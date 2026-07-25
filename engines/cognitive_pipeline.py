@@ -130,11 +130,17 @@ class RecordingStage:
     ) -> CognitiveCycleContext:
 
         debate_result = None
+        weight_snapshot_id = None
 
         if hasattr(ctx, "cognition"):
             for item in reversed(ctx.cognition.relevant_knowledge):
                 if item.get("type") == "debate_result":
                     debate_result = item.get("data")
+
+                if item.get("type") == "weight_snapshot":
+                    weight_snapshot_id = item.get("data", {}).get("id")
+
+                if debate_result and weight_snapshot_id:
                     break
 
         event = self.recorder.record(
@@ -142,6 +148,7 @@ class RecordingStage:
             opinions,
             belief,
             debate_result,
+            weight_snapshot_id,
         )
 
         ctx.cognition.relevant_knowledge.append({
