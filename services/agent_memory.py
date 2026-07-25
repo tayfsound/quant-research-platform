@@ -1,43 +1,131 @@
-"""Agent Memory — public API (domains metodu)."""
-from contracts.agent_performance import AgentPerformanceRecord, AgentPerformanceSummary
+"""Agent Memory — persistent storage backed by JSON."""
+
+import json
+from pathlib import Path
+
+from contracts.agent_performance import (
+    AgentPerformanceRecord,
+    AgentPerformanceSummary,
+)
+
 
 class AgentMemory:
-    def __init__(self):
+
+    def __init__(self, storage_path: str = "agent_memory_history"):
+        self.storage_path = Path(storage_path)
+        self.storage_path.mkdir(exist_ok=True)
+
+        self.memory_file = self.storage_path / "agent_memory.json"
+
         self._records: dict[str, list[AgentPerformanceRecord]] = {}
 
-    def record(self, record: AgentPerformanceRecord):
+        self._load()
+
+
+    def _load(self):
+
+        if not self.memory_file.exists():
+            return
+
+        raw = json.loads(self.memory_file.read_text())
+
+        for domain, records in raw.items():
+            self._records[domain] = [
+                AgentPerformanceRecord.model_validate(r)
+                for r in records
+            ]
+
+
+    def _save(self):
+
+        payload = {
+            domain: [
+                r.model_dump(mode="json")
+                for r in records
+            ]
+            for domain, records in self._records.items()
+        }
+
+        self.memory_file.write_text(
+            json.dumps(
+                payload,
+                indent=2,
+                default=str,
+            )
+        )
+
+
+    def record(
+        self,
+        record: AgentPerformanceRecord,
+    ):
+
         domain = record.agent_domain
-        if domain not in self._records:
-            self._records[domain] = []
-        self._records[domain].append(record)
+
+        self._records.setdefault(
+            domain,
+            [],
+        ).append(record)
+
+        self._save()
+
 
     def domains(self) -> list[str]:
         return list(self._records.keys())
 
-    def get_summary(self, domain: str) -> AgentPerformanceSummary:
+
+    def get_summary(
+        self,
+        domain: str,
+    ) -> AgentPerformanceSummary:
+
         records = self._records.get(domain, [])
+
         if not records:
-            return AgentPerformanceSummary(agent_domain=domain)
+            return AgentPerformanceSummary(
+                agent_domain=domain
+            )
 
         total = len(records)
-        correct = sum(1 for r in records if r.was_correct)
-        overall = correct / total if total > 0 else 0.0
+
+        correct = sum(
+            1
+            for r in records
+            if r.was_correct
+        )
+
+        overall = correct / total
 
         by_regime: dict[str, list[bool]] = {}
+
         for r in records:
-            regime = str(r.market_regime) if r.market_regime else "unknown"
-            if regime not in by_regime:
-                by_regime[regime] = []
-            by_regime[regime].append(r.was_correct)
+
+            regime = (
+                r.market_regime
+                if r.market_regime
+                else "unknown"
+            )
+
+            by_regime.setdefault(
+                regime,
+                [],
+            ).append(r.was_correct)
 
         regime_accuracy = {
-            regime: sum(results) / len(results)
-            for regime, results in by_regime.items()
-            if results
+            regime: sum(values) / len(values)
+            for regime, values in by_regime.items()
         }
 
         recent = records[-20:]
-        recent_accuracy = sum(1 for r in recent if r.was_correct) / len(recent) if recent else 0.0
+
+        recent_accuracy = (
+            sum(
+                1
+                for r in recent
+                if r.was_correct
+            )
+            / len(recent)
+        ) if recent else 0.0
 
         return AgentPerformanceSummary(
             agent_domain=domain,
@@ -47,9 +135,26 @@ class AgentMemory:
             recent_accuracy=round(recent_accuracy, 3),
         )
 
-    def get_contextual_confidence(self, domain: str, market_regime: str = "") -> float:
+
+    def get_contextual_confidence(
+        self,
+        domain: str,
+        market_regime: str = "",
+    ) -> float:
+
         summary = self.get_summary(domain)
+
         if summary.total_predictions < 5:
             return 0.5
-        regime_acc = summary.by_regime.get(market_regime, summary.overall_accuracy)
-        return round(regime_acc * 0.5 + summary.overall_accuracy * 0.3 + summary.recent_accuracy * 0.2, 3)
+
+        regime = summary.by_regime.get(
+            market_regime,
+            summary.overall_accuracy,
+        )
+
+        return round(
+            regime * 0.5
+            + summary.overall_accuracy * 0.3
+            + summary.recent_accuracy * 0.2,
+            3,
+        )
