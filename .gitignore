@@ -49,3 +49,4 @@ service-account.json
 # Cognitive Core runtime data
 decision_logs/
 weight_history/
+
