@@ -120,7 +120,20 @@ class RecordingStage:
         opinions: list[AgentOpinion],
     ) -> CognitiveCycleContext:
 
-        event = self.recorder.record(ctx, opinions, belief)
+        debate_result = None
+
+        if hasattr(ctx, "cognition"):
+            for item in reversed(ctx.cognition.relevant_knowledge):
+                if item.get("type") == "debate_result":
+                    debate_result = item.get("data")
+                    break
+
+        event = self.recorder.record(
+            ctx,
+            opinions,
+            belief,
+            debate_result,
+        )
 
         ctx.cognition.relevant_knowledge.append({
             "type": "decision_event",
