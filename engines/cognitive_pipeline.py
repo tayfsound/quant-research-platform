@@ -49,6 +49,28 @@ class CouncilStage:
             "data": belief.model_dump(),
         })
 
+        # Aktif agent weight snapshot bilgisini bilişsel hafızaya kaydet
+        if self.orchestrator.active_weight_snapshot_id:
+            ctx.cognition.relevant_knowledge.append({
+                "type": "weight_snapshot",
+                "data": {
+                    "id": str(
+                        self.orchestrator.active_weight_snapshot_id
+                    )
+                },
+            })
+
+        # Aktif agent weight snapshot bilgisini bilişsel hafızaya kaydet
+        if self.orchestrator.active_weight_snapshot_id:
+            ctx.cognition.relevant_knowledge.append({
+                "type": "weight_snapshot",
+                "data": {
+                    "id": str(
+                        self.orchestrator.active_weight_snapshot_id
+                    )
+                },
+            })
+
         # Debate katmanı çıktısını bilişsel hafızaya kaydet
         if self.orchestrator.last_debate_result:
             ctx.cognition.relevant_knowledge.append({
