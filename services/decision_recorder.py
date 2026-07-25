@@ -23,6 +23,7 @@ class DecisionRecorder:
         opinions: list[AgentOpinion],
         belief: Belief | None = None,
         debate_result: DebateResult | None = None,
+        weight_snapshot_id=None,
     ) -> DecisionEvent:
 
         start = time.perf_counter()
@@ -109,6 +110,8 @@ class DecisionRecorder:
                 if debate_result
                 else None
             ),
+
+            weight_snapshot_id=weight_snapshot_id,
         )
 
 
