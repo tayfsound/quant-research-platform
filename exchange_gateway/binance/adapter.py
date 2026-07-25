@@ -1,0 +1,97 @@
+"""
+Binance REST adapter — salt okunur piyasa verisi.
+"""
+from datetime import datetime
+from typing import Any
+
+import httpx
+
+from config import get_settings
+from contracts.exchange import OrderBookSnapshot, SymbolInfo
+from exchange_gateway.base import BaseExchangeAdapter
+
+settings = get_settings()
+BASE_URL = "https://api.binance.com"
+
+
+class BinanceAdapter(BaseExchangeAdapter):
+    def __init__(self) -> None:
+        super().__init__("binance")
+        self._client: httpx.AsyncClient | None = None
+
+    async def connect(self) -> None:
+        await super().connect()
+        self._client = httpx.AsyncClient(
+            base_url=BASE_URL,
+            timeout=15.0,
+        )
+
+    async def disconnect(self) -> None:
+        if self._client:
+            await self._client.aclose()
+            self._client = None
+        await super().disconnect()
+
+    async def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        resp = await self._client.get(path, params=params)
+        resp.raise_for_status()
+        return resp.json()
+
+    # --- MarketDataPort implementasyonu ---
+    async def get_symbols(self) -> list[SymbolInfo]:
+        data = await self._get("/api/v3/exchangeInfo")
+        return [
+            SymbolInfo(
+                symbol=s["symbol"],
+                base_asset=s["baseAsset"],
+                quote_asset=s["quoteAsset"],
+                price_precision=s.get("pricePrecision", 8),
+                quantity_precision=s.get("quantityPrecision", 8),
+                min_quantity=float(
+                    next(f["minQty"] for f in s["filters"] if f["filterType"] == "LOT_SIZE")
+                ),
+                max_leverage=125,
+                maker_fee=0.001,
+                taker_fee=0.001,
+            )
+            for s in data["symbols"]
+        ]
+
+    async def get_order_book(self, symbol: str, depth: int = 10) -> OrderBookSnapshot:
+        data = await self._get("/api/v3/depth", {"symbol": symbol, "limit": depth})
+        return OrderBookSnapshot(
+            time=datetime.now(),
+            symbol=symbol,
+            bids=[(float(b[0]), float(b[1])) for b in data["bids"]],
+            asks=[(float(a[0]), float(a[1])) for a in data["asks"]],
+        )
+
+    async def subscribe_to_streams(self, symbols: list[str]) -> None:
+        pass  # WebSocket, Faz 18'de
+
+    async def fetch_ohlcv(
+        self, symbol: str, timeframe: str, since: datetime | None = None, limit: int = 1000
+    ) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {"symbol": symbol, "interval": timeframe, "limit": limit}
+        if since:
+            params["startTime"] = int(since.timestamp() * 1000)
+        data = await self._get("/api/v3/klines", params)
+        return [
+            {
+                "time": d[0],
+                "open": float(d[1]),
+                "high": float(d[2]),
+                "low": float(d[3]),
+                "close": float(d[4]),
+                "volume": float(d[5]),
+            }
+            for d in data
+        ]
+
+    async def fetch_funding_rate(self, symbol: str) -> float:
+        data = await self._get("/fapi/v1/fundingRate", {"symbol": symbol, "limit": 1})
+        return float(data[0]["fundingRate"])
+
+    async def fetch_open_interest(self, symbol: str) -> float:
+        data = await self._get("/fapi/v1/openInterest", {"symbol": symbol})
+        return float(data["openInterest"])

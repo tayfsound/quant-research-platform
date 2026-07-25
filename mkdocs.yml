@@ -1,0 +1,18 @@
+site_name: AI Quant Research Platform
+site_description: Kurumsal Seviye Yapay Zekâ Kantitatif Araştırma Platformu
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: indigo
+      accent: cyan
+nav:
+  - Ana Sayfa: index.md
+  - Mimari:
+      - Genel Mimari: architecture/overview.md
+      - Event Sistemi: architecture/events.md
+      - Veri Katmanı: architecture/database.md
+  - Geliştirme:
+      - Başlangıç: development/setup.md
+      - Katkı Rehberi: development/contributing.md
+  - ADR: decisions/

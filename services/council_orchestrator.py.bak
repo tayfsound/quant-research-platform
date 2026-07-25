@@ -1,0 +1,23 @@
+"""Council Orchestrator — belief ve opinions birlikte döner."""
+from contracts.agent import AgentOpinion, AgentDomain
+from services.belief_engine import BeliefEngine, Belief
+
+class CouncilOrchestrator:
+    def __init__(self, registry, belief_engine: BeliefEngine | None = None):
+        self.registry = registry
+        self.belief_engine = belief_engine or BeliefEngine()
+
+    def deliberate(self, contexts: dict[AgentDomain, object]) -> tuple[Belief, list[AgentOpinion]]:
+        opinions: list[AgentOpinion] = []
+
+        for domain, ctx in contexts.items():
+            if ctx is not None:
+                agent = self.registry.get(domain)
+                if agent:
+                    opinions.append(agent.analyze(ctx))
+
+        if not opinions:
+            return Belief(direction="WAIT", total_opinions=0), []
+
+        belief = self.belief_engine.synthesize(opinions)
+        return belief, opinions

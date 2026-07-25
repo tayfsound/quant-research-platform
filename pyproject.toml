@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "quant-research-platform"
+version = "0.1.0"
+description = "AI Quant Research Operating System"
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "MIT"}
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "sqlalchemy[asyncio]>=2.0.35",
+    "psycopg2-binary>=2.9.9",
+    "asyncpg>=0.30.0",
+    "redis>=5.2.0",
+    "pydantic-settings>=2.6.0",
+    "python-dotenv>=1.0.1",
+    "httpx>=0.28.0",
+    "orjson>=3.10.0",
+    "structlog>=24.4.0",
+    "pgvector>=0.3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.7.0",
+    "mypy>=1.13.0",
+    "pre-commit>=3.8.0",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+strict = true
+ignore_missing_imports = true
+exclude = ["dashboard/"]
+allow_redefinition = true
+disallow_any_generics = false
+
+[tool.hatch.build.targets.wheel]
+packages = ["contracts", "exchange_gateway", "market_data", "ml", "rl", "strategies", "simulator", "risk", "analytics", "api", "database", "events", "config", "observability"]
