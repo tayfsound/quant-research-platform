@@ -50,3 +50,6 @@ service-account.json
 decision_logs/
 weight_history/
 
+
+# Agent runtime memory
+agent_memory_history/
