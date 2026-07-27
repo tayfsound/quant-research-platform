@@ -1,0 +1,13 @@
+{
+  "id": "b22f5377-fe60-48e0-b8de-d3ccb3831809",
+  "timestamp": "2026-07-25T15:51:20.188115Z",
+  "weights": {
+    "technical": 0.179,
+    "macro": 0.2
+  },
+  "evaluation_window": 100,
+  "previous_snapshot_id": "d04c89b0-21b9-4e82-a582-39100b986f6b",
+  "snapshot_hash": "06afcec8d7bcf1e612983444e0c79d7c519100ba9e0f74f4326f5621d22c74a2",
+  "reason": "performance_update",
+  "engine_version": "1.0.0"
+}

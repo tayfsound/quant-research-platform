@@ -107,6 +107,8 @@ class DecisionRecorder:
 
             debate_trace=(
                 debate_result.model_dump(mode="json")
+                if hasattr(debate_result, "model_dump")
+                else debate_result
                 if debate_result
                 else None
             ),

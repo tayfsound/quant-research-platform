@@ -1,0 +1,141 @@
+{
+  "schema_version": "cognitive-core-v1",
+  "id": "03805779-b3ab-487a-a87e-fece5d14daeb",
+  "timestamp": "2026-07-22T19:27:49.314069Z",
+  "symbol": "BTCUSDT",
+  "market_snapshot": {
+    "features": {
+      "RSI": 25,
+      "ATR": 3.5
+    },
+    "raw_snapshot": {}
+  },
+  "agent_opinions": [
+    {
+      "agent_id": "macro_agent_v1",
+      "domain": "macro",
+      "direction": "WAIT",
+      "confidence": 0.0,
+      "uncertainty": 0.0,
+      "data_quality": 0.8,
+      "evidence_strength": 0.7,
+      "freshness": 0.9,
+      "source_reliability": 0.9,
+      "evidence": [],
+      "caveats": [],
+      "timestamp": "2026-07-22T21:27:49.313823"
+    },
+    {
+      "agent_id": "sentiment_agent_v1",
+      "domain": "sentiment",
+      "direction": "WAIT",
+      "confidence": 0.0,
+      "uncertainty": 0.0,
+      "data_quality": 0.75,
+      "evidence_strength": 0.65,
+      "freshness": 0.85,
+      "source_reliability": 0.7,
+      "evidence": [],
+      "caveats": [
+        "Sentiment signals are reflexive and crowd-dependent"
+      ],
+      "timestamp": "2026-07-22T21:27:49.313829"
+    },
+    {
+      "agent_id": "onchain_agent_v1",
+      "domain": "onchain",
+      "direction": "WAIT",
+      "confidence": 0.0,
+      "uncertainty": 0.0,
+      "data_quality": 0.8,
+      "evidence_strength": 0.75,
+      "freshness": 0.7,
+      "source_reliability": 0.85,
+      "evidence": [],
+      "caveats": [],
+      "timestamp": "2026-07-22T21:27:49.313834"
+    },
+    {
+      "agent_id": "technical_agent_v1",
+      "domain": "technical",
+      "direction": "WAIT",
+      "confidence": 0.0,
+      "uncertainty": 0.0,
+      "data_quality": 0.85,
+      "evidence_strength": 0.7,
+      "freshness": 0.9,
+      "source_reliability": 0.75,
+      "evidence": [],
+      "caveats": [
+        "Volume not confirming trend — potential divergence"
+      ],
+      "timestamp": "2026-07-22T21:27:49.313839"
+    }
+  ],
+  "belief_state": {
+    "id": "6978a978-3c21-4f27-8776-fe2cce937bce",
+    "timestamp": "2026-07-22T21:27:49.313929",
+    "direction": "WAIT",
+    "strength": 1.0,
+    "uncertainty": 0.0,
+    "entropy": 0.0,
+    "information_clusters": 4,
+    "total_opinions": 4,
+    "cluster_disagreement": 0.0,
+    "cluster_balance": 1.0,
+    "crowding_penalty": 0.0,
+    "cluster_weights": {
+      "macro_data": 0.615,
+      "social_media": 0.547,
+      "onchain_data": 0.585,
+      "raw_price": 0.595
+    },
+    "supporting_opinions": [
+      "macro",
+      "sentiment",
+      "onchain",
+      "technical"
+    ],
+    "opposing_opinions": [],
+    "evidence_paths": [
+      "macro_agent -> macro_data",
+      "onchain_agent -> onchain_data",
+      "sentiment_agent -> social_media",
+      "technical_agent -> ema -> raw_price",
+      "technical_agent -> rsi -> raw_price"
+    ],
+    "assumptions": [
+      "Clusters: 4, Balance: 1.0",
+      "Crowding penalty: 0.0"
+    ],
+    "invalidation_conditions": [],
+    "confidence_interval": [
+      1.0,
+      1.0
+    ],
+    "age_seconds": 0,
+    "revision_count": 0,
+    "stability": 0.5
+  },
+  "risk_evaluation": {
+    "verdict": "approved",
+    "reasons": []
+  },
+  "proposed_direction": "WAIT",
+  "original_direction": "",
+  "final_action": "REDUCE",
+  "final_reason": "",
+  "final_size": 0.2,
+  "confidence": 0.4,
+  "risk_adjusted": false,
+  "engine_version": "1.0.0",
+  "git_commit": "",
+  "decision_latency_ms": 0.08,
+  "feature_hash": "2099b4381b4b549a732f914f3b4f84b17da6153f838aa48a3bb5f8de6ed15624",
+  "belief_hash": "eba40abe98dd1c5965a37420da1cd9063351e13405cd0e6f9d9f9959838b5e78",
+  "data_sources": [
+    "market_context",
+    "agent_council",
+    "belief_engine"
+  ]
+}

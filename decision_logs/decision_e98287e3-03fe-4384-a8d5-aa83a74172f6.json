@@ -1,0 +1,147 @@
+{
+  "schema_version": "cognitive-core-v1",
+  "id": "e98287e3-03fe-4384-a8d5-aa83a74172f6",
+  "timestamp": "2026-07-24T16:00:05.255265Z",
+  "symbol": "",
+  "market_snapshot": {
+    "features": {},
+    "raw_snapshot": {}
+  },
+  "agent_opinions": [
+    {
+      "agent_id": "macro_agent_v1",
+      "domain": "macro",
+      "direction": "WAIT",
+      "confidence": 0.0,
+      "uncertainty": 0.0,
+      "data_quality": 0.8,
+      "evidence_strength": 0.7,
+      "freshness": 0.9,
+      "source_reliability": 0.9,
+      "evidence": [],
+      "caveats": [],
+      "timestamp": "2026-07-24T18:00:05.254507",
+      "intrinsic_trust": 0.6150000000000001,
+      "performance_weight": 1.0,
+      "effective_influence": 0.6150000000000001
+    },
+    {
+      "agent_id": "sentiment_agent_v1",
+      "domain": "sentiment",
+      "direction": "WAIT",
+      "confidence": 0.0,
+      "uncertainty": 0.0,
+      "data_quality": 0.75,
+      "evidence_strength": 0.65,
+      "freshness": 0.85,
+      "source_reliability": 0.7,
+      "evidence": [],
+      "caveats": [
+        "Sentiment signals are reflexive and crowd-dependent"
+      ],
+      "timestamp": "2026-07-24T18:00:05.254542",
+      "intrinsic_trust": 0.5475,
+      "performance_weight": 1.0,
+      "effective_influence": 0.5475
+    },
+    {
+      "agent_id": "onchain_agent_v1",
+      "domain": "onchain",
+      "direction": "WAIT",
+      "confidence": 0.0,
+      "uncertainty": 0.0,
+      "data_quality": 0.8,
+      "evidence_strength": 0.75,
+      "freshness": 0.7,
+      "source_reliability": 0.85,
+      "evidence": [],
+      "caveats": [],
+      "timestamp": "2026-07-24T18:00:05.254552",
+      "intrinsic_trust": 0.5850000000000001,
+      "performance_weight": 1.0,
+      "effective_influence": 0.5850000000000001
+    },
+    {
+      "agent_id": "technical_agent_v1",
+      "domain": "technical",
+      "direction": "WAIT",
+      "confidence": 0.0,
+      "uncertainty": 0.0,
+      "data_quality": 0.85,
+      "evidence_strength": 0.7,
+      "freshness": 0.9,
+      "source_reliability": 0.75,
+      "evidence": [],
+      "caveats": [
+        "Volume not confirming trend — potential divergence"
+      ],
+      "timestamp": "2026-07-24T18:00:05.254561",
+      "intrinsic_trust": 0.595,
+      "performance_weight": 1.0,
+      "effective_influence": 0.595
+    }
+  ],
+  "belief_state": {
+    "id": "409a9c1f-6425-4624-9386-d5a4080172c9",
+    "timestamp": "2026-07-24T18:00:05.254677",
+    "direction": "WAIT",
+    "strength": 1.0,
+    "uncertainty": 0.0,
+    "entropy": 0.0,
+    "information_clusters": 4,
+    "total_opinions": 4,
+    "cluster_disagreement": 0.0,
+    "cluster_balance": 1.0,
+    "crowding_penalty": 0.0,
+    "cluster_weights": {
+      "macro_data": 0.615,
+      "social_media": 0.547,
+      "onchain_data": 0.585,
+      "raw_price": 0.595
+    },
+    "supporting_opinions": [
+      "macro",
+      "sentiment",
+      "onchain",
+      "technical"
+    ],
+    "opposing_opinions": [],
+    "evidence_paths": [
+      "macro_agent -> macro_data",
+      "onchain_agent -> onchain_data",
+      "sentiment_agent -> social_media",
+      "technical_agent -> ema -> raw_price",
+      "technical_agent -> rsi -> raw_price"
+    ],
+    "assumptions": [],
+    "invalidation_conditions": [],
+    "confidence_interval": [
+      0.0,
+      0.0
+    ],
+    "age_seconds": 0,
+    "revision_count": 0,
+    "stability": 0.5
+  },
+  "risk_evaluation": {
+    "verdict": "approved",
+    "reasons": []
+  },
+  "proposed_direction": "WAIT",
+  "original_direction": "",
+  "final_action": "REDUCE",
+  "final_reason": "",
+  "final_size": 0.0,
+  "confidence": 0.5,
+  "risk_adjusted": false,
+  "engine_version": "1.0.0",
+  "git_commit": "",
+  "decision_latency_ms": 0.277,
+  "feature_hash": "bfa962c9f972569313de025d7075aaab11f7eae71ee5c9b6a3275e1745a9be71",
+  "belief_hash": "bac6884c443f57a58a627f5a355ea7210d1d3c3931c0e46dc39c75b8ec0d22b9",
+  "data_sources": [
+    "market_context",
+    "agent_council",
+    "belief_engine"
+  ]
+}

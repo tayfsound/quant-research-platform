@@ -10,11 +10,17 @@ class WeightOptimizer:
     def __init__(
         self,
         agent_memory: AgentMemory,
-        weight_repository: WeightRepository,
+        weight_repository: WeightRepository | None = None,
         prior_strength: int = 5,
     ):
         self.agent_memory = agent_memory
-        self.weight_repository = weight_repository
+
+        self.weight_repository = (
+            weight_repository
+            if weight_repository
+            else WeightRepository()
+        )
+
         self.prior_strength = prior_strength
 
 
@@ -44,7 +50,6 @@ class WeightOptimizer:
             )
 
 
-            # Bayesian smoothing
             smoothed_accuracy = (
                 correct + self.prior_strength
             ) / (
@@ -52,7 +57,6 @@ class WeightOptimizer:
             )
 
 
-            # Sample confidence
             confidence_factor = min(
                 total / evaluation_window,
                 1.0

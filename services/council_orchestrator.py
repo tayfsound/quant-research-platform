@@ -11,6 +11,7 @@ class CouncilOrchestrator:
         self.registry = registry
         self.belief_engine = belief_engine or BeliefEngine()
         self.weight_repository = WeightRepository()
+        self.active_weight_snapshot_id = None
 
         self.last_debate_result: DebateResult | None = None
 
@@ -52,6 +53,7 @@ class CouncilOrchestrator:
         )
 
         snapshot = self.weight_repository.get_latest()
+        self.active_weight_snapshot_id = snapshot.id if snapshot else None
 
         if snapshot:
             belief = self.belief_engine.apply_weights(

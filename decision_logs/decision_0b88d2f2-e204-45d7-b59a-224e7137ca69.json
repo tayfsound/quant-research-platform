@@ -1,0 +1,149 @@
+{
+  "schema_version": "cognitive-core-v1",
+  "id": "0b88d2f2-e204-45d7-b59a-224e7137ca69",
+  "timestamp": "2026-07-22T22:54:02.406042Z",
+  "symbol": "BTCUSDT",
+  "market_snapshot": {
+    "features": {
+      "RSI": 25
+    },
+    "raw_snapshot": {}
+  },
+  "agent_opinions": [
+    {
+      "agent_id": "macro_agent_v1",
+      "domain": "macro",
+      "direction": "WAIT",
+      "confidence": 0.0,
+      "uncertainty": 0.0,
+      "data_quality": 0.8,
+      "evidence_strength": 0.7,
+      "freshness": 0.9,
+      "source_reliability": 0.9,
+      "evidence": [],
+      "caveats": [],
+      "timestamp": "2026-07-23T00:54:02.405596",
+      "intrinsic_trust": 0.6150000000000001,
+      "performance_weight": 1.0,
+      "effective_influence": 0.6150000000000001
+    },
+    {
+      "agent_id": "sentiment_agent_v1",
+      "domain": "sentiment",
+      "direction": "WAIT",
+      "confidence": 0.0,
+      "uncertainty": 0.0,
+      "data_quality": 0.75,
+      "evidence_strength": 0.65,
+      "freshness": 0.85,
+      "source_reliability": 0.7,
+      "evidence": [],
+      "caveats": [
+        "Sentiment signals are reflexive and crowd-dependent"
+      ],
+      "timestamp": "2026-07-23T00:54:02.405602",
+      "intrinsic_trust": 0.5475,
+      "performance_weight": 1.0,
+      "effective_influence": 0.5475
+    },
+    {
+      "agent_id": "onchain_agent_v1",
+      "domain": "onchain",
+      "direction": "WAIT",
+      "confidence": 0.0,
+      "uncertainty": 0.0,
+      "data_quality": 0.8,
+      "evidence_strength": 0.75,
+      "freshness": 0.7,
+      "source_reliability": 0.85,
+      "evidence": [],
+      "caveats": [],
+      "timestamp": "2026-07-23T00:54:02.405605",
+      "intrinsic_trust": 0.5850000000000001,
+      "performance_weight": 1.0,
+      "effective_influence": 0.5850000000000001
+    },
+    {
+      "agent_id": "technical_agent_v1",
+      "domain": "technical",
+      "direction": "WAIT",
+      "confidence": 0.0,
+      "uncertainty": 0.0,
+      "data_quality": 0.85,
+      "evidence_strength": 0.7,
+      "freshness": 0.9,
+      "source_reliability": 0.75,
+      "evidence": [],
+      "caveats": [
+        "Volume not confirming trend — potential divergence"
+      ],
+      "timestamp": "2026-07-23T00:54:02.405608",
+      "intrinsic_trust": 0.595,
+      "performance_weight": 1.0,
+      "effective_influence": 0.595
+    }
+  ],
+  "belief_state": {
+    "id": "fc35460e-e434-406f-8213-6088a92922ce",
+    "timestamp": "2026-07-23T00:54:02.405660",
+    "direction": "WAIT",
+    "strength": 1.0,
+    "uncertainty": 0.0,
+    "entropy": 0.0,
+    "information_clusters": 4,
+    "total_opinions": 4,
+    "cluster_disagreement": 0.0,
+    "cluster_balance": 1.0,
+    "crowding_penalty": 0.0,
+    "cluster_weights": {
+      "macro_data": 0.615,
+      "social_media": 0.547,
+      "onchain_data": 0.585,
+      "raw_price": 0.595
+    },
+    "supporting_opinions": [
+      "macro",
+      "sentiment",
+      "onchain",
+      "technical"
+    ],
+    "opposing_opinions": [],
+    "evidence_paths": [
+      "macro_agent -> macro_data",
+      "onchain_agent -> onchain_data",
+      "sentiment_agent -> social_media",
+      "technical_agent -> ema -> raw_price",
+      "technical_agent -> rsi -> raw_price"
+    ],
+    "assumptions": [],
+    "invalidation_conditions": [],
+    "confidence_interval": [
+      0.0,
+      0.0
+    ],
+    "age_seconds": 0,
+    "revision_count": 0,
+    "stability": 0.5
+  },
+  "risk_evaluation": {
+    "verdict": "approved",
+    "reasons": []
+  },
+  "proposed_direction": "WAIT",
+  "original_direction": "",
+  "final_action": "WAIT",
+  "final_reason": "",
+  "final_size": 0.0,
+  "confidence": 0.08,
+  "risk_adjusted": false,
+  "engine_version": "1.0.0",
+  "git_commit": "",
+  "decision_latency_ms": 0.086,
+  "feature_hash": "3be11fb557fa33737322675e33fcfadeb37a5e6d06b5ee5973b89ed479ab3630",
+  "belief_hash": "c0ab1b4d312dc8c1e2dfbfbcc13780eacf3afa36b4c447544e3e1a8374e24841",
+  "data_sources": [
+    "market_context",
+    "agent_council",
+    "belief_engine"
+  ]
+}

@@ -1,55 +1,6 @@
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-dist/
-.env
 .venv/
-venv/
-
-# Node / React
-dashboard/node_modules/
-dashboard/dist/
-dashboard/.env
-
-# IDE
-.vscode/
-.idea/
-
-# Docker
-docker-compose.override.yml
-
-# Data
-data/
-logs/
-
-# AI Memory embeddings (yeniden üretilebilir)
-AI_MEMORY_SYSTEM/embeddings/
-
-# OS
+__pycache__/
+.pytest_cache/
 .DS_Store
-Thumbs.db
-# Güvenlik
-.env
-*.pem
-*.key
-keys/
-secrets/
-credentials.json
-service-account.json
-
-# API keys (asla commit etme)
-*_api_key*
-*_api_secret*
-
-# Environment
-.env.local
-.env.production
-
-# Cognitive Core runtime data
-decision_logs/
-weight_history/
-
-
-# Agent runtime memory
-agent_memory_history/
+tmp_test_memory/
+*.pyc
