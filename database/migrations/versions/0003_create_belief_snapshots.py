@@ -45,11 +45,13 @@ def upgrade() -> None:
         sa.Column(
             "uncertainty",
             sa.Float(),
+            server_default=sa.text("1.0"),
             nullable=False,
         ),
         sa.Column(
             "entropy",
             sa.Float(),
+            server_default=sa.text("0.0"),
             nullable=False,
         ),
         sa.Column(
@@ -115,11 +117,13 @@ def upgrade() -> None:
         sa.Column(
             "stability",
             sa.Float(),
+            server_default=sa.text("0.5"),
             nullable=True,
         ),
         sa.Column(
             "revision_count",
             sa.Integer(),
+            server_default=sa.text("0"),
             nullable=True,
         ),
         sa.Column(

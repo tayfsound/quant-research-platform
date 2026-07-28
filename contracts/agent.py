@@ -65,6 +65,7 @@ class AgentChallenge(BaseModel):
     evidence_strength: float = 0.5
     urgency: str = "normal"
     source_reliability: float = 0.8
+    suggested_adjustment: str = ""
 
 class AgentResponse(BaseModel):
     responder_domain: AgentDomain

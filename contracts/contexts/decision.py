@@ -29,3 +29,5 @@ class Decision(BaseModel):
     confidence: float = 0.0
     uncertainty: float = 1.0
     reconsideration_count: int = 0
+    take_profit: float | None = None
+    stop_loss: float | None = None

@@ -1,6 +1,7 @@
 """Kalıcı hafıza testleri."""
 from contracts.memory import Episode
 from contracts.observation import Observation, ObservationType
+from contracts.agent import AgentOpinion, AgentDomain
 from contracts.belief import Belief
 from services.belief_engine import BeliefEngine
 from contracts.curiosity import ExperimentProposal, ExperimentStatus
@@ -46,16 +47,57 @@ def test_save_and_retrieve_observation():
     assert len(rows) == 1
     assert rows[0]["symbol"] == "BTCUSDT"
 
-def test_save_and_update_belief():
+def test_save_and_retrieve_belief_snapshot():
     session = get_session()
     repo = BeliefRepository(session)
-    belief = Belief(
-        direction="LONG",
-        strength=0.7,
-    )
-    repo.save(belief)
-    row = repo.get_by_expression("")
-    assert row is not None
+    engine = BeliefEngine()
+    opinions = [
+        AgentOpinion(domain=AgentDomain.TECHNICAL, direction="LONG", confidence=0.8).recalculate(),
+        AgentOpinion(domain=AgentDomain.NEWS, direction="LONG", confidence=0.7).recalculate(),
+    ]
+    belief = engine.synthesize(opinions)
+    repo.save_snapshot(belief)
+
+    rows = repo.get_latest(limit=1)
+    assert len(rows) == 1
+    assert rows[0]["direction"] == "LONG"
+    assert rows[0]["strength"] == belief.strength
+    assert rows[0]["uncertainty"] == belief.uncertainty
+    assert rows[0]["timestamp"] is not None
+
+    # Verify append-only: a new snapshot is added without updating the first one.
+    opinions2 = [AgentOpinion(domain=AgentDomain.TECHNICAL, direction="SHORT", confidence=0.6).recalculate()]
+    belief2 = engine.synthesize(opinions2)
+    repo.save_snapshot(belief2)
+
+    latest = repo.get_latest(limit=10)
+    directions = [r["direction"] for r in latest]
+    assert "SHORT" in directions
+    assert "LONG" in directions
+    assert latest[0]["direction"] == "SHORT"
+
+def test_get_by_direction():
+    session = get_session()
+    repo = BeliefRepository(session)
+    engine = BeliefEngine()
+
+    for _ in range(2):
+        b = engine.synthesize([AgentOpinion(domain=AgentDomain.TECHNICAL, direction="LONG", confidence=0.8).recalculate()])
+        repo.save_snapshot(b)
+
+    b_short = engine.synthesize([AgentOpinion(domain=AgentDomain.TECHNICAL, direction="SHORT", confidence=0.6).recalculate()])
+    repo.save_snapshot(b_short)
+
+    long_rows = repo.get_by_direction("LONG", limit=10)
+    assert len(long_rows) >= 2
+    assert all(r["direction"] == "LONG" for r in long_rows)
+    # The most recent rows should include the newly saved LONG snapshots.
+    assert long_rows[0]["direction"] == "LONG"
+    assert long_rows[1]["direction"] == "LONG"
+
+    short_rows = repo.get_by_direction("SHORT", limit=10)
+    assert len(short_rows) >= 1
+    assert short_rows[0]["direction"] == "SHORT"
 
 def test_experiment_lifecycle():
     session = get_session()

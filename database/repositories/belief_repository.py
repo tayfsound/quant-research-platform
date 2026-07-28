@@ -1,9 +1,9 @@
 """Belief repository — Belief Persistence V3 snapshot storage."""
 
-import json
 import warnings
 
-from sqlalchemy import text
+from sqlalchemy import insert, text, String, Float, Integer, MetaData, Table, Column
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from contracts.belief import Belief
 
@@ -40,30 +40,26 @@ class BeliefRepository:
             "crowding_penalty": getattr(
                 belief, "crowding_penalty", None
             ),
-            "cluster_weights": json.dumps(
-                getattr(belief, "cluster_weights", {})
+            "cluster_weights": getattr(
+                belief, "cluster_weights", None
             ),
-            "supporting_opinions": json.dumps(
-                getattr(belief, "supporting_opinions", [])
+            "supporting_opinions": getattr(
+                belief, "supporting_opinions", None
             ),
-            "opposing_opinions": json.dumps(
-                getattr(belief, "opposing_opinions", [])
+            "opposing_opinions": getattr(
+                belief, "opposing_opinions", None
             ),
-            "evidence_paths": json.dumps(
-                getattr(belief, "evidence_paths", [])
+            "evidence_paths": getattr(
+                belief, "evidence_paths", None
             ),
-            "assumptions": json.dumps(
-                getattr(belief, "assumptions", [])
+            "assumptions": getattr(
+                belief, "assumptions", None
             ),
-            "invalidation_conditions": json.dumps(
-                getattr(belief, "invalidation_conditions", [])
+            "invalidation_conditions": getattr(
+                belief, "invalidation_conditions", None
             ),
-            "confidence_interval": json.dumps(
-                list(getattr(
-                    belief,
-                    "confidence_interval",
-                    (0.0, 0.0),
-                ))
+            "confidence_interval": getattr(
+                belief, "confidence_interval", None
             ),
             "stability": getattr(
                 belief, "stability", 0.5
@@ -74,54 +70,37 @@ class BeliefRepository:
         }
 
         self.session.execute(
-            text("""
-            INSERT INTO belief_snapshots (
-                id,
-                direction,
-                strength,
-                uncertainty,
-                entropy,
-                information_clusters,
-                total_opinions,
-                cluster_disagreement,
-                cluster_balance,
-                crowding_penalty,
-                cluster_weights,
-                supporting_opinions,
-                opposing_opinions,
-                evidence_paths,
-                assumptions,
-                invalidation_conditions,
-                confidence_interval,
-                stability,
-                revision_count
-            )
-            VALUES (
-                :id,
-                :direction,
-                :strength,
-                :uncertainty,
-                :entropy,
-                :information_clusters,
-                :total_opinions,
-                :cluster_disagreement,
-                :cluster_balance,
-                :crowding_penalty,
-                :cluster_weights,
-                :supporting_opinions,
-                :opposing_opinions,
-                :evidence_paths,
-                :assumptions,
-                :invalidation_conditions,
-                :confidence_interval,
-                :stability,
-                :revision_count
-            )
-            """),
-            data,
+            insert(
+                sa_table := self._table(),
+            ).values(**data),
         )
 
         self.session.commit()
+
+    def _table(self):
+        return Table(
+            "belief_snapshots",
+            MetaData(),
+            Column("id", UUID(as_uuid=True), primary_key=True),
+            Column("direction", String(10), nullable=False),
+            Column("strength", Float(), nullable=False),
+            Column("uncertainty", Float(), nullable=False),
+            Column("entropy", Float(), nullable=False),
+            Column("information_clusters", Integer(), nullable=True),
+            Column("total_opinions", Integer(), nullable=True),
+            Column("cluster_disagreement", Float(), nullable=True),
+            Column("cluster_balance", Float(), nullable=True),
+            Column("crowding_penalty", Float(), nullable=True),
+            Column("cluster_weights", JSONB(), nullable=True),
+            Column("supporting_opinions", JSONB(), nullable=True),
+            Column("opposing_opinions", JSONB(), nullable=True),
+            Column("evidence_paths", JSONB(), nullable=True),
+            Column("assumptions", JSONB(), nullable=True),
+            Column("invalidation_conditions", JSONB(), nullable=True),
+            Column("confidence_interval", JSONB(), nullable=True),
+            Column("stability", Float(), nullable=True),
+            Column("revision_count", Integer(), nullable=True),
+        )
 
     def get_latest(self, limit: int = 10) -> list[dict]:
 

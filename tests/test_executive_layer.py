@@ -37,5 +37,5 @@ def test_fusion_returns_action_type():
         market={"features": {"RSI": 50}},
         decision={"proposed_direction": "LONG", "proposed_size": 1.0},
     )
-    result = fusion.evaluate(ctx)
+    result = fusion.evaluate(ctx, None)
     assert result.decision.action == ActionType.WAIT

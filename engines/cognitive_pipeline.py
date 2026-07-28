@@ -3,11 +3,12 @@ from contracts.context import CognitiveCycleContext
 from contracts.belief import Belief
 from contracts.agent import AgentOpinion, AgentDomain
 from services.context_adapter import ContextAdapter
+from services.knowledge_base import KnowledgeBase
 from agents.registry import AgentRegistry
 from services.council_orchestrator import CouncilOrchestrator
 from services.decision_context_builder import DecisionContextBuilder
+from services.decision_fusion import DecisionFusion
 from services.metacognition import Metacognition
-from services.risk_gate import RiskGate
 from services.decision_recorder import DecisionRecorder
 
 
@@ -19,13 +20,34 @@ class MemoryStage:
         return self.context_builder.enrich(ctx)
 
 
+class KnowledgeStage:
+    def __init__(self, knowledge_base: KnowledgeBase | None = None):
+        self.knowledge_base = knowledge_base or KnowledgeBase()
+
+    def execute(self, ctx: CognitiveCycleContext) -> CognitiveCycleContext:
+        relevant = self.knowledge_base.query_relevant(
+            ctx.market.model_dump(),
+            ctx.decision.model_dump(),
+        )
+        ctx.cognition.relevant_knowledge.extend(relevant)
+        return ctx
+
+
 class CouncilStage:
     def __init__(self, registry: AgentRegistry):
         self.registry = registry
         self.adapter = ContextAdapter()
         self.orchestrator = CouncilOrchestrator(registry)
+        self.knowledge_base = KnowledgeBase()
 
     def execute(self, ctx: CognitiveCycleContext) -> tuple[CognitiveCycleContext, Belief, list[AgentOpinion]]:
+        wisdom = self.knowledge_base.query_relevant(
+            ctx.market.model_dump(),
+            ctx.decision.model_dump(),
+        )
+        for w in wisdom:
+            ctx.cognition.relevant_knowledge.append(w)
+
         contexts = {
             AgentDomain.MACRO: self.adapter.to_macro(ctx),
             AgentDomain.SENTIMENT: self.adapter.to_sentiment(ctx),
@@ -35,41 +57,18 @@ class CouncilStage:
 
         belief, opinions = self.orchestrator.deliberate(contexts)
 
-        ctx.cognition.relevant_knowledge.append({
-            "type": "weight_snapshot",
-            "data": {
-                "id": str(self.orchestrator.active_weight_snapshot_id)
-                if self.orchestrator.active_weight_snapshot_id
-                else None
-            },
-        })
+        if self.orchestrator.active_weight_snapshot_id:
+            ctx.cognition.relevant_knowledge.append({
+                "type": "weight_snapshot",
+                "data": {
+                    "id": str(self.orchestrator.active_weight_snapshot_id)
+                },
+            })
 
         ctx.cognition.relevant_knowledge.append({
             "type": "council_belief",
             "data": belief.model_dump(),
         })
-
-        # Aktif agent weight snapshot bilgisini bilişsel hafızaya kaydet
-        if self.orchestrator.active_weight_snapshot_id:
-            ctx.cognition.relevant_knowledge.append({
-                "type": "weight_snapshot",
-                "data": {
-                    "id": str(
-                        self.orchestrator.active_weight_snapshot_id
-                    )
-                },
-            })
-
-        # Aktif agent weight snapshot bilgisini bilişsel hafızaya kaydet
-        if self.orchestrator.active_weight_snapshot_id:
-            ctx.cognition.relevant_knowledge.append({
-                "type": "weight_snapshot",
-                "data": {
-                    "id": str(
-                        self.orchestrator.active_weight_snapshot_id
-                    )
-                },
-            })
 
         # Debate katmanı çıktısını bilişsel hafızaya kaydet
         if self.orchestrator.last_debate_result:
@@ -132,12 +131,12 @@ class MetaStage:
         return ctx
 
 
-class RiskStage:
+class DecisionFusionStage:
     def __init__(self):
-        self.risk_gate = RiskGate()
+        self.fusion = DecisionFusion()
 
-    def execute(self, ctx: CognitiveCycleContext) -> CognitiveCycleContext:
-        return self.risk_gate.evaluate(ctx)
+    def execute(self, ctx: CognitiveCycleContext, belief: Belief) -> CognitiveCycleContext:
+        return self.fusion.evaluate(ctx, belief)
 
 
 class RecordingStage:
