@@ -11,3 +11,4 @@ decision_logs/
 weight_history/
 *.log
 .env
+.env
