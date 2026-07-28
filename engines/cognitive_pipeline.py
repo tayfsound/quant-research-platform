@@ -57,13 +57,14 @@ class CouncilStage:
 
         belief, opinions = self.orchestrator.deliberate(contexts)
 
-        if self.orchestrator.active_weight_snapshot_id:
-            ctx.cognition.relevant_knowledge.append({
-                "type": "weight_snapshot",
-                "data": {
-                    "id": str(self.orchestrator.active_weight_snapshot_id)
-                },
-            })
+        ctx.cognition.relevant_knowledge.append({
+            "type": "weight_snapshot",
+            "data": {
+                "id": str(self.orchestrator.active_weight_snapshot_id)
+                if self.orchestrator.active_weight_snapshot_id
+                else None
+            },
+        })
 
         ctx.cognition.relevant_knowledge.append({
             "type": "council_belief",

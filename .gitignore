@@ -4,3 +4,9 @@ __pycache__/
 .DS_Store
 tmp_test_memory/
 *.pyc
+
+# Runtime logs
+agent_memory_history/
+decision_logs/
+weight_history/
+*.log
