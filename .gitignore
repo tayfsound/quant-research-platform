@@ -10,3 +10,4 @@ agent_memory_history/
 decision_logs/
 weight_history/
 *.log
+.env
