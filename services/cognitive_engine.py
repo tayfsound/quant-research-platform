@@ -10,7 +10,7 @@ from engines.cognitive_pipeline import (
     MemoryStage, KnowledgeStage, CouncilStage, MetaStage,
     DecisionFusionStage, RecordingStage,
 )
-from services.decision_persistor import DecisionPersistor
+from database.repositories.decision_persistor import DecisionPersistor
 from services.guardrail_stage import GuardrailStage
 from services.learning_loop import LearningLoop
 from services.outcome_evaluator import OutcomeEvaluator

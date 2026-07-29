@@ -27,6 +27,10 @@ class EpisodeRepository:
             data,
         )
 
+        self.session.commit()
+
+        return episode
+
     def latest(self, limit: int = 20):
         result = self.session.execute(
             text("SELECT * FROM episodes ORDER BY created_at DESC LIMIT :limit"),

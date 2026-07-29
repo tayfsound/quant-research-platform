@@ -1,3 +1,4 @@
+from pathlib import Path
 """Decision recorder — Phase 165 replay compatible."""
 
 from database.repositories.decision_persistor import DecisionPersistor
@@ -7,6 +8,8 @@ from contracts.decision_event import DecisionEvent
 
 class DecisionRecorder:
     def __init__(self, storage_path=None):
+        self.storage_path = Path(storage_path) if storage_path else Path("decision_logs")
+        self.storage_path.mkdir(parents=True, exist_ok=True)
         self.session = get_session()
         self.persistor = DecisionPersistor(self.session)
 
@@ -55,6 +58,11 @@ class DecisionRecorder:
             ),
             weight_snapshot_id=weight_snapshot_id,
         )
+
+        self.persistor.persist(event)
+
+        log_file = self.storage_path / f"decision_{event.id}.json"
+        log_file.write_text(event.model_dump_json(indent=2))
 
         return event
 

@@ -7,7 +7,7 @@ from sklearn.ensemble import RandomForestClassifier
 class ClassicalModels:
     @staticmethod
     def train_xgboost(x, y):
-        model = xgb.XGBClassifier(n_estimators=100, max_depth=5)
+        model = xgb.XGBClassifier(n_estimators=100, max_depth=5, n_jobs=1, tree_method="hist")
         model.fit(x, y)
         return model
 

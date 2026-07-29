@@ -17,13 +17,44 @@ class MemoryConsolidator:
         self.semantic = SemanticMemory()
         self.search = SemanticSearch()
         self.embedder = EmbeddingService()
+        self._restore_episodic()
+
+
+    def _restore_episodic(self):
+        session = get_session()
+        try:
+            rows = EpisodeRepository(session).latest(limit=100)
+
+            for row in rows:
+                data = dict(row)
+
+                if isinstance(data.get("outcome"), str):
+                    import json
+                    data["outcome"] = json.loads(data["outcome"])
+
+                if isinstance(data.get("embedding"), str):
+                    import json
+                    try:
+                        data["embedding"] = json.loads(data["embedding"])
+                    except Exception:
+                        data["embedding"] = None
+
+                self.episodic.episodes.append(
+                    Episode(**data)
+                )
+        finally:
+            session.close()
 
     def capture_cycle(self, ctx):
         self.episodic.episodes.append(Episode(
             symbol=ctx.market.symbol,
             binding_expression="",
             decision=ctx.decision.proposed_direction or "WAIT",
-            outcome=ctx.outcome,
+            outcome=(
+                ctx.outcome.model_dump(mode="json")
+                if hasattr(ctx.outcome, "model_dump")
+                else ctx.outcome
+            ),
             lesson="",
         ))
         for k in ctx.cognition.relevant_knowledge:
@@ -37,8 +68,13 @@ class MemoryConsolidator:
     def commit_to_episodic(self, ctx=None):
         session = get_session()
         repo = EpisodeRepository(session)
+
+        saved = None
+
         for ep in self.episodic.episodes:
-            repo.save(ep)
+            saved = repo.save(ep)
+
+        return saved
 
     def load_from_persistent(self, session=None):
         if session is None:

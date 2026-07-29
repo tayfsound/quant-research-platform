@@ -56,6 +56,7 @@ class DecisionPersistor:
                     :belief_snapshot_id,
                     :status
                 )
+                ON CONFLICT (id) DO NOTHING
             """),
             {
                 "id": str(event.id),
