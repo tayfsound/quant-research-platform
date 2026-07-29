@@ -1,37 +1,22 @@
-from contracts.replay.replay_result import ReplayResult
+from services.replay.replay_verifier import ReplayVerifier
 
 
-class ReplayEngine:
+class DeterministicReplayEngine:
 
     def __init__(self, decision_engine):
         self.decision_engine = decision_engine
+        self.verifier = ReplayVerifier()
 
-    def replay(self, snapshot, events):
+    def replay(self, snapshot, event):
 
-        for event in events:
-            self._apply_event(event)
+        replayed_decision = self.decision_engine.evaluate()
 
-        decision = self.decision_engine.evaluate()
-
-        return decision
-
-    def verify(self, original, replayed):
-
-        differences = {}
-
-        if original != replayed:
-            differences["decision"] = {
-                "original": original,
-                "replayed": replayed
-            }
-
-        return ReplayResult(
-            success=True,
-            verified=len(differences) == 0,
-            original_decision=original,
-            replayed_decision=replayed,
-            differences=differences
+        verification = self.verifier.verify(
+            snapshot,
+            event,
         )
 
-    def _apply_event(self, event):
-        pass
+        return {
+            "replayed_decision": replayed_decision,
+            "verification": verification,
+        }
