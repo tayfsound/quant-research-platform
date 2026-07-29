@@ -30,3 +30,4 @@ class DecisionEvent(BaseModel):
     outcome: Optional[dict] = None
     weight_snapshot_id: Optional[UUID] = None
     belief_snapshot_id: Optional[UUID] = None
+    decision_latency_ms: float = 0.0

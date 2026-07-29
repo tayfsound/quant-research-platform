@@ -12,7 +12,8 @@ class TrainingFeatureExtractor:
         features = {}
 
         # 1. Market Features
-        market_feats = event.market_snapshot.get("features", {})
+        market_snapshot = event.market_snapshot or {}
+        market_feats = market_snapshot.get("features", {})
         for k, v in market_feats.items():
             features[f"market_{k}"] = v
 
@@ -51,7 +52,7 @@ class TrainingFeatureExtractor:
             features["agent_weighted_consensus"] = 0.0
 
         # 3. Belief Features
-        belief = event.belief_state
+        belief = event.belief_state or {}
         features["belief_strength"] = belief.get("strength", 0.0)
         features["belief_uncertainty"] = belief.get("uncertainty", 0.0)
         features["belief_entropy"] = belief.get("entropy", 0.0)

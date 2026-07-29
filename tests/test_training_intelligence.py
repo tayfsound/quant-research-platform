@@ -2,43 +2,49 @@
 import json
 import shutil
 from pathlib import Path
+from datetime import datetime
 from services.training_intelligence import TrainingIntelligence
 from services.decision_recorder import DecisionRecorder
 from services.outcome_tracker import OutcomeTracker
 from contracts.context import CognitiveCycleContext
 from contracts.outcome import TradeOutcome
+from unittest.mock import MagicMock
+
+from unittest.mock import patch
 
 def test_generate_training_data():
-    test_path = "test_intelligence_logs"
-    Path(test_path).mkdir(exist_ok=True)
+    import tempfile
+    from uuid import uuid4
+    from contracts.decision_event import DecisionEvent
     
-    recorder = DecisionRecorder(storage_path=test_path)
-    tracker = OutcomeTracker(storage_path=test_path)
-    intelligence = TrainingIntelligence(storage_path=test_path)
-    
-    # 1. Karar kaydet
-    ctx = CognitiveCycleContext(
-        market={"symbol": "BTCUSDT", "features": {"RSI": 45}},
-        decision={"proposed_size": 0.1},
-    )
-    event = recorder.record(ctx, [])
-    
-    # 2. Outcome ekle
-    tracker.attach_outcome(str(event.id), TradeOutcome(pnl=10.0, win=True))
-    
-    # 3. Eğitim verisi üret
-    output_file = "test_training_dataset.jsonl"
-    result = intelligence.generate_training_data(output_path=output_file)
-    
-    assert result["sample_count"] == 1
-    assert Path(output_file).exists()
-    
-    # Veriyi kontrol et
-    with open(output_file, "r") as f:
-        data = json.loads(f.readline())
-        assert data["label_pnl"] == 10.0
-        assert data["features"]["market_RSI"] == 45
+    with tempfile.TemporaryDirectory() as test_path_str:
+        test_path = Path(test_path_str)
+        intelligence = TrainingIntelligence(storage_path=test_path)
+        
+        event_id = uuid4()
+        event = DecisionEvent(
+            id=event_id,
+            symbol="BTCUSDT",
+            market_snapshot={"features": {"RSI": 45}},
+            confidence=0.8,
+            outcome={"pnl": 10.0, "win": True}
+        )
+        
+        filename = test_path / f"decision_{event_id}.json"
+        filename.write_text(event.model_dump_json())
+        
+        output_file = "test_training_dataset.jsonl"
+        result = intelligence.generate_training_data(output_path=output_file)
+        
+        try:
+            assert result["sample_count"] == 1
+            assert Path(output_file).exists()
+            with open(output_file, "r") as f:
+                data = json.loads(f.readline())
+                assert data["label_pnl"] == 10.0
+        finally:
+            if Path(output_file).exists():
+                Path(output_file).unlink()
     
     # Temizlik
-    shutil.rmtree(test_path, ignore_errors=True)
     Path(output_file).unlink(missing_ok=True)

@@ -13,7 +13,8 @@ class SampleQualityScorer:
         # 1. Data Completeness Score (0.0 - 1.0)
         # Gerekli alanların varlığı kontrol edilir
         completeness = 1.0
-        if not event.market_snapshot.get("features"): completeness -= 0.3
+        market_snapshot = event.market_snapshot or {}
+        if not market_snapshot.get("features"): completeness -= 0.3
         if not event.agent_opinions: completeness -= 0.3
         if not event.outcome: completeness -= 0.4
         scores["completeness_score"] = max(0.0, completeness)

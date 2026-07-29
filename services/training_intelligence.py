@@ -18,10 +18,15 @@ class TrainingIntelligence:
         skipped_low_quality = 0
         samples = []
         
-        for filename in self.storage_path.glob("decision_*.json"):
+        # Ensure path is Path object
+        search_path = Path(self.storage_path)
+        files = list(search_path.glob("decision_*.json"))
+        for filename in files:
             try:
-                event = DecisionEvent.model_validate_json(filename.read_text())
+                content = filename.read_text()
+                event = DecisionEvent.model_validate_json(content)
                 if not event.outcome:
+                    print(f"DEBUG: Skipping {filename} - No outcome")
                     continue
                 
                 # Kalite puanını hesapla
