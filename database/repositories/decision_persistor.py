@@ -1,4 +1,4 @@
-"""Decision persistence — Phase 170."""
+"""Decision persistence — Phase 171 outcome support."""
 
 import json
 
@@ -15,20 +15,10 @@ class DecisionPersistor:
         contributions = list(event.agent_opinions) if event.agent_opinions else []
 
         if event.risk_evaluation:
-            contributions.append(
-                {
-                    "type": "risk_evaluation",
-                    "data": event.risk_evaluation,
-                }
-            )
-
-        if event.outcome:
-            contributions.append(
-                {
-                    "type": "outcome",
-                    "data": event.outcome,
-                }
-            )
+            contributions.append({
+                "type": "risk_evaluation",
+                "data": event.risk_evaluation,
+            })
 
         self.session.execute(
             text("""
@@ -42,7 +32,8 @@ class DecisionPersistor:
                     agent_contributions,
                     weight_snapshot_id,
                     belief_snapshot_id,
-                    status
+                    status,
+                    outcome
                 )
                 VALUES (
                     :id,
@@ -54,7 +45,8 @@ class DecisionPersistor:
                     CAST(:agent_contributions AS jsonb),
                     :weight_snapshot_id,
                     :belief_snapshot_id,
-                    :status
+                    :status,
+                    CAST(:outcome AS jsonb)
                 )
                 ON CONFLICT (id) DO NOTHING
             """),
@@ -80,6 +72,10 @@ class DecisionPersistor:
                     else None
                 ),
                 "status": "pending",
+                "outcome": json.dumps(
+                    event.outcome,
+                    default=str,
+                ) if event.outcome else None,
             },
         )
 
@@ -87,9 +83,7 @@ class DecisionPersistor:
 
     def get_by_id(self, decision_id: str):
         row = self.session.execute(
-            text(
-                "SELECT * FROM decisions WHERE id = :id"
-            ),
+            text("SELECT * FROM decisions WHERE id = :id"),
             {"id": decision_id},
         ).mappings().first()
 
@@ -110,10 +104,7 @@ class DecisionPersistor:
             text(
                 "SELECT * FROM decisions WHERE symbol=:symbol ORDER BY timestamp DESC LIMIT :limit"
             ),
-            {
-                "symbol": symbol,
-                "limit": limit,
-            },
+            {"symbol": symbol, "limit": limit},
         ).mappings().all()
 
         return [dict(r) for r in rows]
@@ -123,15 +114,22 @@ class DecisionPersistor:
         decision_id: str,
         pnl: float,
         status: str,
+        outcome: dict | None = None,
     ) -> None:
         self.session.execute(
-            text(
-                "UPDATE decisions SET pnl=:pnl, status=:status WHERE id=:id"
-            ),
+            text("""
+                UPDATE decisions
+                SET
+                    pnl = :pnl,
+                    status = :status,
+                    outcome = CAST(:outcome AS jsonb)
+                WHERE id = :id
+            """),
             {
                 "id": decision_id,
                 "pnl": pnl,
                 "status": status,
+                "outcome": json.dumps(outcome, default=str) if outcome else None,
             },
         )
 

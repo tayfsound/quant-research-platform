@@ -1,8 +1,9 @@
 from pathlib import Path
-from database.connection import get_session
-from sqlalchemy import text
-from database.repositories.decision_persistor import DecisionPersistor
+
 from contracts.outcome import TradeOutcome
+from services.training_dataset_builder import TrainingDatasetBuilder
+from database.connection import get_session
+from database.repositories.decision_persistor import DecisionPersistor
 
 
 class OutcomeTracker:
@@ -14,25 +15,17 @@ class OutcomeTracker:
 
         try:
             persistor = DecisionPersistor(session)
-
             data = persistor.get_by_id(decision_id)
 
             if not data:
                 return None
 
-            session.execute(
-                text("""
-                UPDATE decisions
-                SET status = :status
-                WHERE id = :id
-                """),
-                {
-                    "id": decision_id,
-                    "status": "completed",
-                },
+            persistor.update_outcome(
+                decision_id=decision_id,
+                pnl=outcome.pnl,
+                status="completed",
+                outcome=outcome.model_dump(mode="json"),
             )
-
-            session.commit()
 
             from contracts.decision_event import DecisionEvent
             from uuid import UUID
@@ -54,4 +47,4 @@ class OutcomeTracker:
             session.close()
 
     def build_training_dataset(self, output_path="training_data.jsonl"):
-        return 0
+        return TrainingDatasetBuilder().build(output_path)
