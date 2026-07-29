@@ -43,10 +43,10 @@ class LiquidationError(SimulationError):
 class RiskError(QuantPlatformError):
     """Risk yönetimi hataları."""
 
-class RiskLimitExceededErrorErrorError(RiskError):
+class RiskLimitExceededError(RiskError):
     """Risk limiti aşıldı."""
 
-class CircuitBreakerTriggeredErrorError(RiskError):
+class CircuitBreakerTriggeredError(RiskError):
     """Devre kesici aktif."""
 
 

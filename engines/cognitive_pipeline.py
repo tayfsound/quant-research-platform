@@ -1,6 +1,7 @@
 """Cognitive Pipeline Aşamaları — opinions akışı + Debate hafızası + RecordingStage."""
 from contracts.context import CognitiveCycleContext
 from contracts.belief import Belief
+from contracts.decision_event import DecisionEvent
 from contracts.agent import AgentOpinion, AgentDomain
 from services.context_adapter import ContextAdapter
 from services.knowledge_base import KnowledgeBase
@@ -149,7 +150,7 @@ class RecordingStage:
         ctx: CognitiveCycleContext,
         belief: Belief,
         opinions: list[AgentOpinion],
-    ) -> CognitiveCycleContext:
+    ) -> DecisionEvent:
 
         debate_result = None
         weight_snapshot_id = None
@@ -178,4 +179,4 @@ class RecordingStage:
             "data": event.model_dump(),
         })
 
-        return ctx
+        return event
