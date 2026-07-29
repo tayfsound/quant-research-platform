@@ -1,5 +1,6 @@
 """Decision persistence — Phase 170."""
 
+import json
 from sqlalchemy import text
 from contracts.decision_event import DecisionEvent
 
@@ -9,12 +10,9 @@ class DecisionPersistor:
         self.session = session
 
     def persist(self, event: DecisionEvent) -> None:
-        # Pack extra DecisionEvent fields into agent_contributions JSONB
-        contributions = list(event.agent_opinions) if event.agent_opinions else []
+        agent_contributions = list(event.agent_opinions) if event.agent_opinions else []
         if event.risk_evaluation:
-            contributions.append({"type": "risk_evaluation", "data": event.risk_evaluation})
-        if event.outcome:
-            contributions.append({"type": "outcome", "data": event.outcome})
+            agent_contributions.append({"type": "risk_evaluation", "data": event.risk_evaluation})
         
         self.session.execute(
             text("""
@@ -24,7 +22,7 @@ class DecisionPersistor:
                 )
                 VALUES (
                     :id, :timestamp, :symbol, :direction, :size, :confidence,
-                    :agent_contributions, :weight_snapshot_id, :belief_snapshot_id, :status
+                    CAST(:agent_contributions AS jsonb), :weight_snapshot_id, :belief_snapshot_id, :status
                 )
             """),
             {
@@ -34,9 +32,9 @@ class DecisionPersistor:
                 "direction": event.proposed_direction or event.final_action or "WAIT",
                 "size": event.final_size,
                 "confidence": event.confidence,
-                "agent_contributions": contributions,
+                "agent_contributions": json.dumps(agent_contributions),
                 "weight_snapshot_id": str(event.weight_snapshot_id) if event.weight_snapshot_id else None,
-                "belief_snapshot_id": str(event.belief_snapshot_id) if event.belief_snapshot_id else None,
+                "belief_snapshot_id": None,
                 "status": "pending",
             },
         )

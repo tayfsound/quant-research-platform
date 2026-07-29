@@ -1,50 +1,32 @@
-"""Decision Event — zenginleştirilmiş: latency, hash, debate trace."""
-from datetime import datetime, UTC
+"""Decision event contracts."""
+
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Optional
 from uuid import UUID, uuid4
+
 from pydantic import BaseModel, Field
 
 
+class ExecutionMode(str, Enum):
+    EXPERIMENT = "experiment"
+    PAPER = "paper"
+    LIVE = "live"
+
+
 class DecisionEvent(BaseModel):
-    schema_version: str = "cognitive-core-v1"
-
+    """A recorded decision with full provenance."""
     id: UUID = Field(default_factory=uuid4)
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
-
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     symbol: str = ""
-    market_snapshot: dict = Field(default_factory=dict)
-
-    agent_opinions: list[dict] = Field(default_factory=list)
-
-    belief_state: dict = Field(default_factory=dict)
-
-    cognitive_audit: dict | None = None
-
-    # NEW
-    debate_trace: dict | None = None
-
-    risk_evaluation: dict = Field(default_factory=dict)
-
-    proposed_direction: str = ""
-    original_direction: str = ""
-
-    final_action: str = ""
-    final_reason: str = ""
-
+    proposed_direction: Optional[str] = None
+    final_action: Optional[str] = None
     final_size: float = 0.0
     confidence: float = 0.0
-
-    risk_adjusted: bool = False
-    rejection_reason: str | None = None
-
-    outcome: dict | None = None
-
-    engine_version: str = "1.0.0"
-    weight_snapshot_id: UUID | None = None
-    git_commit: str = ""
-
-    decision_latency_ms: float = 0.0
-
-    feature_hash: str = ""
-    belief_hash: str = ""
-
-    data_sources: list[str] = Field(default_factory=list)
+    agent_opinions: list[dict] = Field(default_factory=list)
+    risk_evaluation: Optional[dict] = None
+    market_snapshot: Optional[dict] = None
+    belief_state: Optional[dict] = None
+    outcome: Optional[dict] = None
+    weight_snapshot_id: Optional[UUID] = None
+    belief_snapshot_id: Optional[UUID] = None
