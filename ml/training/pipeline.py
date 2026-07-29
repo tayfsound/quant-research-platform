@@ -2,11 +2,13 @@
 from datetime import datetime
 
 from ml.registry.store import ModelRegistry, ModelRegistryEntry
+from ml.training.feature_extractor import TrainingFeatureExtractor
 
 
 class TrainingPipeline:
     def __init__(self, registry: ModelRegistry):
         self.registry = registry
+        self.extractor = TrainingFeatureExtractor()
 
     def run(self, model_type: str, hyperparams: dict, metrics: dict) -> ModelRegistryEntry:
         entry = ModelRegistryEntry(
