@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
-from typing import Any, Dict
 from datetime import datetime
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -8,10 +8,14 @@ class ReplaySnapshot:
     snapshot_id: str
     created_at: datetime
 
-    market_state: Dict[str, Any] = field(default_factory=dict)
-    portfolio_state: Dict[str, Any] = field(default_factory=dict)
+    decision_event_id: str = ""
 
-    agent_weights: Dict[str, float] = field(default_factory=dict)
-    beliefs: Dict[str, Any] = field(default_factory=dict)
+    market_state: dict[str, Any] = field(default_factory=dict)
+    risk_state: dict[str, Any] = field(default_factory=dict)
 
-    decision_state: Dict[str, Any] = field(default_factory=dict)
+    beliefs: dict[str, Any] = field(default_factory=dict)
+    belief_state: dict[str, Any] = field(default_factory=dict)
+
+    weight_snapshot_id: str | None = None
+
+    decision_hash: str = ""
