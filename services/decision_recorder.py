@@ -56,9 +56,6 @@ class DecisionRecorder:
             weight_snapshot_id=weight_snapshot_id,
         )
 
-        # Backward compatibility
-        self.persistor.persist(event)
-
         return event
 
     def replay(self, decision_id: str):

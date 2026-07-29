@@ -1,29 +1,39 @@
-"""Decision Recorder testleri."""
-from contracts.context import CognitiveCycleContext
+"""Decision Recorder compatibility tests."""
+
+from database.connection import get_session
+from database.repositories.decision_persistor import DecisionPersistor
 from services.decision_recorder import DecisionRecorder
-from contracts.belief import Belief
+from contracts.context import CognitiveCycleContext
+
 
 def test_record_and_replay():
-    recorder = DecisionRecorder(storage_path="test_decision_logs")
+    recorder = DecisionRecorder()
+
     ctx = CognitiveCycleContext(
         market={"symbol": "BTCUSDT"},
         decision={"proposed_size": 0.5},
     )
-    opinions = []
 
-    event = recorder.record(ctx, opinions)
+    event = recorder.record(ctx, [])
+
     assert event.symbol == "BTCUSDT"
     assert event.final_action != ""
 
-    # Replay
-    replayed = recorder.replay(str(event.id))
-    assert replayed is not None
-    assert replayed.symbol == "BTCUSDT"
+    session = get_session()
 
-    # List
-    decisions = recorder.list_decisions(limit=5)
-    assert len(decisions) >= 1
+    try:
+        persistor = DecisionPersistor(session)
 
-    # Temizlik
-    import shutil
-    shutil.rmtree("test_decision_logs", ignore_errors=True)
+        persistor.persist(event)
+
+        replayed = recorder.replay(str(event.id))
+
+        assert replayed is not None
+        assert replayed.symbol == "BTCUSDT"
+
+        decisions = recorder.list_decisions(limit=5)
+
+        assert len(decisions) >= 1
+
+    finally:
+        session.close()
