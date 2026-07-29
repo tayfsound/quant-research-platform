@@ -32,34 +32,52 @@ class DecisionRecorder:
             final_action=direction,
             final_size=getattr(ctx.decision, "final_size", 0.0),
             confidence=getattr(ctx.decision, "confidence", 0.0),
-
             agent_opinions=[
                 op.model_dump()
                 for op in (opinions or [])
             ],
-
             risk_evaluation=ctx.risk.evaluation.model_dump(),
-
             market_snapshot={
                 "symbol": ctx.market.symbol,
                 "timeframe": ctx.market.timeframe,
                 "features": ctx.market.features,
                 "raw_snapshot": ctx.market.raw_snapshot,
             },
-
             belief_state=(
                 belief.model_dump()
                 if belief and hasattr(belief, "model_dump")
                 else None
             ),
-
             outcome=(
                 ctx.outcome.model_dump()
                 if ctx.outcome and hasattr(ctx.outcome, "model_dump")
                 else None
             ),
-
             weight_snapshot_id=weight_snapshot_id,
         )
 
+        # Backward compatibility
+        self.persistor.persist(event)
+
         return event
+
+    def replay(self, decision_id: str):
+        data = self.persistor.get_by_id(decision_id)
+
+        if data is None:
+            return None
+
+        return DecisionEvent(
+            id=data["id"],
+            timestamp=data["timestamp"],
+            symbol=data["symbol"],
+            proposed_direction=data.get("direction"),
+            final_action=data.get("direction"),
+            final_size=data.get("size", 0.0),
+            confidence=data.get("confidence", 0.0),
+            weight_snapshot_id=data.get("weight_snapshot_id"),
+            belief_snapshot_id=data.get("belief_snapshot_id"),
+        )
+
+    def list_decisions(self, limit: int = 100):
+        return self.persistor.list_recent(limit)
