@@ -11,9 +11,13 @@ class DecisionPersistor:
 
     def persist(self, event: DecisionEvent) -> None:
         agent_contributions = list(event.agent_opinions) if event.agent_opinions else []
+
         if event.risk_evaluation:
-            agent_contributions.append({"type": "risk_evaluation", "data": event.risk_evaluation})
-        
+            agent_contributions.append({
+                "type": "risk_evaluation",
+                "data": event.risk_evaluation
+            })
+
         self.session.execute(
             text("""
                 INSERT INTO decisions (
@@ -32,12 +36,16 @@ class DecisionPersistor:
                 "direction": event.proposed_direction or event.final_action or "WAIT",
                 "size": event.final_size,
                 "confidence": event.confidence,
-                "agent_contributions": json.dumps(agent_contributions),
+                "agent_contributions": json.dumps(
+                    agent_contributions,
+                    default=str
+                ),
                 "weight_snapshot_id": str(event.weight_snapshot_id) if event.weight_snapshot_id else None,
-                "belief_snapshot_id": None,
+                "belief_snapshot_id": str(event.belief_snapshot_id) if event.belief_snapshot_id else None,
                 "status": "pending",
             },
         )
+
         self.session.commit()
 
     def get_by_symbol(self, symbol: str, limit: int = 100) -> list[dict]:
@@ -50,6 +58,10 @@ class DecisionPersistor:
     def update_outcome(self, decision_id: str, pnl: float, status: str) -> None:
         self.session.execute(
             text("UPDATE decisions SET pnl = :pnl, status = :status WHERE id = :id"),
-            {"id": decision_id, "pnl": pnl, "status": status},
+            {
+                "id": decision_id,
+                "pnl": pnl,
+                "status": status
+            },
         )
         self.session.commit()
