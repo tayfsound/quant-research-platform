@@ -6,13 +6,15 @@ from typing import Any
 from contracts.decision_event import DecisionEvent
 from ml.training.feature_extractor import TrainingFeatureExtractor
 from ml.training.quality_scorer import SampleQualityScorer
-
+from ml.training.replay_memory import ReplayMemory
+from contracts.decision_event import DecisionEvent
 
 class TrainingIntelligence:
-    def __init__(self, storage_path: str = "decision_logs"):
+    def __init__(self, storage_path: str = "decision_logs", memory_capacity: int = 10000):
         self.storage_path = Path(storage_path)
         self.extractor = TrainingFeatureExtractor()
         self.quality_scorer = SampleQualityScorer()
+        self.replay_memory = ReplayMemory(capacity=memory_capacity)
 
     def generate_training_data(self, output_path: str = "ml_training_dataset.jsonl", min_quality_score: float = 0.0) -> dict[str, Any]:
         """Karar geçmişlerinden zenginleştirilmiş ve kalite puanlı eğitim verisi üretir."""
@@ -61,6 +63,14 @@ class TrainingIntelligence:
             with open(output_path, "w") as f:
                 for s in samples:
                     f.write(json.dumps(s) + "\n")
+                    # Replay Memory'ye ekle
+                    self.replay_memory.add({
+                        "decision_id": s["decision_id"],
+                        "features": s["features"],
+                        "label": s["label_pnl"], # Varsayılan olarak PnL
+                        "quality_score": s["quality_score"],
+                        "timestamp": s["timestamp"]
+                    })
 
         return {
             "sample_count": count,
