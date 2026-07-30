@@ -27,8 +27,8 @@ class GeneticOptimizer:
     def optimize(self, evaluator: Callable) -> Dict[str, float]:
         population = [self._random_individual() for _ in range(self.population_size)]
         for _ in range(self.generations):
-            scored = sorted([(self._fitness(ind, evaluator), ind) for ind in population], reverse=True)
-            elites = [ind for _, ind in scored[:4]]
+            scored = sorted([(self._fitness(ind, evaluator), i, ind) for i, ind in enumerate(population)], reverse=True)
+            elites = [ind for _, _, ind in scored[:4]]
             offspring = []
             while len(offspring) < self.population_size - 4:
                 p1, p2 = random.sample(elites, 2)
