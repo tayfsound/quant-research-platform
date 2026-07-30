@@ -1,10 +1,11 @@
 """Unified Cognitive Expression Language (UCEL) — AST v2.1 (Production-ready)."""
 from __future__ import annotations
-from abc import ABC, abstractmethod
+
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Union, Literal, ClassVar
+from typing import Annotated, ClassVar, Literal
 from uuid import UUID, uuid4
+
 from pydantic import BaseModel, Field
 
 
@@ -55,11 +56,11 @@ class Value(BaseModel):
     numeric: float | None = None
 
     @classmethod
-    def from_bool(cls, value: bool) -> "Value":
+    def from_bool(cls, value: bool) -> Value:
         return cls(type="boolean", boolean=value)
 
     @classmethod
-    def from_numeric(cls, value: float) -> "Value":
+    def from_numeric(cls, value: float) -> Value:
         return cls(type="numeric", numeric=value)
 
     def is_true(self) -> bool:
@@ -117,8 +118,8 @@ class Variable(BaseModel):
 class BinaryOp(BaseModel):
     node_type: Literal[NodeType.BINARY_OP] = NodeType.BINARY_OP
     op: OpType
-    left: "Node"
-    right: "Node"
+    left: Node
+    right: Node
 
     def explain(self) -> str:
         return f"({self.left.explain()} {self.op.value} {self.right.explain()})"
@@ -146,8 +147,8 @@ class BinaryOp(BaseModel):
 class Comparison(BaseModel):
     node_type: Literal[NodeType.COMPARISON] = NodeType.COMPARISON
     op: OpType
-    left: "Node"
-    right: "Node"
+    left: Node
+    right: Node
 
     def explain(self) -> str:
         op_map = {OpType.GT: ">", OpType.LT: "<", OpType.GTE: ">=",
@@ -176,7 +177,7 @@ class Comparison(BaseModel):
 class FunctionCall(BaseModel):
     node_type: Literal[NodeType.FUNCTION_CALL] = NodeType.FUNCTION_CALL
     name: str
-    arguments: list["Node"] = Field(default_factory=list)
+    arguments: list[Node] = Field(default_factory=list)
     ALLOWED_FUNCTIONS: ClassVar[set[str]] = {"RSI", "SMA", "EMA", "ATR", "MACD", "ABS", "MAX", "MIN", "BELIEF", "CONFIDENCE"}
 
     def explain(self) -> str:
@@ -194,7 +195,7 @@ class FunctionCall(BaseModel):
 
 class LogicalAnd(BaseModel):
     node_type: Literal[NodeType.LOGICAL_AND] = NodeType.LOGICAL_AND
-    children: list["Node"]
+    children: list[Node]
 
     def explain(self) -> str:
         return " VE ".join(c.explain() for c in self.children)
@@ -208,7 +209,7 @@ class LogicalAnd(BaseModel):
 
 class LogicalOr(BaseModel):
     node_type: Literal[NodeType.LOGICAL_OR] = NodeType.LOGICAL_OR
-    children: list["Node"]
+    children: list[Node]
 
     def explain(self) -> str:
         return " VEYA ".join(c.explain() for c in self.children)
@@ -222,7 +223,7 @@ class LogicalOr(BaseModel):
 
 class LogicalNot(BaseModel):
     node_type: Literal[NodeType.LOGICAL_NOT] = NodeType.LOGICAL_NOT
-    child: "Node"
+    child: Node
 
     def explain(self) -> str:
         return f"DEĞİL ({self.child.explain()})"
@@ -235,7 +236,7 @@ class LogicalNot(BaseModel):
 
 
 Node = Annotated[
-    Union[Constant, Variable, BinaryOp, Comparison, FunctionCall, LogicalAnd, LogicalOr, LogicalNot],
+    Constant | Variable | BinaryOp | Comparison | FunctionCall | LogicalAnd | LogicalOr | LogicalNot,
     Field(discriminator="node_type")
 ]
 
@@ -309,13 +310,9 @@ class Expression(BaseModel):
         def walk(node: Node):
             if isinstance(node, Variable):
                 vars_found.add(node.name)
-            elif isinstance(node, BinaryOp):
+            elif isinstance(node, BinaryOp) or isinstance(node, Comparison):
                 walk(node.left); walk(node.right)
-            elif isinstance(node, Comparison):
-                walk(node.left); walk(node.right)
-            elif isinstance(node, LogicalAnd):
-                for c in node.children: walk(c)
-            elif isinstance(node, LogicalOr):
+            elif isinstance(node, LogicalAnd) or isinstance(node, LogicalOr):
                 for c in node.children: walk(c)
             elif isinstance(node, LogicalNot):
                 walk(node.child)
@@ -328,7 +325,7 @@ class Expression(BaseModel):
         return {"name": self.name, "description": self.description, "root": self.root.to_dict()}
 
     @classmethod
-    def from_dict(cls, data: dict) -> "Expression":
+    def from_dict(cls, data: dict) -> Expression:
         return cls.model_validate(data)
 
 

@@ -1,6 +1,8 @@
 """Technical Analysis Domain Contracts."""
 from datetime import datetime
+
 from pydantic import BaseModel, Field
+
 
 class TechnicalContext(BaseModel):
     """TechnicalAgent için yapısal teknik analiz bağlamı."""

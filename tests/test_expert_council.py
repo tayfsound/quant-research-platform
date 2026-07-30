@@ -1,7 +1,8 @@
 """Expert Council testleri — stabilize API."""
-from contracts.agent import AgentOpinion, AgentDomain
-from services.expert_council import ExpertCouncil
+from contracts.agent import AgentDomain, AgentOpinion
 from services.agent_memory import AgentMemory
+from services.expert_council import ExpertCouncil
+
 
 class MockAgent:
     def __init__(self, domain, direction, confidence):

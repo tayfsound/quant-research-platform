@@ -3,6 +3,7 @@ from contracts.context import CognitiveCycleContext
 from contracts.contexts.decision import ActionType
 from services.cognitive_engine import CognitiveEngine
 
+
 def test_cognitive_cycle():
     engine = CognitiveEngine()
     ctx = CognitiveCycleContext(

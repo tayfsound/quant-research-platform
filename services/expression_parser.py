@@ -1,7 +1,13 @@
 """UCEL Parser v2 — string → AST."""
 from contracts.expression import (
-    Expression, Node, Constant, Variable, Comparison, LogicalAnd, LogicalOr,
+    Comparison,
+    Constant,
+    Expression,
+    LogicalAnd,
+    LogicalOr,
+    Node,
     OpType,
+    Variable,
 )
 
 

@@ -1,7 +1,9 @@
 """Information Graph V2 — FROZEN. Cycle-safe root traversal, sorted evidence paths."""
 import math
 from enum import StrEnum
+
 from pydantic import BaseModel, Field
+
 
 class SourceType(StrEnum):
     RAW_PRICE = "raw_price"

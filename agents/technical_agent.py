@@ -1,6 +1,7 @@
 """Technical Agent — yapısal teknik analiz uzmanı."""
-from contracts.agent import AgentOpinion, AgentDomain
+from contracts.agent import AgentDomain, AgentOpinion
 from contracts.technical import TechnicalContext
+
 
 class TechnicalAgent:
     def __init__(self):

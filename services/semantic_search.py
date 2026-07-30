@@ -1,7 +1,9 @@
 """Semantic Search — güvenli similarity, temiz SQL."""
-from database.session_factory import SessionFactory
 from sqlalchemy import text
+
+from database.session_factory import SessionFactory
 from services.embedding_service import EmbeddingService
+
 
 class SemanticSearch:
     def __init__(self):

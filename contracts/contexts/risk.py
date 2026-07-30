@@ -1,7 +1,9 @@
 """RiskContext – hash doğrulamalı immutable risk limitleri."""
-from hashlib import sha256
 from enum import StrEnum
-from pydantic import BaseModel, Field, model_validator
+from hashlib import sha256
+
+from pydantic import BaseModel, Field
+
 
 class RiskAdjustmentSource(StrEnum):
     LLM = "llm"

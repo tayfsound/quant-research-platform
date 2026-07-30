@@ -1,6 +1,8 @@
 """Lesson repository — commit yok."""
 from sqlalchemy import text
+
 from contracts.evaluation import Lesson
+
 
 class LessonRepository:
     def __init__(self, session):

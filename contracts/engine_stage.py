@@ -1,6 +1,6 @@
 """EngineStage protokolü – tüm engine'ler aynı arayüzü uygular."""
 from abc import abstractmethod
-from typing import Protocol, TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from contracts.context import CognitiveCycleContext

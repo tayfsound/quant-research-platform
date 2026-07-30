@@ -1,6 +1,7 @@
 """Agent Debate testleri."""
-from contracts.agent import AgentOpinion, AgentDomain, AgentChallenge, AgentResponse
+from contracts.agent import AgentChallenge, AgentDomain, AgentOpinion, AgentResponse
 from services.agent_debate import AgentDebate
+
 
 class MockChallenger:
     def __init__(self, domain, challenges_to_make=None):

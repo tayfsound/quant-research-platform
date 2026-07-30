@@ -1,6 +1,7 @@
 """Macro Agent — ekonomik göstergelerden piyasa yönü çıkarır."""
-from contracts.agent import AgentOpinion, AgentDomain
+from contracts.agent import AgentDomain, AgentOpinion
 from contracts.macro import MacroContext
+
 
 class MacroAgent:
     def __init__(self):

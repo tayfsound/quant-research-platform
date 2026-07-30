@@ -1,11 +1,21 @@
 """UCEL v2.1 testleri."""
 import json
+
 import pytest
+
 from contracts.expression import (
-    Expression, Constant, Variable, Comparison, LogicalAnd,
-    LogicalOr, LogicalNot, BinaryOp, FunctionCall, OpType,
-    MissingVariableError, Value, EvaluationStep, EvaluationResult,
+    BinaryOp,
+    Comparison,
+    Constant,
+    Expression,
+    FunctionCall,
+    LogicalAnd,
+    LogicalNot,
+    OpType,
+    Value,
+    Variable,
 )
+
 
 def test_simple_comparison():
     expr = Expression(

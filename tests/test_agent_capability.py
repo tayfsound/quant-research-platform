@@ -4,6 +4,7 @@ from contracts.execution_mode import ExecutionMode, get_permission
 from services.cognitive_engine import CognitiveEngine
 from services.execution_router import ExecutionRouter
 
+
 def test_experiment_mode_has_no_order_permission():
     p = get_permission(ExecutionMode.EXPERIMENT)
     assert p.can_place_orders is False

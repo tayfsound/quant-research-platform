@@ -1,6 +1,7 @@
 """Salience Detector — piyasa olayının önemini değerlendirir."""
 from contracts.context import CognitiveCycleContext
 
+
 class SalienceDetector:
     def __init__(self, threshold: float = 0.7):
         self.threshold = threshold

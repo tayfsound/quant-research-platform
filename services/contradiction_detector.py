@@ -1,6 +1,7 @@
 """Contradiction Detector — hipotez ve eleştiri arasındaki çelişkiyi analiz eder."""
 from contracts.context import CognitiveCycleContext
 
+
 class ContradictionDetector:
     def analyze(self, ctx: CognitiveCycleContext, criticism: dict) -> dict:
         """

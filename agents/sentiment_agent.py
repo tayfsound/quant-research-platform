@@ -1,6 +1,7 @@
 """Sentiment Agent V1.1 — düzeltilmiş yorumlar, News Tone, Google Trends."""
-from contracts.agent import AgentOpinion, AgentDomain
+from contracts.agent import AgentDomain, AgentOpinion
 from contracts.sentiment import SentimentContext
+
 
 class SentimentAgent:
     def __init__(self):

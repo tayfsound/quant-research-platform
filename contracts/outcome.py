@@ -2,8 +2,11 @@
 from datetime import datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
+
 from pydantic import BaseModel, Field
+
 from contracts.opportunity import OpportunityCost
+
 
 class FailureType(StrEnum):
     FALSE_REVERSAL = "false_reversal"

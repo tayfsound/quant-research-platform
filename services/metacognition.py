@@ -26,7 +26,7 @@ class Metacognition:
             item for item in ctx.cognition.relevant_knowledge
             if item.get("type") == "memory_insight"
         ]
-        
+
         if memory_insights:
             memory_confidence = memory_insights[-1]["data"].get("confidence", 0.5)
         else:

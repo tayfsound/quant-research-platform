@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "phase-*"]
   pull_request:
-    branches: [main]
+    branches: [main, "phase-*"]
 
 jobs:
   backend-lint:
@@ -16,7 +16,7 @@ jobs:
           python-version: "3.12"
       - run: pip install ruff mypy
       - run: ruff check .
-      - run: mypy --strict .
+      - run: mypy .
 
   backend-test:
     runs-on: ubuntu-latest

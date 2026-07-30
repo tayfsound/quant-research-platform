@@ -1,6 +1,7 @@
 """Information Graph V2 testleri."""
 from contracts.information_graph import InformationGraph
 
+
 def test_independence_score_max():
     graph = InformationGraph()
     score = graph.compute_independence([

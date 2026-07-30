@@ -1,9 +1,11 @@
 """Agent Weight Snapshot — immutable, event-sourced ağırlık kaydı."""
 import hashlib
 import json
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
+
 from pydantic import BaseModel, Field
+
 
 class AgentWeightSnapshot(BaseModel):
     id: UUID = Field(default_factory=uuid4)

@@ -2,6 +2,7 @@
 from contracts.context import CognitiveCycleContext
 from contracts.contexts.risk import RiskReason
 
+
 class RiskEngine:
     def __init__(self, secret: str = ""):
         self.secret = secret

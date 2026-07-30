@@ -1,6 +1,7 @@
 """Belief System V3 testleri."""
-from contracts.agent import AgentOpinion, AgentDomain
+from contracts.agent import AgentDomain, AgentOpinion
 from services.belief_engine import BeliefEngine
+
 
 def test_independent_clusters():
     engine = BeliefEngine()

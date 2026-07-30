@@ -2,6 +2,7 @@
 from contracts.context import CognitiveCycleContext
 from engines.risk_engine import RiskEngine
 
+
 class LiveExecutor:
     def __init__(self, risk_engine: RiskEngine):
         self.risk_engine = risk_engine

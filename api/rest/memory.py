@@ -1,5 +1,6 @@
 """Memory REST endpoint — semantic search."""
 from fastapi import APIRouter, Query
+
 from services.memory_service import MemoryService
 
 router = APIRouter(prefix="/memory", tags=["memory"])

@@ -2,7 +2,9 @@
 from datetime import datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
+
 from pydantic import BaseModel, Field
+
 
 class MemoryType(StrEnum):
     WORKING = "working"

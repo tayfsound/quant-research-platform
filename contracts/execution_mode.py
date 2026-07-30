@@ -1,7 +1,8 @@
 """Agent Capability Boundary — frozen permission, mode authority."""
 from enum import StrEnum
-from pydantic import BaseModel, Field, ConfigDict
-from typing import Any
+
+from pydantic import BaseModel, ConfigDict
+
 
 class ExecutionMode(StrEnum):
     EXPERIMENT = "experiment"

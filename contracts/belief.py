@@ -1,10 +1,9 @@
 """Belief System v3 — FROZEN. Epistemik motor, cluster balance, log crowding, evidence paths."""
-import math
 from datetime import datetime
 from uuid import UUID, uuid4
+
 from pydantic import BaseModel, Field
-from contracts.agent import AgentOpinion
-from contracts.information_graph import InformationGraph
+
 
 class Belief(BaseModel):
     id: UUID = Field(default_factory=uuid4)

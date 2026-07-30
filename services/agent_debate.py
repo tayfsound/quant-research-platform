@@ -1,13 +1,19 @@
 """Agent Debate Layer V2 — çok turlu tartışma + Cognitive Audit."""
 from contracts.agent import (
-    AgentOpinion, AgentChallenge, AgentResponse, DebateRound,
-    DebateResult, CognitiveAudit, AgentDomain,
+    AgentChallenge,
+    AgentDomain,
+    AgentOpinion,
+    AgentResponse,
+    CognitiveAudit,
+    DebateResult,
+    DebateRound,
 )
+
 
 class AgentDebate:
     def __init__(self, max_rounds: int = 2):
-        self.challengers: dict[str, "ChallengerAgent"] = {}
-        self.responders: dict[str, "ResponderAgent"] = {}
+        self.challengers: dict[str, ChallengerAgent] = {}
+        self.responders: dict[str, ResponderAgent] = {}
         self.max_rounds = max_rounds
 
     def register_challenger(self, domain: AgentDomain, agent: "ChallengerAgent"):

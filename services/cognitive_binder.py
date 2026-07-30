@@ -1,10 +1,11 @@
 """Cognitive Binder — Observation → Knowledge → Belief → Hypothesis döngüsünü UCEL ile bağlar."""
-from contracts.cognitive_binding import CognitiveBinding
-from contracts.expression import Expression, Comparison, Variable, Constant, OpType, LogicalAnd
-from contracts.observation import Observation, ObservationType
-from contracts.knowledge import KnowledgeEntry, KnowledgeCategory
 from contracts.belief import Belief
+from contracts.cognitive_binding import CognitiveBinding
+from contracts.expression import Comparison, Constant, Expression, OpType, Variable
 from contracts.hypothesis import Hypothesis
+from contracts.knowledge import KnowledgeCategory, KnowledgeEntry
+from contracts.observation import Observation, ObservationType
+
 
 class CognitiveBinder:
     """UCEL tabanlı bilişsel bağlayıcı."""

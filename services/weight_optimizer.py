@@ -1,8 +1,12 @@
 """Weight Optimizer — Bayesian smoothing ile stabil ağırlık önerisi."""
 
+from enum import Enum
+
 from contracts.agent_weight_snapshot import AgentWeightSnapshot
 from services.agent_memory import AgentMemory
 from services.weight_repository import WeightRepository
+
+MAX_WEIGHT_DELTA = 0.10
 
 
 class WeightOptimizer:
@@ -86,3 +90,58 @@ class WeightOptimizer:
         self.weight_repository.save(snapshot)
 
         return snapshot
+
+    def optimize(
+        self,
+        agents: list[dict],
+        outcome,
+    ) -> dict[str, float]:
+        """
+        Feedback-loop weight update with a gradual delta cap.
+
+        `outcome` is expected to expose `decision_score` in [-1, 1].
+        Weight changes are clipped to MAX_WEIGHT_DELTA per decision.
+        """
+        current_snapshot = self.weight_repository.get_latest()
+        current_weights = dict(current_snapshot.weights) if current_snapshot else {}
+
+        decision_score = getattr(outcome, "decision_score", 0.0)
+
+        new_weights = {}
+        adjusted_domains = set()
+
+        for agent in agents:
+            domain = self._normalize_domain(agent)
+            if not domain:
+                continue
+
+            adjusted_domains.add(domain)
+            old_weight = current_weights.get(domain, 1.0)
+
+            # Simple reward/penalty scaled by decision score.
+            desired = old_weight + (decision_score * 0.2)
+            desired = max(0.0, min(2.0, desired))
+
+            new_weights[domain] = self._clip_delta(old_weight, desired)
+
+        # Preserve weights for domains that did not contribute this decision.
+        for domain, weight in current_weights.items():
+            if domain not in new_weights:
+                new_weights[domain] = weight
+
+        return new_weights
+
+    def _clip_delta(self, old_weight: float, new_weight: float) -> float:
+        delta = new_weight - old_weight
+        if abs(delta) > MAX_WEIGHT_DELTA:
+            return old_weight + (MAX_WEIGHT_DELTA * (1 if delta > 0 else -1))
+        return new_weight
+
+    @staticmethod
+    def _normalize_domain(agent: dict) -> str:
+        domain = agent.get("domain") or agent.get("agent_id") or "unknown"
+        if isinstance(domain, Enum):
+            domain = domain.value
+        if isinstance(domain, dict):
+            domain = domain.get("value", "unknown")
+        return str(domain).lower()

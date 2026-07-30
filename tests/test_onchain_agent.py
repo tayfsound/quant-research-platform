@@ -2,6 +2,7 @@
 from agents.onchain_agent import OnChainAgent
 from contracts.onchain import OnChainContext
 
+
 def test_whale_accumulation_generates_long():
     agent = OnChainAgent()
     ctx = OnChainContext(

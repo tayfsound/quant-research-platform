@@ -1,5 +1,6 @@
 """Cognitive State Model testleri."""
-from contracts.contexts.decision import ActionType, DecisionReason, Decision
+from contracts.contexts.decision import ActionType, Decision, DecisionReason
+
 
 def test_action_types():
     assert ActionType.WAIT == "WAIT"

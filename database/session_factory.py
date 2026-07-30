@@ -1,6 +1,8 @@
 """SessionFactory — her işlem için yeni session, uzun ömürlü bağlantı yok."""
 from contextlib import contextmanager
+
 from database.connection import SessionLocal
+
 
 class SessionFactory:
     @staticmethod

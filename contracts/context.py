@@ -1,13 +1,16 @@
 """CognitiveCycleContext — outcome alanı eklendi."""
 from datetime import datetime
 from uuid import UUID, uuid4
+
 from pydantic import BaseModel, Field
-from contracts.execution_mode import ExecutionMode
-from contracts.contexts.market import MarketContext
+
 from contracts.contexts.cognitive import CognitiveContext
-from contracts.contexts.risk import RiskContext
 from contracts.contexts.decision import Decision
+from contracts.contexts.market import MarketContext
+from contracts.contexts.risk import RiskContext
+from contracts.execution_mode import ExecutionMode
 from contracts.outcome import TradeOutcome
+
 
 class CognitiveCycleContext(BaseModel):
     cycle_id: UUID = Field(default_factory=uuid4)

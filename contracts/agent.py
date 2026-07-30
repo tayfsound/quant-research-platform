@@ -1,10 +1,11 @@
 """Agent Sözleşmesi — intrinsic_trust, performance_weight, effective_influence."""
+from abc import abstractmethod
 from datetime import datetime
 from enum import StrEnum
-from uuid import UUID, uuid4
-from pydantic import BaseModel, Field
-from abc import abstractmethod
 from typing import Protocol
+
+from pydantic import BaseModel, Field
+
 
 class AgentDomain(StrEnum):
     TECHNICAL = "technical"
@@ -29,7 +30,7 @@ class AgentOpinion(BaseModel):
     agent_id: str = ""
     domain: AgentDomain
     direction: str = ""
-    
+
     confidence: float = 0.0
     uncertainty: float = 0.0
     data_quality: float = 0.8
@@ -65,6 +66,7 @@ class AgentChallenge(BaseModel):
     evidence_strength: float = 0.5
     urgency: str = "normal"
     source_reliability: float = 0.8
+    suggested_adjustment: str = ""
 
 class AgentResponse(BaseModel):
     responder_domain: AgentDomain

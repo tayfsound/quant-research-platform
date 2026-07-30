@@ -1,170 +1,89 @@
-"""Decision Recorder — deterministik kayıt, hash, latency, debate trace."""
-import json
-import time
-import hashlib
 from pathlib import Path
+
+"""Decision recorder — Phase 165 replay compatible."""
+
 from contracts.decision_event import DecisionEvent
-from contracts.context import CognitiveCycleContext
-from contracts.belief import Belief
-from contracts.agent import AgentOpinion
-from contracts.agent import DebateResult
+from database.connection import get_session
+from database.repositories.decision_persistor import DecisionPersistor
 
 
 class DecisionRecorder:
-
-    def __init__(self, storage_path: str = "decision_logs"):
-        self.storage_path = Path(storage_path)
-        self.storage_path.mkdir(exist_ok=True)
-
+    def __init__(self, storage_path=None):
+        self.storage_path = Path(storage_path) if storage_path else Path("decision_logs")
+        self.storage_path.mkdir(parents=True, exist_ok=True)
+        self.session = get_session()
+        self.persistor = DecisionPersistor(self.session)
 
     def record(
         self,
-        ctx: CognitiveCycleContext,
-        opinions: list[AgentOpinion],
-        belief: Belief | None = None,
-        debate_result: DebateResult | None = None,
+        ctx,
+        opinions=None,
+        belief=None,
+        debate_result=None,
         weight_snapshot_id=None,
     ) -> DecisionEvent:
 
-        start = time.perf_counter()
-
-        feature_payload = json.dumps(
-            {
-                "features": ctx.market.features,
-                "raw_snapshot": ctx.market.raw_snapshot,
-            },
-            sort_keys=True,
-            default=str,
+        direction = (
+            getattr(ctx.decision, "proposed_direction", None)
+            or getattr(ctx.decision, "final_action", "WAIT")
         )
 
-        feature_hash = hashlib.sha256(
-            feature_payload.encode()
-        ).hexdigest()
-
-
-        belief_hash = ""
-
-        if belief:
-            belief_payload = json.dumps(
-                belief.model_dump(),
-                sort_keys=True,
-                default=str,
-            )
-            belief_hash = hashlib.sha256(
-                belief_payload.encode()
-            ).hexdigest()
-
-
         event = DecisionEvent(
+            id=ctx.cycle_id,
+            timestamp=ctx.timestamp,
             symbol=ctx.market.symbol,
-
+            proposed_direction=direction,
+            final_action=direction,
+            final_size=getattr(ctx.decision, "final_size", 0.0),
+            confidence=getattr(ctx.decision, "confidence", 0.0),
+            agent_opinions=[
+                op.model_dump()
+                for op in (opinions or [])
+            ],
+            risk_evaluation=ctx.risk.evaluation.model_dump(),
             market_snapshot={
+                "symbol": ctx.market.symbol,
+                "timeframe": ctx.market.timeframe,
                 "features": ctx.market.features,
                 "raw_snapshot": ctx.market.raw_snapshot,
             },
-
-            agent_opinions=[
-                o.model_dump(mode="json")
-                for o in opinions
-            ],
-
             belief_state=(
-                belief.model_dump(mode="json")
-                if belief else {}
-            ),
-
-            risk_evaluation={
-                "verdict": ctx.risk.evaluation.verdict,
-                "reasons": ctx.risk.evaluation.reasons,
-            },
-
-            proposed_direction=ctx.decision.proposed_direction,
-
-            final_action=(
-                ctx.decision.action.value
-                if ctx.decision.action
-                else "WAIT"
-            ),
-
-            final_size=ctx.decision.final_size,
-
-            confidence=ctx.decision.confidence,
-
-            decision_latency_ms=round(
-                (time.perf_counter() - start) * 1000,
-                3,
-            ),
-
-            feature_hash=feature_hash,
-
-            belief_hash=belief_hash,
-
-            data_sources=[
-                "market_context",
-                "agent_council",
-                "belief_engine",
-            ],
-
-            debate_trace=(
-                debate_result.model_dump(mode="json")
-                if hasattr(debate_result, "model_dump")
-                else debate_result
-                if debate_result
+                belief.model_dump()
+                if belief and hasattr(belief, "model_dump")
                 else None
             ),
-
+            outcome=(
+                ctx.outcome.model_dump()
+                if ctx.outcome and hasattr(ctx.outcome, "model_dump")
+                else None
+            ),
             weight_snapshot_id=weight_snapshot_id,
         )
 
+        self.persistor.persist(event)
 
-        filename = self.storage_path / f"decision_{event.id}.json"
-
-        filename.write_text(
-            event.model_dump_json(
-                indent=2,
-                exclude_none=True,
-            )
-        )
-
-
-        index_file = self.storage_path / "index.jsonl"
-
-        with open(index_file, "a") as f:
-            f.write(
-                json.dumps({
-                    "id": str(event.id),
-                    "timestamp": event.timestamp.isoformat(),
-                    "symbol": event.symbol,
-                    "action": event.final_action,
-                }) + "\n"
-            )
-
+        log_file = self.storage_path / f"decision_{event.id}.json"
+        log_file.write_text(event.model_dump_json(indent=2))
 
         return event
 
+    def replay(self, decision_id: str):
+        data = self.persistor.get_by_id(decision_id)
 
-    def replay(self, decision_id: str) -> DecisionEvent | None:
-
-        filename = self.storage_path / f"decision_{decision_id}.json"
-
-        if not filename.exists():
+        if data is None:
             return None
 
-        return DecisionEvent.model_validate_json(
-            filename.read_text()
+        return DecisionEvent(
+            id=data["id"],
+            timestamp=data["timestamp"],
+            symbol=data["symbol"],
+            proposed_direction=data.get("direction"),
+            final_action=data.get("direction"),
+            final_size=data.get("size", 0.0),
+            confidence=data.get("confidence", 0.0),
+            weight_snapshot_id=data.get("weight_snapshot_id"),
+            belief_snapshot_id=data.get("belief_snapshot_id"),
         )
 
-
-    def list_decisions(self, limit: int = 20) -> list[dict]:
-
-        index_file = self.storage_path / "index.jsonl"
-
-        if not index_file.exists():
-            return []
-
-        lines = index_file.read_text().strip().split("\n")
-
-        return [
-            json.loads(line)
-            for line in lines[-limit:]
-        ]
+    def list_decisions(self, limit: int = 100):
+        return self.persistor.list_recent(limit)

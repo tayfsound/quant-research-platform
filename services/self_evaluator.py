@@ -1,6 +1,7 @@
 """Self Evaluator — ajanın kendi performansını analiz etmesi."""
-from contracts.evaluation import PredictionError, OutcomeAnalysis, BeliefAdjustment, Lesson
+from contracts.evaluation import BeliefAdjustment, Lesson, OutcomeAnalysis
 from contracts.memory import EpisodicMemory, SemanticMemory
+
 
 class SelfEvaluator:
     def __init__(self, episodic: EpisodicMemory, semantic: SemanticMemory):

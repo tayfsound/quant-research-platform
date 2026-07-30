@@ -1,9 +1,10 @@
 """Agent Registry — tüm uzman ajanları merkezi olarak yönetir."""
-from contracts.agent import AgentDomain
 from agents.macro_agent import MacroAgent
-from agents.sentiment_agent import SentimentAgent
 from agents.onchain_agent import OnChainAgent
+from agents.sentiment_agent import SentimentAgent
 from agents.technical_agent import TechnicalAgent
+from contracts.agent import AgentDomain
+
 
 class AgentRegistry:
     def __init__(self):

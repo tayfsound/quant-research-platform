@@ -14,9 +14,9 @@ class MetaLearner:
         """Son N işlem performansına göre tüm parametreleri optimize et."""
         if len(self.history) < window:
             return current
-        
+
         recent = self.history[-window:]
-        
+
         # Act threshold için grid search (reward tabanlı)
         act_candidates = [t / 100 for t in range(40, 91, 5)]  # 0.40, 0.45, ..., 0.90
         best_act = current.get("act_threshold", 0.7)

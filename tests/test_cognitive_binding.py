@@ -2,6 +2,7 @@
 from contracts.observation import Observation, ObservationType
 from services.cognitive_binder import CognitiveBinder
 
+
 def test_bind_observation_creates_ucel_expression():
     binder = CognitiveBinder()
     obs = Observation(type=ObservationType.INDICATOR, symbol="BTCUSDT", timeframe="4H", description="RSI oversold", data={"rsi": 25})

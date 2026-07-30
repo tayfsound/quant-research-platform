@@ -1,7 +1,7 @@
 """ML Prediction -> AgentOpinion adapter."""
 
-from contracts.ml import PredictionResult, Direction
-from contracts.agent import AgentOpinion, AgentDomain
+from contracts.agent import AgentDomain, AgentOpinion
+from contracts.ml import Direction, PredictionResult
 
 
 class MLAgentAdapter:

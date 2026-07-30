@@ -1,42 +1,51 @@
-"""Outcome Tracker — düzeltilmiş JSON serialization ve ayrılmış feature."""
 from pathlib import Path
-import json
-from datetime import datetime, UTC
-from contracts.decision_event import DecisionEvent
-from contracts.outcome import TradeOutcome, FailureType
+
+from contracts.outcome import TradeOutcome
+from database.connection import get_session
+from database.repositories.decision_persistor import DecisionPersistor
+from services.training_dataset_builder import TrainingDatasetBuilder
+
 
 class OutcomeTracker:
-    def __init__(self, storage_path: str = "decision_logs"):
+    def __init__(self, storage_path="decision_logs"):
         self.storage_path = Path(storage_path)
 
-    def attach_outcome(self, decision_id: str, outcome: TradeOutcome) -> DecisionEvent | None:
-        filename = self.storage_path / f"decision_{decision_id}.json"
-        if not filename.exists():
-            return None
+    def attach_outcome(self, decision_id: str, outcome: TradeOutcome):
+        session = get_session()
 
-        event = DecisionEvent.model_validate_json(filename.read_text())
-        event.outcome = outcome.model_dump(mode="json")
-        filename.write_text(event.model_dump_json(indent=2, exclude_none=True))
-        return event
+        try:
+            persistor = DecisionPersistor(session)
+            data = persistor.get_by_id(decision_id)
 
-    def build_training_dataset(self, output_path: str = "training_data.jsonl") -> int:
-        count = 0
-        with open(output_path, "w") as out:
-            for filename in self.storage_path.glob("decision_*.json"):
-                try:
-                    event = DecisionEvent.model_validate_json(filename.read_text())
-                    if event.outcome:
-                        record = {
-                            "features": event.market_snapshot.get("features", {}),
-                            "raw_context": event.market_snapshot.get("raw_snapshot", {}),
-                            "agent_opinions": event.agent_opinions,
-                            "belief_strength": event.belief_state.get("strength", 0),
-                            "decision": event.final_action,
-                            "confidence": event.confidence,
-                            "outcome": event.outcome,
-                        }
-                        out.write(json.dumps(record, default=str) + "\n")
-                        count += 1
-                except Exception:
-                    pass
-        return count
+            if not data:
+                return None
+
+            persistor.update_outcome(
+                decision_id=decision_id,
+                pnl=outcome.pnl,
+                status="completed",
+                outcome=outcome.model_dump(mode="json"),
+            )
+
+            from uuid import UUID
+
+            from contracts.decision_event import DecisionEvent
+
+            return DecisionEvent(
+                id=UUID(decision_id),
+                timestamp=data["timestamp"],
+                symbol=data["symbol"],
+                proposed_direction=data["direction"],
+                final_action=data["direction"],
+                final_size=data["size"] or 0.0,
+                confidence=data["confidence"] or 0.0,
+                agent_opinions=[],
+                market_snapshot={},
+                outcome=outcome.model_dump(mode="json"),
+            )
+
+        finally:
+            session.close()
+
+    def build_training_dataset(self, output_path="training_data.jsonl"):
+        return TrainingDatasetBuilder().build(output_path)

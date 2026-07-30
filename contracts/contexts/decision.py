@@ -1,6 +1,8 @@
 """Decision — ActionType, confidence, uncertainty, reason, reconsideration."""
 from enum import StrEnum
-from pydantic import BaseModel, Field
+
+from pydantic import BaseModel
+
 
 class ActionType(StrEnum):
     ENTER_LONG = "ENTER_LONG"
@@ -29,3 +31,5 @@ class Decision(BaseModel):
     confidence: float = 0.0
     uncertainty: float = 1.0
     reconsideration_count: int = 0
+    take_profit: float | None = None
+    stop_loss: float | None = None

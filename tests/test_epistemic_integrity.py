@@ -1,6 +1,7 @@
 """Epistemic Integrity Testleri — final."""
-from contracts.agent import AgentOpinion, AgentDomain
+from contracts.agent import AgentDomain, AgentOpinion
 from services.belief_engine import BeliefEngine
+
 
 def test_partial_shared_source_detected():
     """Technical ve Quant aynı fiyat kaynağından, Order Flow farklı mikro yapıdan."""

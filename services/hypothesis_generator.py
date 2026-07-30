@@ -1,7 +1,8 @@
 """Hypothesis Generator — Knowledge + Belief'ten hipotez üretir."""
+from services.belief_service import BeliefService
+
 from contracts.experiment import Experiment
 from contracts.knowledge import KnowledgeCategory
-from services.belief_service import BeliefService
 from services.knowledge_service import KnowledgeService
 
 

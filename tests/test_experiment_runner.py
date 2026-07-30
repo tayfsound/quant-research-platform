@@ -1,7 +1,8 @@
 """Experiment Runner testleri."""
-from contracts.memory import EpisodicMemory, SemanticMemory, Episode
 from contracts.curiosity import ExperimentProposal
+from contracts.memory import EpisodicMemory, SemanticMemory
 from services.experiment_runner import ExperimentRunner
+
 
 def test_enqueue_and_run():
     em = EpisodicMemory()

@@ -2,7 +2,9 @@
 from contracts.context import CognitiveCycleContext
 from services.cognitive_engine import CognitiveEngine
 
+
 def test_full_cognitive_cycle_with_council():
+    from contracts.contexts.risk import RiskLimitEntry
     engine = CognitiveEngine()
     ctx = CognitiveCycleContext(
         market={
@@ -24,6 +26,7 @@ def test_full_cognitive_cycle_with_council():
             }
         },
         decision={"proposed_size": 0.5},
+        risk={"limits": {"max_position_size": RiskLimitEntry(value=1.0)}},
     )
 
     result = engine.run(ctx)

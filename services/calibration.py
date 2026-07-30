@@ -1,6 +1,7 @@
 """Calibration Metrics — Brier Score, ECE, Reliability Diagram, Confidence Histogram."""
 from collections import defaultdict
 
+
 class CalibrationMetrics:
     def __init__(self):
         self.predictions: list[tuple[float, bool]] = []  # (confidence, was_correct)

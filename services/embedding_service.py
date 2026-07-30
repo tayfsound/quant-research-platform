@@ -1,6 +1,7 @@
 """Embedding Service — thread‑safe singleton, normalize edilmiş vektörler."""
-from sentence_transformers import SentenceTransformer
 from threading import Lock
+
+from sentence_transformers import SentenceTransformer
 
 _model = None
 _model_lock = Lock()

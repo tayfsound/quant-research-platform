@@ -1,7 +1,7 @@
 """Path‑Aware Opportunity Cost — min_significant_r, exit_price düzeltmesi."""
-import math
-from contracts.opportunity import OpportunityCost
 from contracts.context import CognitiveCycleContext
+from contracts.opportunity import OpportunityCost
+
 
 class OpportunityCostCalculator:
     def __init__(self, initial_risk: float = 100.0, min_significant_r: float = 0.5):

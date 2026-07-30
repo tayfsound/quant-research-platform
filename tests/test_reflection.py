@@ -1,8 +1,9 @@
 """Reflection Engine testleri."""
 from contracts.context import CognitiveCycleContext
 from contracts.contexts.decision import ActionType
-from services.contradiction_detector import ContradictionDetector
 from services.attention_controller import AttentionController
+from services.contradiction_detector import ContradictionDetector
+
 
 def test_contradiction_low_conflict_proceed():
     detector = ContradictionDetector()

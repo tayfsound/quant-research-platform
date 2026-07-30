@@ -1,7 +1,9 @@
 """Opportunity Cost — exit_price eklendi."""
 from datetime import datetime
 from uuid import UUID, uuid4
+
 from pydantic import BaseModel, Field
+
 
 class OpportunityCost(BaseModel):
     id: UUID = Field(default_factory=uuid4)

@@ -1,7 +1,10 @@
 """Episode repository — CAST ile embedding."""
 import json
+
 from sqlalchemy import text
+
 from contracts.memory import Episode
+
 
 class EpisodeRepository:
     def __init__(self, session):
@@ -26,6 +29,10 @@ class EpisodeRepository:
                VALUES (:id, :cycle_id, :symbol, :observation, :binding_expression, :decision, :outcome, :lesson, CAST(:embedding AS vector))"""),
             data,
         )
+
+        self.session.commit()
+
+        return episode
 
     def latest(self, limit: int = 20):
         result = self.session.execute(

@@ -1,8 +1,9 @@
 """Belief Updater — yeni BeliefEngine ile."""
+from contracts.agent import AgentDomain, AgentOpinion
 from contracts.context import CognitiveCycleContext
 from contracts.outcome import DecisionEvaluation
 from services.belief_engine import BeliefEngine
-from contracts.agent import AgentOpinion, AgentDomain
+
 
 class BeliefUpdater:
     def __init__(self, belief_engine: BeliefEngine | None = None):
@@ -15,10 +16,10 @@ class BeliefUpdater:
         ]
         if not memory_insights:
             return
-        
+
         insight = memory_insights[-1]["data"]
         dominant = insight.get("dominant_direction", "NEUTRAL")
-        
+
         # Yeni BeliefEngine ile sentezle (stub: tek agent görüşü olarak)
         opinion = AgentOpinion(
             domain=AgentDomain.TECHNICAL,
