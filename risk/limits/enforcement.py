@@ -1,46 +1,34 @@
-"""Risk limit uygulama motoru."""
-from risk.limits.exposure import ExposureTracker
-from risk.limits.schema import LimitType, RiskLimit
+"""Risk limit enforcement."""
+from dataclasses import dataclass
+from typing import Optional
 
+@dataclass
+class RiskLimit:
+    max_position_size: float = 1.0
+    max_drawdown_pct: float = 0.05
+    daily_loss_limit: float = 1000.0
+    signed_hash: Optional[str] = None
 
-class RiskEvaluator:
-    def __init__(self):
-        self._limits: dict[LimitType, RiskLimit] = {}
-
-    def load_limits(self, limits: list[RiskLimit]):
-        for limit in limits:
-            self._limits[limit.limit_type] = limit
-
-    def evaluate(self, exposure: ExposureTracker, proposed_size: float, proposed_leverage: float) -> tuple[bool, str]:
-        # Max position size
-        if LimitType.MAX_POSITION_SIZE in self._limits:
-            limit = self._limits[LimitType.MAX_POSITION_SIZE]
-            if proposed_size > limit.value:
-                return False, f"Position size {proposed_size} exceeds limit {limit.value}"
-
-        # Max leverage
-        if LimitType.MAX_LEVERAGE in self._limits:
-            limit = self._limits[LimitType.MAX_LEVERAGE]
-            if proposed_leverage > limit.value:
-                return False, f"Leverage {proposed_leverage} exceeds limit {limit.value}"
-
-        # Max exposure
-        if LimitType.MAX_EXPOSURE in self._limits:
-            limit = self._limits[LimitType.MAX_EXPOSURE]
-            new_exposure = exposure.total_exposure + proposed_size
-            if new_exposure > limit.value:
-                return False, f"Total exposure {new_exposure} exceeds limit {limit.value}"
-
-        # Max drawdown
-        if LimitType.MAX_DRAWDOWN in self._limits:
-            limit = self._limits[LimitType.MAX_DRAWDOWN]
-            if exposure.current_drawdown >= limit.value:
-                return False, f"Drawdown {exposure.current_drawdown:.2%} exceeds limit {limit.value:.2%}"
-
-        # Max daily loss
-        if LimitType.MAX_DAILY_LOSS in self._limits:
-            limit = self._limits[LimitType.MAX_DAILY_LOSS]
-            if abs(exposure.daily_loss) >= limit.value:
-                return False, f"Daily loss {exposure.daily_loss} exceeds limit {limit.value}"
-
-        return True, "approved"
+class RiskEnforcer:
+    def __init__(self, limit: RiskLimit = None):
+        self.limit = limit or RiskLimit()
+        self.daily_pnl: float = 0.0
+        self.peak_equity: float = 10000.0
+    
+    def check_position(self, size: float, current_equity: float) -> tuple[bool, str]:
+        if size > self.limit.max_position_size:
+            return False, "POSITION_SIZE_EXCEEDED"
+        drawdown = (self.peak_equity - current_equity) / self.peak_equity
+        if drawdown > self.limit.max_drawdown_pct:
+            return False, "DRAWDOWN_LIMIT"
+        return True, "OK"
+    
+    def check_daily_loss(self, pnl: float) -> tuple[bool, str]:
+        self.daily_pnl += pnl
+        if self.daily_pnl < -self.limit.daily_loss_limit:
+            return False, "DAILY_LOSS_LIMIT"
+        return True, "OK"
+    
+    def update_equity(self, equity: float):
+        if equity > self.peak_equity:
+            self.peak_equity = equity
