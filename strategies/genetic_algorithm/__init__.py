@@ -1,1 +1,1 @@
-from .ga import GeneticAlgorithm
+from .ga import GeneticAlgorithm, GeneticOptimizer

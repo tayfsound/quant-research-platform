@@ -35,3 +35,17 @@ class GeneticAlgorithm:
                 offspring.append(Individual(params=child_params))
             self._population = elites + offspring
         return self.best
+
+class GeneticOptimizer:
+    def __init__(self, population_size: int = 20, generations: int = 10, mutation_rate: float = 0.1):
+        self.ga = GeneticAlgorithm(population_size)
+        self.generations = generations
+        self.mutation_rate = mutation_rate
+    
+    def optimize(self, evaluator):
+        self.ga.initialize({
+            "rsi_threshold": (20.0, 40.0),
+            "confidence_min": (0.5, 0.9),
+            "position_size": (0.1, 1.0)
+        })
+        return self.ga.evolve(evaluator, generations=self.generations).params
