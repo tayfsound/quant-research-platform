@@ -5,7 +5,6 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
-
 class ExperimentPriority(StrEnum):
     HIGH = "high"
     MEDIUM = "medium"
@@ -14,12 +13,10 @@ class ExperimentPriority(StrEnum):
 class ExperimentStatus(StrEnum):
     PROPOSED = "proposed"
     APPROVED = "approved"
-echo "models/*.pkl" >> .gitignore
-git rm --cached models/decision_classifier.pkl
-pytest tests/test_backtest.py tests/test_genetic_algorithm.py -xvs
-git add -A
-git commit -m "fix: remove package directories conflicting with modules, ignore pkl"
-git push origin main
+    REJECTED = "rejected"
+    COMPLETED = "completed"
+
+class CuriositySignal(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     question: str
     source: str = "unknown"
