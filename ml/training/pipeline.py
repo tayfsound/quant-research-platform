@@ -1,7 +1,16 @@
 """Egitim pipeline'i."""
+from dataclasses import dataclass, field
 from ml.training.replay_memory import ReplayMemory
 from ml.models.classifier import DecisionClassifier
-from typing import List, Dict, Any, Optional
+
+@dataclass
+class TrainingResult:
+    model_type: str
+    metrics: dict = field(default_factory=dict)
+    hyperparameters: dict = field(default_factory=dict)
+    status: str = "trained"
+    samples: int = 0
+    positive_ratio: float = 0.0
 
 class TrainingPipeline:
     def __init__(self, memory=None, classifier=None, registry=None):
@@ -12,21 +21,27 @@ class TrainingPipeline:
         self.classifier = classifier or DecisionClassifier()
         self.registry = registry
     
-    def run(self, min_samples: int = 10, model_type: str = None, predictions: list = None, hyperparams: dict = None) -> Dict[str, Any]:
+    def run(self, min_samples: int = 10, model_type: str = None, predictions: list = None, hyperparams: dict = None):
         if len(self.memory.memory) < min_samples:
-            return {"status": "insufficient_data", "trained": False, "samples": len(self.memory.memory)}
+            return TrainingResult(model_type=model_type or "default", status="insufficient_data")
         samples = self.memory.sample(batch_size=min(len(self.memory.memory), 1000))
         features = [s.features for s in samples]
         labels = [s.label for s in samples]
         if len(features) < min_samples:
-            return {"status": "insufficient_features", "trained": False}
+            return TrainingResult(model_type=model_type or "default", status="insufficient_features")
         self.classifier.train(features, labels)
         self.classifier.save()
-        return {
-            "status": "trained",
-            "samples": len(features),
-            "positive_ratio": sum(labels) / len(labels),
-            "model_type": model_type or "default",
-            "metrics": {"accuracy": 0.75} if predictions else {},
-            "hyperparameters": hyperparams or {}
-        }
+        
+        metrics = {"accuracy": 0.75} if predictions else {}
+        if predictions:
+            total_pnl = sum(p.get("pnl", 0) for p in predictions)
+            metrics["total_pnl"] = total_pnl
+        
+        return TrainingResult(
+            model_type=model_type or "default",
+            metrics=metrics,
+            hyperparameters=hyperparams or {},
+            status="trained",
+            samples=len(features),
+            positive_ratio=sum(labels) / len(labels)
+        )
