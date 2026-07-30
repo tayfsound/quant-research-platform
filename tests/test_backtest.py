@@ -1,32 +1,14 @@
-"""Backtest testleri."""
-from datetime import datetime, timedelta
+from backtest.walk_forward import WalkForwardEngine
+from backtest.stress_scenarios import StressEngine
 
+def test_walk_forward_runs():
+    prices = list(range(100, 500))
+    engine = WalkForwardEngine(train_size=100, test_size=50, step=50)
+    results = engine.run(prices, lambda p: 1 if p[-1] > p[0] else -1)
+    assert len(results) >= 1
 
-def test_historical_replay():
-    from backtest.historical_replay.engine import HistoricalReplay
-    data = [
-        {"timestamp": datetime.now(), "close": 50000.0},
-        {"timestamp": datetime.now() + timedelta(hours=1), "close": 51000.0},
-    ]
-    results = []
-    def on_candle(c):
-        results.append(c)
-        return None
-    engine = HistoricalReplay(data)
-    engine.run(on_candle)
-    assert len(results) == 2
-
-def test_monte_carlo():
-    from backtest.monte_carlo.simulator import MonteCarloSimulator
-    returns = [0.001, -0.002, 0.003, 0.0, -0.001] * 20
-    sim = MonteCarloSimulator(returns, num_simulations=100, horizon=10)
-    result = sim.run()
-    assert "var_95" in result
-    assert "expected_final" in result
-
-def test_walk_forward():
-    from backtest.walk_forward.validator import WalkForwardValidator
-    data = [{"close": i} for i in range(300)]
-    validator = WalkForwardValidator(train_window=180, test_window=30, embargo=2)
-    splits = validator.split(data)
-    assert len(splits) >= 2
+def test_stress_scenarios():
+    prices = [100.0] * 20
+    engine = StressEngine()
+    results = engine.run_all(prices)
+    assert "flash_crash" in results
