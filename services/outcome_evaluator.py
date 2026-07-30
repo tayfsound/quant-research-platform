@@ -1,7 +1,7 @@
 """Outcome Evaluator — DecisionEvent tabanlı sürekli Decision Score üretir."""
 
 from contracts.decision_event import DecisionEvent
-from contracts.outcome import TradeOutcome, DecisionEvaluation, FailureType
+from contracts.outcome import DecisionEvaluation, FailureType, TradeOutcome
 
 
 class OutcomeEvaluator:

@@ -1,9 +1,10 @@
 """Evaluation Engine — öz değerlendirme + merak + deney çalıştırma."""
 from contracts.context import CognitiveCycleContext
-from services.self_evaluator import SelfEvaluator
 from services.curiosity_engine import CuriosityEngine
 from services.experiment_runner import ExperimentRunner
 from services.memory_consolidator import MemoryConsolidator
+from services.self_evaluator import SelfEvaluator
+
 
 class EvaluationEngine:
     def __init__(self, consolidator: MemoryConsolidator):

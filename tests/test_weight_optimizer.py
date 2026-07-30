@@ -1,7 +1,8 @@
 """Weight Optimizer testleri."""
+from contracts.agent_performance import AgentPerformanceRecord
 from services.agent_memory import AgentMemory
 from services.weight_optimizer import WeightOptimizer
-from contracts.agent_performance import AgentPerformanceRecord
+
 
 def test_weight_optimizer_proposes_weights():
     memory = AgentMemory()

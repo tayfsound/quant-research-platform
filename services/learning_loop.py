@@ -2,16 +2,15 @@
 
 from enum import Enum
 
-from services.outcome_tracker import OutcomeTracker
-from services.meta_learner import MetaLearner
-from services.calibration import CalibrationMetrics
-from services.agent_memory import AgentMemory
-from services.weight_optimizer import WeightOptimizer
-from services.weight_repository import WeightRepository
-
 from contracts.agent_performance import AgentPerformanceRecord
 from contracts.decision_event import DecisionEvent
 from contracts.outcome import DecisionEvaluation
+from services.agent_memory import AgentMemory
+from services.calibration import CalibrationMetrics
+from services.meta_learner import MetaLearner
+from services.outcome_tracker import OutcomeTracker
+from services.weight_optimizer import WeightOptimizer
+from services.weight_repository import WeightRepository
 
 
 class LearningLoop:

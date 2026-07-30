@@ -1,7 +1,8 @@
 """Curiosity Engine testleri."""
-from contracts.memory import EpisodicMemory, SemanticMemory, Episode
-from services.self_evaluator import SelfEvaluator
+from contracts.memory import Episode, EpisodicMemory, SemanticMemory
 from services.curiosity_engine import CuriosityEngine
+from services.self_evaluator import SelfEvaluator
+
 
 def test_curiosity_from_errors():
     em = EpisodicMemory()

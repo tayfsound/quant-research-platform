@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from contracts.decision_event import DecisionEvent
 from services.replay.snapshot_builder import build_snapshot
 
@@ -6,7 +7,7 @@ from services.replay.snapshot_builder import build_snapshot
 def test_snapshot_builder():
 
     event = DecisionEvent(
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         symbol="BTCUSDT",
         final_action="BUY",
         final_size=1.0,

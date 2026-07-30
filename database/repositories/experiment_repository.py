@@ -1,7 +1,10 @@
 """Experiment repository — commit yok."""
 import json
+
 from sqlalchemy import text
+
 from contracts.curiosity import ExperimentProposal, ExperimentStatus
+
 
 class ExperimentRepository:
     def __init__(self, session):

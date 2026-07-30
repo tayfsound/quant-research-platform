@@ -1,7 +1,9 @@
 """Decision persistence — Phase 170."""
 
 import json
+
 from sqlalchemy import text
+
 from contracts.decision_event import DecisionEvent
 
 

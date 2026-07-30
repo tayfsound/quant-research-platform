@@ -1,21 +1,19 @@
 """Kalıcı hafıza testleri."""
+from contracts.agent import AgentDomain, AgentOpinion
+from contracts.context import CognitiveCycleContext
+from contracts.curiosity import ExperimentProposal, ExperimentStatus
 from contracts.memory import Episode
 from contracts.observation import Observation, ObservationType
-from contracts.agent import AgentOpinion, AgentDomain
-from contracts.belief import Belief
-from services.belief_engine import BeliefEngine
-from contracts.curiosity import ExperimentProposal, ExperimentStatus
-from contracts.evaluation import Lesson
-from contracts.context import CognitiveCycleContext
 from database.connection import get_session
-from database.repositories.episode_repository import EpisodeRepository
-from database.repositories.observation_repository import ObservationRepository
 from database.repositories.belief_repository import BeliefRepository
+from database.repositories.episode_repository import EpisodeRepository
 from database.repositories.experiment_repository import ExperimentRepository
-from database.repositories.lesson_repository import LessonRepository
+from database.repositories.observation_repository import ObservationRepository
+from services.belief_engine import BeliefEngine
 from services.memory_consolidator import MemoryConsolidator
-from services.semantic_search import SemanticSearch
 from services.memory_service import MemoryService
+from services.semantic_search import SemanticSearch
+
 
 def test_save_and_retrieve_episode():
     session = get_session()

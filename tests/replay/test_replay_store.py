@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from contracts.replay.replay_snapshot import ReplaySnapshot
 from services.replay.replay_store import ReplayStore
@@ -12,7 +12,7 @@ def test_replay_store(tmp_path):
 
     snapshot = ReplaySnapshot(
         snapshot_id="001",
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
         market_state={"BTC": 60000},
     )
 

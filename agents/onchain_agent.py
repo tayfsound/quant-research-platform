@@ -1,6 +1,7 @@
 """OnChain Agent — zincir üstü verilerden yön çıkarır."""
-from contracts.agent import AgentOpinion, AgentDomain
+from contracts.agent import AgentDomain, AgentOpinion
 from contracts.onchain import OnChainContext
+
 
 class OnChainAgent:
     def __init__(self):

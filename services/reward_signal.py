@@ -1,6 +1,6 @@
 """Reward Signal — decision_score tabanlı."""
-import math
 from contracts.outcome import DecisionEvaluation
+
 
 class RewardSignal:
     def __init__(self, initial_risk: float = 100.0):

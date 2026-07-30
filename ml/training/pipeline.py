@@ -2,8 +2,8 @@
 from datetime import datetime
 
 from ml.registry.store import ModelRegistry, ModelRegistryEntry
-from ml.training.feature_extractor import TrainingFeatureExtractor
 from ml.training.evaluation import ModelEvaluator
+from ml.training.feature_extractor import TrainingFeatureExtractor
 
 
 class TrainingPipeline:
@@ -15,7 +15,7 @@ class TrainingPipeline:
     def run(self, model_type: str, predictions: list[dict], hyperparams: dict = None) -> ModelRegistryEntry:
         # Değerlendirme yap
         eval_result = self.evaluator.evaluate_predictions(predictions)
-        
+
         entry = ModelRegistryEntry(
             model_type=model_type,
             version=f"{datetime.now().strftime('%Y%m%d%H%M%S')}",

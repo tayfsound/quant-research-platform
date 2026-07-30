@@ -1,6 +1,8 @@
 """Training Sample Quality Scorer — Eğitim örneklerinin kalitesini puanlar."""
 from typing import Any
+
 from contracts.decision_event import DecisionEvent
+
 
 class SampleQualityScorer:
     def __init__(self):
@@ -9,7 +11,7 @@ class SampleQualityScorer:
     def score_sample(self, event: DecisionEvent) -> dict[str, Any]:
         """Bir DecisionEvent'in eğitim için kalite puanını hesaplar."""
         scores = {}
-        
+
         # 1. Data Completeness Score (0.0 - 1.0)
         # Gerekli alanların varlığı kontrol edilir
         completeness = 1.0
@@ -49,5 +51,5 @@ class SampleQualityScorer:
             scores["significance_score"] * 0.2
         )
         scores["final_quality_score"] = round(final_score, 4)
-        
+
         return scores

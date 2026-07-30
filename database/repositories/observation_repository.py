@@ -1,7 +1,10 @@
 """Observation repository — commit yok, cycle_id opsiyonel."""
 import json
+
 from sqlalchemy import text
+
 from contracts.observation import Observation
+
 
 class ObservationRepository:
     def __init__(self, session):

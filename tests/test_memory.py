@@ -1,7 +1,8 @@
 """Memory testleri — güncellenmiş."""
-from contracts.memory import WorkingMemory, EpisodicMemory, SemanticMemory, Episode
-from services.memory_consolidator import MemoryConsolidator
 from contracts.context import CognitiveCycleContext
+from contracts.memory import Episode, EpisodicMemory, SemanticMemory, WorkingMemory
+from services.memory_consolidator import MemoryConsolidator
+
 
 def test_working_memory_limits():
     wm = WorkingMemory(max_items=3)

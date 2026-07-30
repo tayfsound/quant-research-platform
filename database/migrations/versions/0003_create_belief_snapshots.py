@@ -5,15 +5,14 @@ Revises: f8fa21f0e94a
 Create Date: 2026-07-28
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-
 revision: str = "0003"
-down_revision: Union[str, Sequence[str], None] = "f8fa21f0e94a"
+down_revision: str | Sequence[str] | None = "f8fa21f0e94a"
 branch_labels = None
 depends_on = None
 

@@ -1,6 +1,8 @@
 """OnChain Domain Contracts."""
 from datetime import datetime
+
 from pydantic import BaseModel, Field
+
 
 class OnChainContext(BaseModel):
     """OnChainAgent için zincir üstü bağlam."""

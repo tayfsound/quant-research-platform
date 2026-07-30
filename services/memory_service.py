@@ -1,15 +1,16 @@
 """Memory Service — güncel SemanticSearch API ile."""
-from contracts.memory import Episode
 from contracts.belief import Belief
-from contracts.evaluation import Lesson
 from contracts.curiosity import ExperimentProposal
-from database.session_factory import SessionFactory
-from database.repositories.episode_repository import EpisodeRepository
+from contracts.evaluation import Lesson
+from contracts.memory import Episode
 from database.repositories.belief_repository import BeliefRepository
+from database.repositories.episode_repository import EpisodeRepository
 from database.repositories.experiment_repository import ExperimentRepository
 from database.repositories.lesson_repository import LessonRepository
+from database.session_factory import SessionFactory
 from services.memory_consolidator import MemoryConsolidator
 from services.semantic_search import SemanticSearch
+
 
 class MemoryService:
     def __init__(self):

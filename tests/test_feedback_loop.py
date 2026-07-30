@@ -3,14 +3,14 @@
 import shutil
 from uuid import uuid4
 
-from contracts.decision_event import DecisionEvent
-from contracts.outcome import TradeOutcome, DecisionEvaluation
 from contracts.agent_weight_snapshot import AgentWeightSnapshot
+from contracts.decision_event import DecisionEvent
+from contracts.outcome import DecisionEvaluation, TradeOutcome
 from database.connection import get_session
+from services.agent_memory import AgentMemory
 from services.decision_persistor import DecisionPersistor
 from services.outcome_evaluator import OutcomeEvaluator
 from services.weight_optimizer import WeightOptimizer
-from services.agent_memory import AgentMemory
 from services.weight_repository import WeightRepository
 
 

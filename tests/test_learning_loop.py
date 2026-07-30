@@ -1,7 +1,8 @@
 """Learning Loop testleri."""
-from services.learning_loop import LearningLoop
-from services.decision_recorder import DecisionRecorder
 from contracts.context import CognitiveCycleContext
+from services.decision_recorder import DecisionRecorder
+from services.learning_loop import LearningLoop
+
 
 def test_process_outcome():
     # Önce bir karar kaydet

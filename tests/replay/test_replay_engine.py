@@ -1,8 +1,8 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from contracts.decision_event import DecisionEvent
-from services.replay.snapshot_builder import build_snapshot
 from engines.replay.replay_engine import DeterministicReplayEngine
+from services.replay.snapshot_builder import build_snapshot
 
 
 class FakeDecisionEngine:
@@ -16,7 +16,7 @@ class FakeDecisionEngine:
 def test_replay_engine():
 
     event = DecisionEvent(
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         symbol="BTCUSDT",
         final_action="BUY",
         final_size=1.0,

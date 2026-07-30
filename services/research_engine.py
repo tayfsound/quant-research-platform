@@ -1,14 +1,16 @@
 """Research Engine — mode'a göre executor seçer."""
+from engines.belief_engine import BeliefEngine
+
 from contracts.context import CognitiveCycleContext
 from contracts.execution_mode import ExecutionMode
-from engines.observation_pipeline import ObservationPipeline
-from engines.knowledge_builder import KnowledgeBuilder
-from engines.belief_engine import BeliefEngine
-from engines.hypothesis_engine import HypothesisEngine
-from engines.risk_engine import RiskEngine
 from engines.decision_engine import DecisionEngine
-from engines.sandbox_executor import SandboxExecutor
+from engines.hypothesis_engine import HypothesisEngine
+from engines.knowledge_builder import KnowledgeBuilder
 from engines.live_executor import LiveExecutor
+from engines.observation_pipeline import ObservationPipeline
+from engines.risk_engine import RiskEngine
+from engines.sandbox_executor import SandboxExecutor
+
 
 class ResearchEngine:
     def __init__(self):

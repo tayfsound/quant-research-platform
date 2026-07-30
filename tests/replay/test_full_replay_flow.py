@@ -1,15 +1,15 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from contracts.decision_event import DecisionEvent
-from services.replay.snapshot_builder import build_snapshot
 from services.replay.replay_session import ReplaySession
 from services.replay.replay_verifier import ReplayVerifier
+from services.replay.snapshot_builder import build_snapshot
 
 
 def test_full_replay_flow():
 
     event = DecisionEvent(
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         symbol="BTCUSDT",
         final_action="BUY",
         final_size=2.0,

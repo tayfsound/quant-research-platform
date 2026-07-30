@@ -2,7 +2,7 @@
 
 import warnings
 
-from sqlalchemy import insert, text, String, Float, Integer, MetaData, Table, Column
+from sqlalchemy import Column, Float, Integer, MetaData, String, Table, insert, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from contracts.belief import Belief

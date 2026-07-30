@@ -2,6 +2,7 @@
 from contracts.context import CognitiveCycleContext
 from services.cognitive_engine import CognitiveEngine
 
+
 def test_cognitive_engine_runs():
     engine = CognitiveEngine()
     ctx = CognitiveCycleContext(

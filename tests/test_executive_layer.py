@@ -1,9 +1,10 @@
 """Executive Layer testleri."""
 from contracts.context import CognitiveCycleContext
 from contracts.contexts.decision import ActionType
-from services.salience_detector import SalienceDetector
-from services.inner_critic import InnerCritic
 from services.decision_fusion import DecisionFusion
+from services.inner_critic import InnerCritic
+from services.salience_detector import SalienceDetector
+
 
 def test_salience_low_score_returns_wait():
     detector = SalienceDetector(threshold=0.7)

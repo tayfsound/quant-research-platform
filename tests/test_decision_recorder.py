@@ -1,9 +1,9 @@
 """Decision Recorder compatibility tests."""
 
+from contracts.context import CognitiveCycleContext
 from database.connection import get_session
 from database.repositories.decision_persistor import DecisionPersistor
 from services.decision_recorder import DecisionRecorder
-from contracts.context import CognitiveCycleContext
 
 
 def test_record_and_replay():

@@ -1,6 +1,5 @@
 import json
 from pathlib import Path
-from typing import List
 
 from contracts.replay.replay_event import ReplayEvent
 
@@ -25,7 +24,7 @@ class ReplayRecorder:
             encoding="utf-8"
         )
 
-    def load(self) -> List[dict]:
+    def load(self) -> list[dict]:
         if not self.path.exists():
             return []
 

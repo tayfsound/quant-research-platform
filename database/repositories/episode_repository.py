@@ -1,7 +1,10 @@
 """Episode repository — CAST ile embedding."""
 import json
+
 from sqlalchemy import text
+
 from contracts.memory import Episode
+
 
 class EpisodeRepository:
     def __init__(self, session):

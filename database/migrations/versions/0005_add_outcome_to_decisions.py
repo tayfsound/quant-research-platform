@@ -4,15 +4,14 @@ Revision ID: 0005
 Revises: 0004
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
-
 revision: str = "0005"
-down_revision: Union[str, Sequence[str], None] = "0004"
+down_revision: str | Sequence[str] | None = "0004"
 branch_labels = None
 depends_on = None
 

@@ -1,6 +1,8 @@
 """MarketContext – piyasa verileri (heterojen)."""
-from pydantic import BaseModel, Field
 from typing import Any
+
+from pydantic import BaseModel, Field
+
 
 class MarketContext(BaseModel):
     symbol: str = ""

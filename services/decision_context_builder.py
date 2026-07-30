@@ -1,7 +1,8 @@
 """Decision Context Builder — örneklem ağırlıklı confidence, düzeltilmiş avg_pnl."""
-from services.semantic_search import SemanticSearch
 from contracts.context import CognitiveCycleContext
 from contracts.memory_context import MemoryInsight
+from services.semantic_search import SemanticSearch
+
 
 class DecisionContextBuilder:
     def __init__(self):

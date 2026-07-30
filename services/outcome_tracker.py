@@ -1,9 +1,9 @@
 from pathlib import Path
 
 from contracts.outcome import TradeOutcome
-from services.training_dataset_builder import TrainingDatasetBuilder
 from database.connection import get_session
 from database.repositories.decision_persistor import DecisionPersistor
+from services.training_dataset_builder import TrainingDatasetBuilder
 
 
 class OutcomeTracker:
@@ -27,8 +27,9 @@ class OutcomeTracker:
                 outcome=outcome.model_dump(mode="json"),
             )
 
-            from contracts.decision_event import DecisionEvent
             from uuid import UUID
+
+            from contracts.decision_event import DecisionEvent
 
             return DecisionEvent(
                 id=UUID(decision_id),

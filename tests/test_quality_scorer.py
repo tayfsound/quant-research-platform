@@ -1,11 +1,11 @@
 """Quality Scorer testleri."""
-import pytest
-from ml.training.quality_scorer import SampleQualityScorer
 from contracts.decision_event import DecisionEvent
+from ml.training.quality_scorer import SampleQualityScorer
+
 
 def test_quality_scoring():
     scorer = SampleQualityScorer()
-    
+
     # Yüksek kaliteli örnek
     event_high = DecisionEvent(
         symbol="BTCUSDT",
@@ -17,11 +17,11 @@ def test_quality_scoring():
         confidence=0.8,
         outcome={"pnl": 12.0, "win": True} # Yüksek PnL
     )
-    
+
     scores_high = scorer.score_sample(event_high)
     assert scores_high["completeness_score"] == 1.0
     assert scores_high["final_quality_score"] > 0.5
-    
+
     # Düşük kaliteli örnek (eksik veri)
     event_low = DecisionEvent(
         symbol="ETHUSDT",
@@ -29,7 +29,7 @@ def test_quality_scoring():
         agent_opinions=[], # Eksik ajan görüşü
         outcome=None # Eksik sonuç
     )
-    
+
     scores_low = scorer.score_sample(event_low)
     assert scores_low["completeness_score"] < 0.5
     assert scores_low["final_quality_score"] < 0.3

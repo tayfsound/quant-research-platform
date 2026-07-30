@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
-from contracts.information_graph import InformationGraph, SourceType, NodeType
+from contracts.information_graph import InformationGraph, NodeType, SourceType
 
 
 class WisdomEntry(BaseModel):

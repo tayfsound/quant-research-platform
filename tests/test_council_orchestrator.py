@@ -1,11 +1,12 @@
 """Council Orchestrator testleri — AgentDomain enum anahtarları."""
 from agents.registry import AgentRegistry
-from services.council_orchestrator import CouncilOrchestrator
 from contracts.agent import AgentDomain
 from contracts.macro import MacroContext
-from contracts.sentiment import SentimentContext
 from contracts.onchain import OnChainContext
+from contracts.sentiment import SentimentContext
 from contracts.technical import TechnicalContext
+from services.council_orchestrator import CouncilOrchestrator
+
 
 def test_full_council_deliberate():
     registry = AgentRegistry.create_default()

@@ -3,6 +3,7 @@ from contracts.context import CognitiveCycleContext
 from contracts.observation import Observation, ObservationType
 from services.cognitive_binder import CognitiveBinder
 
+
 class ObservationPipeline:
     def __init__(self):
         self.binder = CognitiveBinder()

@@ -2,8 +2,8 @@
 
 from contracts.agent import (
     AgentChallenge,
-    AgentOpinion,
     AgentDomain,
+    AgentOpinion,
 )
 
 

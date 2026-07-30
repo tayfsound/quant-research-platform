@@ -6,7 +6,6 @@ from contracts.agent_weight_snapshot import AgentWeightSnapshot
 from services.agent_memory import AgentMemory
 from services.weight_repository import WeightRepository
 
-
 MAX_WEIGHT_DELTA = 0.10
 
 

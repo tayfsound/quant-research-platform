@@ -1,6 +1,7 @@
 """Inner Critic — alternatif açıklamalar ve karşı argümanlar üretir."""
 from contracts.context import CognitiveCycleContext
 
+
 class InnerCritic:
     def review(self, ctx: CognitiveCycleContext) -> dict:
         features = ctx.market.features
@@ -39,7 +40,7 @@ class InnerCritic:
             if insight.get("dominant_direction") != ctx.decision.proposed_direction:
                 challenges.append(f"Memory suggests {insight.get('dominant_direction')} but proposal is {ctx.decision.proposed_direction}")
                 risk_flags.append("direction_conflict")
-                alternative_explanations.append(f"Historical pattern contradicts current proposal — reconsider")
+                alternative_explanations.append("Historical pattern contradicts current proposal — reconsider")
 
         # Hacim teyidi
         volume_ratio = features.get("volume_ratio", 1)

@@ -1,7 +1,8 @@
 """Model Evaluator — Modellerin performansını finansal ve istatistiksel olarak ölçer."""
+
 import numpy as np
-from typing import Any, List
 from pydantic import BaseModel
+
 
 class EvaluationResult(BaseModel):
     # İstatistiksel Metrikler
@@ -9,14 +10,14 @@ class EvaluationResult(BaseModel):
     precision: float = 0.0
     recall: float = 0.0
     f1_score: float = 0.0
-    
+
     # Finansal Metrikler
     total_pnl: float = 0.0
     sharpe_ratio: float = 0.0
     max_drawdown: float = 0.0
     win_rate: float = 0.0
     profit_factor: float = 0.0
-    
+
     # Bilişsel Metrikler
     avg_confidence: float = 0.0
     calibration_error: float = 0.0
@@ -25,7 +26,7 @@ class ModelEvaluator:
     def __init__(self):
         pass
 
-    def evaluate_predictions(self, predictions: List[dict]) -> EvaluationResult:
+    def evaluate_predictions(self, predictions: list[dict]) -> EvaluationResult:
         """Tahmin listesini değerlendirir.
         predictions: [{'pred': int, 'actual': int, 'pnl': float, 'confidence': float}]
         """
@@ -54,13 +55,13 @@ class ModelEvaluator:
         wins = pnls[pnls > 0]
         losses = pnls[pnls < 0]
         win_rate = len(wins) / len(pnls) if len(pnls) > 0 else 0.0
-        
+
         profit_factor = abs(np.sum(wins) / np.sum(losses)) if len(losses) > 0 else (999.0 if np.sum(wins) > 0 else 0.0)
-        
+
         # Sharpe Ratio
         std_pnl = np.std(pnls)
         sharpe = np.mean(pnls) / std_pnl * np.sqrt(252) if std_pnl > 0 else 0.0
-        
+
         # Max Drawdown
         cum_pnl = np.cumsum(pnls)
         peak = np.maximum.accumulate(cum_pnl)

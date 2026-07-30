@@ -3,6 +3,7 @@ from contracts.context import CognitiveCycleContext
 from contracts.contexts.decision import ActionType, Decision
 from services.risk_gate import RiskGate
 
+
 def test_risk_gate_approves_small_position():
     gate = RiskGate(max_position_size=1.0)
     ctx = CognitiveCycleContext(

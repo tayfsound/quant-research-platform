@@ -2,6 +2,7 @@
 from contracts.context import CognitiveCycleContext
 from services.decision_context_builder import DecisionContextBuilder
 
+
 class FakeSearch:
     def find_similar_episodes(self, *args, **kwargs):
         return [

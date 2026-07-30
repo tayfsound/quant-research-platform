@@ -1,7 +1,8 @@
 """Risk Engine testleri – hash doğrulama, secret, limitsiz ret."""
 from contracts.context import CognitiveCycleContext
-from contracts.contexts.risk import RiskLimitEntry, RiskAdjustment
+from contracts.contexts.risk import RiskAdjustment, RiskLimitEntry
 from engines.risk_engine import RiskEngine
+
 
 def test_risk_approves_small_position():
     ctx = CognitiveCycleContext(
@@ -78,7 +79,7 @@ def test_modified_value_invalidates_hash():
     secret = "supersecret"
     # Orijinal limit 1.0 için hash
     valid_hash = hashlib.sha256(f"1.0:{secret}".encode()).hexdigest()
-    
+
     # Saldırgan değeri 10.0 yapıp hash'i aynı bırakıyor
     ctx = CognitiveCycleContext(
         risk={"limits": {"max_position_size": RiskLimitEntry(value=10.0, hash=valid_hash)}},

@@ -1,7 +1,9 @@
 """Self Evaluation modelleri — ajanın kendini değerlendirmesi."""
 from datetime import datetime
 from uuid import UUID, uuid4
+
 from pydantic import BaseModel, Field
+
 
 class PredictionError(BaseModel):
     """Tahmin hatası kaydı."""

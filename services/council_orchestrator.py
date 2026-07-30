@@ -1,9 +1,9 @@
 """Council Orchestrator — belief, opinions ve debate birlikte yönetilir."""
-from contracts.agent import AgentOpinion, AgentDomain, DebateResult
-from services.belief_engine import BeliefEngine, Belief
-from services.weight_repository import WeightRepository
-from services.agent_debate import AgentDebate
 from agents.critics.risk_challenger import RiskChallenger
+from contracts.agent import AgentDomain, AgentOpinion, DebateResult
+from services.agent_debate import AgentDebate
+from services.belief_engine import Belief, BeliefEngine
+from services.weight_repository import WeightRepository
 
 
 class CouncilOrchestrator:

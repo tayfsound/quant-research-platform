@@ -1,16 +1,18 @@
 """Cognitive Engine — opinions akışı + RecordingStage + feedback loop."""
-from contracts.context import CognitiveCycleContext
-from contracts.belief import Belief
-from contracts.agent import AgentOpinion
-from contracts.agent_weight_snapshot import AgentWeightSnapshot
 from agents.registry import AgentRegistry
+from contracts.agent_weight_snapshot import AgentWeightSnapshot
+from contracts.context import CognitiveCycleContext
 from database.connection import get_session
-from engines.risk_engine import RiskEngine
-from engines.cognitive_pipeline import (
-    MemoryStage, KnowledgeStage, CouncilStage, MetaStage,
-    DecisionFusionStage, RecordingStage,
-)
 from database.repositories.decision_persistor import DecisionPersistor
+from engines.cognitive_pipeline import (
+    CouncilStage,
+    DecisionFusionStage,
+    KnowledgeStage,
+    MemoryStage,
+    MetaStage,
+    RecordingStage,
+)
+from engines.risk_engine import RiskEngine
 from services.guardrail_stage import GuardrailStage
 from services.learning_loop import LearningLoop
 from services.outcome_evaluator import OutcomeEvaluator

@@ -1,9 +1,10 @@
 """Context Adapter — ham piyasa verisini ajan bağlamlarına dönüştürür."""
 from contracts.context import CognitiveCycleContext
 from contracts.macro import MacroContext
-from contracts.sentiment import SentimentContext
 from contracts.onchain import OnChainContext
+from contracts.sentiment import SentimentContext
 from contracts.technical import TechnicalContext
+
 
 class ContextAdapter:
     def _get(self, ctx: CognitiveCycleContext, key: str, default=None):

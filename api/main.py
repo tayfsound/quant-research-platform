@@ -2,7 +2,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
-from api.rest import strategies, models, reasoning, audit, memory, cognitive
+
+from api.rest import audit, cognitive, memory, models, reasoning, strategies
 from api.websocket import decisions, live_predictions
 from observability.health import router as health_router
 from observability.metrics import get_metrics

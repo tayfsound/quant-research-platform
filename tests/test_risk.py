@@ -1,8 +1,9 @@
 """Risk testleri — contract-first yaklaşım."""
 from contracts.context import CognitiveCycleContext
-from contracts.contexts.decision import Decision, ActionType
+from contracts.contexts.decision import ActionType, Decision
 from contracts.contexts.risk import RiskContext
 from services.risk_gate import RiskGate
+
 
 def test_risk_gate_approves_small_trade():
     gate = RiskGate(max_position_size=1.0)

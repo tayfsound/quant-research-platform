@@ -1,4 +1,4 @@
-from contracts.outcome import TradeOutcome, DecisionEvaluation
+from contracts.outcome import DecisionEvaluation, TradeOutcome
 from services.reward_signal import RewardSignal
 
 

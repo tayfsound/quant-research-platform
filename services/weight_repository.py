@@ -1,7 +1,9 @@
 """Weight Repository — snapshot'ları JSON dosyasında saklar."""
 import json
 from pathlib import Path
+
 from contracts.agent_weight_snapshot import AgentWeightSnapshot
+
 
 class WeightRepository:
     def __init__(self, storage_path: str = "weight_history"):

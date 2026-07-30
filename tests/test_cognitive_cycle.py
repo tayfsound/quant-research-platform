@@ -2,6 +2,7 @@
 from contracts.context import CognitiveCycleContext
 from services.cognitive_engine import CognitiveEngine
 
+
 def test_full_cognitive_cycle_with_council():
     from contracts.contexts.risk import RiskLimitEntry
     engine = CognitiveEngine()

@@ -1,9 +1,10 @@
 """Autonomous Experiment Runner — düzeltilmiş."""
-from contracts.curiosity import ExperimentProposal, ExperimentStatus, ExperimentResult
-from contracts.memory import EpisodicMemory, SemanticMemory, Episode
 from contracts.context import CognitiveCycleContext
+from contracts.curiosity import ExperimentProposal, ExperimentResult, ExperimentStatus
 from contracts.execution_mode import ExecutionMode
+from contracts.memory import Episode, EpisodicMemory, SemanticMemory
 from engines.sandbox_executor import SandboxExecutor
+
 
 class ExperimentRunner:
     def __init__(self, episodic: EpisodicMemory, semantic: SemanticMemory):

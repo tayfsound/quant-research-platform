@@ -2,6 +2,7 @@
 from contracts.context import CognitiveCycleContext
 from contracts.observation import Observation, ObservationType
 
+
 class VirtualPortfolio:
     def __init__(self, initial_balance: float = 10000.0):
         self.balance = initial_balance

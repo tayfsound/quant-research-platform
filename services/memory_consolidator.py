@@ -1,14 +1,11 @@
 """Memory consolidator — Phase 164: Belief V3 compatible."""
 
-from contracts.memory import EpisodicMemory, SemanticMemory, Episode
-from contracts.observation import Observation, ObservationType
-from contracts.belief import Belief
-from database.repositories.episode_repository import EpisodeRepository
-from database.repositories.observation_repository import ObservationRepository
-from database.repositories.belief_repository import BeliefRepository
-from services.semantic_search import SemanticSearch
-from services.embedding_service import EmbeddingService
+from contracts.memory import Episode, EpisodicMemory, SemanticMemory
 from database.connection import get_session
+from database.repositories.belief_repository import BeliefRepository
+from database.repositories.episode_repository import EpisodeRepository
+from services.embedding_service import EmbeddingService
+from services.semantic_search import SemanticSearch
 
 
 class MemoryConsolidator:

@@ -2,6 +2,7 @@
 from agents.technical_agent import TechnicalAgent
 from contracts.technical import TechnicalContext
 
+
 def test_bullish_setup_generates_long():
     agent = TechnicalAgent()
     ctx = TechnicalContext(

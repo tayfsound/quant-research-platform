@@ -1,11 +1,12 @@
 """Agent Weight Integration testleri."""
-from contracts.agent import AgentOpinion, AgentDomain
-from services.belief_engine import BeliefEngine
+from contracts.agent import AgentDomain, AgentOpinion
+from contracts.agent_performance import AgentPerformanceRecord
 from contracts.agent_weight_snapshot import AgentWeightSnapshot
 from services.agent_memory import AgentMemory
+from services.belief_engine import BeliefEngine
 from services.weight_optimizer import WeightOptimizer
 from services.weight_repository import WeightRepository
-from contracts.agent_performance import AgentPerformanceRecord
+
 
 def test_weight_optimizer_with_memory():
     memory = AgentMemory()

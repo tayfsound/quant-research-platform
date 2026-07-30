@@ -1,11 +1,11 @@
 """Expert Council V2 — bağlama duyarlı ağırlıklandırma."""
-from contracts.agent import AgentOpinion, AgentDomain
+from contracts.agent import AgentDomain, AgentOpinion
 from services.agent_memory import AgentMemory
-from services.calibration import CalibrationMetrics
+
 
 class ExpertCouncil:
     def __init__(self, agent_memory: AgentMemory):
-        self.agents: dict[str, "BaseAgent"] = {}
+        self.agents: dict[str, BaseAgent] = {}
         self.memory = agent_memory
         self.dependency_groups: dict[str, list[str]] = {}  # group -> [agent_ids]
 

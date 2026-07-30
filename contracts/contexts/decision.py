@@ -1,6 +1,8 @@
 """Decision — ActionType, confidence, uncertainty, reason, reconsideration."""
 from enum import StrEnum
-from pydantic import BaseModel, Field
+
+from pydantic import BaseModel
+
 
 class ActionType(StrEnum):
     ENTER_LONG = "ENTER_LONG"

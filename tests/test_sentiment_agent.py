@@ -2,6 +2,7 @@
 from agents.sentiment_agent import SentimentAgent
 from contracts.sentiment import SentimentContext
 
+
 def test_extreme_fear_generates_long():
     agent = SentimentAgent()
     ctx = SentimentContext(

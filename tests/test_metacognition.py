@@ -2,6 +2,7 @@
 from contracts.context import CognitiveCycleContext
 from services.metacognition import Metacognition
 
+
 def test_high_confidence_act():
     meta = Metacognition(act_threshold=0.7, reduce_threshold=0.4)
     ctx = CognitiveCycleContext()

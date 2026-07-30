@@ -1,8 +1,11 @@
 """Executive Memory — yürütücü kararları ve sonuçlarını saklar."""
 from datetime import datetime
+
+from sqlalchemy import text
+
 from contracts.context import CognitiveCycleContext
 from database.session_factory import SessionFactory
-from sqlalchemy import text
+
 
 class ExecutiveMemory:
     def record_decision(self, ctx: CognitiveCycleContext, salience: float, criticism: dict, contradiction: dict) -> dict:

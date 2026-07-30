@@ -1,6 +1,6 @@
 """Decision Fusion — Expected Value ve Risk/Reward odaklı son karar aşaması."""
-from contracts.context import CognitiveCycleContext
 from contracts.belief import Belief
+from contracts.context import CognitiveCycleContext
 from contracts.contexts.decision import ActionType
 from services.inner_critic import InnerCritic
 

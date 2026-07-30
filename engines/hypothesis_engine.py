@@ -1,7 +1,8 @@
 """Hypothesis Engine — önce topla, sonra ekle."""
-from contracts.context import CognitiveCycleContext
 from contracts.belief import Belief
+from contracts.context import CognitiveCycleContext
 from services.cognitive_binder import CognitiveBinder
+
 
 class HypothesisEngine:
     def __init__(self):

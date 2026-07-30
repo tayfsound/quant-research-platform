@@ -1,9 +1,11 @@
 """Belief Engine (service) — apply_weights intrinsic_trust tabanlı."""
 import math
-from contracts.belief import Belief
+
 from contracts.agent import AgentOpinion
-from contracts.information_graph import InformationGraph
 from contracts.agent_weight_snapshot import AgentWeightSnapshot
+from contracts.belief import Belief
+from contracts.information_graph import InformationGraph
+
 
 class BeliefEngine:
     def __init__(self, info_graph: InformationGraph | None = None):

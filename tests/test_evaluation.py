@@ -1,7 +1,7 @@
 """Self Evaluation testleri."""
-from contracts.memory import EpisodicMemory, SemanticMemory, Episode
-from contracts.evaluation import PredictionError, OutcomeAnalysis, BeliefAdjustment, Lesson
+from contracts.memory import Episode, EpisodicMemory, SemanticMemory
 from services.self_evaluator import SelfEvaluator
+
 
 def test_outcome_analysis():
     em = EpisodicMemory()

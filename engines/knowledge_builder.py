@@ -1,7 +1,8 @@
 """Knowledge Builder — önce topla, sonra ekle (sonsuz döngü riski yok)."""
-from contracts.context import CognitiveCycleContext
 from contracts.cognitive_binding import CognitiveBinding
+from contracts.context import CognitiveCycleContext
 from services.cognitive_binder import CognitiveBinder
+
 
 class KnowledgeBuilder:
     def __init__(self):

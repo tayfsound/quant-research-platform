@@ -2,6 +2,7 @@
 from agents.macro_agent import MacroAgent
 from contracts.macro import MacroContext
 
+
 def test_hawkish_macro_generates_short():
     agent = MacroAgent()
     ctx = MacroContext(

@@ -2,6 +2,7 @@
 from contracts.context import CognitiveCycleContext
 from services.memory_consolidator import MemoryConsolidator
 
+
 class MemoryEngine:
     def __init__(self, consolidator: MemoryConsolidator | None = None):
         self.consolidator = consolidator or MemoryConsolidator()

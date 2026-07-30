@@ -1,7 +1,8 @@
 """Curiosity Engine — hata analizinden yeni deneyler üretir."""
-from contracts.curiosity import CuriositySignal, ExperimentProposal, ExperimentPriority
-from contracts.evaluation import OutcomeAnalysis, BeliefAdjustment
+from contracts.curiosity import CuriositySignal, ExperimentPriority, ExperimentProposal
+from contracts.evaluation import BeliefAdjustment, OutcomeAnalysis
 from contracts.memory import EpisodicMemory
+
 
 class CuriosityEngine:
     def __init__(self, episodic: EpisodicMemory):

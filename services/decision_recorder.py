@@ -1,9 +1,10 @@
 from pathlib import Path
+
 """Decision recorder — Phase 165 replay compatible."""
 
-from database.repositories.decision_persistor import DecisionPersistor
-from database.connection import get_session
 from contracts.decision_event import DecisionEvent
+from database.connection import get_session
+from database.repositories.decision_persistor import DecisionPersistor
 
 
 class DecisionRecorder:

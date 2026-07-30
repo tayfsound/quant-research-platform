@@ -1,0 +1,24 @@
+{
+  "id": "33b69f1c-b733-4d6e-b159-963690700854",
+  "timestamp": "2026-07-29T21:45:29.215591",
+  "symbol": "BTCUSDT",
+  "proposed_direction": "LONG",
+  "final_action": "LONG",
+  "final_size": 0.1,
+  "confidence": 0.8,
+  "agent_opinions": [],
+  "risk_evaluation": {},
+  "market_snapshot": {
+    "symbol": "BTCUSDT",
+    "timeframe": "1h",
+    "features": {
+      "RSI": 45
+    },
+    "raw_snapshot": {}
+  },
+  "belief_state": null,
+  "outcome": null,
+  "weight_snapshot_id": null,
+  "belief_snapshot_id": null,
+  "decision_latency_ms": 0.0
+}

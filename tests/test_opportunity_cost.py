@@ -1,7 +1,8 @@
 """Path‑Aware Opportunity Cost testleri."""
 from contracts.context import CognitiveCycleContext
-from contracts.contexts.decision import Decision, ActionType
+from contracts.contexts.decision import ActionType, Decision
 from services.opportunity_cost import OpportunityCostCalculator
+
 
 def test_long_wait_stop_would_hit():
     calc = OpportunityCostCalculator(initial_risk=100)

@@ -2,6 +2,7 @@
 from contracts.context import CognitiveCycleContext
 from contracts.contexts.decision import ActionType, DecisionReason
 
+
 class RiskGate:
     def __init__(self, max_position_size: float = 1.0, max_drawdown: float = 0.15):
         self.max_position_size = max_position_size

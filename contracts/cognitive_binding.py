@@ -1,12 +1,15 @@
 """Cognitive Binding — UCEL Expression'ı bağlar."""
 from datetime import datetime
 from uuid import UUID, uuid4
-from pydantic import BaseModel, Field, ConfigDict
+
+from pydantic import BaseModel, ConfigDict, Field
+
 from contracts.expression import Expression
+
 
 class CognitiveBinding(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
-    
+
     id: UUID = Field(default_factory=uuid4)
     source_type: str
     source_id: UUID | None = None
