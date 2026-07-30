@@ -1,27 +1,41 @@
-"""Eğitim pipeline'ı."""
-from datetime import datetime
-
-from ml.registry.store import ModelRegistry, ModelRegistryEntry
-from ml.training.evaluation import ModelEvaluator
-from ml.training.feature_extractor import TrainingFeatureExtractor
-
+"""Eğitim pipeline'ı — ReplayMemory'den sample çekip model eğitir."""
+from ml.training.replay_memory import ReplayMemory
+from ml.training.feature_extractor import FeatureExtractor
+from ml.models.classifier import DecisionClassifier
+from typing import List, Dict, Any
 
 class TrainingPipeline:
-    def __init__(self, registry: ModelRegistry):
-        self.registry = registry
-        self.extractor = TrainingFeatureExtractor()
-        self.evaluator = ModelEvaluator()
-
-    def run(self, model_type: str, predictions: list[dict], hyperparams: dict = None) -> ModelRegistryEntry:
-        # Değerlendirme yap
-        eval_result = self.evaluator.evaluate_predictions(predictions)
-
-        entry = ModelRegistryEntry(
-            model_type=model_type,
-            version=f"{datetime.now().strftime('%Y%m%d%H%M%S')}",
-            hyperparameters=hyperparams or {},
-            metrics=eval_result.model_dump(),
-            trained_at=datetime.now(),
-        )
-        self.registry.register(entry)
-        return entry
+    def __init__(self, memory: ReplayMemory = None, classifier: DecisionClassifier = None):
+        self.memory = memory or ReplayMemory(capacity=10000)
+        self.classifier = classifier or DecisionClassifier()
+        self.extractor = FeatureExtractor()
+    
+    def run(self, min_samples: int = 10) -> Dict[str, Any]:
+        """Replay memory'den örnek çek, feature çıkar, model eğit."""
+        if len(self.memory.buffer) < min_samples:
+            return {"status": "insufficient_data", "trained": False, "samples": len(self.memory.buffer)}
+        
+        samples = self.memory.sample(batch_size=min(len(self.memory.buffer), 1000))
+        features = []
+        labels = []
+        
+        for sample in samples:
+            raw = sample.get("raw", {})
+            outcome = raw.get("outcome", {})
+            pnl = outcome.get("pnl", 0) if outcome else 0
+            
+            feat = self.extractor.extract(raw)
+            features.append(feat)
+            labels.append(1 if pnl > 0 else 0)
+        
+        if len(features) < min_samples:
+            return {"status": "insufficient_features", "trained": False}
+        
+        self.classifier.train(features, labels)
+        self.classifier.save()
+        
+        return {
+            "status": "trained",
+            "samples": len(features),
+            "positive_ratio": sum(labels) / len(labels)
+        }
