@@ -13,12 +13,13 @@ class ExperimentPriority(StrEnum):
 
 class ExperimentStatus(StrEnum):
     PROPOSED = "proposed"
-    APPROVED = "approved"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-
-class CuriositySignal(BaseModel):
+    APPROVED = "approved"rm -rf backtest/stress_scenarios/ backtest/walk_forward/ backtest/monte_carlo/ backtest/historical_replay/
+echo "models/*.pkl" >> .gitignore
+git rm --cached models/decision_classifier.pkl
+pytest tests/test_backtest.py tests/test_genetic_algorithm.py -xvs
+git add -A
+git commit -m "fix: remove package directories conflicting with modules, ignore pkl"
+git push origin main
     id: UUID = Field(default_factory=uuid4)
     question: str
     source: str = "unknown"
