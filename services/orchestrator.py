@@ -1,12 +1,14 @@
-"""End-to-end cognitive loop orchestrator — Phase 186 risk gate."""
+"""End-to-end cognitive loop orchestrator — Phase 187 CognitiveEngine integration."""
 from typing import Any
 from market_data.ingestion.data_provider import get_ohlcv_provider, OHLCVProvider
 from market_data.features.indicators import rsi, ema, macd
 from simulator.fill_engine import FillEngine
 from ml.training.replay_memory import ReplayMemory
+from services.cognitive_engine import CognitiveEngine
 from services.risk_gate import RiskGate
-from services.risk_cycle_adapter import build_cycle_context, apply_gate_result
+from services.risk_cycle_adapter import apply_gate_result
 from config import get_settings
+from contracts.context import CognitiveCycleContext
 
 class CognitiveOrchestrator:
     def __init__(
@@ -16,6 +18,7 @@ class CognitiveOrchestrator:
         max_drawdown: float = 0.15,
         current_drawdown: float = 0.0,
     ):
+        self.engine = CognitiveEngine()
         self.fill_engine = FillEngine()
         self.memory = ReplayMemory(capacity=10000)
         self.risk_gate = RiskGate(
@@ -36,22 +39,26 @@ class CognitiveOrchestrator:
         if not data:
             return {"direction": "NEUTRAL", "error": "no_data", "memory_size": len(self.memory.memory)}
         
-        features = {
+        # Build cognitive context
+        ctx = CognitiveCycleContext()
+        ctx.market.symbol = symbol
+        ctx.market.timeframe = timeframe
+        ctx.market.features = {
             "rsi": rsi(data),
             "ema": ema(data),
             "macd": macd(data)["macd"],
         }
+        ctx.market.raw_snapshot = {
+            "close": data[-1].close,
+            "volume": data[-1].volume,
+            "high": data[-1].high,
+            "low": data[-1].low,
+        }
         
-        raw_direction = "LONG" if features["rsi"] < 40 else "SHORT" if features["rsi"] > 60 else "NEUTRAL"
-        proposed_size = 0.5 if raw_direction != "NEUTRAL" else 0.0
+        # Run cognitive engine
+        ctx = self.engine.run(ctx)
         
-        ctx = build_cycle_context(
-            direction=raw_direction,
-            size=proposed_size,
-            current_drawdown=self.current_drawdown,
-            max_position_size=self.max_position_size,
-            max_drawdown=self.max_drawdown_limit,
-        )
+        # Post-fusion risk gate
         ctx = self.risk_gate.evaluate(ctx)
         gated = apply_gate_result(ctx)
         
@@ -68,7 +75,7 @@ class CognitiveOrchestrator:
         if gated["approved"]:
             self.memory.add({
                 "decision_id": f"cycle_{seed}",
-                "features": features,
+                "features": ctx.market.features,
                 "label": 1 if filled_price > market_price else 0,
                 "quality_score": 0.8,
                 "timestamp": data[-1].timestamp.isoformat(),
@@ -77,7 +84,6 @@ class CognitiveOrchestrator:
         
         return {
             "direction": gated["direction"],
-            "proposed_direction": raw_direction,
             "size": gated["size"],
             "filled_price": filled_price,
             "fee": fee,
