@@ -4,7 +4,10 @@ from ml.models.classifier import DecisionClassifier
 from typing import List, Dict, Any, Optional
 
 class TrainingPipeline:
-    def __init__(self, memory: ReplayMemory = None, classifier: DecisionClassifier = None, registry: Any = None):
+    def __init__(self, memory=None, classifier=None, registry=None):
+        if memory is not None and not isinstance(memory, ReplayMemory):
+            registry = memory
+            memory = None
         self.memory = memory or ReplayMemory(capacity=10000)
         self.classifier = classifier or DecisionClassifier()
         self.registry = registry
