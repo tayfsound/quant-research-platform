@@ -5,7 +5,6 @@ from typing import Any
 
 from contracts.decision_event import DecisionEvent
 from ml.training.feature_extractor import TrainingFeatureExtractor
-from ml.training.quality_scorer import SampleQualityScorer
 from ml.training.replay_memory import ReplayMemory
 from contracts.decision_event import DecisionEvent
 
