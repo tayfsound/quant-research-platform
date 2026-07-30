@@ -12,10 +12,10 @@ class TrainingPipeline:
     
     def run(self, min_samples: int = 10) -> Dict[str, Any]:
         """Replay memory'den örnek çek, feature çıkar, model eğit."""
-        if len(self.memory.buffer) < min_samples:
-            return {"status": "insufficient_data", "trained": False, "samples": len(self.memory.buffer)}
+        if len(self.memory.memory) < min_samples:
+            return {"status": "insufficient_data", "trained": False, "samples": len(self.memory.memory)}
         
-        samples = self.memory.sample(batch_size=min(len(self.memory.buffer), 1000))
+        samples = self.memory.sample(batch_size=min(len(self.memory.memory), 1000))
         features = []
         labels = []
         
