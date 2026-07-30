@@ -13,7 +13,7 @@ class ExperimentPriority(StrEnum):
 
 class ExperimentStatus(StrEnum):
     PROPOSED = "proposed"
-    APPROVED = "approved"rm -rf backtest/stress_scenarios/ backtest/walk_forward/ backtest/monte_carlo/ backtest/historical_replay/
+    APPROVED = "approved"
 echo "models/*.pkl" >> .gitignore
 git rm --cached models/decision_classifier.pkl
 pytest tests/test_backtest.py tests/test_genetic_algorithm.py -xvs
