@@ -88,3 +88,7 @@ class TrainingIntelligence:
             "win_rate": sum(1 for s in samples if s["label_win"] == 1) / len(samples),
             "avg_quality_score": sum(s["quality_score"] for s in samples) / len(samples)
         }
+
+class SampleQualityScorer:
+    def score(self, sample: dict) -> float:
+        return sample.get("quality_score", 0.5)

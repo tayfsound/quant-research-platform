@@ -13,6 +13,7 @@ class ExperimentPriority(StrEnum):
 class ExperimentStatus(StrEnum):
     PROPOSED = "proposed"
     APPROVED = "approved"
+    RUNNING = "running"
     REJECTED = "rejected"
     COMPLETED = "completed"
 
