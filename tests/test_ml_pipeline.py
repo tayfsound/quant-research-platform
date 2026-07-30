@@ -27,6 +27,8 @@ def test_pipeline_end_to_end():
     memory = ReplayMemory(capacity=100)
     for i in range(20):
         memory.add({
+            "decision_id": f"dec_{i}",
+            "timestamp": "2026-07-30T00:00:00",
             "raw": {
                 "belief": {"direction": "LONG", "confidence": 0.8, "strength": 0.7},
                 "outcome": {"pnl": 100 if i % 3 == 0 else -50}
