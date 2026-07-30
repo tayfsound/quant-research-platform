@@ -13,3 +13,6 @@ weight_history/
 .env
 .env
 .env
+.env
+.env.*
+!.env.example
