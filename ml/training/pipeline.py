@@ -4,9 +4,10 @@ from ml.models.classifier import DecisionClassifier
 from typing import List, Dict, Any, Optional
 
 class TrainingPipeline:
-    def __init__(self, memory: ReplayMemory = None, classifier: DecisionClassifier = None):
+    def __init__(self, memory: ReplayMemory = None, classifier: DecisionClassifier = None, registry: Any = None):
         self.memory = memory or ReplayMemory(capacity=10000)
         self.classifier = classifier or DecisionClassifier()
+        self.registry = registry
     
     def run(self, min_samples: int = 10, model_type: str = None, predictions: list = None, hyperparams: dict = None) -> Dict[str, Any]:
         if len(self.memory.memory) < min_samples:
