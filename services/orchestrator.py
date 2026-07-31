@@ -71,13 +71,20 @@ class CognitiveOrchestrator:
             fee = 0.0
         
         # Forward outcome
-        outcome = self.forward.calculate(filled_price, direction, data)
-        pnl = outcome["pnl"] - fee
-        win = pnl > 0
-        
-        # Record decision (approve + reject)
-        ctx.outcome = outcome
-        self.recorder.record(ctx, [], None)
+        outcome = self.forward.calculate(filled_price, direction, data, fee=fee)
+        pnl = outcome["pnl"]
+        win = outcome["win"]
+        # Outcome'u TradeOutcome contract'ina cevir (P1-12)
+        from contracts.outcome import TradeOutcome
+        ctx.outcome = TradeOutcome(
+            pnl=outcome["pnl"],
+            win=outcome["win"],
+            decision=direction,
+            confidence_at_decision=ctx.decision.confidence,
+        )
+
+        # REMOVED: self.recorder.record(ctx, [], None)
+        # Engine RecordingStage zaten kaydediyor -- cift kayit yok (P1-8)
         
         # Memory (sadece risk-onaylı)
         if direction != "NEUTRAL" and size > 0:

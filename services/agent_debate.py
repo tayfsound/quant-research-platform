@@ -4,9 +4,11 @@ from contracts.agent import (
     AgentDomain,
     AgentOpinion,
     AgentResponse,
+    ChallengerAgent,
     CognitiveAudit,
     DebateResult,
     DebateRound,
+    ResponderAgent,
 )
 
 

@@ -1,0 +1,20 @@
+--- a/risk/limits/schema.py
++++ b/risk/limits/schema.py
+@@ -3,7 +3,7 @@
+ from enum import StrEnum
+ from uuid import UUID, uuid4
+ 
+-from pydantic import BaseModel
++from pydantic import BaseModel, Field
+ 
+ class LimitType(StrEnum):
+     MAX_POSITION_SIZE = "max_position_size"
+@@ -17,7 +17,7 @@
+     CIRCUIT_BREAKER = "circuit_breaker"
+ 
+ class RiskLimit(BaseModel):
+-    id: UUID = uuid4()
++    id: UUID = Field(default_factory=uuid4)
+     scope: str = "global"
+     limit_type: LimitType
+     value: float

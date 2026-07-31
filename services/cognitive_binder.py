@@ -44,18 +44,19 @@ class CognitiveBinder:
     def knowledge_to_belief(self, binding: CognitiveBinding, category: str = "indicator") -> Belief:
         """CognitiveBinding'den Belief oluştur."""
         return Belief(
-            statement=binding.expression.root.explain(),
-            expression=binding.expression.description,
-            category=category,
-            confidence=binding.confidence,
-            evidence_count=binding.evidence_count,
+            direction="LONG" if binding.confidence > 0.6 else "WAIT",
+            strength=binding.confidence,
+            uncertainty=1.0 - binding.confidence,
+            evidence_paths=[binding.expression.description] if binding.expression else [],
+            assumptions=[binding.expression.root.explain()] if binding.expression else [],
+            total_opinions=binding.evidence_count,
         )
 
     def belief_to_hypothesis(self, belief: Belief) -> Hypothesis:
         """Belief'ten test edilebilir hipotez üret."""
         return Hypothesis(
-            statement=f"Test: {belief.statement}",
+            statement=f"Test: direction={belief.direction}, strength={belief.strength}",
             belief_ids=[belief.id],
-            sample_size=belief.evidence_count,
-            proposed_experiment=f"Verify if {belief.expression} holds in current market",
+            sample_size=belief.total_opinions,
+            proposed_experiment=f"Verify if {belief.direction} holds in current market",
         )

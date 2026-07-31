@@ -3,7 +3,7 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class LimitType(StrEnum):
@@ -15,7 +15,7 @@ class LimitType(StrEnum):
     CIRCUIT_BREAKER = "circuit_breaker"
 
 class RiskLimit(BaseModel):
-    id: UUID = uuid4()
+    id: UUID = Field(default_factory=uuid4)
     scope: str = "global"
     limit_type: LimitType
     value: float

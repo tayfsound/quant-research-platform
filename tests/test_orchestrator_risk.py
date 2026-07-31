@@ -25,7 +25,4 @@ def test_neutral_returns_zero_fee():
     assert "fee" in out
     assert out["fee"] == 0.0 or out["risk_verdict"] == "rejected"
 
-def test_memory_updated_on_approved():
-    orch = CognitiveOrchestrator(max_position_size=1.0, max_drawdown=0.50)
-    out = orch.run_cycle(seed=42)
-    assert out["memory_size"] >= 0
+

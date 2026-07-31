@@ -134,8 +134,8 @@ class OllamaExplainer:
         if not logs:
             return {"analysis": "No logs", "new_system_prompt": current_prompt}
         total = len(logs)
-        wins = [l for trade_log in logs if trade_log.get("outcome", {}).get("pnl", 0) > 0]
-        losses = [l for trade_log in logs if trade_log.get("outcome", {}).get("pnl", 0) <= 0]
+        wins = [trade_log for trade_log in logs if trade_log.get("outcome", {}).get("pnl", 0) > 0]
+        losses = [trade_log for trade_log in logs if trade_log.get("outcome", {}).get("pnl", 0) <= 0]
         win_rate = len(wins) / total if total > 0 else 0.0
         summary = {
             "task": "analyze_logs",

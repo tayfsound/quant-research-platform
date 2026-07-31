@@ -179,4 +179,9 @@ class RecordingStage:
             "data": event.model_dump(),
         })
 
+        # Belief persistence -- pipeline'dan DB'ye (P0-6)
+        if belief is not None:
+            from services.memory_service import MemoryService
+            MemoryService().store_belief(belief)
+
         return event

@@ -7,10 +7,12 @@ def test_cycle_returns_pnl():
     assert "win" in out
     assert "risk_verdict" in out
 
-def test_cycle_records_decision():
+def test_cycle_uses_engine_recording():
+    """Orchestrator facade: recording sadece Engine stage'inde yapilir (P1-8)."""
     orch = CognitiveOrchestrator()
     out = orch.run_cycle(seed=42)
-    assert out["memory_size"] >= 0
+    assert "risk_verdict" in out
+    assert out["risk_verdict"] in ("approved", "rejected")
 
 def test_neutral_zero_pnl():
     orch = CognitiveOrchestrator()
