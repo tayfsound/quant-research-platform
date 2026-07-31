@@ -1,28 +1,32 @@
-# Mevcut Durum — v1.1 Trusted Paper Cycle
+# Mevcut Durum — v1.2 Dashboard Ready
 
 **Tarih:** 2026-07-31
 **Branch:** main
-**Tag:** v1.1.0
-**Test:** 222 passed
+**Tag:** v1.2.0
+**Test:** 224 passed
 
-## v1.1 Yenilikleri
-- Forward outcome (N-bar PnL + fee dahil)
-- Orchestrator ↔ CognitiveEngine tek yol (council/meta/fusion entegre)
-- DecisionEvent persist her cycle (approve + reject)
-- Risk gate orchestrator'a entegre
+## v1.2 Yenilikleri
+- Dashboard API (/latest, /health)
+- CORS enabled for localhost:5173
 
-## Sistem Bilesenleri
+## Tamamlanan
+- v1.0: Core cognitive loop
+- v1.1: Trusted paper cycle (forward outcome + decision persist)
+- v1.2: Dashboard API
+
+## Sistem
 - 4 Agent + SourceReliabilityAgent
-- Cognitive Engine (Memory → Knowledge → Council → Meta → Decision Fusion → Risk)
-- Forward Outcome Calculator
-- Decision Recording + Replay Memory
+- Cognitive Engine (council/meta/fusion)
+- Risk Gate + Enforcement
+- Forward Outcome (N-bar PnL)
+- Decision Recording
 - ML Training Pipeline
 - Backtest + Genetic Algorithm
 - Market Data Provider (mock|binance)
-- Simulator (fee, slippage, fill)
-- API Endpoints (/cycle, /status, /metrics)
+- Simulator
+- API Endpoints (/cycle, /status, /metrics, /dashboard/latest, /dashboard/health)
 
-## v1.2 Hedefleri
-- Dashboard ↔ API bağlantısı
-- Binance testnet smoke
-- WebSocket live feed (opsiyonel)
+## Sonraki
+- v1.3: Binance testnet smoke
+- v1.4: WebSocket live feed (opsiyonel)
+- v1.5: Dashboard UI bağlantısı
