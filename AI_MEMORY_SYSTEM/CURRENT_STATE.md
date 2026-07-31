@@ -1,31 +1,28 @@
-# Mevcut Durum — Phase 191 (v1.0)
+# Mevcut Durum — v1.1 Trusted Paper Cycle
 
-**Tarih:** 2026-07-30
+**Tarih:** 2026-07-31
 **Branch:** main
-**Tag:** v1.0.0
-**Test:** 217 passed
+**Tag:** v1.1.0
+**Test:** 222 passed
 
-## Tamamlanan Fazlar
-176-191
+## v1.1 Yenilikleri
+- Forward outcome (N-bar PnL + fee dahil)
+- Orchestrator ↔ CognitiveEngine tek yol (council/meta/fusion entegre)
+- DecisionEvent persist her cycle (approve + reject)
+- Risk gate orchestrator'a entegre
 
 ## Sistem Bilesenleri
-- 4 Agent (Macro, Sentiment, OnChain, Technical)
-- SourceReliabilityAgent
-- Cognitive Engine (Memory → Knowledge → Council → Meta → Decision Fusion)
-- Risk Gate + Enforcement + Circuit Breaker
+- 4 Agent + SourceReliabilityAgent
+- Cognitive Engine (Memory → Knowledge → Council → Meta → Decision Fusion → Risk)
+- Forward Outcome Calculator
 - Decision Recording + Replay Memory
-- Feature Extraction + Quality Scoring
-- ML Training Pipeline + Classifier
-- Backtest (Walk-forward + Stress)
-- Genetic Algorithm
+- ML Training Pipeline
+- Backtest + Genetic Algorithm
 - Market Data Provider (mock|binance)
 - Simulator (fee, slippage, fill)
-- Outcome Tracker
 - API Endpoints (/cycle, /status, /metrics)
-- Orchestrator (end-to-end)
 
-## Mimari Kurallar
-- Risk izolasyonu: AI risk limitlerini degistiremez
-- Paper-only execution
-- Deterministik replay
-- Test zorunlulugu
+## v1.2 Hedefleri
+- Dashboard ↔ API bağlantısı
+- Binance testnet smoke
+- WebSocket live feed (opsiyonel)
