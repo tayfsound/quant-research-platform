@@ -54,7 +54,7 @@ class CognitiveOrchestrator:
         }
         
         # Run cognitive engine (council + meta + fusion + risk)
-        ctx = self.engine.run(ctx, persist=False)
+        ctx = self.engine.run(ctx)
         
         market_price = data[-1].close
         direction = ctx.decision.proposed_direction if ctx.decision.proposed_direction else "NEUTRAL"
@@ -71,7 +71,7 @@ class CognitiveOrchestrator:
             fee = 0.0
         
         # Forward outcome
-        outcome = self.forward.calculate(filled_price, direction, data)
+        outcome = self.forward.calculate(filled_price, direction, data, fee=fee)
         pnl = outcome["pnl"]
         win = outcome["win"]
         # Outcome'u TradeOutcome contract'ina cevir (P1-12)
@@ -87,8 +87,6 @@ class CognitiveOrchestrator:
         # Engine RecordingStage zaten kaydediyor -- cift kayit yok (P1-8)
         
         # Memory (sadece risk-onaylı)
-        ctx = self.engine.finalize(ctx)
-
         if direction != "NEUTRAL" and size > 0:
             self.memory.add({
                 "decision_id": f"cycle_{seed}",

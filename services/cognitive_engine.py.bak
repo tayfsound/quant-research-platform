@@ -40,12 +40,11 @@ class CognitiveEngine:
             weight_repository=self.weight_repository,
         )
 
-    def run(self, ctx: CognitiveCycleContext, *, persist: bool = True) -> CognitiveCycleContext:
+    def run(self, ctx: CognitiveCycleContext) -> CognitiveCycleContext:
         ctx, should_continue = self.guardrail_stage.evaluate(ctx)
         if not should_continue:
-            if persist:
-                event = self.record_stage.execute(ctx, None, [])
-                self._persist_and_learn(event, ctx)
+            event = self.record_stage.execute(ctx, None, [])
+            self._persist_and_learn(event, ctx)
             return ctx
 
         ctx = self.memory_stage.execute(ctx)
@@ -53,19 +52,6 @@ class CognitiveEngine:
         ctx, belief, opinions = self.council_stage.execute(ctx)
         ctx = self.meta_stage.execute(ctx, belief)
         ctx = self.decision_fusion.execute(ctx, belief)
-
-        ctx.__dict__["_last_belief"] = belief
-        ctx.__dict__["_last_opinions"] = opinions
-
-        if persist:
-            event = self.record_stage.execute(ctx, belief, opinions)
-            self._persist_and_learn(event, ctx)
-        return ctx
-
-    def finalize(self, ctx: CognitiveCycleContext) -> CognitiveCycleContext:
-        """Outcome set edildikten sonra tek kayit + learning."""
-        belief = ctx.__dict__.get("_last_belief")
-        opinions = ctx.__dict__.get("_last_opinions") or []
         event = self.record_stage.execute(ctx, belief, opinions)
         self._persist_and_learn(event, ctx)
         return ctx

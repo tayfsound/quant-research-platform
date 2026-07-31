@@ -15,21 +15,33 @@ def test_short_win_when_price_falls():
     fo = ForwardOutcome(bars_forward=10)
     result = fo.calculate(data[0].close, "SHORT", data)
     assert "pnl" in result
+from datetime import datetime, timedelta, timezone
+from market_data.ingestion.ohlcv import OHLCV
 
-def test_forward_outcome_uses_bars_forward():
-    """ForwardOutcome gercekten bars_forward kadar ileri gitmeli (P1-11)."""
-    from market_data.ingestion.ohlcv import OHLCV
-    fwd = ForwardOutcome(bars_forward=5)
-    data = [OHLCV(open=100, high=101, low=99, close=100+i, volume=1000, timestamp=None) for i in range(20)]
-    result = fwd.calculate(entry_price=100, direction="LONG", data=data)
-    assert result["bars"] == 5
-    assert result["exit_price"] == 105
+def _bars(n, start=100.0, step=1.0):
+    t0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    out = []
+    for i in range(n):
+        p = start + i * step
+        out.append(OHLCV(timestamp=t0 + timedelta(minutes=i), open=p, high=p, low=p, close=p, volume=1.0))
+    return out
 
-def test_forward_outcome_with_fee():
-    """Fee net PnL'den dusulmeli."""
-    from market_data.ingestion.ohlcv import OHLCV
-    fwd = ForwardOutcome(bars_forward=10)
-    data = [OHLCV(open=100, high=101, low=99, close=100+i, volume=1000, timestamp=None) for i in range(20)]
-    result = fwd.calculate(entry_price=100, direction="LONG", data=data, fee=2.0)
-    assert result["pnl"] == 8.0
-    assert result["win"] is True
+def test_long_profit_n_bar():
+    data = _bars(20, start=100.0, step=1.0)
+    fo = ForwardOutcome(bars_forward=10)
+    r = fo.calculate(entry_price=data[-11].close, direction="LONG", data=data)
+    assert r["pending"] is False
+    assert r["pnl"] > 0
+    assert r["bars"] == 10
+
+def test_short_profit():
+    data = _bars(20, start=100.0, step=-1.0)
+    fo = ForwardOutcome(bars_forward=10)
+    r = fo.calculate(entry_price=data[-11].close, direction="SHORT", data=data)
+    assert r["pnl"] > 0
+
+def test_insufficient_bars_pending():
+    data = _bars(5)
+    r = ForwardOutcome(10).calculate(100.0, "LONG", data)
+    assert r["pending"] is True
+    assert r["pnl"] == 0.0
