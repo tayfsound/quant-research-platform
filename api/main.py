@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
-from api.rest import audit, cognitive, memory, models, orchestrator, reasoning, strategies
+from api.rest import audit, cognitive, dashboard, memory, models, orchestrator, reasoning, strategies
 from api.websocket import decisions, live_predictions
 from observability.health import router as health_router
 from observability.metrics import get_metrics
@@ -33,3 +33,4 @@ app.include_router(audit.router, prefix="/api/v1")
 app.include_router(memory.router, prefix="/api/v1")
 app.include_router(cognitive.router, prefix="/api/v1")
 app.include_router(orchestrator.router, prefix="/api/v1")
+app.include_router(dashboard.router, prefix="/api/v1")
