@@ -4,7 +4,6 @@ import hashlib
 import json
 import logging
 import re
-import subprocess
 
 from contracts.llm import LLMExplanation
 
@@ -59,51 +58,36 @@ class OllamaExplainer:
             return LLMExplanation.neutral()
 
     def _call_llm_sync(self, ensemble_output: dict, prompt: str, timeout_ms: int) -> LLMExplanation:
+        import httpx
         user_prompt = json.dumps(ensemble_output, indent=2, default=str)
         input_text = f"{prompt}\n\nUser: {user_prompt}\n\nAssistant: "
         symbol = ensemble_output.get("symbol", "unknown")
         try:
-            process = subprocess.Popen(
-                ["ollama", "run", self.model],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
+            response = httpx.post(
+                "http://localhost:11434/api/generate",
+                json={
+                    "model": self.model,
+                    "prompt": input_text,
+                    "stream": False,
+                    "options": {"temperature": 0.3},
+                },
+                timeout=timeout_ms / 1000,
             )
-            try:
-                stdout, stderr = process.communicate(input=input_text, timeout=timeout_ms / 1000)
-                if stderr:
-                    logger.warning("LLM stderr", extra={
-                        "stderr": stderr.strip()[:200],
-                        "symbol": symbol,
-                        "model": self.model,
-                    })
-            except subprocess.TimeoutExpired:
-                logger.warning("LLM process timed out, killing PID", extra={
-                    "pid": process.pid,
-                    "symbol": symbol,
-                    "prompt_hash": hash_prompt(prompt),
-                })
-                process.kill()
-                process.wait()
+            response.raise_for_status()
+            data = response.json()
+            raw = data.get("response", "")
+            if not raw or not raw.strip():
+                logger.warning("LLM returned empty response", extra={"symbol": symbol})
                 return LLMExplanation.neutral()
-
-            if process.returncode != 0:
-                logger.error("LLM process exited non-zero", extra={
-                    "returncode": process.returncode,
-                    "stderr": stderr.strip()[:200],
-                    "symbol": symbol,
-                })
-                return LLMExplanation.neutral()
-
-            if not stdout or not stdout.strip():
-                logger.warning("LLM returned empty stdout", extra={"symbol": symbol})
-                return LLMExplanation.neutral()
-
-            return self._parse_output(stdout)
-
+            return self._parse_output(raw)
+        except httpx.TimeoutException:
+            logger.warning("LLM HTTP timeout", extra={
+                "symbol": symbol,
+                "prompt_hash": hash_prompt(prompt),
+            })
+            return LLMExplanation.neutral()
         except Exception as e:
-            logger.exception("LLM call failed", extra={"error": str(e), "symbol": symbol})
+            logger.exception("LLM HTTP call failed", extra={"error": str(e), "symbol": symbol})
             return LLMExplanation.neutral()
 
     def _parse_output(self, raw: str) -> LLMExplanation:

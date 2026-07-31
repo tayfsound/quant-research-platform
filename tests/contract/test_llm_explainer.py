@@ -1,40 +1,48 @@
 """OllamaExplainer contract testleri."""
 import asyncio
-import subprocess
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
 from contracts.llm import LLMExplanation
 from llm_reasoner import OllamaExplainer
 
+@pytest.mark.asyncio
+async def test_timeout_returns_neutral():
+    """httpx timeout durumunda neutral donmeli."""
+    explainer = OllamaExplainer()
+    with patch("httpx.post", side_effect=httpx.ReadTimeout("timeout")):
+        result = await explainer.explain({}, timeout_ms=200)
+        assert result == LLMExplanation.neutral()
 
 @pytest.mark.asyncio
-async def test_timeout_kills_process():
+async def test_http_error_returns_neutral():
+    """httpx HTTPError durumunda neutral donmeli."""
     explainer = OllamaExplainer()
-    mock_process = MagicMock()
-    mock_process.communicate.side_effect = subprocess.TimeoutExpired(cmd="ollama", timeout=0.5)
-    with patch("subprocess.Popen", return_value=mock_process):
-        result = await asyncio.wait_for(explainer.explain({}, timeout_ms=200), timeout=1.0)
-    assert result == LLMExplanation.neutral()
-    mock_process.kill.assert_called_once()
-
-@pytest.mark.asyncio
-async def test_stderr_filled_but_exit_ok():
-    explainer = OllamaExplainer()
-    mock_process = MagicMock()
-    mock_process.communicate.return_value = ("", "some error output")
-    mock_process.returncode = 0
-    with patch("subprocess.Popen", return_value=mock_process):
+    with patch("httpx.post", side_effect=httpx.ConnectError("connection refused")):
         result = await explainer.explain({})
-    assert result == LLMExplanation.neutral()
+        assert result == LLMExplanation.neutral()
 
 @pytest.mark.asyncio
-async def test_empty_stdout_returns_neutral():
+async def test_empty_response_returns_neutral():
+    """LLM bos response donerse neutral donmeli."""
     explainer = OllamaExplainer()
-    mock_process = MagicMock()
-    mock_process.communicate.return_value = ("   ", "")
-    mock_process.returncode = 0
-    with patch("subprocess.Popen", return_value=mock_process):
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"response": ""}
+    with patch("httpx.post", return_value=mock_response):
         result = await explainer.explain({})
-    assert result == LLMExplanation.neutral()
+        assert result == LLMExplanation.neutral()
+
+@pytest.mark.asyncio
+async def test_valid_response_parsed():
+    """Gecerli JSON response parse edilmeli."""
+    explainer = OllamaExplainer()
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "response": '{"explanation": "bullish", "risks": [], "confidence_comment": "high", "risk_adjustment_factor": 0.9}'
+    }
+    with patch("httpx.post", return_value=mock_response):
+        result = await explainer.explain({})
+        assert result.explanation == "bullish"
+        assert result.risk_adjustment_factor == 0.9

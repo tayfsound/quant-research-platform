@@ -1,16 +1,16 @@
-# Mevcut Durum -- v1.2.2 Single Persist + Forward Outcome
+# Mevcut Durum -- v1.2.4 Final
 
 **Tarih:** 2026-07-31
 **Branch:** main
-**Tag:** v1.2.2
-**Test:** 228+ passed
+**Tag:** v1.2.4
+**Test:** 234 passed
 
 ## Tamamlanan (C1 kanitli)
 
 ### P0 -- Hijyen
 - P0-3: `risk/limits/schema.py` `Field(default_factory=uuid4)`
 - P0-4: `agent_debate.py` imports; `llm_reasoner.py` comprehension fix
-- P0-5: `cognitive_binder.py` Belief v3 uyumlu (UNBOUND)
+- P0-5: `cognitive_binder.py` Belief v3 uyumlu
 - P0-6: `RecordingStage` `MemoryService.store_belief()` baglandi
 
 ### P1 -- Tek karar yolu + Outcome
@@ -20,9 +20,14 @@
 ### P2 -- Dashboard + Compose
 - P2-15: Dashboard proxy + API client + `LatestCycle` component
 - P2-16: `docker-compose.yml`'e API service eklendi
-- P2-17: Replay integration test (minimal, pending persist sonrasi)
+
+### Binder + Learning
+- `BinderStage` eklendi; `CognitiveEngine` stage zincirinde Knowledge -> Binder -> Council
+- `CognitiveBinder` **BOUND**
+- `WeightOptimizer` Pydantic AgentOpinion uyumlu
+- `llm_reasoner.py` httpx tabanli HTTP client (subprocess kaldirildi)
 
 ## Mimari Notlar
-- `CognitiveBinder` hala **UNBOUND**
 - Risk otoritesi: `GuardrailStage` (erken) + `RiskStage` (fusion sonrasi) -- ikili yapi
 - `ForwardOutcome`: entry = data[-(n+1)], exit = data[-1]; canlida `pending=True`
+- Learning: `finalize()` outcome set edildikten sonra `_persist_and_learn` calisir

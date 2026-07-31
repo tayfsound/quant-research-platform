@@ -138,8 +138,18 @@ class WeightOptimizer:
         return new_weight
 
     @staticmethod
-    def _normalize_domain(agent: dict) -> str:
-        domain = agent.get("domain") or agent.get("agent_id") or "unknown"
+    def _normalize_domain(agent) -> str:
+        # Pydantic model veya dict olabilir
+        if hasattr(agent, "model_dump"):
+            data = agent.model_dump()
+        elif hasattr(agent, "dict"):
+            data = agent.dict()
+        elif isinstance(agent, dict):
+            data = agent
+        else:
+            data = {}
+
+        domain = data.get("domain") or data.get("agent_id") or "unknown"
         if isinstance(domain, Enum):
             domain = domain.value
         if isinstance(domain, dict):
