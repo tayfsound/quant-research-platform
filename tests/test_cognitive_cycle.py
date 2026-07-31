@@ -41,3 +41,22 @@ def test_full_cognitive_cycle_with_council():
         if item.get("type") == "council_belief"
     ]
     assert len(belief_items) == 1
+def test_binder_stage_produces_belief_from_wisdom():
+    """BinderStage wisdom itemlarini belief e cevirir (CognitiveBinder bound)."""
+    from engines.cognitive_pipeline import BinderStage, KnowledgeStage
+    from contracts.context import CognitiveCycleContext
+
+    ctx = CognitiveCycleContext()
+    ctx.market.symbol = "BTCUSDT"
+    ctx.decision.proposed_direction = "LONG"
+
+    ks = KnowledgeStage()
+    ctx = ks.execute(ctx)
+
+    bs = BinderStage()
+    ctx = bs.execute(ctx)
+
+    binder_beliefs = [k for k in ctx.cognition.relevant_knowledge if k.get("type") == "binder_belief"]
+    assert len(binder_beliefs) > 0
+    assert "data" in binder_beliefs[0]
+    assert "direction" in binder_beliefs[0]["data"]

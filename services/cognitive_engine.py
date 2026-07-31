@@ -5,6 +5,7 @@ from contracts.context import CognitiveCycleContext
 from database.connection import get_session
 from database.repositories.decision_persistor import DecisionPersistor
 from engines.cognitive_pipeline import (
+    BinderStage,
     CouncilStage,
     DecisionFusionStage,
     KnowledgeStage,
@@ -27,6 +28,7 @@ class CognitiveEngine:
         self.guardrail_stage = GuardrailStage(RiskEngine())
         self.memory_stage = MemoryStage()
         self.knowledge_stage = KnowledgeStage()
+        self.binder_stage = BinderStage()
         self.council_stage = CouncilStage(registry)
         self.meta_stage = MetaStage()
         self.decision_fusion = DecisionFusionStage()
@@ -50,6 +52,7 @@ class CognitiveEngine:
 
         ctx = self.memory_stage.execute(ctx)
         ctx = self.knowledge_stage.execute(ctx)
+        ctx = self.binder_stage.execute(ctx)
         ctx, belief, opinions = self.council_stage.execute(ctx)
         ctx = self.meta_stage.execute(ctx, belief)
         ctx = self.decision_fusion.execute(ctx, belief)

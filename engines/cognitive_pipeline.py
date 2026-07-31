@@ -141,6 +141,35 @@ class DecisionFusionStage:
         return self.fusion.evaluate(ctx, belief)
 
 
+class BinderStage:
+    """Knowledge -> CognitiveBinding -> Belief (P0-5 bind)."""
+    def __init__(self):
+        from services.cognitive_binder import CognitiveBinder
+        self.binder = CognitiveBinder()
+
+    def execute(self, ctx: CognitiveCycleContext) -> CognitiveCycleContext:
+        for item in ctx.cognition.relevant_knowledge:
+            if item.get("type") == "wisdom":
+                from contracts.expression import Expression, Constant
+                from contracts.cognitive_binding import CognitiveBinding
+                expr = Expression(
+                    name=item.get("category", "unknown"),
+                    description=item.get("principle", ""),
+                    root=Constant(value=item.get("confidence", 0.5)),
+                )
+                binding = CognitiveBinding(
+                    source_type="knowledge_base",
+                    expression=expr,
+                    confidence=item.get("confidence", 0.5),
+                    evidence_count=item.get("validation_count", 0),
+                )
+                belief = self.binder.knowledge_to_belief(binding)
+                ctx.cognition.relevant_knowledge.append({
+                    "type": "binder_belief",
+                    "data": belief.model_dump(),
+                })
+        return ctx
+
 class RecordingStage:
     def __init__(self):
         self.recorder = DecisionRecorder()
