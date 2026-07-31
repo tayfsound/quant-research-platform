@@ -1,12 +1,12 @@
-"""End-to-end cognitive loop orchestrator — Phase 187 CognitiveEngine integration."""
+"""End-to-end cognitive loop orchestrator — v1.1 trusted paper cycle."""
 from typing import Any
 from market_data.ingestion.data_provider import get_ohlcv_provider, OHLCVProvider
 from market_data.features.indicators import rsi, ema, macd
 from simulator.fill_engine import FillEngine
 from ml.training.replay_memory import ReplayMemory
 from services.cognitive_engine import CognitiveEngine
-from services.risk_gate import RiskGate
-from services.risk_cycle_adapter import apply_gate_result
+from services.forward_outcome import ForwardOutcome
+from services.decision_recorder import DecisionRecorder
 from config import get_settings
 from contracts.context import CognitiveCycleContext
 
@@ -21,10 +21,8 @@ class CognitiveOrchestrator:
         self.engine = CognitiveEngine()
         self.fill_engine = FillEngine()
         self.memory = ReplayMemory(capacity=10000)
-        self.risk_gate = RiskGate(
-            max_position_size=max_position_size,
-            max_drawdown=max_drawdown,
-        )
+        self.forward = ForwardOutcome(bars_forward=10)
+        self.recorder = DecisionRecorder()
         self.data_provider = data_provider or get_ohlcv_provider()
         self.max_position_size = max_position_size
         self.max_drawdown_limit = max_drawdown
@@ -55,16 +53,16 @@ class CognitiveOrchestrator:
             "low": data[-1].low,
         }
         
-        # Run cognitive engine
+        # Run cognitive engine (council + meta + fusion + risk)
         ctx = self.engine.run(ctx)
         
-        # Post-fusion risk gate
-        ctx = self.risk_gate.evaluate(ctx)
-        gated = apply_gate_result(ctx)
-        
         market_price = data[-1].close
-        if gated["approved"]:
-            decision = {"direction": gated["direction"], "size": gated["size"]}
+        direction = ctx.decision.proposed_direction if ctx.decision.proposed_direction else "NEUTRAL"
+        size = ctx.decision.final_size if ctx.decision.final_size else 0.0
+        
+        # Execution simulation
+        if direction != "NEUTRAL" and size > 0:
+            decision = {"direction": direction, "size": size}
             result = self.fill_engine.simulate(decision, market_price)
             filled_price = result.filled_price
             fee = result.fee
@@ -72,23 +70,36 @@ class CognitiveOrchestrator:
             filled_price = market_price
             fee = 0.0
         
-        if gated["approved"]:
+        # Forward outcome
+        outcome = self.forward.calculate(filled_price, direction, data)
+        pnl = outcome["pnl"] - fee
+        win = pnl > 0
+        
+        # Record decision (approve + reject)
+        ctx.outcome = outcome
+        self.recorder.record(ctx, [], None)
+        
+        # Memory (sadece risk-onaylı)
+        if direction != "NEUTRAL" and size > 0:
             self.memory.add({
                 "decision_id": f"cycle_{seed}",
                 "features": ctx.market.features,
-                "label": 1 if filled_price > market_price else 0,
+                "label": 1 if win else 0,
+                "pnl": pnl,
                 "quality_score": 0.8,
                 "timestamp": data[-1].timestamp.isoformat(),
-                "risk_verdict": gated["risk_verdict"],
+                "direction": direction,
             })
         
         return {
-            "direction": gated["direction"],
-            "size": gated["size"],
+            "direction": direction,
+            "size": size,
             "filled_price": filled_price,
             "fee": fee,
+            "pnl": pnl,
+            "win": win,
             "memory_size": len(self.memory.memory),
-            "risk_verdict": gated["risk_verdict"],
-            "risk_reasons": gated["risk_reasons"],
-            "action": gated["action"],
+            "risk_verdict": ctx.risk.evaluation.verdict if ctx.risk.evaluation else "unknown",
+            "risk_reasons": [str(r) for r in ctx.risk.evaluation.reasons] if ctx.risk.evaluation else [],
+            "action": ctx.decision.action.value if ctx.decision.action else "WAIT",
         }
