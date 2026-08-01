@@ -72,7 +72,7 @@ class CognitiveOrchestrator:
         
         # Forward outcome
         outcome = self.forward.calculate(filled_price, direction, data)
-        pnl = outcome["pnl"]
+        pnl = outcome["pnl"] - fee
         win = outcome["win"]
         # Outcome'u TradeOutcome contract'ina cevir (P1-12)
         from contracts.outcome import TradeOutcome
