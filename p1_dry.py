@@ -1,4 +1,17 @@
-"""Learning Loop — outcome feedback + adaptive weight update."""
+import subprocess
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent
+src = REPO / "services" / "learning_loop.py"
+bak = REPO / "services" / "learning_loop.py.bak"
+
+# Yedekle
+import shutil
+shutil.copy2(src, bak)
+print("yedek: learning_loop.py.bak")
+
+src.write_text('''"""Learning Loop — outcome feedback + adaptive weight update."""
 
 from enum import Enum
 
@@ -84,3 +97,18 @@ class LearningLoop:
             "meta_threshold": self.meta_learner.suggest_threshold(0.7),
             "weight_domains": self.agent_memory.domains(),
         }
+''')
+print("learning_loop.py DRY refactor")
+
+r = subprocess.run(["pytest", "-q", "--ignore=tests/test_ml.py"], cwd=REPO)
+if r.returncode != 0:
+    shutil.copy2(bak, src)
+    bak.unlink()
+    print("[FAIL] Tests red — geri alındı", file=sys.stderr)
+    sys.exit(1)
+
+bak.unlink()
+subprocess.run(["git", "add", "-A"], cwd=REPO, check=True)
+subprocess.run(["git", "commit", "-m", "refactor: learning_loop DRY — _apply_feedback extract"], cwd=REPO, check=True)
+subprocess.run(["git", "push", "origin", "main"], cwd=REPO, check=True)
+print("[OK] Done")
