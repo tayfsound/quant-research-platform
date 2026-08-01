@@ -1,7 +1,7 @@
 """Walk-forward backtest motoru."""
 from dataclasses import dataclass
 from typing import List, Callable
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 
 @dataclass
 class WalkForwardResult:
@@ -27,7 +27,7 @@ class WalkForwardEngine:
             signal = strategy(train)
             train_ret = sum(train[j+1] - train[j] for j in range(len(train)-1)) if signal > 0 else 0
             test_ret = sum(test[j+1] - test[j] for j in range(len(test)-1)) if signal > 0 else 0
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             results.append(WalkForwardResult(
                 train_start=now - timedelta(days=len(prices)-i),
                 train_end=now - timedelta(days=len(prices)-i-self.train_size),

@@ -1,6 +1,6 @@
 """Ortak OHLCV modeli."""
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timezone
 from typing import Any
 
 @dataclass(frozen=True)

@@ -1,6 +1,6 @@
 """Deterministik mock OHLCV uretici."""
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from market_data.ingestion.ohlcv import OHLCV
 
 class MockOHLCVAdapter:
@@ -11,7 +11,7 @@ class MockOHLCVAdapter:
     def generate(self, n: int = 100):
         data = []
         price = self.base_price
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         for i in range(n):
             change = self.rng.gauss(0, price * 0.02)
             open_p = price
