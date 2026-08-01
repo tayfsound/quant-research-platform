@@ -17,3 +17,7 @@ weight_history/
 .env.*
 !.env.example
 models/*.pkl
+*.bak
+*.patch
+apply_*.py
+fix_*.py
