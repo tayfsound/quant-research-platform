@@ -29,7 +29,7 @@ class MemoryService:
 
     def store_belief(self, belief: Belief):
         with SessionFactory.get_session() as session:
-            BeliefRepository(session).save(belief)
+            BeliefRepository(session).save_snapshot(belief)
 
     def store_experiment(self, proposal: ExperimentProposal):
         with SessionFactory.get_session() as session:
