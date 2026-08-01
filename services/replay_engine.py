@@ -1,0 +1,99 @@
+"""Replay Engine — persist edilmis belief+decision'i geri oynat."""
+from datetime import datetime
+from typing import List, Dict, Optional
+
+from database.repositories.belief_repository import BeliefRepository
+from database.repositories.decision_persistor import DecisionPersistor
+from services.cognitive_engine import CognitiveEngine
+from contracts.context import CognitiveCycleContext
+
+
+class ReplayEngine:
+    def __init__(
+        self,
+        belief_repo: Optional[BeliefRepository] = None,
+        decision_repo: Optional[DecisionPersistor] = None,
+    ):
+        self.belief_repo = belief_repo
+        self.decision_repo = decision_repo
+        self.engine = CognitiveEngine()
+
+    def list_available_sessions(self, limit: int = 100) -> List[Dict]:
+        """Persist edilmis session'lari listele."""
+        sessions = []
+        if self.decision_repo:
+            decisions = self.decision_repo.list_recent(limit=limit)
+            seen = set()
+            for d in decisions:
+                sym = d.get("symbol", "unknown")
+                if sym not in seen:
+                    seen.add(sym)
+                    sessions.append({
+                        "session_id": f"session_{sym}",
+                        "symbol": sym,
+                        "decision_count": len([x for x in decisions if x.get("symbol") == sym]),
+                    })
+        return sessions
+
+    def run_replay(
+        self,
+        session_id: str,
+        symbol: Optional[str] = None,
+        limit: int = 100,
+    ) -> Dict:
+        """Belirli bir session'i geri oynat."""
+        if not self.belief_repo or not self.decision_repo:
+            return {"error": "repositories_not_configured", "session_id": session_id}
+
+        beliefs = self.belief_repo.get_latest(limit=limit)
+        if not beliefs:
+            return {"error": "no_beliefs_found", "session_id": session_id}
+
+        target_symbol = symbol or session_id.replace("session_", "")
+        decisions = self.decision_repo.get_by_symbol(target_symbol, limit=limit)
+
+        results = []
+        for belief in beliefs:
+            ctx = CognitiveCycleContext()
+            ctx.market.symbol = belief.get("symbol", target_symbol)
+            ctx.market.features = {"rsi": 50.0, "ema": 100.0, "macd": 0.0}
+            ctx.decision.proposed_direction = belief.get("direction", "NEUTRAL")
+            ctx.decision.confidence = belief.get("strength", 0.5)
+
+            try:
+                ctx = self.engine.run(ctx, persist=False)
+                results.append({
+                    "belief_id": str(belief.get("id")),
+                    "direction": belief.get("direction"),
+                    "engine_direction": ctx.decision.proposed_direction,
+                    "match": belief.get("direction") == ctx.decision.proposed_direction,
+                })
+            except Exception as e:
+                results.append({
+                    "belief_id": str(belief.get("id")),
+                    "error": str(e),
+                })
+
+        return {
+            "session_id": session_id,
+            "symbol": target_symbol,
+            "belief_count": len(beliefs),
+            "decision_count": len(decisions),
+            "results": results,
+            "match_rate": sum(1 for r in results if r.get("match")) / len(results) if results else 0.0,
+        }
+
+    def validate_replay_integrity(self, session_id: str) -> Dict:
+        """Replay oncesi veri butunlugunu kontrol et."""
+        if not self.belief_repo or not self.decision_repo:
+            return {"valid": False, "reason": "repositories_not_configured"}
+
+        beliefs = self.belief_repo.get_latest(limit=1)
+        decisions = self.decision_repo.list_recent(limit=1)
+
+        return {
+            "valid": len(beliefs) > 0 and len(decisions) > 0,
+            "belief_count": len(beliefs),
+            "decision_count": len(decisions),
+            "session_id": session_id,
+        }
