@@ -104,3 +104,17 @@ class ReplayEngine:
             "decision_count": len(decisions),
             "session_id": session_id,
         }
+
+    def verify_integrity(self, decision_id: str) -> bool:
+        """Verify decision hash against stored signature."""
+        import hashlib
+        if not self.decision_repo:
+            return False
+        decision = self.decision_repo.get_by_id(decision_id)
+        if not decision:
+            return False
+        raw = f"{decision.get('symbol')}|{decision.get('proposed_direction')}|{decision.get('confidence')}"
+        expected = hashlib.sha256(raw.encode()).hexdigest()
+        stored = decision.get('integrity_hash', '')
+        return expected == stored
+
