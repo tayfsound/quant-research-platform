@@ -3,7 +3,7 @@
 **Tarih:** 2026-08-01
 **Branch:** main
 **Tag:** v1.2.5
-**Test:** 245 passed (240 + 2 RiskGateStage)
+**Test:** 246 passed (240 + 2 RiskGateStage)
 
 ## Tamamlanan (C1 kanitli)
 
@@ -36,6 +36,9 @@
 
 ### P1 -- Fee Fix
 - P1-13: Orchestrator'da pnl = outcome["pnl"] - fee (net of fee)
+
+### P1 -- E2E Integration Tests
+- P1-17: E2E persist chain — DB + belief + weight learning (mock assert)
 
 ### P2 -- Experiment Registry Temeli (Faz 159)
 - P2-21: ExperimentRegistry contract (git_sha, risk_limits_version, feature_schema_id, prompt_hash, model_id)
