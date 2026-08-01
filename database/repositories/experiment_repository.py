@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Experiment repository — commit yok."""
 import json
 
