@@ -16,7 +16,14 @@ class ReplayEngine:
     ):
         self.belief_repo = belief_repo
         self.decision_repo = decision_repo
-        self.engine = CognitiveEngine()
+        self._engine = None  # Lazy init
+
+    @property
+    def engine(self):
+        """CognitiveEngine'i lazy olarak olustur."""
+        if self._engine is None:
+            self._engine = CognitiveEngine()
+        return self._engine
 
     def list_available_sessions(self, limit: int = 100) -> List[Dict]:
         """Persist edilmis session'lari listele."""

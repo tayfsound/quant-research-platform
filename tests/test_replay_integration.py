@@ -1,6 +1,6 @@
 """Replay Engine integration testleri."""
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from services.replay_engine import ReplayEngine
 
 
@@ -42,16 +42,18 @@ def test_replay_engine_runs_with_mock_data():
         decision_repo=mock_decision_repo,
     )
 
-    with patch.object(engine.engine, "run") as mock_run:
-        mock_ctx = MagicMock()
-        mock_ctx.decision.proposed_direction = "LONG"
-        mock_run.return_value = mock_ctx
+    # CognitiveEngine'i mock'la — property yerine _engine attribute'unu set et
+    mock_eng = MagicMock()
+    mock_ctx = MagicMock()
+    mock_ctx.decision.proposed_direction = "LONG"
+    mock_eng.run.return_value = mock_ctx
+    engine._engine = mock_eng
 
-        result = engine.run_replay("session_BTCUSDT", symbol="BTCUSDT")
-        assert result["belief_count"] == 1
-        assert result["decision_count"] == 1
-        assert result["session_id"] == "session_BTCUSDT"
-        assert "match_rate" in result
+    result = engine.run_replay("session_BTCUSDT", symbol="BTCUSDT")
+    assert result["belief_count"] == 1
+    assert result["decision_count"] == 1
+    assert result["session_id"] == "session_BTCUSDT"
+    assert "match_rate" in result
 
 
 def test_replay_integrity_check():
