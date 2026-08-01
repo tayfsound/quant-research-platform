@@ -1,10 +1,11 @@
-"""FastAPI ana uygulama — tüm router'lar."""
-from fastapi import FastAPI
+"""FastAPI ana uygulama — tum router'lar."""
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
 from api.rest import audit, cognitive, dashboard, memory, models, orchestrator, reasoning, strategies
 from api.websocket import decisions, live_predictions
+from api.websocket.cycle_feed import websocket_endpoint
 from observability.health import router as health_router
 from observability.metrics import get_metrics
 
@@ -34,3 +35,7 @@ app.include_router(memory.router, prefix="/api/v1")
 app.include_router(cognitive.router, prefix="/api/v1")
 app.include_router(orchestrator.router, prefix="/api/v1")
 app.include_router(dashboard.router, prefix="/api/v1")
+
+@app.websocket("/ws/cycle")
+async def cycle_websocket(websocket: WebSocket):
+    await websocket_endpoint(websocket)
