@@ -170,6 +170,46 @@ class BinderStage:
                 })
         return ctx
 
+
+
+class RiskGateStage:
+    def __init__(self, risk_engine):
+        self.risk_engine = risk_engine
+
+    def execute(self, ctx):
+        limits = ctx.risk.limits
+        final_size = getattr(ctx.decision, "final_size", 0.0)
+        reasons = []
+
+        max_size = limits.get("max_position_size")
+        if max_size and final_size > max_size.value:
+            from contracts.contexts.risk import RiskReason
+            reasons.append(RiskReason(
+                code="POST_FUSION_SIZE_EXCEEDED",
+                message="Final size " + str(final_size) + " > limit " + str(max_size.value),
+                severity="critical",
+            ))
+
+        max_dd = limits.get("max_drawdown")
+        if max_dd and ctx.risk.current_drawdown >= max_dd.value:
+            from contracts.contexts.risk import RiskReason
+            reasons.append(RiskReason(
+                code="MAX_DRAWDOWN",
+                message="Drawdown exceeded",
+                severity="critical",
+            ))
+
+        if reasons:
+            from contracts.contexts.decision import ActionType
+            ctx.decision.action = ActionType.WAIT
+            ctx.decision.final_size = 0.0
+            ctx.risk.evaluation.verdict = "rejected"
+            ctx.risk.evaluation.reasons = reasons
+        else:
+            ctx.risk.evaluation.verdict = "approved"
+
+        return ctx
+
 class RecordingStage:
     def __init__(self):
         self.recorder = DecisionRecorder()

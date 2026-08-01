@@ -21,3 +21,6 @@ models/*.pkl
 *.patch
 apply_*.py
 fix_*.py
+
+llm_reasoner_patch.py
+UTC

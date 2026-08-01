@@ -12,6 +12,7 @@ from engines.cognitive_pipeline import (
     MemoryStage,
     MetaStage,
     RecordingStage,
+    RiskGateStage,
 )
 from engines.risk_engine import RiskEngine
 from services.guardrail_stage import GuardrailStage
@@ -33,6 +34,7 @@ class CognitiveEngine:
         self.meta_stage = MetaStage()
         self.decision_fusion = DecisionFusionStage()
         self.record_stage = RecordingStage()
+        self.risk_gate_stage = RiskGateStage(self.guardrail_stage.risk_engine)
 
         self.outcome_evaluator = OutcomeEvaluator()
         self.learning_loop = LearningLoop()
@@ -56,6 +58,7 @@ class CognitiveEngine:
         ctx, belief, opinions = self.council_stage.execute(ctx)
         ctx = self.meta_stage.execute(ctx, belief)
         ctx = self.decision_fusion.execute(ctx, belief)
+        ctx = self.risk_gate_stage.execute(ctx)
 
         ctx.__dict__["_last_belief"] = belief
         ctx.__dict__["_last_opinions"] = opinions
@@ -78,13 +81,7 @@ class CognitiveEngine:
         event,
         ctx: CognitiveCycleContext,
     ) -> None:
-        """Persist decision to DB and run post-execution feedback loop."""
-        session = get_session()
-        try:
-            DecisionPersistor(session).persist(event)
-        finally:
-            session.close()
-
+        """Feedback loop only — RecordingStage already persisted."""
         if ctx.outcome is None:
             return
 
