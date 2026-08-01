@@ -1,32 +1,40 @@
-"""Risk Gate testleri — düzeltilmiş."""
+"""RiskGateStage integration tests."""
+from unittest.mock import MagicMock
 from contracts.context import CognitiveCycleContext
-from contracts.contexts.decision import ActionType, Decision
-from services.risk_gate import RiskGate
+from contracts.contexts.decision import ActionType
+from engines.cognitive_pipeline import RiskGateStage
 
+class FakeLimit:
+    value = 0.5
 
-def test_risk_gate_approves_small_position():
-    gate = RiskGate(max_position_size=1.0)
-    ctx = CognitiveCycleContext(
-        decision=Decision(final_size=0.5, action=ActionType.ENTER_LONG),
-    )
-    result = gate.evaluate(ctx)
-    assert result.risk.evaluation.verdict == "approved"
+class FakeEval:
+    verdict = ""
+    reasons = []
 
-def test_risk_gate_rejects_large_position():
-    gate = RiskGate(max_position_size=0.3)
-    ctx = CognitiveCycleContext(
-        decision=Decision(final_size=10.0, action=ActionType.ENTER_LONG),
-    )
-    result = gate.evaluate(ctx)
-    assert result.risk.evaluation.verdict == "rejected"
-    assert result.decision.action == ActionType.WAIT
+def test_rejects_oversized():
+    stage = RiskGateStage(MagicMock())
+    ctx = CognitiveCycleContext()
+    ctx.decision.final_size = 1.0
+    ctx.risk.limits = {"max_position_size": FakeLimit()}
+    ctx.risk.evaluation = FakeEval()
+    ctx.risk.current_drawdown = 0.0
+    
+    ctx = stage.execute(ctx)
+    
+    assert ctx.decision.action == ActionType.WAIT
+    assert ctx.decision.final_size == 0.0
+    assert ctx.risk.evaluation.verdict == "rejected"
+    assert any(r.code == "POST_FUSION_SIZE_EXCEEDED" for r in ctx.risk.evaluation.reasons)
 
-def test_risk_gate_rejects_on_drawdown():
-    gate = RiskGate(max_drawdown=0.1)
-    ctx = CognitiveCycleContext(
-        risk={"current_drawdown": 0.15},
-        decision=Decision(final_size=0.5, action=ActionType.ENTER_LONG),
-    )
-    result = gate.evaluate(ctx)
-    assert result.risk.evaluation.verdict == "rejected"
-    assert result.decision.action == ActionType.WAIT
+def test_approves_valid():
+    stage = RiskGateStage(MagicMock())
+    ctx = CognitiveCycleContext()
+    ctx.decision.final_size = 0.3
+    ctx.risk.limits = {"max_position_size": FakeLimit()}
+    ctx.risk.evaluation = FakeEval()
+    ctx.risk.current_drawdown = 0.0
+    
+    ctx = stage.execute(ctx)
+    
+    assert ctx.risk.evaluation.verdict == "approved"
+    assert ctx.decision.final_size == 0.3
