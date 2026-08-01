@@ -1,7 +1,10 @@
 """Pending outcome tracker — Faz 162 önkoşulu."""
+import structlog
 from typing import List, Dict
 from datetime import datetime
 
+
+logger = structlog.get_logger()
 
 class PendingOutcomeTracker:
     """Tracks pending outcomes until sufficient bars arrive."""
@@ -19,6 +22,21 @@ class PendingOutcomeTracker:
         })
 
     def check_and_finalize(self, data_provider, symbol: str, timeframe: str) -> List[Dict]:
+        """Finalize pending outcomes when sufficient bars arrive."""
+        finalized = []
+        for item in list(self.pending):
+            try:
+                data = data_provider.get_ohlcv(symbol, timeframe, limit=item["required_bars"] + 1)
+                if len(data) >= item["required_bars"] + 1:
+                    from services.forward_outcome import ForwardOutcome
+                    fo = ForwardOutcome(bars_forward=item["required_bars"])
+                    result = fo.calculate(item["entry_price"], item["direction"], data)
+                    if not result["pending"]:
+                        finalized.append({"decision_id": item["decision_id"], "result": result})
+                        self.pending.remove(item)
+            except Exception as e:
+                logger.warning("pending_finalize_failed", decision_id=item["decision_id"], error=str(e))
+        return finalized
         """Stub — real implementation needs data provider + scheduler integration."""
         finalized = []
         for item in list(self.pending):
