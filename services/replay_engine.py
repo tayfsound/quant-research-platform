@@ -118,3 +118,27 @@ class ReplayEngine:
         stored = decision.get('integrity_hash', '')
         return expected == stored
 
+    def replay_decision(self, decision_id: str) -> dict:
+        """Replay a single decision by ID through CognitiveEngine."""
+        if not self.decision_repo:
+            return {'error': 'repositories_not_configured', 'decision_id': decision_id}
+
+        decision = self.decision_repo.get_by_id(decision_id)
+        if not decision:
+            return {'error': 'decision_not_found', 'decision_id': decision_id}
+
+        ctx = CognitiveCycleContext()
+        ctx.market.symbol = decision.get('symbol', 'unknown')
+        ctx.decision.proposed_direction = decision.get('proposed_direction', 'NEUTRAL')
+        ctx.decision.confidence = decision.get('confidence', 0.0)
+
+        result_ctx = self.engine.run(ctx, persist=False)
+
+        return {
+            'decision_id': decision_id,
+            'symbol': result_ctx.market.symbol,
+            'direction': result_ctx.decision.proposed_direction,
+            'confidence': result_ctx.decision.confidence,
+            'risk_verdict': result_ctx.risk.evaluation.verdict if result_ctx.risk.evaluation else 'unknown',
+        }
+

@@ -3,7 +3,7 @@ from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
-from api.rest import audit, cognitive, dashboard, memory, models, orchestrator, reasoning, strategies
+from api.rest import audit, cognitive, dashboard, memory, models, orchestrator, reasoning, replay, strategies
 from api.websocket import decisions, live_predictions
 from api.websocket.cycle_feed import websocket_endpoint
 from observability.health import router as health_router
@@ -25,6 +25,7 @@ app.include_router(health_router, tags=["health"])
 async def metrics():
     return Response(content=get_metrics(), media_type="text/plain")
 
+app.include_router(replay.router, prefix="/api/v1")
 app.include_router(strategies.router, prefix="/api/v1")
 app.include_router(models.router, prefix="/api/v1")
 app.include_router(decisions.router, prefix="/api/v1")
