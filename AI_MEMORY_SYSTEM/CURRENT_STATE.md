@@ -1,9 +1,9 @@
-# Mevcut Durum -- v1.2.4 Final
+# Mevcut Durum -- v1.2.5
 
-**Tarih:** 2026-07-31
+**Tarih:** 2026-08-01
 **Branch:** main
-**Tag:** v1.2.4
-**Test:** 234 passed
+**Tag:** v1.2.5
+**Test:** 242 passed (240 + 2 RiskGateStage)
 
 ## Tamamlanan (C1 kanitli)
 
@@ -27,7 +27,17 @@
 - `WeightOptimizer` Pydantic AgentOpinion uyumlu
 - `llm_reasoner.py` httpx tabanli HTTP client (subprocess kaldirildi)
 
+
+### P0 -- Risk Gate + Cleanup (2026-08-01)
+- P0-17: Repo cleanup — apply_*.py, fix_*.py, *.patch, UTC silindi; .gitignore güncellendi
+- P0-18: RiskGateStage eklendi (fusion sonrası size/drawdown kontrolü)
+- P0-19: Tek DB persist path — _persist_and_learn sadece feedback loop
+- P0-20: RiskGateStage integration test (approve + reject path'leri)
+
+### P1 -- Fee Fix
+- P1-13: Orchestrator'da pnl = outcome["pnl"] - fee (net of fee)
+
 ## Mimari Notlar
-- Risk otoritesi: `GuardrailStage` (erken) + `RiskStage` (fusion sonrasi) -- ikili yapi
+- Risk otoritesi: `GuardrailStage` (erken) + `RiskGateStage` (fusion sonrasi) -- ikili yapi ✅
 - `ForwardOutcome`: entry = data[-(n+1)], exit = data[-1]; canlida `pending=True`
 - Learning: `finalize()` outcome set edildikten sonra `_persist_and_learn` calisir
