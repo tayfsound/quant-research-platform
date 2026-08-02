@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
-from api.rest import audit, cognitive, dashboard, memory, models, orchestrator, reasoning, replay, strategies, weights
+from api.rest import audit, cognitive, dashboard, experiments, memory, models, orchestrator, reasoning, replay, strategies, weights
 from api.websocket import decisions, live_predictions
 from api.websocket.cycle_feed import websocket_endpoint
 from observability.health import router as health_router
@@ -37,6 +37,7 @@ async def metrics():
 
 app.include_router(replay.router, prefix="/api/v1")
 app.include_router(weights.router, prefix="/api/v1")
+app.include_router(experiments.router, prefix="/api/v1")
 app.include_router(strategies.router, prefix="/api/v1")
 app.include_router(models.router, prefix="/api/v1")
 app.include_router(decisions.router, prefix="/api/v1")
