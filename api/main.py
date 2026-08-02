@@ -1,5 +1,6 @@
 """FastAPI ana uygulama — tum router'lar."""
 from fastapi import FastAPI, WebSocket
+from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
@@ -9,7 +10,16 @@ from api.websocket.cycle_feed import websocket_endpoint
 from observability.health import router as health_router
 from observability.metrics import get_metrics
 
-app = FastAPI(title="AI Quant Research Platform", version="0.15.5")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: pending outcome scheduler
+    from services.pending_outcome_tracker import PendingOutcomeTracker
+    tracker = PendingOutcomeTracker()
+    # Scheduler task placeholder — real data_provider needed
+    yield
+    # Shutdown
+
+app = FastAPI(title="AI Quant Research Platform", version="0.15.5", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

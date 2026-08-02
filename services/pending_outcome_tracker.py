@@ -1,5 +1,6 @@
 """Pending outcome tracker — Faz 162 önkoşulu."""
 import structlog
+import asyncio
 from typing import List, Dict
 from datetime import datetime
 
@@ -52,3 +53,13 @@ class PendingOutcomeTracker:
 
     def count(self) -> int:
         return len(self.pending)
+
+    async def run_scheduler(self, data_provider, symbol: str, timeframe: str, interval_seconds: int = 60):
+        """Background task — check pending outcomes every N seconds."""
+        while True:
+            try:
+                self.check_and_finalize(data_provider, symbol, timeframe)
+            except Exception:
+                pass
+            await asyncio.sleep(interval_seconds)
+
