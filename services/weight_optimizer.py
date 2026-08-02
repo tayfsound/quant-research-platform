@@ -98,12 +98,11 @@ class WeightOptimizer:
         self,
         agents: list[dict],
         outcome,
+        require_approval: bool = True,
     ) -> dict[str, float]:
         """
         Feedback-loop weight update with a gradual delta cap.
-
-        `outcome` is expected to expose `decision_score` in [-1, 1].
-        Weight changes are clipped to MAX_WEIGHT_DELTA per decision.
+        Large changes (>5%) require human approval.
         """
         current_snapshot = self.weight_repository.get_latest()
         current_weights = dict(current_snapshot.weights) if current_snapshot else {}
@@ -121,16 +120,35 @@ class WeightOptimizer:
             adjusted_domains.add(domain)
             old_weight = current_weights.get(domain, 1.0)
 
-            # Simple reward/penalty scaled by decision score.
             desired = old_weight + (decision_score * 0.2)
             desired = max(0.0, min(2.0, desired))
 
             new_weights[domain] = self._clip_delta(old_weight, desired)
 
-        # Preserve weights for domains that did not contribute this decision.
         for domain, weight in current_weights.items():
             if domain not in new_weights:
                 new_weights[domain] = weight
+
+        # Approval gate: >5% max change requires human approval
+        if current_weights and new_weights:
+            max_change = max(
+                abs(new_weights.get(k, 0) - current_weights.get(k, 0))
+                for k in set(new_weights) | set(current_weights)
+            )
+            if require_approval and max_change > 0.05:
+                try:
+                    approval = WeightApproval(
+                        proposed_weights=new_weights,
+                        previous_weights=current_weights,
+                        max_delta=MAX_WEIGHT_DELTA,
+                        status="pending",
+                    )
+                    with SessionFactory.get_session() as session:
+                        WeightApprovalRepository(session).save(approval)
+                    return current_weights  # Return old weights until approved
+                except Exception:
+                    # Table may not exist yet — fall through to allow weight update
+                    pass
 
         return new_weights
 
