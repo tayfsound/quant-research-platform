@@ -5,6 +5,9 @@ from enum import Enum
 from contracts.agent_weight_snapshot import AgentWeightSnapshot
 from services.agent_memory import AgentMemory
 from services.weight_repository import WeightRepository
+from contracts.weight_approval import WeightApproval
+from database.session_factory import SessionFactory
+from database.repositories.weight_approval_repository import WeightApprovalRepository
 
 MAX_WEIGHT_DELTA = 0.10
 
