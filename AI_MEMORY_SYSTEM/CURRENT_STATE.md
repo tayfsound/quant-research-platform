@@ -49,6 +49,8 @@
 
 ## Bilinen Borçlar (Known Gaps)
 
+    • WeightApproval API endpoint'leri (/weights/pending, /approve, /reject) | P3 | Yeni
+
 | # | Borç | Öncelik | Bloklayan |
 |---|------|---------|-----------|
 | 1 | BinderStage sadece "wisdom" tipini işliyor; observation/debate_result binder'dan geçmiyor | P1 | Hayır |
