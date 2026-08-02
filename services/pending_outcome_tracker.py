@@ -38,21 +38,8 @@ class PendingOutcomeTracker:
             except Exception as e:
                 logger.warning("pending_finalize_failed", decision_id=item["decision_id"], error=str(e))
         return finalized
-        """Stub — real implementation needs data provider + scheduler integration."""
-        finalized = []
-        for item in list(self.pending):
-            data = data_provider.get_ohlcv(symbol, timeframe, limit=item["required_bars"] + 1)
-            if len(data) >= item["required_bars"] + 1:
-                from services.forward_outcome import ForwardOutcome
-                fo = ForwardOutcome(bars_forward=item["required_bars"])
-                result = fo.calculate(item["entry_price"], item["direction"], data)
-                if not result["pending"]:
-                    finalized.append({"decision_id": item["decision_id"], "result": result})
-                    self.pending.remove(item)
-        return finalized
 
     def count(self) -> int:
-        return len(self.pending)
 
     async def run_scheduler(self, data_provider, symbol: str, timeframe: str, interval_seconds: int = 60):
         """Background task — check pending outcomes every N seconds."""
