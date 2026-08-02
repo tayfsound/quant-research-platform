@@ -15,7 +15,8 @@ async def lifespan(app: FastAPI):
     # Startup: pending outcome scheduler
     from services.pending_outcome_tracker import PendingOutcomeTracker
     tracker = PendingOutcomeTracker()
-    # Scheduler task placeholder — real data_provider needed
+    # TODO: real data_provider + symbol/timeframe config
+    # asyncio.create_task(tracker.run_scheduler(...))
     yield
     # Shutdown
 
