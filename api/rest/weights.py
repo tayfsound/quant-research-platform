@@ -16,8 +16,24 @@ async def list_pending(limit: int = 10):
 async def approve(approval_id: str, approved_by: str = "human"):
     with SessionFactory.get_session() as session:
         repo = WeightApprovalRepository(session)
+        approval = session.query(WeightApprovalModel).filter_by(id=approval_id).first()
+        if not approval:
+            return {"error": "not_found"}
+        if approval.status != "pending":
+            return {"error": "already_processed", "status": approval.status}
+        
+        # Apply proposed weights to repository
+        from contracts.agent_weight_snapshot import AgentWeightSnapshot
+        from services.weight_repository import WeightRepository
+        snapshot = AgentWeightSnapshot(
+            weights=approval.proposed_weights,
+            evaluation_window=100,
+            previous_snapshot_id=None,
+        ).finalize()
+        WeightRepository().save(snapshot)
+        
         repo.approve(approval_id, approved_by)
-        return {"approval_id": approval_id, "status": "approved"}
+        return {"approval_id": approval_id, "status": "approved", "weights_applied": True}
 
 @router.post("/{approval_id}/reject")
 async def reject(approval_id: str):
