@@ -7,6 +7,7 @@ from datetime import datetime
 
 logger = structlog.get_logger()
 
+
 class PendingOutcomeTracker:
     """Tracks pending outcomes until sufficient bars arrive."""
 
@@ -40,6 +41,7 @@ class PendingOutcomeTracker:
         return finalized
 
     def count(self) -> int:
+        return len(self.pending)
 
     async def run_scheduler(self, data_provider, symbol: str, timeframe: str, interval_seconds: int = 60):
         """Background task — check pending outcomes every N seconds."""
@@ -49,4 +51,3 @@ class PendingOutcomeTracker:
             except Exception:
                 pass
             await asyncio.sleep(interval_seconds)
-
