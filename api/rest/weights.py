@@ -1,7 +1,7 @@
 """Weight approval API — Faz 160 runtime."""
 from fastapi import APIRouter
 from database.session_factory import SessionFactory
-from database.repositories.weight_approval_repository import WeightApprovalRepository
+from database.repositories.weight_approval_repository import WeightApprovalRepository, WeightApprovalModel
 
 router = APIRouter(prefix="/weights", tags=["weights"])
 
@@ -38,7 +38,6 @@ async def approve(approval_id: str, approved_by: str = "human"):
 @router.post("/{approval_id}/reject")
 async def reject(approval_id: str):
     with SessionFactory.get_session() as session:
-        repo = WeightApprovalRepository(session)
-        session.query(type(repo).__bases__[0]).filter_by(id=approval_id).update({"status": "rejected"})
+        session.query(WeightApprovalModel).filter_by(id=approval_id).update({"status": "rejected"})
         session.commit()
         return {"approval_id": approval_id, "status": "rejected"}
