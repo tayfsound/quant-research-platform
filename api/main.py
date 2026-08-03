@@ -20,7 +20,7 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
 
-app = FastAPI(title="AI Quant Research Platform", version="0.15.5", lifespan=lifespan)
+app = FastAPI(title="AI Quant Research Platform", version="1.2.5", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
