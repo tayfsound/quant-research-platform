@@ -146,9 +146,12 @@ class WeightOptimizer:
                     with SessionFactory.get_session() as session:
                         WeightApprovalRepository(session).save(approval)
                     return current_weights  # Return old weights until approved
-                except Exception:
-                    # Table may not exist yet — fall through to allow weight update
-                    pass
+                except Exception as e:
+                    import structlog
+                    logger = structlog.get_logger()
+                    logger.error('weight_approval_save_failed', error=str(e), max_change=max_change)
+                    # Table not exists — fail-safe: do NOT apply new weights
+                    return current_weights
 
         return new_weights
 
