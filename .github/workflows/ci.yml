@@ -50,7 +50,9 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Run tests
-        run: pytest -q --ignore=tests/test_ml.py
+        run: |
+          alembic upgrade head
+          pytest -q --ignore=tests/test_ml.py
         env:
           DATABASE_URL: postgresql+asyncpg://quant:quantpass@localhost:5432/quantdb
           REDIS_URL: redis://localhost:6379/0

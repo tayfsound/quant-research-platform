@@ -7,7 +7,7 @@ Create Date: 2026-08-02
 from alembic import op
 
 revision = 'faz161'
-down_revision = None
+down_revision = "f8fa21f0e94a"
 branch_labels = None
 depends_on = None
 
