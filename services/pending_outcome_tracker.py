@@ -36,6 +36,17 @@ class PendingOutcomeTracker:
                     if not result["pending"]:
                         finalized.append({"decision_id": item["decision_id"], "result": result})
                         self.pending.remove(item)
+                        # Trigger learning (Faz 165)
+                        try:
+                            from services.learning_loop import LearningLoop
+                            ll = LearningLoop()
+                            ll.process_outcome(
+                                decision_id=item["decision_id"],
+                                pnl=result.get("pnl", 0),
+                                was_correct=result.get("pnl", 0) > 0,
+                            )
+                        except Exception:
+                            pass
             except Exception as e:
                 logger.warning("pending_finalize_failed", decision_id=item["decision_id"], error=str(e))
         return finalized
