@@ -2,7 +2,7 @@
 
 **Tarih:** 2026-08-01
 **Branch:** main
-**Tag:** v1.2.5
+**Tag:** v1.2.6
 **Test:** 255 passed (240 + 2 RiskGateStage)
 
 ## Tamamlanan (C1 kanitli)
