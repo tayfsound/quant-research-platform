@@ -41,6 +41,7 @@ class PendingOutcomeTracker:
         return finalized
 
     def count(self) -> int:
+        return len(self.pending)
 
     async def run_scheduler(self, data_provider, symbol: str, timeframe: str, interval_seconds: int = 60):
         """Background task — check pending outcomes every N seconds."""

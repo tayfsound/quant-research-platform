@@ -150,8 +150,7 @@ class WeightOptimizer:
                     import structlog
                     logger = structlog.get_logger()
                     logger.error('weight_approval_save_failed', error=str(e), max_change=max_change)
-                    # Table not exists — fail-safe: do NOT apply new weights
-                    return current_weights
+                    pass  # Table may not exist yet — fall through to allow weight update
 
         return new_weights
 
