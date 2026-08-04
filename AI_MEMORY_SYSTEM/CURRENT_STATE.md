@@ -104,12 +104,20 @@ Yapılanlar (C1 kanıtlı):
 
 | # | Borç | Öncelik | Bloklayan |
 |---|------|---------|-----------|
-| 1 | BinderStage sadece "wisdom" tipini işliyor; observation/debate_result binder'dan geçmiyor | P1 | Hayır |
-| 3 | E2E DB persist + belief + weight update zinciri integration testi eksik | P1 | Hayır |
+| 3 | E2E DB persist + belief + weight update zinciri integration testi eksik | ~~P1~~ **Kapandı** | tests/test_e2e_scenarios.py — guardrail-red/outcome-none/outcome-var, üçü de gerçek DB'ye karşı yeşil (2026-08-04) |
+| 8 | `engines/memory_engine.py` (`MemoryEngine.record_cycle` → `MemoryConsolidator.capture_cycle`) `CognitiveEngine.run()`/`finalize()` içinde hiçbir yerden çağrılmıyor — gerçek ada. `capture_cycle`, `relevant_knowledge` içindeki `type="observation"` öğelerini `semantic.consolidated_beliefs`'e taşıyor ama şu an pipeline'da hiçbir stage `"observation"` tipi üretmiyor, yani şu anda zararsız ama tamamen kopuk. | P2 | Hayır |
 | 6 | Alembic history'de 2 head var: `faz165` (0005 zincirinden) ve `faz161` (f8fa21f0e94a zincirinden, hiç merge edilmedi). `faz161`'in `create_hypertable()` çağrıları local DB'de `decisions`/`experiment_registry`/`weight_approvals` tabloları dolu olduğu için başarısız oluyor (`migrate_data=>true` gerekiyor — Timescale, boş olmayan tabloyu varsayılan olarak hypertable'a çevirmiyor). Bu bir alan/version eksikliği değil, gerçek veri var. CI'da DB boş başladığı için sorun yok. Local'de düzeltmek için: ya `migrate_data=>true` ile devam et (veri kaybı yok ama chunk'lara bölünür), ya da local DB'yi sıfırdan kurup migration zincirini baştan çalıştır. | P2 | Migration testi (roadmap Faz 182 gate) |
 | 7 | `weight_approvals` tablosunun kendisi migration zincirinde hiçbir yerde `CREATE TABLE` ile oluşturulmuyor (muhtemelen geçmişte `Base.metadata.create_all()` ile elle kuruldu). Sıfırdan bir DB'de `alembic upgrade head` bu tabloyu oluşturmaz. | P1 | Migration testi (roadmap Faz 182 gate) |
 
 ## Mimari Notlar
+- **BinderStage kapsamı (Sprint 1 netleştirme, 2026-08-04):** BinderStage bilinçli olarak sadece
+  `"wisdom"` tipini `CognitiveBinder.knowledge_to_belief()` ile ayrı bir "bilgi kaynaklı" belief'e
+  çeviriyor. `"debate_result"` zaten CouncilStage'in ürettiği ana `belief` (council_belief) için
+  destekleyici/açıklayıcı meta veri — Fusion/RecordingStage'e giden asıl belief bu, debate_result'ı
+  ayrıca bir belief'e çevirmek aynı karar için iki rakip belief üretir, bu yanlış olur. `"observation"`
+  tipini ise şu an hiçbir stage üretmiyor (bkz. borç #8) — üretilmeye başlarsa, doğal yeri BinderStage
+  değil `MemoryConsolidator.capture_cycle` (semantic memory consolidation), o da bağlanmalı. Sonuç:
+  BinderStage'in kapsamı doğru, önceki "borç" kaydı yanıltıcıydı.
 - Risk otoritesi: `GuardrailStage` (erken) + `RiskGateStage` (fusion sonrasi) -- ikili yapi ✅
 - `ForwardOutcome`: entry = data[-(n+1)], exit = data[-1]; canlida `pending=True`
 - Learning: `finalize()` outcome set edildikten sonra `_persist_and_learn` calisir
