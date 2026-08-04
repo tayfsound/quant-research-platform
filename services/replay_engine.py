@@ -1,4 +1,7 @@
-"""Replay Engine — persist edilmis belief+decision'i geri oynat."""
+"""Replay Engine — thin facade over services/replay/ (the real deterministic
+replay motor: decision_hash, snapshot_builder, ReplayVerifier). This class
+keeps the public API that api/rest/replay.py and the dashboard already call;
+the hashing/verification logic itself lives in services/replay/."""
 from datetime import datetime
 from typing import List, Dict, Optional
 
@@ -6,6 +9,10 @@ from database.repositories.belief_repository import BeliefRepository
 from database.repositories.decision_persistor import DecisionPersistor
 from services.cognitive_engine import CognitiveEngine
 from contracts.context import CognitiveCycleContext
+from contracts.decision_event import DecisionEvent
+from services.replay.seed_manager import ReplaySeedManager
+from services.replay.snapshot_builder import build_snapshot
+from services.replay.replay_verifier import ReplayVerifier
 
 
 class ReplayEngine:
@@ -106,20 +113,17 @@ class ReplayEngine:
         }
 
     def verify_integrity(self, decision_id: str) -> bool:
-        """Verify decision hash against stored signature."""
-        import hashlib
-        if not self.decision_repo:
-            return False
-        decision = self.decision_repo.get_by_id(decision_id)
-        if not decision:
-            return False
-        raw = f"{decision.get('symbol')}|{decision.get('proposed_direction')}|{decision.get('confidence')}"
-        expected = hashlib.sha256(raw.encode()).hexdigest()
-        stored = decision.get('integrity_hash', '')
-        return expected == stored
+        """Verify a decision is reproducible: replay it and check the
+        replayed outcome hashes identically to the original (services/replay/
+        ReplayVerifier), rather than comparing against a stored hash column
+        that doesn't exist in the schema."""
+        result = self.replay_decision(decision_id, deterministic=True)
+        return bool(result.get("verification", {}).get("verified", False))
 
     def replay_decision(self, decision_id: str, deterministic: bool = True) -> dict:
-        """Replay a single decision by ID through CognitiveEngine — deterministic from snapshot."""
+        """Replay a single decision by ID through CognitiveEngine, restoring
+        state deterministically, and verify the replay against the original
+        via services/replay/ (decision_hash + snapshot_builder + ReplayVerifier)."""
         if not self.decision_repo:
             return {'error': 'repositories_not_configured', 'decision_id': decision_id}
 
@@ -127,43 +131,58 @@ class ReplayEngine:
         if not decision:
             return {'error': 'decision_not_found', 'decision_id': decision_id}
 
-        ctx = CognitiveCycleContext()
-        ctx.market.symbol = decision.get('symbol', 'unknown')
-        
         # Restore market snapshot if available
         # DB'de ayrı kolon yok; agent_contributions içinde saklanıyor
-        snapshot = {}
+        snapshot_data = {}
         raw = {}
         agent_contributions = decision.get('agent_contributions', []) or []
         for contrib in agent_contributions:
             if isinstance(contrib, dict) and contrib.get('type') == 'market_snapshot':
-                snapshot = contrib.get('data', {})
-                raw = snapshot.get('raw_snapshot', {})
+                snapshot_data = contrib.get('data', {})
+                raw = snapshot_data.get('raw_snapshot', {})
                 break
         if not raw:
             # Fallback: doğrudan market_snapshot kolonu (gelecek şema)
-            snapshot = decision.get('market_snapshot', {}) or {}
-            raw = snapshot.get('raw_snapshot', {})
+            snapshot_data = decision.get('market_snapshot', {}) or {}
+            raw = snapshot_data.get('raw_snapshot', {})
+
+        original_event = DecisionEvent(
+            symbol=decision.get('symbol', 'unknown'),
+            final_action=decision.get('proposed_direction') or decision.get('direction'),
+            final_size=decision.get('final_size', 0.0) or 0.0,
+            confidence=decision.get('confidence', 0.0),
+            market_snapshot=snapshot_data or None,
+        )
+        original_snapshot = build_snapshot(original_event)
+
+        ctx = CognitiveCycleContext()
+        ctx.market.symbol = original_event.symbol
         if raw:
             ctx.market.features = {
-                k: v for k, v in raw.items() 
+                k: v for k, v in raw.items()
                 if k not in ('symbol', 'timestamp') and isinstance(v, (int, float, str))
             }
-        
-        ctx.decision.proposed_direction = decision.get('proposed_direction', 'NEUTRAL')
+        ctx.decision.proposed_direction = (
+            decision.get('proposed_direction') or decision.get('direction') or 'NEUTRAL'
+        )
         ctx.decision.confidence = decision.get('confidence', 0.0)
 
-        # Deterministik replay: seed + config hash
         if deterministic:
             import hashlib
-            config_hash = hashlib.sha256(
-                f"{decision_id}|{decision.get('symbol')}|{decision.get('confidence')}".encode()
-            ).hexdigest()
-            # Engine'e deterministik mod sinyali (seed-based)
-            import random
-            random.seed(config_hash[:16])
+            seed_source = f"{decision_id}|{decision.get('symbol')}|{decision.get('confidence')}"
+            seed_hash = hashlib.sha256(seed_source.encode()).hexdigest()
+            ReplaySeedManager().set_seed(int(seed_hash[:8], 16))
 
         result_ctx = self.engine.run(ctx, persist=False)
+
+        replayed_event = DecisionEvent(
+            symbol=result_ctx.market.symbol,
+            final_action=result_ctx.decision.proposed_direction,
+            final_size=getattr(result_ctx.decision, 'final_size', 0.0) or 0.0,
+            confidence=result_ctx.decision.confidence,
+            market_snapshot=snapshot_data or None,
+        )
+        verification = ReplayVerifier().verify(original_snapshot, replayed_event)
 
         return {
             'decision_id': decision_id,
@@ -173,5 +192,6 @@ class ReplayEngine:
             'risk_verdict': result_ctx.risk.evaluation.verdict if result_ctx.risk.evaluation else 'unknown',
             'snapshot_restored': bool(raw),
             'deterministic': deterministic,
+            'verification': verification,
         }
 

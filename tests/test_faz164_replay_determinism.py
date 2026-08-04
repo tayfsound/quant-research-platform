@@ -28,6 +28,9 @@ def test_persist_then_replay():
         assert result["symbol"] == "BTCUSDT"
         assert result["snapshot_restored"] is True
         assert result["deterministic"] is True
+        # services/replay/ hash verification: replay must genuinely match the original
+        assert result["verification"]["verified"] is True
+        assert engine.verify_integrity(str(event.id)) is True
 
 def test_replay_integrity_hash():
     """verify_integrity: decision hash doğrula."""
