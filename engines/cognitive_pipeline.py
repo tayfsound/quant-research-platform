@@ -39,10 +39,12 @@ class KnowledgeStage:
 
 
 class CouncilStage:
-    def __init__(self, registry: AgentRegistry):
+    def __init__(self, registry: AgentRegistry, pinned_weight_snapshot_id=None):
         self.registry = registry
         self.adapter = ContextAdapter()
-        self.orchestrator = CouncilOrchestrator(registry)
+        self.orchestrator = CouncilOrchestrator(
+            registry, pinned_weight_snapshot_id=pinned_weight_snapshot_id
+        )
         self.knowledge_base = KnowledgeBase()
 
     def execute(self, ctx: CognitiveCycleContext) -> tuple[CognitiveCycleContext, Belief, list[AgentOpinion]]:

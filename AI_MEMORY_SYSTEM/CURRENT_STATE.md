@@ -2,8 +2,8 @@
 
 **Tarih:** 2026-08-04
 **Branch:** main
-**Son commit (HEAD):** 8319c0a Sprint 3 (vektörize backtest çekirdeği) + bu oturumun devamı (Sprint 4)
-**Test:** 295 passed, 1 xfailed (TimescaleDB hypertable, local'de non-empty table nedeniyle — bkz. borç #6), 1 skipped
+**Son commit (HEAD):** c43d878 Sprint 4 (metrik motoru) + bu oturumun devamı (Sprint 5)
+**Test:** 298 passed, 1 xfailed (TimescaleDB hypertable, local'de non-empty table nedeniyle — bkz. borç #6), 1 skipped
 
 **Önemli not:** Bu dosya, Faz 161-167 commit'lerinden sonra güncellenmemiş kalmıştı (dokümantasyon
 sürüklenmesi — roadmap'te 5 kez tekrarlanan risk, burada gerçekleşti). Aşağıdaki liste 2026-08-04
@@ -114,6 +114,8 @@ Yapılanlar (C1 kanıtlı):
 | 12 | **İki ayrı `DecisionPersistor` sınıfı var:** `database/repositories/decision_persistor.py` (gerçek üretim yolu — `DecisionRecorder` bunu kullanıyor, `list_recent`/`get_by_symbol`/`outcome` kolonu/`ON CONFLICT DO NOTHING` var) ve `services/decision_persistor.py` (sadece testlerin ve eski replay kodunun kullandığı, `list_recent` yok, `outcome` yazmıyor). API artık production'ın kullandığı (`database/repositories/...`) sınıfa bağlandı (replay, deneyler). Hangi sınıfın kalacağına — ya da `services/decision_persistor.py`'ın tamamen kaldırılıp testlerin de `database/repositories/...`'a taşınmasına — karar verilmedi. | P1 | Proje sahibi kararı |
 | 13 | **`experiment_registry` tablosu hiçbir migration'da `CREATE TABLE` ile oluşturulmuyordu — Faz 159'dan beri her `ExperimentRegistryRepository.save()` çağrısı `RecordingStage.execute()`'daki çıplak `except Exception: pass` içinde sessizce patlıyordu.** Yani "ExperimentRegistry bound to RecordingStage" iddiası hiçbir zaman gerçek bir DB satırı üretmemişti. `faz166_experiment_registry_table.py` migration'ı eklendi ve uygulandı; `GET /api/v1/experiments/` de aslında `{"experiments": []}` döndüren bir placeholder'dı (`repo.get_by_git_sha("")` çağırıp sonucu atıyordu) — `ExperimentRegistryRepository.list_recent()` eklendi, endpoint gerçek veriyi dönüyor artık. Kanıt: `tests/test_experiment_registry_real_persist.py` — gerçek bir cognitive cycle çalıştırılıp API'den gerçek (non-"unknown") git_sha ile geri geldiği doğrulanıyor. | ~~P0~~ **Kapandı** | — |
 | 14 | **Sprint 2 dashboard gate kapandı (2026-08-04):** `LatestCycle`, `PendingApprovals`, `ExperimentList` bileşenleri Faz 164'te yazılmış ama `App.tsx`'e hiç import edilmemiş/render edilmemişti — NavBar'da sekmeleri bile yoktu, tarayıcıdan asla erişilemiyorlardı. Üçü de artık `App.tsx`/`NavBar.tsx`'e bağlı (`cycle`/`approvals`/`experiments` sekmeleri). Yeni `ReplayView.tsx` eklendi (`POST /replay/decision/{id}` tetikler, `verification.verified`'ı gösterir) — roadmap'in "tarayıcıdan replay tetiklenip aynı sonucu üretebiliyor mu" gate'i buna karşılık geliyor. Doğrulama: `vite dev` sunucusu ayağa kalktı, `App.tsx`'in transpile edilmiş halinde `ReplayView` gerçekten yükleniyor (curl ile doğrulandı); gerçek bir tarayıcıda tıklama testi yapılmadı (bu ortamda tarayıcı yok) ama backend endpoint'i ayrıca gerçek DB'ye karşı test edildi (`test_replay_decision_api.py`). **Önceden var olan, ilgisiz bir sorun:** `npm run build` (`tsc -b`) `AIReasoning.tsx` ve `LivePredictions.tsx`'te bu oturumdan önce var olan tip hatalarıyla başarısız oluyor (muhtemelen tipsiz `useState()` → `never[]` çıkarımı); bu dosyalara dokunulmadı, kapsam dışı bırakıldı. | P2 (build hatası) | Hayır (dev server çalışıyor) |
+| 15 | **🔴 `ctx.risk.limits`'i üretimde hiçbir kod yolu doldurmuyor.** `POST /cognitive/run` (`api/rest/cognitive.py`) boş bir context ile `engine.run()` çağırıyor; `RiskEngine.execute()` her zaman `MISSING_LIMIT` ile reddediyor. **CognitiveEngine tabanlı üretim yolu şu an asla gerçek bir işlem onaylamıyor.** Ayrıca üç ayrı, birbiriyle uyumsuz "risk limit" temsili var (`risk/limits/schema.py` pydantic `RiskLimit` — `.verify()` yok; `risk/limits/enforcement.py` `RiskEnforcer`/`RiskLimit` dataclass — ayrı arayüz; `RiskEngine.execute()`'ın gerçekte beklediği `.value`+`.verify(secret)->bool` arayüzü — hiçbir yerde gerçek implement edilmemiş, sadece testlerde `FakeLimit` olarak mock'lanmış). Üçünü tek bir gerçek implementasyona indirip `/cognitive/run`'a bağlamak gerekiyor — bu proje sahibinin önceliklendirme kararını gerektirir (hangi tasarım kalacak, imzalı/hash'li mi olacak). | **P0** | Gerçek bir kararın üretimde onaylanabilmesi |
+| 16 | `services/embedding_service.py` (`SentenceTransformer`) hiçbir testte çalıştırılmamış — sadece `ctx.market.features` doluyken tetiklenen yoldan geçiyor, ve standart `transformers.AutoModel/AutoTokenizer` mock deseninde gerçek bir `TypeError` ile patlıyor (`self.to(device)`, sentence-transformers kendi cihaz tespitini mock'lanmış modelle bozuyor). Gerçek bir backtest/production akışının feature vermesi gerekeceği an bu test-altyapısı sorunu da çözülmeli. | P2 | Backtest'e gerçek feature girişi |
 
 ### Sprint 3 (Faz 167 bloğu) — Vektörize backtest çekirdeği (2026-08-04)
 Önceki durumda `backtest/` klasörü zaten vardı ama roadmap'in istediği şey değildi:
@@ -169,6 +171,60 @@ bir testi yoktu**, bir başka saf ada. Roadmap'in istediği listeye göre:
   beslenebildiğini kanıtlayan bir entegrasyon testi eklendi — ikisi ayrı ada
   olarak kalmasın diye.
 - `pytest -q`: 295 passed.
+
+### Sprint 5 (Faz 167 bloğu) — Replay ↔ Backtest entegrasyonu + determinizm denetimi (2026-08-04)
+- `backtest/cognitive_backtest_runner.py` eklendi: her bar/sembol için
+  **gerçek `CognitiveEngine.run()`**'u çağırıyor (replay'in tek-karar için
+  kullandığı aynı fonksiyon) ve sonucu Sprint 3'ün `VectorizedBacktestEngine`'ine
+  besliyor — ayrı, basitleştirilmiş bir "backtest karar mantığı" YAZILMADI
+  (bu tam olarak CognitiveEngine/Orchestrator "iki beyin" sorununu bir kat
+  aşağıda tekrar üretirdi). Kanıt: `test_backtest_runner_actually_invokes_cognitive_engine_run`
+  — `engine.run`'a `wraps=` ile spy koyup gerçekten 10 kez (2 sembol × 5 bar)
+  çağrıldığını doğruluyor.
+- **Determinizm denetimi — gerçek bug bulundu ve düzeltildi:** `CouncilOrchestrator.deliberate()`
+  ağırlıkları uygulamak için her zaman `WeightRepository.get_latest()` çağırıyordu.
+  Bir backtest geçmişteki bir bar'ı simüle ederken bu, o an sistemin GERÇEKTEN
+  o tarihte sahip olduğu ağırlıkları değil, **şu anki en güncel (gelecekte
+  öğrenilmiş) ağırlıkları** kullanır — klasik look-ahead sızıntısı, roadmap'in
+  bu konuşmada "defalarca vurgulanan nokta" dediği tam olarak bu. Düzeltme:
+  `WeightRepository.get_by_id()` eklendi; `CouncilOrchestrator`/`CouncilStage`/
+  `CognitiveEngine`'e `pinned_weight_snapshot_id` parametresi eklendi (varsayılan
+  `None` = eski davranış, canlı sistemde hiçbir şey değişmedi). Kanıt:
+  `test_backtest_is_deterministic_with_a_pinned_weight_snapshot` — aynı pin
+  edilmiş snapshot ile iki ayrı backtest çalıştırması birebir aynı sonucu
+  üretiyor.
+- `datetime.now()` denetimi: `engines/cognitive_pipeline.py`, `services/cognitive_engine.py`,
+  `services/guardrail_stage.py`, `engines/risk_engine.py`, `services/agent_memory.py`,
+  `services/weight_optimizer.py` tarandı — karar YOLUNDA tek `datetime.now()`
+  kullanımı `weight_optimizer.py`'de bir approval TTL'i (insan onay son kullanma
+  tarihi) için, kararın kendisini etkilemiyor; determinizm riski değil.
+- **Yeni, önemli bulgu (P0):** `ctx.risk.limits`'i gerçek üretimde **hiçbir kod
+  yolu** doldurmuyor — `api/rest/cognitive.py`'deki `POST /cognitive/run`
+  bomboş bir `CognitiveCycleContext()` oluşturup direkt `engine.run()` çağırıyor.
+  Sonuç: `RiskEngine.execute()` her zaman `MISSING_LIMIT` ile reddediyor —
+  **CognitiveEngine yolu üretimde şu an asla gerçek bir kararı onaylamıyor.**
+  Ayrıca üç farklı, birbirinden habersiz "risk limit" temsili var:
+  `risk/limits/schema.py` (`RiskLimit` pydantic, `.verify()` yok),
+  `risk/limits/enforcement.py` (`RiskEnforcer`/`RiskLimit` dataclass, ayrı arayüz),
+  ve `RiskEngine.execute()`'ın gerçekte beklediği arayüz (`.value` + `.verify(secret)->bool`)
+  — bu üçüncüsü hiçbir yerde gerçek olarak implement edilmemiş, sadece test
+  dosyalarında `FakeLimit` adıyla mock'lanmış. `backtest/cognitive_backtest_runner.py`
+  bunun için kendi minimal `_UnlimitedPositionLimit`'ini kullanıyor (dördüncü
+  bir temsil eklemek yerine, gerçek arayüzü taklit ediyor ve bunu docstring'de
+  açıkça belirtiyor). **Bu üç risk-limit tasarımını tek bir gerçek implementasyona
+  indirmek ve `/cognitive/run`'a bağlamak ayrı, öncelikli bir karar/iş gerektiriyor.**
+- **Yeni bulgu (P2, kapsam dışı bırakıldı):** `services/embedding_service.py`
+  (`SentenceTransformer`) hiçbir testte hiç çalıştırılmamış — sadece
+  `ctx.market.features` doluyken tetiklenen `DecisionContextBuilder.enrich()`
+  → `SemanticSearch.find_similar_episodes()` yolundan geçiyor, ve mevcut
+  standart `transformers.AutoModel/AutoTokenizer` mock deseni altında
+  `self.to(device)` çağrısında gerçek bir `TypeError` ile patlıyor
+  (`sentence_transformers` kendi cihaz tespitini yapıyor, mock'lanmış model
+  bunu bozuyor). Backtest runner bilinçli olarak `ctx.market.features`
+  set etmiyor (diğer tüm geçen full-cycle testler de aynı şekilde bu yoldan
+  kaçınıyor) — gerçek bir backtest'in feature'ları karar motoruna vermesi
+  gerekecek, o zaman bu test-altyapısı sorunu da çözülmeli.
+- `pytest -q`: 298 passed.
 
 ## Mimari Notlar
 - **BinderStage kapsamı (Sprint 1 netleştirme, 2026-08-04):** BinderStage bilinçli olarak sadece

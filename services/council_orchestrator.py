@@ -7,11 +7,21 @@ from services.weight_repository import WeightRepository
 
 
 class CouncilOrchestrator:
-    def __init__(self, registry, belief_engine: BeliefEngine | None = None):
+    def __init__(
+        self,
+        registry,
+        belief_engine: BeliefEngine | None = None,
+        pinned_weight_snapshot_id=None,
+    ):
         self.registry = registry
         self.belief_engine = belief_engine or BeliefEngine()
         self.weight_repository = WeightRepository()
         self.active_weight_snapshot_id = None
+        # If set, deliberate() uses this exact snapshot instead of
+        # get_latest() — required for backtest determinism, otherwise a
+        # decision simulated for a past bar would use weights learned from
+        # data that (in a real run) wouldn't exist yet.
+        self.pinned_weight_snapshot_id = pinned_weight_snapshot_id
 
         self.last_debate_result: DebateResult | None = None
 
@@ -52,7 +62,10 @@ class CouncilOrchestrator:
             {}
         )
 
-        snapshot = self.weight_repository.get_latest()
+        if self.pinned_weight_snapshot_id is not None:
+            snapshot = self.weight_repository.get_by_id(self.pinned_weight_snapshot_id)
+        else:
+            snapshot = self.weight_repository.get_latest()
         self.active_weight_snapshot_id = snapshot.id if snapshot else None
 
         if snapshot:

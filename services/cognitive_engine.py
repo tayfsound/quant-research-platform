@@ -23,14 +23,19 @@ from services.weight_repository import WeightRepository
 
 
 class CognitiveEngine:
-    def __init__(self):
+    def __init__(self, pinned_weight_snapshot_id=None):
+        """pinned_weight_snapshot_id: if set, every decision uses this exact
+        weight snapshot instead of WeightRepository.get_latest() — required
+        for backtest determinism (see backtest/cognitive_backtest_runner.py)
+        so a simulated historical decision can't use weights learned from
+        data past that point in time."""
         registry = AgentRegistry.create_default()
 
         self.guardrail_stage = GuardrailStage(RiskEngine())
         self.memory_stage = MemoryStage()
         self.knowledge_stage = KnowledgeStage()
         self.binder_stage = BinderStage()
-        self.council_stage = CouncilStage(registry)
+        self.council_stage = CouncilStage(registry, pinned_weight_snapshot_id=pinned_weight_snapshot_id)
         self.meta_stage = MetaStage()
         self.decision_fusion = DecisionFusionStage()
         self.record_stage = RecordingStage()

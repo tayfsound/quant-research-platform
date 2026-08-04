@@ -38,3 +38,13 @@ class WeightRepository:
         if not filename.exists():
             return None
         return AgentWeightSnapshot.model_validate_json(filename.read_text())
+
+    def get_by_id(self, snapshot_id) -> AgentWeightSnapshot | None:
+        """Fetch a specific pinned snapshot — needed so a backtest run can
+        use the weights that existed at a given historical point instead of
+        whatever is 'latest' right now (get_latest() would leak future
+        learning into a simulated past decision)."""
+        filename = self.storage_path / f"snapshot_{snapshot_id}.json"
+        if not filename.exists():
+            return None
+        return AgentWeightSnapshot.model_validate_json(filename.read_text())
