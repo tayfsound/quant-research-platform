@@ -1,10 +1,11 @@
 """Cognitive Pipeline Aşamaları — opinions akışı + Debate hafızası + RecordingStage."""
+from contracts.contexts.decision import ActionType
+from contracts.contexts.risk import RiskReason
+
 from agents.registry import AgentRegistry
 from contracts.agent import AgentDomain, AgentOpinion
 from contracts.belief import Belief
 from contracts.context import CognitiveCycleContext
-from contracts.contexts.risk import RiskReason
-from contracts.contexts.decision import ActionType
 from contracts.decision_event import DecisionEvent
 from contracts.experiment_registry import ExperimentRegistry
 from services.context_adapter import ContextAdapter
@@ -112,9 +113,6 @@ class MetaStage:
 
         ctx.decision.confidence = meta["confidence"]
         ctx.decision.uncertainty = meta["uncertainty"]
-
-        from contracts.contexts.decision import ActionType
-
         if meta["decision"] == "WAIT":
             ctx.decision.action = ActionType.WAIT
             ctx.decision.final_size = 0.0
@@ -174,44 +172,6 @@ class BinderStage:
         return ctx
 
 
-
-class RiskGateStage:
-    def __init__(self, risk_engine):
-        self.risk_engine = risk_engine
-
-    def execute(self, ctx):
-        limits = ctx.risk.limits
-        final_size = getattr(ctx.decision, "final_size", 0.0)
-        reasons = []
-
-        max_size = limits.get("max_position_size")
-        if max_size and final_size > max_size.value:
-            from contracts.contexts.risk import RiskReason
-            reasons.append(RiskReason(
-                code="POST_FUSION_SIZE_EXCEEDED",
-                message="Final size " + str(final_size) + " > limit " + str(max_size.value),
-                severity="critical",
-            ))
-
-        max_dd = limits.get("max_drawdown")
-        if max_dd and ctx.risk.current_drawdown >= max_dd.value:
-            from contracts.contexts.risk import RiskReason
-            reasons.append(RiskReason(
-                code="MAX_DRAWDOWN",
-                message="Drawdown exceeded",
-                severity="critical",
-            ))
-
-        if reasons:
-            from contracts.contexts.decision import ActionType
-            ctx.decision.action = ActionType.WAIT
-            ctx.decision.final_size = 0.0
-            ctx.risk.evaluation.verdict = "rejected"
-            ctx.risk.evaluation.reasons = reasons
-        else:
-            ctx.risk.evaluation.verdict = "approved"
-
-        return ctx
 
 class RecordingStage:
     def __init__(self):
