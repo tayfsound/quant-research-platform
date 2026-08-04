@@ -1,10 +1,12 @@
 """WeightApproval E2E — real DB approval → real endpoint → real weight snapshot persisted."""
 from uuid import uuid4
 
+from contracts.auth import Role
 from contracts.weight_approval import WeightApproval
 from database.session_factory import SessionFactory
 from database.repositories.weight_approval_repository import WeightApprovalRepository
 from services.weight_repository import WeightRepository
+from tests.auth_helpers import make_authed_headers
 
 
 def test_approve_endpoint_applies_weights():
@@ -25,7 +27,8 @@ def test_approve_endpoint_applies_weights():
         WeightApprovalRepository(session).save(approval)
 
     client = TestClient(app)
-    response = client.post(f"/api/v1/weights/{approval.id}/approve", params={"approved_by": "test"})
+    headers = make_authed_headers(Role.OPERATOR)
+    response = client.post(f"/api/v1/weights/{approval.id}/approve", headers=headers)
 
     assert response.status_code == 200
     body = response.json()

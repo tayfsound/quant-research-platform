@@ -24,6 +24,8 @@ dependencies = [
     "pgvector>=0.3.0",
     "numpy>=2.0.0",
     "psutil>=6.0.0",
+    "pyjwt>=2.9.0",
+    "bcrypt>=4.2.0",
 ]
 
 [project.optional-dependencies]

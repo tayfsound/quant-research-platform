@@ -1,9 +1,9 @@
-# Mevcut Durum -- v1.6.0 (+ Plugin System / Research Workspace)
+# Mevcut Durum -- v1.7.0 (+ Auth altyapısı — yüksek riskli endpoint'ler korumalı)
 
 **Tarih:** 2026-08-04
 **Branch:** main
-**Son commit (HEAD):** 1eb24c7 Faz 173-174 (Monitoring/Explainability) + bu oturumun devamı (Faz 176-177)
-**Test:** 324 passed, 1 xfailed (TimescaleDB hypertable, local'de non-empty table nedeniyle — bkz. borç #6), 1 skipped
+**Son commit (HEAD):** 39ddbb9 Faz 176-177 (Plugin/Workspace) + bu oturumun devamı (Faz 178-179 Auth, kısmi)
+**Test:** 334 passed, 1 xfailed (TimescaleDB hypertable, local'de non-empty table nedeniyle — bkz. borç #6), 1 skipped
 **Not:** Faz 172 (Execution Layer) hâlâ bekliyor — gerçek (testnet) borsa API key'i proje sahibinden bekleniyor, roadmap'in kendisi bu bloğu "hız değil doğruluk" diye işaretliyor.
 
 **Önemli not:** Bu dosya, Faz 161-167 commit'lerinden sonra güncellenmemiş kalmıştı (dokümantasyon
@@ -441,6 +441,72 @@ Roadmap: "Kod değiştirmeden, sadece UI üzerinden yeni bir agent ekleyip
   gerçek çözüm ExperimentRegistry'ye plugin-tracking alanı eklemek, ki bu
   proje sahibinin şema kararını gerektirir.
 - `pytest -q`: 324 passed.
+
+## Faz 178-179 — API + Auth: KISMİ (2026-08-04, aynı oturum) 🔴
+
+Proje sahibiyle kapsam netleştirildi: gerçek altyapı kur + en yüksek riskli
+endpoint'lere uygula; TÜM ~35 endpoint'e yaymak ayrı, bilinçli bırakılmış bir
+adım (aşağıda). Execution Layer'ın aksine bu blok dış kimlik bilgisi
+gerektirmiyordu, bu yüzden kurulabildi.
+
+### Ne kuruldu (gerçek, test edilmiş)
+- **Yeni bağımlılıklar:** `pyjwt`, `bcrypt` (hem sistem Python hem `.venv`'e
+  kuruldu, `pyproject.toml`'a eklendi) — parola/JWT için sağlam, standart
+  kütüphaneler kullanmadan bunu doğru yapmanın yolu yok.
+- `contracts/auth.py`: `Role` (VIEWER < OPERATOR < ADMIN, sıralı IntEnum —
+  `role >= min_role` doğrudan çalışır), `User`, `APIKey`, `AuditLogEntry`.
+  **Workspace** kasıtlı olarak modellenmedi — sistemde başka hiçbir yerde
+  multi-tenant kavramı yok (tek global dashboard/DB), Workspace'i yoktan var
+  etmek gerçek bir şeyi genişletmek değil icat etmek olurdu.
+- `database/migrations/versions/faz168_auth_tables.py`: `users`, `api_keys`,
+  `audit_log` tabloları — uygulandı, doğrulandı.
+- `services/auth_service.py`: `bcrypt` ile parola hash'leme, `PyJWT` ile
+  token üretme/doğrulama (HS256, `.env`'deki `SECRET_KEY`/`JWT_ALGORITHM`/
+  `JWT_EXPIRE_MINUTES`), API key üretme (SHA256 — parola değil, zaten
+  yüksek-entropili rastgele token, bcrypt'in yavaşlığı gereksiz).
+  **Fail-closed:** `SECRET_KEY` boşsa token üretme/doğrulama tamamen
+  reddediliyor (boş string ile imzalamak yerine).
+  `get_current_user` (Bearer JWT veya `X-API-Key` header'ını çözer) ve
+  `require_role(min_role)` (403 + audit) — **her ikisi de her çağrıda
+  allow/deny farketmeksizin `audit_log`'a yazıyor** (roadmap: "her
+  yetkilendirme kararının loglanması").
+- `api/rest/auth.py`: `POST /auth/register` (ilk kullanıcı otomatik ADMIN —
+  başka kimlik doğrulanmış aktör yokken bootstrap; sonrakiler VIEWER),
+  `POST /auth/login`, `GET /auth/me`, `POST /auth/api-keys`,
+  `GET /auth/audit-log` (ADMIN-only).
+- **Korumaya alınan endpoint'ler** (agreed scope — en yüksek risk):
+  - `api/rest/weights.py`: `/approve`, `/reject`, `/auto-reject` →
+    `require_role(OPERATOR)`. `approved_by` artık client'ın gönderdiği
+    keyfi bir string değil, **kimliği doğrulanmış kullanıcının username'i**
+    — önceden herkes `approved_by=whoever` diyebilirdi, audit bütünlüğü
+    buna bağlı.
+  - `api/rest/workspace.py`: `/plugins/upload`, `/plugins/{f}/trust`,
+    `/plugins/{f}/revoke` → `require_role(ADMIN)` — kod çalıştırma riski en
+    yüksek olan yer.
+- **Dashboard bağlantısı** (minimal, H4 uyumlu): `Login.tsx` artık gerçek
+  bir login/register formu — önceden Vite'ın varsayılan başlangıç şablonu
+  (react/vite logoları, "count" butonu) idi, `onLogin` hiçbir kimlik
+  doğrulaması yapmadan direkt çağrılıyordu, tamamen dekoratifti. Artık
+  `POST /auth/login`'e gerçek istek atıyor, JWT'yi `localStorage`'a
+  yazıyor. `dashboard/src/api/auth.ts`: `authHeaders()` helper'ı, SADECE
+  artık korumalı endpoint'leri çağıran `PendingApprovals.tsx` ve
+  `ResearchWorkspace.tsx`'e eklendi (kapsam anlaşmasıyla tutarlı — tüm
+  dashboard'u auth'a bağlamak ayrı bir iş).
+- Kanıt: `tests/test_auth.py` (9 test: hash roundtrip, JWT roundtrip +
+  tampered token reddi, register bootstrap, login/me, API key kullanımı,
+  audit log'un hem allow hem deny kaydettiği, disabled user reddi,
+  SECRET_KEY boşken fail-closed) + `tests/test_weight_approval_e2e.py` ve
+  `tests/test_research_workspace.py` gerçek auth header'larla güncellendi
+  (`tests/auth_helpers.py` — bootstrap sırası bağımsız, doğrudan repository
+  üzerinden deterministik kullanıcı oluşturuyor).
+- `pytest -q`: 334 passed.
+
+### Bilinçli yapılmayanlar (proje sahibiyle kapsam anlaşması)
+| # | Ne | Neden şimdi değil |
+|---|----|--------------------|
+| 17 | Roadmap'in istediği geri kalan ~30 endpoint (cognitive/run, replay, backtest, experiments, dashboard, vb.) hâlâ auth'suz — herkes çağırabilir. | Kapsam bilinçli olarak "gerçek altyapı + en yüksek riskli endpoint" ile sınırlandı; tam yayılma ayrı, büyük bir iş (her router'ı gözden geçir, hangi rolün neye erişmesi gerektiğine karar ver). |
+| 18 | Sprint 21 (REST+WS API yüzeyinin tamamlanması — backtest tetikleme/replay sorgulama zaten var ama "tam" değil) ve Sprint 24'ün "penetrasyon testi" kısmı yapılmadı. | Auth altyapısı yeni kuruldu; bağımsız bir güvenlik incelemesi (roadmap'in kendi önerisi) altyapı oturmadan anlamlı değil. |
+| 19 | `SECRET_KEY` hâlâ `.env`'deki geliştirme placeholder'ı (`degistirin-cok-gizli-bir-anahtar`) — gerçek sızıntı değil ama **production'a asla bu değerle çıkılmamalı**. | Gerçek rastgele bir `SECRET_KEY` üretmek/rotasyon prosedürü proje sahibinin production dağıtım kararına bağlı. |
 
 ## Mimari Notlar
 - **BinderStage kapsamı (Sprint 1 netleştirme, 2026-08-04):** BinderStage bilinçli olarak sadece

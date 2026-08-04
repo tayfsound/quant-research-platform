@@ -5,10 +5,12 @@ is never bypassed here — uploading never auto-trusts, it only writes the
 file so a human can review it before the separate trust step."""
 import re
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from agents.plugin_loader import PLUGINS_DIR, file_hash
+from contracts.auth import Role
+from services.auth_service import AuthContext, require_role
 from services.plugin_trust_store import load_trusted_hashes, revoke_plugin, trust_plugin
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
@@ -41,7 +43,7 @@ async def list_plugins():
 
 
 @router.post("/plugins/upload")
-async def upload_plugin(upload: PluginUpload):
+async def upload_plugin(upload: PluginUpload, user: AuthContext = Depends(require_role(Role.ADMIN))):
     """Writes the file only — does NOT trust/import it. Returns the hash so
     a reviewer can inspect the source and then call /trust explicitly."""
     if not _SAFE_FILENAME.match(upload.filename):
@@ -57,7 +59,7 @@ async def upload_plugin(upload: PluginUpload):
 
 
 @router.post("/plugins/{filename}/trust")
-async def trust_plugin_endpoint(filename: str):
+async def trust_plugin_endpoint(filename: str, user: AuthContext = Depends(require_role(Role.ADMIN))):
     path = PLUGINS_DIR / filename
     if not path.exists():
         raise HTTPException(status_code=404, detail="plugin_not_found")
@@ -78,6 +80,6 @@ async def trust_plugin_endpoint(filename: str):
 
 
 @router.post("/plugins/{filename}/revoke")
-async def revoke_plugin_endpoint(filename: str):
+async def revoke_plugin_endpoint(filename: str, user: AuthContext = Depends(require_role(Role.ADMIN))):
     revoke_plugin(filename)
     return {"filename": filename, "trusted": False}

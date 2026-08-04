@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { authHeaders } from "../api/auth";
 
 export default function ResearchWorkspace() {
   const [plugins, setPlugins] = useState<any[]>([]);
@@ -16,10 +17,12 @@ export default function ResearchWorkspace() {
     load();
   }, []);
 
+  // Upload/trust/revoke require ADMIN (Sprint 22-24) — loading and running
+  // arbitrary code is the highest-sensitivity action in the whole system.
   const handleUpload = () => {
     fetch("/api/v1/workspace/plugins/upload", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({ filename, source_code: sourceCode }),
     })
       .then((r) => r.json())
@@ -34,7 +37,7 @@ export default function ResearchWorkspace() {
   };
 
   const handleTrust = (name: string) => {
-    fetch(`/api/v1/workspace/plugins/${name}/trust`, { method: "POST" })
+    fetch(`/api/v1/workspace/plugins/${name}/trust`, { method: "POST", headers: authHeaders() })
       .then((r) => r.json())
       .then((data) => {
         setMessage(`Trusted ${name}. Domains registered: ${data.registered_domains?.join(", ")}`);
@@ -43,7 +46,7 @@ export default function ResearchWorkspace() {
   };
 
   const handleRevoke = (name: string) => {
-    fetch(`/api/v1/workspace/plugins/${name}/revoke`, { method: "POST" }).then(() => load());
+    fetch(`/api/v1/workspace/plugins/${name}/revoke`, { method: "POST", headers: authHeaders() }).then(() => load());
   };
 
   return (

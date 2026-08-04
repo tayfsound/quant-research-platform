@@ -1,9 +1,11 @@
 """Weight approval API — Faz 160 runtime."""
 from datetime import datetime
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from database.session_factory import SessionFactory
 from database.repositories.weight_approval_repository import WeightApprovalRepository, WeightApprovalModel
+from contracts.auth import Role
+from services.auth_service import AuthContext, require_role
 
 router = APIRouter(prefix="/weights", tags=["weights"])
 
@@ -15,7 +17,7 @@ async def list_pending(limit: int = 10):
         return {"pending": [{"id": str(r.id), "proposed": r.proposed_weights, "previous": r.previous_weights, "status": r.status} for r in rows]}
 
 @router.post("/{approval_id}/approve")
-async def approve(approval_id: str, approved_by: str = "human"):
+async def approve(approval_id: str, user: AuthContext = Depends(require_role(Role.OPERATOR))):
     with SessionFactory.get_session() as session:
         repo = WeightApprovalRepository(session)
         approval = session.query(WeightApprovalModel).filter_by(id=approval_id).first()
@@ -23,7 +25,7 @@ async def approve(approval_id: str, approved_by: str = "human"):
             return {"error": "not_found"}
         if approval.status != "pending":
             return {"error": "already_processed", "status": approval.status}
-        
+
         # Apply proposed weights to repository
         from contracts.agent_weight_snapshot import AgentWeightSnapshot
         from services.weight_repository import WeightRepository
@@ -33,12 +35,15 @@ async def approve(approval_id: str, approved_by: str = "human"):
             previous_snapshot_id=None,
         ).finalize()
         WeightRepository().save(snapshot)
-        
-        repo.approve(approval_id, approved_by)
+
+        # approved_by is the AUTHENTICATED caller's username, not a free-text
+        # query param anyone could fill in with anything — audit integrity
+        # depends on this actually being who did it.
+        repo.approve(approval_id, user.username)
         return {"approval_id": approval_id, "status": "approved", "weights_applied": True}
 
 @router.post("/{approval_id}/reject")
-async def reject(approval_id: str):
+async def reject(approval_id: str, user: AuthContext = Depends(require_role(Role.OPERATOR))):
     with SessionFactory.get_session() as session:
         approval = session.query(WeightApprovalModel).filter_by(id=approval_id).first()
         if not approval:
@@ -51,7 +56,7 @@ async def reject(approval_id: str):
 
 
 @router.post("/auto-reject")
-async def auto_reject_stale(max_age_hours: float = 24):
+async def auto_reject_stale(max_age_hours: float = 24, user: AuthContext = Depends(require_role(Role.OPERATOR))):
     """Reject pending approvals older than max_age_hours."""
     with SessionFactory.get_session() as session:
         repo = WeightApprovalRepository(session)

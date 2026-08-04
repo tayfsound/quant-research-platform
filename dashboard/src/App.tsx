@@ -14,6 +14,7 @@ import BacktestRuns from './views/BacktestRuns';
 import DecisionExplain from './views/DecisionExplain';
 import ResearchWorkspace from './views/ResearchWorkspace';
 import NavBar from './components/NavBar';
+import { clearToken } from './api/auth';
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -23,9 +24,14 @@ function App() {
     return <Login onLogin={() => setIsLoggedIn(true)} />;
   }
 
+  const handleLogout = () => {
+    clearToken();
+    setIsLoggedIn(false);
+  };
+
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
-      <NavBar current={view} onChange={setView} onLogout={() => setIsLoggedIn(false)} />
+      <NavBar current={view} onChange={setView} onLogout={handleLogout} />
       <main className="p-6 max-w-7xl mx-auto">
         {view === 'live' && <LivePredictions />}
         {view === 'market' && <MarketOverview />}

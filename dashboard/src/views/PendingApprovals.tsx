@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import { authHeaders } from "../api/auth";
 
 export default function PendingApprovals() {
   const [approvals, setApprovals] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/v1/weights/pending?limit=10")
@@ -10,13 +12,25 @@ export default function PendingApprovals() {
   }, []);
 
   const handleApprove = (id: string) => {
-    fetch(`/api/v1/weights/${id}/approve`, { method: "POST" })
-      .then(() => setApprovals((prev) => prev.filter((a) => a.id !== id)));
+    setError(null);
+    // Requires OPERATOR+ role (Sprint 22-24) — weight approval is one of
+    // the highest-stakes actions in the system, this is the human-side
+    // mirror of "AI can't change risk limits."
+    fetch(`/api/v1/weights/${id}/approve`, { method: "POST", headers: authHeaders() })
+      .then(async (r) => {
+        if (!r.ok) {
+          const data = await r.json().catch(() => ({}));
+          throw new Error(data.detail || `HTTP ${r.status}`);
+        }
+        setApprovals((prev) => prev.filter((a) => a.id !== id));
+      })
+      .catch((e) => setError(String(e.message || e)));
   };
 
   return (
     <div className="p-4 border rounded">
       <h2 className="text-lg font-bold mb-2">Pending Weight Approvals</h2>
+      {error && <div className="text-red-400 text-sm mb-2">{error}</div>}
       {approvals.length === 0 ? (
         <div>No pending approvals</div>
       ) : (

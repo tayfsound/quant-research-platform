@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
-from api.rest import audit, backtest, cognitive, dashboard, experiments, explainability, memory, models, orchestrator, reasoning, replay, strategies, weights, workspace
+from api.rest import audit, auth, backtest, cognitive, dashboard, experiments, explainability, memory, models, orchestrator, reasoning, replay, strategies, weights, workspace
 from api.websocket import decisions, live_predictions
 from api.websocket.cycle_feed import websocket_endpoint
 from observability.health import router as health_router
@@ -73,6 +73,7 @@ app.include_router(dashboard.router, prefix="/api/v1")
 app.include_router(backtest.router, prefix="/api/v1")
 app.include_router(explainability.router, prefix="/api/v1")
 app.include_router(workspace.router, prefix="/api/v1")
+app.include_router(auth.router, prefix="/api/v1")
 
 @app.websocket("/ws/cycle")
 async def cycle_websocket(websocket: WebSocket):

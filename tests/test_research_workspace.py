@@ -6,6 +6,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agents.plugin_loader import PLUGINS_DIR
+from contracts.auth import Role
+from tests.auth_helpers import make_authed_headers
 
 PLUGIN_SOURCE = '''
 from contracts.agent import AgentDomain, AgentOpinion
@@ -38,10 +40,12 @@ def test_upload_then_trust_activates_a_new_agent_with_no_code_change():
             _cleanup()
             try:
                 client = TestClient(app)
+                headers = make_authed_headers(Role.ADMIN)
 
                 upload = client.post(
                     "/api/v1/workspace/plugins/upload",
                     json={"filename": TEST_FILENAME, "source_code": PLUGIN_SOURCE},
+                    headers=headers,
                 )
                 assert upload.status_code == 200
                 assert upload.json()["trusted"] is False
@@ -56,7 +60,7 @@ def test_upload_then_trust_activates_a_new_agent_with_no_code_change():
                 probe = AgentRegistry()
                 assert TEST_FILENAME not in discover_plugins(probe)
 
-                trust = client.post(f"/api/v1/workspace/plugins/{TEST_FILENAME}/trust")
+                trust = client.post(f"/api/v1/workspace/plugins/{TEST_FILENAME}/trust", headers=headers)
                 assert trust.status_code == 200
                 body = trust.json()
                 assert body["trusted"] is True
@@ -86,5 +90,27 @@ def test_upload_rejects_unsafe_filenames():
             response = client.post(
                 "/api/v1/workspace/plugins/upload",
                 json={"filename": "../../evil.py", "source_code": "x = 1"},
+                headers=make_authed_headers(Role.ADMIN),
             )
             assert response.status_code == 400
+
+
+def test_upload_requires_admin_role():
+    with patch("transformers.AutoModel.from_pretrained"):
+        with patch("transformers.AutoTokenizer.from_pretrained"):
+            from fastapi.testclient import TestClient
+            from api.main import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/api/v1/workspace/plugins/upload",
+                json={"filename": "harmless.py", "source_code": "x = 1"},
+                headers=make_authed_headers(Role.VIEWER),
+            )
+            assert response.status_code == 403
+
+            unauthenticated = client.post(
+                "/api/v1/workspace/plugins/upload",
+                json={"filename": "harmless.py", "source_code": "x = 1"},
+            )
+            assert unauthenticated.status_code == 401
