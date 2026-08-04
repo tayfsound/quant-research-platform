@@ -118,7 +118,7 @@ class ReplayEngine:
         stored = decision.get('integrity_hash', '')
         return expected == stored
 
-    def replay_decision(self, decision_id: str) -> dict:
+    def replay_decision(self, decision_id: str, deterministic: bool = True) -> dict:
         """Replay a single decision by ID through CognitiveEngine — deterministic from snapshot."""
         if not self.decision_repo:
             return {'error': 'repositories_not_configured', 'decision_id': decision_id}
@@ -131,8 +131,19 @@ class ReplayEngine:
         ctx.market.symbol = decision.get('symbol', 'unknown')
         
         # Restore market snapshot if available
-        snapshot = decision.get('market_snapshot', {})
-        raw = snapshot.get('raw_snapshot', {})
+        # DB'de ayrı kolon yok; agent_contributions içinde saklanıyor
+        snapshot = {}
+        raw = {}
+        agent_contributions = decision.get('agent_contributions', []) or []
+        for contrib in agent_contributions:
+            if isinstance(contrib, dict) and contrib.get('type') == 'market_snapshot':
+                snapshot = contrib.get('data', {})
+                raw = snapshot.get('raw_snapshot', {})
+                break
+        if not raw:
+            # Fallback: doğrudan market_snapshot kolonu (gelecek şema)
+            snapshot = decision.get('market_snapshot', {}) or {}
+            raw = snapshot.get('raw_snapshot', {})
         if raw:
             ctx.market.features = {
                 k: v for k, v in raw.items() 
@@ -141,6 +152,16 @@ class ReplayEngine:
         
         ctx.decision.proposed_direction = decision.get('proposed_direction', 'NEUTRAL')
         ctx.decision.confidence = decision.get('confidence', 0.0)
+
+        # Deterministik replay: seed + config hash
+        if deterministic:
+            import hashlib
+            config_hash = hashlib.sha256(
+                f"{decision_id}|{decision.get('symbol')}|{decision.get('confidence')}".encode()
+            ).hexdigest()
+            # Engine'e deterministik mod sinyali (seed-based)
+            import random
+            random.seed(config_hash[:16])
 
         result_ctx = self.engine.run(ctx, persist=False)
 
@@ -151,5 +172,6 @@ class ReplayEngine:
             'confidence': result_ctx.decision.confidence,
             'risk_verdict': result_ctx.risk.evaluation.verdict if result_ctx.risk.evaluation else 'unknown',
             'snapshot_restored': bool(raw),
+            'deterministic': deterministic,
         }
 

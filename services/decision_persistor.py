@@ -20,6 +20,12 @@ class DecisionPersistor:
                 "data": event.risk_evaluation
             })
 
+        if event.market_snapshot:
+            agent_contributions.append({
+                "type": "market_snapshot",
+                "data": event.market_snapshot
+            })
+
         self.session.execute(
             text("""
                 INSERT INTO decisions (
@@ -67,3 +73,11 @@ class DecisionPersistor:
             },
         )
         self.session.commit()
+
+    def get_by_id(self, decision_id: str) -> dict | None:
+        result = self.session.execute(
+            text("SELECT * FROM decisions WHERE id = :id"),
+            {"id": decision_id},
+        )
+        row = result.mappings().first()
+        return dict(row) if row else None

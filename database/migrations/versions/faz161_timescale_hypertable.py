@@ -12,6 +12,7 @@ branch_labels = None
 depends_on = None
 
 def upgrade():
+    op.execute('CREATE EXTENSION IF NOT EXISTS timescaledb;')
     op.execute("SELECT create_hypertable('decisions', 'timestamp', if_not_exists => TRUE);")
     op.execute("SELECT create_hypertable('experiment_registry', 'timestamp', if_not_exists => TRUE);")
     op.execute("SELECT create_hypertable('weight_approvals', 'timestamp', if_not_exists => TRUE);")
