@@ -1,0 +1,19 @@
+# Non-secret configuration only. DB URLs, SECRET_KEY, and exchange API keys
+# live in secret.yaml (see secret.example.yaml — never commit a filled-in
+# secret.yaml, same rule as .env).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: qrp-config
+  namespace: qrp
+data:
+  APP_ENV: "production"
+  LOG_LEVEL: "INFO"
+  API_PORT: "8000"
+  JWT_ALGORITHM: "HS256"
+  JWT_EXPIRE_MINUTES: "1440"
+  PGVECTOR_EMBEDDING_DIM: "384"
+  MARKET_DATA_SOURCE: "mock"
+  DEFAULT_SYMBOL: "BTCUSDT"
+  DEFAULT_TIMEFRAME: "1m"
+  MARKET_DATA_FALLBACK_TO_MOCK: "true"

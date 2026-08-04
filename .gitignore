@@ -19,6 +19,8 @@ agents/plugins/*.py
 .env
 .env.*
 !.env.example
+k8s/secret.yaml
+!k8s/secret.example.yaml
 models/*.pkl
 *.bak
 *.patch

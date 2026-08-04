@@ -26,6 +26,24 @@ dependencies = [
     "psutil>=6.0.0",
     "pyjwt>=2.9.0",
     "bcrypt>=4.2.0",
+    # Sprint 25-26: these were already imported throughout the codebase
+    # (services/llm_reasoner.py, ml/training/, database/migrations/ via
+    # alembic, observability/metrics.py via prometheus_client) but never
+    # declared — `pip install .` in a fresh environment (i.e. the Docker
+    # image built this sprint) never actually worked before this. Verified
+    # by building the real Docker image and running `python -c "from
+    # api.main import app"` inside it.
+    "alembic>=1.13.0",
+    "prometheus-client>=0.20.0",
+    "sentence-transformers>=3.0.0",
+    "scikit-learn>=1.5.0",
+    "torch>=2.3.0",
+    "lightgbm>=4.3.0",
+    "xgboost>=2.0.0",
+    "sortedcontainers>=2.4.0",
+    "filelock>=3.13.0",
+    "websockets>=13.0",
+    "celery>=5.4.0",
 ]
 
 [project.optional-dependencies]
