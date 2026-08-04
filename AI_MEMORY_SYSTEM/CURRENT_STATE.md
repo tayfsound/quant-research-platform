@@ -1,9 +1,13 @@
-# Mevcut Durum -- v1.2.5
+# Mevcut Durum -- v1.2.6 (Faz 167 sonrası + Faz 165 auto-approval gerçek entegrasyon)
 
-**Tarih:** 2026-08-01
+**Tarih:** 2026-08-04
 **Branch:** main
-**Tag:** v1.2.6
-**Test:** 255 passed (240 + 2 RiskGateStage)
+**Son commit (HEAD):** 8c71826 Faz 167 (WeightApproval approve → weight snapshot C1 test)
+**Test:** 265 passed, 1 xfailed (TimescaleDB hypertable, local'de non-empty table nedeniyle — bkz. borç #6), 1 skipped
+
+**Önemli not:** Bu dosya, Faz 161-167 commit'lerinden sonra güncellenmemiş kalmıştı (dokümantasyon
+sürüklenmesi — roadmap'te 5 kez tekrarlanan risk, burada gerçekleşti). Aşağıdaki liste 2026-08-04
+tarihinde koda karşı yeniden doğrulandı.
 
 ## Tamamlanan (C1 kanitli)
 
@@ -47,19 +51,71 @@
 
 
 
-## Bilinen Borçlar (Known Gaps)
+### Faz 159-167 (commit'lerde var, bu dosyada eksikti — şimdi eklendi)
+- Faz 159: ExperimentRegistry contract + RecordingStage.execute'e bağlandı (git_sha, risk_limits_version, ...)
+- Faz 160: Meta Optimizer approval gate (human-in-the-loop) — WeightApproval pending/approve/reject
+- Faz 161: TimescaleDB migration dosyası + CI hypertable verify testi (local'de xfail, bkz. borç #6)
+- Faz 162: ReplayEngine deterministic replay + verify_integrity (hash) + Replay API router
+- Faz 163: ForwardOutcome fee-aware (gross/net pnl) + PendingOutcomeTracker → WeightOptimizer learning trigger
+- Faz 164: ReplayEngine determinism testi (gerçek DB persist → replay) + Dashboard PendingApprovals/ExperimentList
+- Faz 165: **Meta Optimizer Auto-Approval** (bu oturumda gerçek entegrasyon tamamlandı — bkz. aşağı)
+- Faz 166: ReplayEngine E2E DB assert testi
+- Faz 167: WeightApproval approve → weight snapshot C1 testi
 
-    • WeightApproval API endpoint'leri (/weights/pending, /approve, /reject) | P3 | Yeni
+### Faz 165 — Auto-Approval (2026-08-04, bu oturumda tamamlandı)
+Önceki oturumdan kalan durum: `api/rest/weights.py` içinde `/weights/auto-reject` ve `/weights/metrics`
+endpoint'leri zaten vardı ama çağırdıkları `WeightApprovalRepository.auto_reject_stale()` ve
+`.approval_latency_metrics()` metodları **yoktu** — klasik ada (island) hatası, endpoint çağrılsa
+`AttributeError` ile patlardı. `tests/test_faz165_auto_approval.py` de bu nedenle kırmızıydı.
+Ayrıca `services/weight_optimizer.py` içinde bozuk bir `try:` indent hatası vardı — 19 test dosyası
+collection aşamasında crash ediyordu (suit hiç çalışmıyordu).
+
+Yapılanlar (C1 kanıtlı):
+- `services/weight_optimizer.py`: indent hatası düzeltildi (satır 140-141)
+- `contracts/weight_approval.py`: `expires_at`, `decided_at` alanları eklendi (önceden sessizce drop ediliyordu — Pydantic v2 default `extra=ignore`)
+- `database/repositories/weight_approval_repository.py`: `WeightApprovalModel`'e `expires_at`/`decided_at` kolonları, `auto_reject_stale()` ve `approval_latency_metrics()` gerçek implementasyon (raw SQL değil, ORM + Python p95 — Postgres-specific `PERCENTILE_CONT` kaldırıldı, SQLite/test uyumlu)
+- `database/migrations/versions/faz165_weight_approval_ttl.py`: gerçek Alembic migration, local DB'ye uygulandı (`alembic upgrade faz165` çalıştırıldı, kolonlar doğrulandı)
+- `api/rest/weights.py`: duplicate import düzeltildi, `reject()` artık `decided_at` set ediyor
+- `tests/test_faz165_auto_approval.py`: yanlış alan adı (`created_at` — modelde yok, gerçek alan `timestamp`) düzeltildi; latency testi gerçek approved kayıttan hesaplanan değeri assert ediyor (sadece key varlığı değil)
+- Kanıt: `pytest -q` → 265 passed (önceki: 2 failed + 19 collection error)
+
+### Ek bulgular — kod incelemesi sırasında (2026-08-04)
+- `contracts/experiment_registry.py`: `get_git_sha()` `pathlib.Path` kullanıyordu ama import etmiyordu;
+  `except Exception` bunu yutup sessizce `"unknown"` döndürüyordu. `engines/cognitive_pipeline.py:225`
+  (RecordingStage, gerçek pipeline yolu) bunu çağırıyor — yani her deneyde `git_sha` hep `"unknown"`
+  kaydediliyordu, Faz 159'un asıl amacı (deneyleri git commit'e pinlemek) fiilen çalışmıyordu. Import
+  eklendi, doğrulandı: `ExperimentRegistry.get_git_sha()` artık gerçek SHA döndürüyor.
+- `tests/test_weight_approval_e2e.py`: dosya adı/docstring "approve endpoint applies weights" diyordu
+  ama gerçek test body'si `WeightApprovalRepository`'i tamamen mockluyor ve sadece `GET /pending`'i
+  çağırıyordu — `/approve` endpoint'ine hiç dokunmuyordu. Gerçek DB + gerçek `POST /approve` + gerçek
+  `WeightRepository.get_latest()` assert eden bir E2E testle değiştirildi.
+
+### Repo hijyeni
+- Root'ta kalan tek-seferlik "patcher script"ler (`pay_debt.py`, `update_state.py`,
+  `faz163_forward_outcome_worker.py`, `faz164_replay_determinism.py`, `faz165_auto_approval.py`) ve
+  `.fix_backups/` silindi. Bunlar önceki oturumdan kalan, kaynağı string-replace ile patch'leyen
+  yardımcı scriptlerdi; faz163/164'ün patch'leri gerçek kaynağa (services/, contracts/) zaten
+  uygulanmıştı ve doğrulandı, faz165'inki ise yarım kalmıştı (yukarıda anlatıldığı gibi elle
+  tamamlandı). Script'lerin kendisi uygulama kodu değil; repo kökünde bırakılmaları yanlışlıkla
+  tekrar çalıştırılıp kaynağı bozma riski taşıyordu (weight_optimizer.py indent hatası muhtemelen
+  böyle oluştu).
+
+## Bilinen Borçlar (Known Gaps)
 
 | # | Borç | Öncelik | Bloklayan |
 |---|------|---------|-----------|
 | 1 | BinderStage sadece "wisdom" tipini işliyor; observation/debate_result binder'dan geçmiyor | P1 | Hayır |
-| 2 | ForwardOutcome pending=True set ediliyor ama finalize worker yok | P1 | Hayır |
 | 3 | E2E DB persist + belief + weight update zinciri integration testi eksik | P1 | Hayır |
-| 4 | Experiment Registry (Faz 159) — git_sha, risk_limits_version, feature_schema_id | P2 | Hayır |
-| 5 | Replay Engine tam sürüm (Faz 162) — determinism + integrity check | P2 | #3 |
+| 6 | Alembic history'de 2 head var: `faz165` (0005 zincirinden) ve `faz161` (f8fa21f0e94a zincirinden, hiç merge edilmedi). `faz161`'in `create_hypertable()` çağrıları local DB'de `decisions`/`experiment_registry`/`weight_approvals` tabloları dolu olduğu için başarısız oluyor (`migrate_data=>true` gerekiyor — Timescale, boş olmayan tabloyu varsayılan olarak hypertable'a çevirmiyor). Bu bir alan/version eksikliği değil, gerçek veri var. CI'da DB boş başladığı için sorun yok. Local'de düzeltmek için: ya `migrate_data=>true` ile devam et (veri kaybı yok ama chunk'lara bölünür), ya da local DB'yi sıfırdan kurup migration zincirini baştan çalıştır. | P2 | Migration testi (roadmap Faz 182 gate) |
+| 7 | `weight_approvals` tablosunun kendisi migration zincirinde hiçbir yerde `CREATE TABLE` ile oluşturulmuyor (muhtemelen geçmişte `Base.metadata.create_all()` ile elle kuruldu). Sıfırdan bir DB'de `alembic upgrade head` bu tabloyu oluşturmaz. | P1 | Migration testi (roadmap Faz 182 gate) |
 
 ## Mimari Notlar
 - Risk otoritesi: `GuardrailStage` (erken) + `RiskGateStage` (fusion sonrasi) -- ikili yapi ✅
 - `ForwardOutcome`: entry = data[-(n+1)], exit = data[-1]; canlida `pending=True`
 - Learning: `finalize()` outcome set edildikten sonra `_persist_and_learn` calisir
+
+- TimescaleDB migration: CI Docker Compose'da çalışıyor, local'de xfail
+- E2E testleri: mock → gerçek DB assert çevrildi (test_e2e_persist_chain, test_recording_stage_e2e)
+
+- **Açık borç:** İki beyin yasağı — CognitiveEngine (stage zinciri) vs Orchestrator (RSI shortcut). API `/cycle` belgelenmeli, tercihen Engine tek yol.
+- E2E testleri: mock → gerçek DB assert çevrildi (test_e2e_persist_chain, test_recording_stage_e2e)

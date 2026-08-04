@@ -50,3 +50,10 @@ disallow_any_generics = false
 
 [tool.hatch.build.targets.wheel]
 packages = ["contracts", "exchange_gateway", "market_data", "ml", "rl", "strategies", "simulator", "risk", "analytics", "api", "database", "events", "config", "observability"]
+
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore::DeprecationWarning:starlette.testclient",
+    "ignore::DeprecationWarning:fastapi.testclient",
+]
