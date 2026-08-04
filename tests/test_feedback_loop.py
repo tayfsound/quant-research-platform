@@ -47,7 +47,7 @@ def test_weight_update_is_gradual():
         was_prediction_correct=True,
     )
 
-    new_weights = optimizer.optimize(agents=agents, outcome=evaluation)
+    new_weights = optimizer.optimize(agents=agents, outcome=evaluation, require_approval=False)
 
     # 0.5 -> istenen ~0.7, ancak delta 0.10 ile kırpılır
     assert new_weights["technical"] == 0.6

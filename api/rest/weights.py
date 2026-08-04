@@ -1,4 +1,6 @@
 """Weight approval API — Faz 160 runtime."""
+from datetime import datetime
+
 from fastapi import APIRouter
 from database.session_factory import SessionFactory
 from database.repositories.weight_approval_repository import WeightApprovalRepository, WeightApprovalModel
@@ -38,6 +40,30 @@ async def approve(approval_id: str, approved_by: str = "human"):
 @router.post("/{approval_id}/reject")
 async def reject(approval_id: str):
     with SessionFactory.get_session() as session:
-        session.query(WeightApprovalModel).filter_by(id=approval_id).update({"status": "rejected"})
+        approval = session.query(WeightApprovalModel).filter_by(id=approval_id).first()
+        if not approval:
+            return {"error": "not_found", "approval_id": approval_id}
+        if approval.status != "pending":
+            return {"error": "already_processed", "approval_id": approval_id, "status": approval.status}
+        session.query(WeightApprovalModel).filter_by(id=approval_id).update({"status": "rejected", "decided_at": datetime.now()})
         session.commit()
         return {"approval_id": approval_id, "status": "rejected"}
+
+
+@router.post("/auto-reject")
+async def auto_reject_stale(max_age_hours: float = 24):
+    """Reject pending approvals older than max_age_hours."""
+    with SessionFactory.get_session() as session:
+        repo = WeightApprovalRepository(session)
+        count = repo.auto_reject_stale(max_age_seconds=max_age_hours * 3600)
+        return {"rejected_count": count, "max_age_hours": max_age_hours}
+
+
+@router.get("/metrics")
+async def approval_metrics():
+    """Approval latency metrics."""
+    with SessionFactory.get_session() as session:
+        repo = WeightApprovalRepository(session)
+        metrics = repo.approval_latency_metrics()
+        pending_count = session.query(WeightApprovalModel).filter_by(status="pending").count()
+        return {"latency": metrics, "pending_count": pending_count}

@@ -1,4 +1,6 @@
 """Weight approval repository."""
+from datetime import datetime, timedelta
+
 from sqlalchemy import Column, String, DateTime, Float, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from database.base import Base
@@ -14,6 +16,8 @@ class WeightApprovalModel(Base):
     max_delta = Column(Float, default=0.10)
     status = Column(String(16), default="pending")
     approved_by = Column(String(64), default="")
+    expires_at = Column(DateTime, nullable=True)
+    decided_at = Column(DateTime, nullable=True)
 
 
 class WeightApprovalRepository:
@@ -29,6 +33,8 @@ class WeightApprovalRepository:
             max_delta=approval.max_delta,
             status=approval.status,
             approved_by=approval.approved_by,
+            expires_at=approval.expires_at,
+            decided_at=approval.decided_at,
         )
         self.session.add(row)
         self.session.commit()
@@ -37,5 +43,38 @@ class WeightApprovalRepository:
         return self.session.query(WeightApprovalModel).filter_by(status="pending").order_by(WeightApprovalModel.timestamp.desc()).limit(limit).all()
 
     def approve(self, approval_id: str, approved_by: str = "human"):
-        self.session.query(WeightApprovalModel).filter_by(id=approval_id).update({"status": "approved", "approved_by": approved_by})
+        self.session.query(WeightApprovalModel).filter_by(id=approval_id).update(
+            {"status": "approved", "approved_by": approved_by, "decided_at": datetime.now()}
+        )
         self.session.commit()
+
+    def auto_reject_stale(self, max_age_seconds: float = 3600) -> int:
+        """Reject pending approvals older than max_age_seconds. Returns rejected count."""
+        cutoff = datetime.now() - timedelta(seconds=max_age_seconds)
+        rows = (
+            self.session.query(WeightApprovalModel)
+            .filter(WeightApprovalModel.status == "pending", WeightApprovalModel.timestamp < cutoff)
+            .all()
+        )
+        for row in rows:
+            row.status = "rejected"
+            row.decided_at = datetime.now()
+        self.session.commit()
+        return len(rows)
+
+    def approval_latency_metrics(self) -> dict:
+        """Latency (seconds) between creation and approval, for approved rows."""
+        rows = (
+            self.session.query(WeightApprovalModel)
+            .filter(WeightApprovalModel.status == "approved", WeightApprovalModel.decided_at.isnot(None))
+            .all()
+        )
+        latencies = sorted((r.decided_at - r.timestamp).total_seconds() for r in rows)
+        if not latencies:
+            return {"avg_seconds": 0.0, "max_seconds": 0.0, "p95_seconds": 0.0}
+        p95_idx = min(len(latencies) - 1, round(0.95 * (len(latencies) - 1)))
+        return {
+            "avg_seconds": sum(latencies) / len(latencies),
+            "max_seconds": latencies[-1],
+            "p95_seconds": latencies[p95_idx],
+        }

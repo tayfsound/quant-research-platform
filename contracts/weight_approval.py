@@ -12,3 +12,5 @@ class WeightApproval(BaseModel):
     max_delta: float = 0.10
     status: str = "pending"  # pending | approved | rejected
     approved_by: str = ""    # human or system
+    expires_at: datetime | None = None  # TTL: None = no expiry
+    decided_at: datetime | None = None  # set on approve/reject, used for latency metrics

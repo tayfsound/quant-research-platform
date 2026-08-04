@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 """Weight Optimizer — Bayesian smoothing ile stabil ağırlık önerisi."""
 
 from enum import Enum
@@ -138,6 +139,7 @@ class WeightOptimizer:
             if require_approval and max_change > 0.05:
                 try:
                     approval = WeightApproval(
+                        expires_at=datetime.now() + timedelta(hours=24),
                         proposed_weights=new_weights,
                         previous_weights=current_weights,
                         max_delta=MAX_WEIGHT_DELTA,

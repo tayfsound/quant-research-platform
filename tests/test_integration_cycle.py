@@ -41,7 +41,7 @@ def test_weight_optimizer_handles_pydantic_agents():
     class FakeOutcome:
         decision_score = 0.5
 
-    weights = opt.optimize(agents, FakeOutcome())
+    weights = opt.optimize(agents, FakeOutcome(), require_approval=False)
     assert "technical" in weights
     assert "macro" in weights
     assert all(0.0 <= w <= 2.0 for w in weights.values())
