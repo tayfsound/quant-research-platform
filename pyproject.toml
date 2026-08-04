@@ -54,6 +54,5 @@ packages = ["contracts", "exchange_gateway", "market_data", "ml", "rl", "strateg
 
 [tool.pytest.ini_options]
 filterwarnings = [
-    "ignore::DeprecationWarning:starlette.testclient",
-    "ignore::DeprecationWarning:fastapi.testclient",
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated.*:starlette.exceptions.StarletteDeprecationWarning",
 ]
