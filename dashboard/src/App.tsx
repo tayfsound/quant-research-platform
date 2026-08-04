@@ -10,6 +10,7 @@ import LatestCycle from './views/LatestCycle';
 import PendingApprovals from './views/PendingApprovals';
 import ExperimentList from './views/ExperimentList';
 import ReplayView from './views/ReplayView';
+import BacktestRuns from './views/BacktestRuns';
 import NavBar from './components/NavBar';
 
 function App() {
@@ -34,6 +35,7 @@ function App() {
         {view === 'approvals' && <PendingApprovals />}
         {view === 'experiments' && <ExperimentList />}
         {view === 'replay' && <ReplayView />}
+        {view === 'backtest' && <BacktestRuns />}
       </main>
     </div>
   );

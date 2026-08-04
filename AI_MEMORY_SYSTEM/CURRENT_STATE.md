@@ -1,9 +1,9 @@
-# Mevcut Durum -- v1.2.6 (Faz 167 sonrası + Faz 165 auto-approval gerçek entegrasyon)
+# Mevcut Durum -- v1.3.0 (Backtest bloğu — Sprint 3-6 tamam)
 
 **Tarih:** 2026-08-04
 **Branch:** main
-**Son commit (HEAD):** c43d878 Sprint 4 (metrik motoru) + bu oturumun devamı (Sprint 5)
-**Test:** 298 passed, 1 xfailed (TimescaleDB hypertable, local'de non-empty table nedeniyle — bkz. borç #6), 1 skipped
+**Son commit (HEAD):** e21774c Sprint 5 (Replay↔Backtest) + bu oturumun devamı (Sprint 6)
+**Test:** 300 passed, 1 xfailed (TimescaleDB hypertable, local'de non-empty table nedeniyle — bkz. borç #6), 1 skipped
 
 **Önemli not:** Bu dosya, Faz 161-167 commit'lerinden sonra güncellenmemiş kalmıştı (dokümantasyon
 sürüklenmesi — roadmap'te 5 kez tekrarlanan risk, burada gerçekleşti). Aşağıdaki liste 2026-08-04
@@ -225,6 +225,40 @@ bir testi yoktu**, bir başka saf ada. Roadmap'in istediği listeye göre:
   kaçınıyor) — gerçek bir backtest'in feature'ları karar motoruna vermesi
   gerekecek, o zaman bu test-altyapısı sorunu da çözülmeli.
 - `pytest -q`: 298 passed.
+
+### Sprint 6 (Faz 167 bloğu) — Persist + dashboard bağlantısı (2026-08-04) — **Backtest bloğu tamam**
+- `contracts/backtest_run.py` (`BacktestRun`) + `database/migrations/versions/faz167_backtest_runs_table.py`
+  ile gerçek `backtest_runs` tablosu (Class 2 — silme/update metodu yok,
+  sadece `save`/`get_by_id`/`list_recent`). Migration local DB'ye uygulandı
+  ve doğrulandı.
+- `backtest/backtest_orchestrator.py` — `run_and_persist_backtest()`: Sprint
+  5'in `run_cognitive_backtest()`'ini çalıştırır, Sprint 4'ün `MetricsEngine`'i
+  ile TÜM metrik setini (sharpe/sortino/calmar/mar/ulcer/recovery/win_rate/
+  profit_factor/expectancy) hesaplar, `experiment_registry`'nin `get_git_sha()`'ı
+  ile git_sha'yı damgalar, sonucu DB'ye yazar. `inf`/`nan` değerler JSON/Postgres
+  `json` kolonunu bozmasın diye `None`'a sanitize ediliyor (profit_factor/
+  recovery_factor drawdown yokken `inf` dönebiliyor — bu gerçek bir edge case,
+  test bunu tetikledi).
+- `api/rest/backtest.py`: `POST /backtest/run` (deterministik `MockOHLCVAdapter`
+  ile — gerçek borsa geçmiş veri ingestion'ı henüz yok, bu roadmap'in kendi
+  sıralamasında Execution Layer/market_data genişletmesinden sonraki bir iş)
+  ve `GET /backtest/runs`. `api/main.py`'a router eklendi.
+- `dashboard/src/views/BacktestRuns.tsx`: "Run Backtest" butonu + son
+  koşuların listesi (PnL, Sharpe, Max DD) — `App.tsx`/`NavBar.tsx`'e bağlandı.
+- **Gate kanıtı** (roadmap: "Bir backtest çalıştırıp, sonucun deterministik
+  olarak tekrarlanabildiğini ve tüm metriklerin doğru hesaplandığını
+  kanıtlayan entegrasyon testi"): `tests/test_backtest_persistence.py` —
+  (1) gerçek bir koşu DB'ye yazılıyor, `max_drawdown`'ın DB'den okunan
+  equity curve'den bağımsız olarak yeniden hesaplanabildiği kanıtlanıyor;
+  (2) aynı pinlenmiş weight snapshot ile iki ayrı, iki ayrı DB satırına
+  yazılan koşu birebir aynı metrikleri/equity curve'ü üretiyor.
+- `pytest -q`: 300 passed. Backend uçtan uca doğrulandı (gerçek HTTP çağrısı,
+  `/backtest/run` → gerçek DB satırı → `/backtest/runs`'ta görünüyor);
+  dashboard tarafı `vite dev` ile transpile doğrulaması yapıldı (gerçek
+  tarayıcı bu ortamda yok, bkz. Sprint 2'nin aynı notu).
+- **Faz 167 bloğu (roadmap Sprint 3-6) böylece tamamlandı.** Sıradaki blok
+  roadmap'te Faz 171 (Portfolio Engine) — çoklu varlık risk motoru, bu
+  motoru (VectorizedBacktestEngine + MetricsEngine) paylaşacak.
 
 ## Mimari Notlar
 - **BinderStage kapsamı (Sprint 1 netleştirme, 2026-08-04):** BinderStage bilinçli olarak sadece
