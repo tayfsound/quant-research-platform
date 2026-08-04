@@ -1,9 +1,9 @@
-# Mevcut Durum -- v1.3.0 (Backtest bloğu — Sprint 3-6 tamam)
+# Mevcut Durum -- v1.4.0 (Backtest bloğu + Portfolio Engine bloğu tamam)
 
 **Tarih:** 2026-08-04
 **Branch:** main
-**Son commit (HEAD):** e21774c Sprint 5 (Replay↔Backtest) + bu oturumun devamı (Sprint 6)
-**Test:** 300 passed, 1 xfailed (TimescaleDB hypertable, local'de non-empty table nedeniyle — bkz. borç #6), 1 skipped
+**Son commit (HEAD):** 056f7f8 Sprint 6 (backtest persist+dashboard) + bu oturumun devamı (Faz 171 Portfolio Engine)
+**Test:** 308 passed, 1 xfailed (TimescaleDB hypertable, local'de non-empty table nedeniyle — bkz. borç #6), 1 skipped
 
 **Önemli not:** Bu dosya, Faz 161-167 commit'lerinden sonra güncellenmemiş kalmıştı (dokümantasyon
 sürüklenmesi — roadmap'te 5 kez tekrarlanan risk, burada gerçekleşti). Aşağıdaki liste 2026-08-04
@@ -256,9 +256,68 @@ bir testi yoktu**, bir başka saf ada. Roadmap'in istediği listeye göre:
   `/backtest/run` → gerçek DB satırı → `/backtest/runs`'ta görünüyor);
   dashboard tarafı `vite dev` ile transpile doğrulaması yapıldı (gerçek
   tarayıcı bu ortamda yok, bkz. Sprint 2'nin aynı notu).
-- **Faz 167 bloğu (roadmap Sprint 3-6) böylece tamamlandı.** Sıradaki blok
-  roadmap'te Faz 171 (Portfolio Engine) — çoklu varlık risk motoru, bu
-  motoru (VectorizedBacktestEngine + MetricsEngine) paylaşacak.
+- **Faz 167 bloğu (roadmap Sprint 3-6) böylece tamamlandı.**
+
+## Faz 171 — Portfolio Engine (2026-08-04, aynı oturum)
+
+### Sprint 7 — Çoklu varlık veri modeli
+`OHLCV`/`OHLCVProvider` zaten varlık-sınıfından bağımsızdı (crypto'ya özgü
+alan yok) — roadmap'in "mevcut mimari zaten asset-independent tasarlanmıştı"
+iddiası doğrulandı. Eksik olan, portföy riskinin gruplayabileceği bir
+varlık-sınıfı etiketiydi:
+- `market_data/asset_class.py`: `AssetClass` enum (crypto/equity_index/
+  commodity/fx/bond) + `SYMBOL_ASSET_CLASS` statik eşleme.
+- `market_data/multi_asset_dataset.py`: `generate_multi_asset_dataset()` —
+  her sembol için ayrı seed'li deterministik `MockOHLCVAdapter`, aynı
+  `{symbol: [OHLCV,...]}` şeklini kullanıyor (backtest/cognitive_backtest_runner.py
+  ve risk/limits/portfolio.py ile doğrudan uyumlu, yeni bir paralel veri
+  formatı yok).
+- Gerçek borsa üzerinden çapraz-varlık veri ingestion'ı (equity/commodity/fx/bond
+  için gerçek bir sağlayıcı) henüz yok — sadece crypto için `BinanceProvider`
+  var. Bu ayrı, büyük bir iş (roadmap'te de zaten Execution Layer/exchange
+  entegrasyonundan bağımsız bir görev).
+
+### Sprint 8 — Portföy-bazlı risk motoru
+- `risk/limits/portfolio.py`: `PortfolioRiskEngine` — kovaryans matrisi
+  (`np.cov`, population/bias=True, projenin diğer istatistiklerinin
+  kullandığı population-std konvansiyonuyla tutarlı), parametrik portföy VaR
+  (`z * sqrt(w^T Σ w) * portfolio_value`), `check_portfolio_var_limit()`.
+  **`risk/limits/`'in bir uzantısı** — tekil sembol otoritesi
+  (`RiskEngine`/`RiskGateStage`) değişmedi, bu sadece onların göremediği
+  çapraz-sembol katmanını ekliyor.
+- Kanıt: `tests/test_portfolio_risk_engine.py` — elle seçilmiş, temiz sayılar
+  üreten iki getiri serisi (`B = 2×A`, mükemmel korelasyon) üzerinde kovaryans
+  matrisi VE portföy VaR'ı ($4935, z=1.645) elle hesaplanmış referansla
+  birebir doğrulanıyor; korelasyonlu iki pozisyonun aynı notional'da
+  korelasyonsuz olandan gerçekten daha yüksek VaR ürettiği ayrıca kanıtlanıyor
+  (bu "korelasyon-ayarlı" olmanın tam kendisi).
+
+### Sprint 9 — Portföy-seviyesi Decision Fusion
+- `services/portfolio_fusion.py`: `PortfolioFusionStage.fuse()` — tekil
+  sembol kararlarından (zaten `CognitiveEngine.run()` ile üretilmiş) gelen
+  önerilen pozisyon boyutlarını alır, `PortfolioRiskEngine` ile portföy VaR'ı
+  kontrol eder; limit aşılırsa TÜM pozisyonları aynı oranda ölçekleyip VaR'ı
+  tam olarak limite çeker (limiti gevşetmiyor/bypass etmiyor — tek-sembol
+  `RiskGateStage` ile aynı "sinyal önerebilir, sadece risk/ onaylayabilir"
+  ilkesi burada da geçerli).
+- Kanıt: `tests/test_portfolio_fusion.py` — ölçekleme faktörünün her iki
+  pozisyona da AYNI oranda uygulandığı ve ölçeklenmiş ağırlıkların
+  `PortfolioRiskEngine`'e bağımsızca geri verilince gerçekten tam olarak
+  `max_var`'ı ürettiği (sadece ölçekleme aritmetiğine güvenilmiyor, ayrıca
+  doğrulanıyor) kanıtlanıyor.
+- **Gate kanıtı** (roadmap: "3+ varlık sınıfını aynı anda paper-trade eden,
+  portföy-VaR limitini gerçekten uygulayan bir entegrasyon testi"):
+  `test_three_plus_asset_classes_paper_traded_with_portfolio_var_enforced` —
+  4 sembol (BTCUSDT/XAUUSD/NASDAQ/US10Y, ≥3 farklı `AssetClass`) için gerçek
+  OHLCV üretilip getiriler hesaplanıyor; dağıtılmış bir tahsis limitin altında
+  onaylanıyor, agresif/yoğunlaşmış bir tahsis ise gerçekten ölçekleniyor
+  (kod var ama tetiklenmiyor değil — her iki dal da fiilen çalıştırılıp
+  doğrulanıyor).
+- `pytest -q`: 308 passed.
+- **Kapsam dışı bırakılan (bilinçli):** Faz171'in kendi roadmap metninde
+  dashboard bağlantısı istenmiyor (Faz167'nin aksine) — bu yüzden dashboard'a
+  bağlanmadı. Gerçek çapraz-varlık veri sağlayıcıları (equity/commodity/fx/bond
+  borsaları) da yok — sadece deterministik mock veri ile test edildi.
 
 ## Mimari Notlar
 - **BinderStage kapsamı (Sprint 1 netleştirme, 2026-08-04):** BinderStage bilinçli olarak sadece
