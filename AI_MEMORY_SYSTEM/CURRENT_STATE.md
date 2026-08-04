@@ -1,10 +1,10 @@
-# Mevcut Durum -- v1.5.0 (Backtest + Portfolio Engine + Monitoring/Explainability blokları tamam)
+# Mevcut Durum -- v1.6.0 (+ Plugin System / Research Workspace)
 
 **Tarih:** 2026-08-04
 **Branch:** main
-**Son commit (HEAD):** 7d32999 Faz 171 (Portfolio Engine) + bu oturumun devamı (Faz 173-174 Monitoring/Explainability)
-**Test:** 316 passed, 1 xfailed (TimescaleDB hypertable, local'de non-empty table nedeniyle — bkz. borç #6), 1 skipped
-**Not:** Faz 172 (Execution Layer) bilinçli olarak atlandı — gerçek (testnet) borsa API key'i proje sahibinden bekleniyor, roadmap'in kendisi bu bloğu "hız değil doğruluk" diye işaretliyor. Faz 173-174'e (bu key'e ihtiyaç duymayan) geçildi.
+**Son commit (HEAD):** 1eb24c7 Faz 173-174 (Monitoring/Explainability) + bu oturumun devamı (Faz 176-177)
+**Test:** 324 passed, 1 xfailed (TimescaleDB hypertable, local'de non-empty table nedeniyle — bkz. borç #6), 1 skipped
+**Not:** Faz 172 (Execution Layer) hâlâ bekliyor — gerçek (testnet) borsa API key'i proje sahibinden bekleniyor, roadmap'in kendisi bu bloğu "hız değil doğruluk" diye işaretliyor.
 
 **Önemli not:** Bu dosya, Faz 161-167 commit'lerinden sonra güncellenmemiş kalmıştı (dokümantasyon
 sürüklenmesi — roadmap'te 5 kez tekrarlanan risk, burada gerçekleşti). Aşağıdaki liste 2026-08-04
@@ -391,6 +391,56 @@ bulundu:
   endpoint'i çağrılıyor; `chain.belief` artık gerçekten `None` değil (yukarıdaki
   bug'ın kanıtı) ve gerçek id içeriyor.
 - `pytest -q`: 316 passed.
+
+## Faz 176-177 — Plugin System + Research Workspace UI (2026-08-04, aynı oturum)
+
+### Sprint 17-18 — Plugin System
+`AgentRegistry.create_default()` 4 sabit ajanı elle register ediyordu,
+dinamik keşif yoktu. **Güvenlik notu roadmap'te açıkça isteniyordu** ("hangi
+plugin'lerin güvenilir kaynaktan geldiğini doğrulayan bir mekanizma
+(imza/hash)"):
+- `agents/plugin_loader.py` — `discover_plugins()`: `agents/plugins/*.py`
+  taranır ama **fail-closed** — bir dosya, SHA256 hash'i `TRUSTED_PLUGIN_HASHES`'te
+  (veya kalıcı trust store'da) olmadıkça import bile edilmez. Bu, uzak bir
+  imza/PKI sistemi değil (o ayrı, çok daha büyük bir iş) — bir insanın dosyayı
+  gözden geçirip hash'ini eklediği yerel bir trust listesi. Dosya
+  değiştirilirse (tampered) hash tutmaz, tekrar güvenilmez hale gelir —
+  test'le kanıtlı (`test_tampered_plugin_is_skipped_even_with_a_previously_trusted_filename`).
+- `AgentRegistry.create_default()` artık `discover_plugins()`'i gerçekten
+  çağırıyor (spy testiyle kanıtlı) — varsayılan trust listesi boş olduğu için
+  canlı davranış DEĞİŞMEDİ, sadece keşif yolu bağlandı.
+- `pytest -q` (bu alt-blok): `tests/test_plugin_loader.py`, 6 test.
+
+### Sprint 19-20 — Research Workspace UI
+Roadmap: "Kod değiştirmeden, sadece UI üzerinden yeni bir agent ekleyip
+çalıştığını gösteren bir demo." Hash-gate'i bozmadan bunu sağlamak için:
+- `services/plugin_trust_store.py` — `agents/plugins/TRUSTED_HASHES.json`'a
+  kalıcı, çalışma-zamanında değiştirilebilir bir trust listesi (upload sonrası
+  "trust" tıklamak kod değişikliği/deploy gerektirmez).
+- `api/rest/workspace.py`: `POST /workspace/plugins/upload` (sadece dosyayı
+  yazar, ASLA otomatik güvenmez — dosya adı `^[a-zA-Z0-9_]+\.py$` ile
+  kısıtlı, path traversal engellenir, 50KB boyut limiti), `GET /workspace/plugins`
+  (liste + trust durumu), `POST /workspace/plugins/{filename}/trust` (hash'i
+  kaydeder + `discover_plugins()`'i tekrar çalıştırıp gerçekten yüklendiğini
+  doğrular), `POST /workspace/plugins/{filename}/revoke`.
+- `dashboard/src/views/ResearchWorkspace.tsx`: dosya adı + kaynak kod textarea'sı,
+  upload butonu, plugin listesi + "Review & Trust"/"Revoke" butonları.
+  `App.tsx`/`NavBar.tsx`'e bağlandı.
+- **Gate kanıtı**: `tests/test_research_workspace.py::test_upload_then_trust_activates_a_new_agent_with_no_code_change` —
+  gerçek HTTP upload → trust ETMEDEN önce `discover_plugins()`'in yüklemediği
+  doğrulanıyor → trust → **`agents/registry.py`'ye tek satır bile dokunmadan**
+  yepyeni bir `AgentRegistry.create_default()` çağrısı yeni agent'ı içeriyor
+  ve gerçekten `.analyze()` çalıştırıp beklenen yönü döndürüyor.
+- **Kasıtlı olarak yapılmayan:** Roadmap "Faz 168 (Experiment Registry)
+  burada devreye girmeli — her yeni eklenen bileşen otomatik bir deney
+  olarak kaydedilsin" diyor, ama `ExperimentRegistry` şemasının
+  (`git_sha`/`risk_limits_version`/`feature_schema_id`/`prompt_hash`/`model_id`/
+  `decision_ids`) hiçbir alanı "bir plugin trust edildi" olayını anlamlı
+  şekilde temsil etmiyor — zorla bir alana sıkıştırmak (`model_id=filename`
+  gibi) contract'ın anlamını bozardı (C3 ihlali). Bilinçli olarak atlandı;
+  gerçek çözüm ExperimentRegistry'ye plugin-tracking alanı eklemek, ki bu
+  proje sahibinin şema kararını gerektirir.
+- `pytest -q`: 324 passed.
 
 ## Mimari Notlar
 - **BinderStage kapsamı (Sprint 1 netleştirme, 2026-08-04):** BinderStage bilinçli olarak sadece

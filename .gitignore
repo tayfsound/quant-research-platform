@@ -9,6 +9,9 @@ tmp_test_memory/
 agent_memory_history/
 decision_logs/
 weight_history/
+agents/plugins/TRUSTED_HASHES.json
+agents/plugins/*.py
+!agents/plugins/__init__.py
 *.log
 .env
 .env

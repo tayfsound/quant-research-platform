@@ -24,10 +24,18 @@ class AgentRegistry:
 
     @classmethod
     def create_default(cls) -> "AgentRegistry":
-        """Dört temel uzman ajanla hazır bir registry oluşturur."""
+        """Dört temel uzman ajanla hazır bir registry oluşturur, sonra
+        agents/plugins/'daki güvenilir (hash'i TRUSTED_PLUGIN_HASHES'te
+        olan) eklentileri keşfeder. TRUSTED_PLUGIN_HASHES varsayılan olarak
+        boş — hiçbir plugin, bir insan onun hash'ini gözden geçirip
+        eklemeden otomatik yüklenmez (Sprint 17-18)."""
         registry = cls()
         registry.register(AgentDomain.MACRO, MacroAgent())
         registry.register(AgentDomain.SENTIMENT, SentimentAgent())
         registry.register(AgentDomain.ONCHAIN, OnChainAgent())
         registry.register(AgentDomain.TECHNICAL, TechnicalAgent())
+
+        from agents.plugin_loader import discover_plugins
+        discover_plugins(registry)
+
         return registry

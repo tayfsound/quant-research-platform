@@ -1,5 +1,5 @@
 function NavBar({ current, onChange, onLogout }: { current: string; onChange: (v: string) => void; onLogout: () => void }) {
-  const tabs = ['live', 'market', 'predictions', 'strategies', 'risk', 'reasoning', 'cycle', 'approvals', 'experiments', 'replay', 'backtest', 'explain'];
+  const tabs = ['live', 'market', 'predictions', 'strategies', 'risk', 'reasoning', 'cycle', 'approvals', 'experiments', 'replay', 'backtest', 'explain', 'workspace'];
   return (
     <nav className="bg-gray-900 p-4 flex gap-4 items-center justify-between border-b border-gray-800">
       <div className="flex gap-4">
