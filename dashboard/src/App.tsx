@@ -6,6 +6,10 @@ import LivePredictions from './views/LivePredictions';
 import Strategies from './views/Strategies';
 import RiskDashboard from './views/RiskDashboard';
 import AIReasoning from './views/AIReasoning';
+import LatestCycle from './views/LatestCycle';
+import PendingApprovals from './views/PendingApprovals';
+import ExperimentList from './views/ExperimentList';
+import ReplayView from './views/ReplayView';
 import NavBar from './components/NavBar';
 
 function App() {
@@ -26,6 +30,10 @@ function App() {
         {view === 'strategies' && <Strategies />}
         {view === 'risk' && <RiskDashboard />}
         {view === 'reasoning' && <AIReasoning />}
+        {view === 'cycle' && <LatestCycle />}
+        {view === 'approvals' && <PendingApprovals />}
+        {view === 'experiments' && <ExperimentList />}
+        {view === 'replay' && <ReplayView />}
       </main>
     </div>
   );
