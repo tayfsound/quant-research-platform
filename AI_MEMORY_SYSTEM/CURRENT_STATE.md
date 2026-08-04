@@ -1,9 +1,9 @@
-# Mevcut Durum -- v1.7.0 (+ Auth altyapısı — yüksek riskli endpoint'ler korumalı)
+# Mevcut Durum -- v1.8.0 (Cloud/K8s + kritik DB-bağlantı düzeltmesi + migration zinciri tam yeşil)
 
 **Tarih:** 2026-08-04
 **Branch:** main
-**Son commit (HEAD):** 39ddbb9 Faz 176-177 (Plugin/Workspace) + bu oturumun devamı (Faz 178-179 Auth, kısmi)
-**Test:** 334 passed, 1 xfailed (TimescaleDB hypertable, local'de non-empty table nedeniyle — bkz. borç #6), 1 skipped
+**Son commit (HEAD):** fff5a59 Faz 178-179 (Auth, kısmi) + bu oturumun devamı (Faz 180 Cloud + Faz 182 migration/health)
+**Test:** 340 passed, 1 skipped, 1 xpassed (0 xfailed — TimescaleDB hypertable borcu tamamen kapandı, bkz. aşağı)
 **Not:** Faz 172 (Execution Layer) hâlâ bekliyor — gerçek (testnet) borsa API key'i proje sahibinden bekleniyor, roadmap'in kendisi bu bloğu "hız değil doğruluk" diye işaretliyor.
 
 **Önemli not:** Bu dosya, Faz 161-167 commit'lerinden sonra güncellenmemiş kalmıştı (dokümantasyon
@@ -507,6 +507,139 @@ gerektirmiyordu, bu yüzden kurulabildi.
 | 17 | Roadmap'in istediği geri kalan ~30 endpoint (cognitive/run, replay, backtest, experiments, dashboard, vb.) hâlâ auth'suz — herkes çağırabilir. | Kapsam bilinçli olarak "gerçek altyapı + en yüksek riskli endpoint" ile sınırlandı; tam yayılma ayrı, büyük bir iş (her router'ı gözden geçir, hangi rolün neye erişmesi gerektiğine karar ver). |
 | 18 | Sprint 21 (REST+WS API yüzeyinin tamamlanması — backtest tetikleme/replay sorgulama zaten var ama "tam" değil) ve Sprint 24'ün "penetrasyon testi" kısmı yapılmadı. | Auth altyapısı yeni kuruldu; bağımsız bir güvenlik incelemesi (roadmap'in kendi önerisi) altyapı oturmadan anlamlı değil. |
 | 19 | `SECRET_KEY` hâlâ `.env`'deki geliştirme placeholder'ı (`degistirin-cok-gizli-bir-anahtar`) — gerçek sızıntı değil ama **production'a asla bu değerle çıkılmamalı**. | Gerçek rastgele bir `SECRET_KEY` üretmek/rotasyon prosedürü proje sahibinin production dağıtım kararına bağlı. |
+
+## Faz 180 — Cloud/Kubernetes (2026-08-04, aynı oturum)
+
+### Kritik bulgu: uygulama hiçbir zaman gerçekten deploy edilebilir değildi
+`database/connection.py` — projenin HER YERDE kullandığı gerçek `engine`/`SessionFactory`
+nesnesi — `DATABASE_URL`'i `"postgresql://quant:quantpass@localhost:5432/quantdb"`
+olarak **sabit kodluyordu**, `config/settings.py`'nin `DATABASE_URL_SYNC`'ini
+(env değişkeninden/.env'den okunan) hiç kullanmıyordu. Yani `.env`, K8s
+Secret, Docker Compose environment — hiçbiri `engine`'in nereye
+bağlanacağını hiçbir zaman etkilemiyordu; uygulama HER ZAMAN `localhost:5432`'ye
+bağlanmaya çalışıyordu. Local dev'de bu tesadüfen doğru olduğu için hiç fark
+edilmedi. **Gerçek bir K8s pod'unu (`kind` ile lokal cluster) deploy edip
+CrashLoopBackOff'u debug ederken bulundu** — pod `postgres` servisine değil
+`localhost`'a bağlanmaya çalışıyordu. Aynı desen daha önce `database/migrations/env.py`'de
+de bulunup düzeltilmişti (settings import ediliyor ama hiç kullanılmıyordu) —
+bu, aynı hatanın uygulamanın ASIL çalışma zamanı yolundaki, çok daha kritik
+hâli. Düzeltildi: `engine = create_engine(settings.DATABASE_URL_SYNC, ...)`.
+`pytest -q` yerelde hâlâ 340 yeşil (yerel `.env`'in varsayılanı zaten
+`localhost:5432` olduğu için davranış değişmedi) — asıl kanıt gerçek K8s
+pod'unun artık `postgres` servisine bağlanabilmesi.
+
+### Sprint 25-26 — Docker → Kubernetes
+- `Dockerfile` **hiç yoktu** — `docker-compose.yml` `api` servisi için
+  `build: dockerfile: Dockerfile` diyordu ama dosya mevcut değildi,
+  `docker-compose up --build` hiçbir zaman çalışmamıştı. Eklendi, gerçekten
+  build edildi (`docker build`, doğrulandı).
+- **`pyproject.toml`'da 13 gerçek, kullanılan bağımlılık hiç deklare
+  edilmemişti** (`alembic`, `prometheus-client`, `sentence-transformers`,
+  `scikit-learn`, `torch`, `lightgbm`, `xgboost`, `sortedcontainers`,
+  `filelock`, `websockets`, ve daha önce eklenenlerle birlikte `redis`,
+  `celery`) — local dev ortamında bunlar "bir şekilde" (muhtemelen elle,
+  sistem Python'a) kurulu olduğu için hiç fark edilmemişti. Temiz bir
+  Docker build bunu hemen ortaya çıkardı (`ModuleNotFoundError: No module
+  named 'prometheus_client'` vb.). Hepsi eklendi ve gerçek build ile
+  doğrulandı.
+- Dockerfile, BuildKit pip cache mount kullanıyor (`--no-cache-dir` yerine)
+  — bağımlılıklar değiştiğinde bile (örn. bu oturumda celery eklendiğinde)
+  torch/sentence-transformers gibi >1GB'lık paketlerin sıfırdan
+  indirilmesini önlüyor.
+- `k8s/`: `namespace.yaml`, `configmap.yaml`, `secret.example.yaml`
+  (gerçek `secret.yaml` asla commit edilmemeli — `.gitignore`'a eklendi),
+  `postgres.yaml` (StatefulSet+PVC), `redis.yaml`, `api.yaml`
+  (Deployment+Service+HPA), `worker.yaml` (Celery worker Deployment+HPA),
+  `ingress.yaml`, `README.md`.
+- **Gerçek doğrulama:** `kind` (Kubernetes-in-Docker) kuruldu, lokal bir
+  cluster ayağa kaldırıldı, manifestler gerçekten `kubectl apply` edildi.
+  Bu süreçte iki gerçek manifest hatası bulundu ve düzeltildi: (1) `image:
+  qrp-api:latest` + `:latest` tag'i K8s'in varsayılan `imagePullPolicy: Always`'ini
+  tetikliyordu, yerel yüklenmiş image'ı yok sayıp var olmayan bir registry'den
+  çekmeye çalışıyordu — `imagePullPolicy: IfNotPresent` eklendi. (2) worker
+  pod'u `celery: executable file not found` ile crashlooped — image, celery
+  pyproject.toml'a eklenmeden ÖNCE build edilmişti (yukarıdaki gerçek DB
+  bağlantısı bulgusuyla aynı build). Redis pod'u gerçekten Ready oldu;
+  postgres pod'u gerçekten Ready oldu (gerçek veri kaybı olmadan — bkz.
+  Faz 182 migration bölümü, aynı doğrulama sürecinde bulunan migration
+  zinciri sorunlarını da ortaya çıkardı).
+- `/health`, `/ready`, `/live` (`observability/health.py`) üçü de
+  **koşulsuz her zaman "ok" dönüyordu** — DB erişilemez olsa bile `/ready`
+  "ready" derdi. Bir K8s readiness probe'u buna bağlıysa hiçbir zaman
+  gerçek anlamda "hazır değil" diyemezdi. `/ready` artık gerçek bir
+  `SELECT 1` yapıyor, DB erişilemezse 503 dönüyor; `/live` bilinçli olarak
+  DB'ye bakmıyor (DB kesintisi liveness'ı değil readiness'ı düşürmeli —
+  aksi halde K8s, düzeltemeyeceği bir sorun için sağlıklı bir process'i
+  öldürüp yeniden başlatır). Kanıt: `tests/test_health_checks.py`.
+
+### Sprint 27 — Worker/Queue mimarisi
+- `services/celery_app.py` + `services/tasks.py` — `docker-compose.yml`'de
+  Faz başından beri duran ama hiçbir şeyin kullanmadığı Redis'i gerçekten
+  kullanan ilk kod. `run_backtest_task`, Sprint 3-6'nın gerçek backtest
+  pipeline'ını (aynı `run_and_persist_backtest`) bir worker'da çalıştırıyor.
+- `POST /backtest/run-async` + `GET /backtest/tasks/{id}` — dispatch +
+  durum sorgulama.
+- Kanıt: `tests/test_celery_tasks.py` — `task_always_eager` ile (Celery
+  task'larını gerçek worker süreci olmadan test etmenin standart yolu,
+  task'ı gerçek Celery çağrı mekanizmasından geçirerek çalıştırır) task
+  mantığı + `/run-async` → `/tasks/{id}` uçtan uca zinciri doğrulanıyor;
+  ayrıca gerçek lokal Redis'e (docker-compose'daki) broker bağlantısı ayrı
+  bir testle kontrol ediliyor (worker süreci gerektirdiği için xfail,
+  strict=False — ama bu oturumda gerçekten xpass etti, Redis gerçekten
+  erişilebilir).
+- `docker-compose.yml`'e `worker` servisi eklendi.
+
+### Sprint 28 — Auto-scaling + health checks
+- `k8s/api.yaml` ve `k8s/worker.yaml`'da `HorizontalPodAutoscaler` (CPU/RAM
+  hedefli) — api için 2-10 replika, worker için 2-8.
+- Health check'lerin gerçek olması (yukarıda) bu sprint'in asıl işiydi —
+  sahte bir health check'e bağlı bir auto-scaler/readiness gate, anlamsız
+  bir güvenlik hissi verir.
+
+## Faz 182 — Production Candidate (kısmi, 2026-08-04, aynı oturum)
+
+### Migration testi — TAM YEŞİL (roadmap'in kendi gate'i)
+K8s doğrulaması sırasında gerçek, boş bir scratch DB (`docker run
+timescale/timescaledb`, hiç veri yok) üzerinde **tüm migration zincirini**
+çalıştırırken iki gerçek, derin hata bulundu ve düzeltildi:
+1. **`weight_approvals` tablosu hiçbir migration'da `CREATE TABLE` ile
+   oluşturulmuyordu** (deneyim registry ile aynı borç türü, #13'te
+   kapatılmıştı — bu tabloda kapatılmamış kalan ikizi). `faz165_base_weight_approvals_table.py`
+   eklendi, `faz165`'in üzerine bağlandı.
+2. **faz161'in `create_hypertable()` çağrıları, "tablo boş değil" hatasının
+   ALTINDA daha derin bir sorunu maskeliyordu**: TimescaleDB, partition
+   kolonunun (`timestamp`) PRIMARY KEY'in bir parçası olmasını şart koşuyor
+   — `decisions`/`experiment_registry`/`weight_approvals`'ın üçü de sadece
+   `id` üzerinde tekil PK'ye sahipti. Boş bir DB'de bile bu yüzden
+   patlıyordu. Düzeltme: PK'yi `(id, timestamp)`'e genişlet, `migrate_data => TRUE`
+   ekle. Bu da YENİ bir kırılmaya yol açtı: `decision_persistor.py`'nin
+   `ON CONFLICT (id) DO NOTHING`'i artık eşleşen bir constraint bulamıyordu
+   (composite PK, tekil `id` constraint'i değil) — 34 test kırıldı, hemen
+   yakalandı, `ON CONFLICT (id, timestamp)`'e düzeltildi (id+timestamp ikisi
+   de `DecisionEvent` oluşturulurken bir kez set edildiği için dedup mantığı
+   bozulmadı).
+- **Hem boş scratch DB'de HEM gerçek lokal dev DB'de (4996 decisions, 1028
+  experiment_registry, 182 weight_approvals satırı, sıfır veri kaybıyla)
+  doğrulandı.** `decisions`/`experiment_registry`/`weight_approvals`
+  şu an gerçekten TimescaleDB hypertable'ları — `tests/test_timescale_migration.py`'deki
+  bu oturumdan ÖNCEKİ tek `xfail` artık gerçek bir `PASS` (xfail marker'ı
+  kaldırıldı, kalması yanıltıcı olurdu).
+- `database/migrations/env.py`: `settings = get_settings()` import edilip
+  hiç kullanılmıyordu, `alembic.ini`'deki sabit kodlanmış URL her zaman
+  kazanıyordu — yani migration'lar ortam değişkeninden bağımsız hep aynı
+  DB'yi hedefliyordu (K8s/prod'da farklı bir DB'ye migrate etmenin yolu
+  `alembic.ini`'yi elle değiştirmekti). `DATABASE_URL_SYNC` set edilmişse
+  artık gerçekten kullanılıyor.
+- Alembic tek head: `faz169` (faz161 + faz168 birleşimi). Bilinen borç #6
+  tamamen kapandı.
+- `pytest -q`: 340 passed, 1 skipped, 1 xpassed, **0 xfailed**.
+
+### Kapsam dışı bırakılanlar (Faz 182'nin geri kalanı)
+| # | Ne | Neden şimdi değil |
+|---|----|--------------------|
+| 20 | Stress/soak test, profiling + performans optimizasyonu. | Bu ortamda gerçek yük üretecek altyapı (çoklu eşzamanlı kullanıcı simülasyonu) yok; `qrp-api` image'ı da 11.6GB (torch/sentence-transformers ağırlıklı) — CPU-only torch wheel ile küçültülebilir, yapılmadı (bkz. `k8s/README.md`). |
+| 21 | Bağımsız/üçüncü taraf güvenlik denetimi + penetrasyon testi. | Auth altyapısı bu oturumda yeni kuruldu (Faz 178-179), henüz olgunlaşmadı; roadmap zaten bunu ayrı bir adım olarak görüyor. |
+| 22 | "Dokümantasyonun tamamının koda karşı otomatik doğrulanması" — CI'da CURRENT_STATE.md'nin koddan sapmadığını kontrol eden bir script. | Roadmap'in kendi önerdiği bu mekanizma henüz yazılmadı; bu oturum boyunca dokümantasyon elle (ama titizlikle, her adımda koda karşı doğrulanarak) güncellendi. |
 
 ## Mimari Notlar
 - **BinderStage kapsamı (Sprint 1 netleştirme, 2026-08-04):** BinderStage bilinçli olarak sadece
