@@ -1,14 +1,16 @@
 """FastAPI ana uygulama — tum router'lar."""
-from fastapi import FastAPI, WebSocket
+import time
+
+from fastapi import FastAPI, Request, WebSocket
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
-from api.rest import audit, backtest, cognitive, dashboard, experiments, memory, models, orchestrator, reasoning, replay, strategies, weights
+from api.rest import audit, backtest, cognitive, dashboard, experiments, explainability, memory, models, orchestrator, reasoning, replay, strategies, weights
 from api.websocket import decisions, live_predictions
 from api.websocket.cycle_feed import websocket_endpoint
 from observability.health import router as health_router
-from observability.metrics import get_metrics
+from observability.metrics import api_request_latency_seconds, api_requests_total, get_metrics
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -32,6 +34,25 @@ app.add_middleware(
 
 app.include_router(health_router, tags=["health"])
 
+
+@app.middleware("http")
+async def metrics_middleware(request: Request, call_next):
+    """Sprint 14-15: instruments EVERY endpoint at once (one wiring point,
+    covers the whole API surface instead of instrumenting each router)."""
+    start = time.perf_counter()
+    response = await call_next(request)
+    elapsed = time.perf_counter() - start
+
+    route = request.scope.get("route")
+    path_label = route.path if route is not None else request.url.path
+
+    api_requests_total.labels(
+        method=request.method, path=path_label, status=str(response.status_code)
+    ).inc()
+    api_request_latency_seconds.labels(method=request.method, path=path_label).observe(elapsed)
+
+    return response
+
 @app.get("/metrics")
 async def metrics():
     return Response(content=get_metrics(), media_type="text/plain")
@@ -50,6 +71,7 @@ app.include_router(cognitive.router, prefix="/api/v1")
 app.include_router(orchestrator.router, prefix="/api/v1")
 app.include_router(dashboard.router, prefix="/api/v1")
 app.include_router(backtest.router, prefix="/api/v1")
+app.include_router(explainability.router, prefix="/api/v1")
 
 @app.websocket("/ws/cycle")
 async def cycle_websocket(websocket: WebSocket):

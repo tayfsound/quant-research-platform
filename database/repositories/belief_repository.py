@@ -119,6 +119,17 @@ class BeliefRepository:
             for row in result.mappings().all()
         ]
 
+    def get_by_id(self, belief_id) -> dict | None:
+        """Fetch one specific belief snapshot — needed to resolve a
+        decision's belief_snapshot_id for the explainability chain (Sprint
+        16), not just 'latest' or 'by direction'."""
+        result = self.session.execute(
+            text("SELECT * FROM belief_snapshots WHERE id = :id"),
+            {"id": str(belief_id)},
+        )
+        row = result.mappings().first()
+        return dict(row) if row else None
+
     def get_by_direction(
         self,
         direction: str,

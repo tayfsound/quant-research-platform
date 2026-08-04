@@ -11,6 +11,7 @@ import PendingApprovals from './views/PendingApprovals';
 import ExperimentList from './views/ExperimentList';
 import ReplayView from './views/ReplayView';
 import BacktestRuns from './views/BacktestRuns';
+import DecisionExplain from './views/DecisionExplain';
 import NavBar from './components/NavBar';
 
 function App() {
@@ -36,6 +37,7 @@ function App() {
         {view === 'experiments' && <ExperimentList />}
         {view === 'replay' && <ReplayView />}
         {view === 'backtest' && <BacktestRuns />}
+        {view === 'explain' && <DecisionExplain />}
       </main>
     </div>
   );

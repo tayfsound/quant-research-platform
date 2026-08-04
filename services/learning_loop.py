@@ -76,6 +76,9 @@ class LearningLoop:
         was_correct = evaluation.was_prediction_correct
         self._apply_feedback(event, was_correct, outcome.pnl)
 
+        from observability.metrics import learning_updates_total
+        learning_updates_total.inc()
+
     def get_stats(self) -> dict:
         return {
             "brier_score": self.calibration.brier_score(),

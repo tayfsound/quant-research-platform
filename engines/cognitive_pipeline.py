@@ -208,6 +208,12 @@ class RecordingStage:
             weight_snapshot_id,
         )
 
+        from observability.metrics import decisions_total
+        decisions_total.labels(
+            symbol=ctx.market.symbol or "unknown",
+            action=str(getattr(ctx.decision, "action", "") or event.final_action or "WAIT"),
+        ).inc()
+
         ctx.cognition.relevant_knowledge.append({
             "type": "decision_event",
             "data": event.model_dump(),

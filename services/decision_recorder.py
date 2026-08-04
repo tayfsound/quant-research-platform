@@ -29,6 +29,22 @@ class DecisionRecorder:
             or getattr(ctx.decision, "final_action", "WAIT")
         )
 
+        agent_opinions_data = [op.model_dump() for op in (opinions or [])]
+        if debate_result is not None:
+            # Explainability chain (Sprint 16): debate_result used to be
+            # accepted here and silently discarded — "hangi debate?" had no
+            # answer for any real persisted decision. Folded into
+            # agent_opinions (same list that flows into agent_contributions
+            # in the DB) tagged distinctly so it's filterable.
+            agent_opinions_data.append({
+                "_type": "debate_result",
+                "data": (
+                    debate_result.model_dump()
+                    if hasattr(debate_result, "model_dump")
+                    else debate_result
+                ),
+            })
+
         event = DecisionEvent(
             id=ctx.cycle_id,
             timestamp=ctx.timestamp,
@@ -37,10 +53,7 @@ class DecisionRecorder:
             final_action=direction,
             final_size=getattr(ctx.decision, "final_size", 0.0),
             confidence=getattr(ctx.decision, "confidence", 0.0),
-            agent_opinions=[
-                op.model_dump()
-                for op in (opinions or [])
-            ],
+            agent_opinions=agent_opinions_data,
             risk_evaluation=ctx.risk.evaluation.model_dump(),
             market_snapshot={
                 "symbol": ctx.market.symbol,
@@ -59,6 +72,12 @@ class DecisionRecorder:
                 else None
             ),
             weight_snapshot_id=weight_snapshot_id,
+            # Explainability chain: without this, belief_snapshot_id was
+            # always NULL in the decisions table — belief IS saved
+            # separately (MemoryService.store_belief in RecordingStage) but
+            # nothing linked the decision row back to it. "hangi belief?"
+            # was unanswerable for any real decision.
+            belief_snapshot_id=belief.id if belief is not None else None,
         )
 
         self.persistor.persist(event)

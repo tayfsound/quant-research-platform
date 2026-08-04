@@ -1,6 +1,7 @@
 """Risk Engine – tüm ret sebeplerini biriktirir, tek otorite."""
 from contracts.context import CognitiveCycleContext
 from contracts.contexts.risk import RiskReason
+from observability.metrics import risk_decisions_total, risk_rejections_total
 
 
 class RiskEngine:
@@ -11,6 +12,7 @@ class RiskEngine:
         limits = ctx.risk.limits
         proposed = ctx.decision.proposed_size
         reasons: list[RiskReason] = []
+        symbol = ctx.market.symbol or "unknown"
 
         # 1. Limit var mı?
         max_size_limit = limits.get("max_position_size")
@@ -19,6 +21,8 @@ class RiskEngine:
             ctx.risk.evaluation.reasons = [
                 RiskReason(code="MISSING_LIMIT", message="No max_position_size limit defined", severity="critical")
             ]
+            risk_decisions_total.labels(verdict="rejected", symbol=symbol).inc()
+            risk_rejections_total.labels(reason="MISSING_LIMIT").inc()
             return ctx
 
         # 2. Hash doğru mu?
@@ -37,10 +41,14 @@ class RiskEngine:
         if reasons:
             ctx.risk.evaluation.verdict = "rejected"
             ctx.risk.evaluation.reasons = reasons
+            risk_decisions_total.labels(verdict="rejected", symbol=symbol).inc()
+            for r in reasons:
+                risk_rejections_total.labels(reason=r.code).inc()
             return ctx
 
         # Onay
         factor = max(0.5, min(ctx.risk.adjustment.factor, 1.0))
         ctx.risk.evaluation.verdict = "approved"
         ctx.decision.risk_adjusted_size = proposed * factor
+        risk_decisions_total.labels(verdict="approved", symbol=symbol).inc()
         return ctx

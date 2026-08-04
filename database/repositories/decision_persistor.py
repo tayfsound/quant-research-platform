@@ -5,6 +5,7 @@ import json
 from sqlalchemy import text
 
 from contracts.decision_event import DecisionEvent
+from observability.metrics import db_query_latency_seconds
 
 
 class DecisionPersistor:
@@ -12,6 +13,10 @@ class DecisionPersistor:
         self.session = session
 
     def persist(self, event: DecisionEvent) -> None:
+        with db_query_latency_seconds.labels(operation="decision_persist").time():
+            self._persist(event)
+
+    def _persist(self, event: DecisionEvent) -> None:
         contributions = list(event.agent_opinions) if event.agent_opinions else []
 
         if event.risk_evaluation:

@@ -1,9 +1,10 @@
-# Mevcut Durum -- v1.4.0 (Backtest bloğu + Portfolio Engine bloğu tamam)
+# Mevcut Durum -- v1.5.0 (Backtest + Portfolio Engine + Monitoring/Explainability blokları tamam)
 
 **Tarih:** 2026-08-04
 **Branch:** main
-**Son commit (HEAD):** 056f7f8 Sprint 6 (backtest persist+dashboard) + bu oturumun devamı (Faz 171 Portfolio Engine)
-**Test:** 308 passed, 1 xfailed (TimescaleDB hypertable, local'de non-empty table nedeniyle — bkz. borç #6), 1 skipped
+**Son commit (HEAD):** 7d32999 Faz 171 (Portfolio Engine) + bu oturumun devamı (Faz 173-174 Monitoring/Explainability)
+**Test:** 316 passed, 1 xfailed (TimescaleDB hypertable, local'de non-empty table nedeniyle — bkz. borç #6), 1 skipped
+**Not:** Faz 172 (Execution Layer) bilinçli olarak atlandı — gerçek (testnet) borsa API key'i proje sahibinden bekleniyor, roadmap'in kendisi bu bloğu "hız değil doğruluk" diye işaretliyor. Faz 173-174'e (bu key'e ihtiyaç duymayan) geçildi.
 
 **Önemli not:** Bu dosya, Faz 161-167 commit'lerinden sonra güncellenmemiş kalmıştı (dokümantasyon
 sürüklenmesi — roadmap'te 5 kez tekrarlanan risk, burada gerçekleşti). Aşağıdaki liste 2026-08-04
@@ -318,6 +319,78 @@ varlık-sınıfı etiketiydi:
   dashboard bağlantısı istenmiyor (Faz167'nin aksine) — bu yüzden dashboard'a
   bağlanmadı. Gerçek çapraz-varlık veri sağlayıcıları (equity/commodity/fx/bond
   borsaları) da yok — sadece deterministik mock veri ile test edildi.
+
+## Faz 172 — Execution Layer: BEKLEMEDE (2026-08-04)
+Roadmap'in kendi metninde 🔴 en riskli blok olarak işaretli ("hız değil
+doğruluk önceliklendirilmeli — gerçek para riski burada başlıyor").
+`exchange_gateway/binance/adapter.py` doğrulandı: sadece salt-okunur genel
+piyasa verisi (`https://api.binance.com`, kimlik doğrulama yok, testnet'e
+bile bağlı değil) — emir verme/testnet/paper-live switch mimarisi hiç yok.
+Secret hijyeni kontrol edildi: ilk commit'te bir `.env` track edilmişti ama
+sadece placeholder değerler içeriyordu (gerçek borsa key'leri hep boştu,
+`SECRET_KEY` bile "degistirin-cok-gizli-bir-anahtar" placeholder'ıydı) —
+gerçek bir sızıntı yok. `.gitignore` artık doğru, `.env.example` temiz,
+gitleaks zaten CI'da aktif (`.github/workflows/ci.yml`). Yani ön koşul
+karşılanmış durumda, ama gerçek (testnet olsa bile) API key olmadan emir
+verme kodu yazılamaz/test edilemez — **proje sahibi kendisi testnet key
+sağlayacağını belirtti, o gelene kadar bu blok bekliyor.**
+
+## Faz 173-174 — Monitoring + Explainability (2026-08-04, aynı oturum)
+
+### Sprint 14-15 — Gerçek zamanlı sistem metrikleri
+`observability/metrics.py` zaten Prometheus metrikleri tanımlıyordu
+(llm_*, risk_*, active_subprocesses, queue_size) ama **hiçbiri hiçbir yerden
+`.inc()`/`.observe()`/`.set()` ile çağrılmıyordu** — `/metrics` çıktısında
+isimleri görünüyordu ama değerleri hep sıfırdı, `test_health.py` sadece
+metrik ADININ metinde geçtiğini kontrol ediyordu, gerçekten hareket ettiğini
+değil. Bu oturumda:
+- `risk_decisions_total`/`risk_rejections_total` → `engines/risk_engine.py`'nin
+  her üç çıkış noktasına (missing limit / diğer red sebepleri / onay) bağlandı.
+- `decisions_total` (yeni) → `RecordingStage.execute()`'a bağlandı (decision-per-sec
+  buradan `rate()` ile türetilir).
+- `learning_updates_total` (yeni) → `LearningLoop.record()`'a bağlandı.
+- `api_requests_total`/`api_request_latency_seconds` (yeni) → `api/main.py`'a
+  TEK bir middleware ile TÜM endpoint'leri kapsayacak şekilde eklendi (her
+  router'ı ayrı ayrı enstrümante etmek yerine).
+- `db_query_latency_seconds` (yeni) → `DecisionPersistor.persist()`'e bağlandı.
+- `cpu_usage_percent`/`memory_usage_percent` (yeni) → `psutil` ile scrape
+  anında ölçülüyor (arka plan thread'i yerine, Prometheus pull modeliyle
+  tutarlı). **Yeni bağımlılık:** `psutil>=6.0.0` — hem sistem Python'a hem
+  `.venv`'e kuruldu, `pyproject.toml`'a eklendi.
+- Kanıt: `tests/test_observability_metrics.py` — her metrik için gerçek bir
+  aksiyon (risk red/onay, gerçek cycle, gerçek HTTP çağrısı, gerçek DB
+  persist) öncesi/sonrası Prometheus exposition metnini `prometheus_client.parser`
+  ile ayrıştırıp değerin gerçekten arttığını kanıtlıyor — sadece metrik
+  adının metinde geçmesini değil.
+
+### Sprint 16 — Explainability zinciri
+Zincirin çoğu `DecisionEvent` şemasında zaten vardı ama iki gerçek kopukluk
+bulundu:
+- **`belief_snapshot_id` hiçbir zaman set edilmiyordu.** `RecordingStage`
+  belief'i ayrıca `MemoryService.store_belief()` ile kaydediyordu ama
+  `DecisionRecorder.record()`'daki `DecisionEvent(...)` çağrısı
+  `belief_snapshot_id` alanını hiç doldurmuyordu — yani "hangi belief?"
+  sorusu HİÇBİR gerçek karar için cevaplanamıyordu. Düzeltildi:
+  `belief_snapshot_id=belief.id`.
+- **`debate_result` parametre olarak alınıyor ama tamamen atılıyordu** —
+  "hangi debate?" sorusu da cevapsızdı. Artık `agent_contributions`'a
+  `{"_type": "debate_result", "data": ...}` olarak ekleniyor.
+- `database/repositories/belief_repository.py`'a `get_by_id()` eklendi
+  (önceden sadece `get_latest()`/`get_by_direction()` vardı — belirli bir
+  karara ait belief'i çekmenin yolu yoktu).
+- `services/explainability.py` (`ExplainabilityService.explain()`) — tüm
+  zinciri (agents/evidence/belief/debate/risk/weight_snapshot/outcome) tek
+  bir yanıtta birleştiriyor. `api/rest/explainability.py`:
+  `GET /decisions/{id}/explain`.
+- `dashboard/src/views/DecisionExplain.tsx` — decision id gir, zincirin her
+  parçası ayrı `<details>` olarak (tıklanabilir/genişletilebilir) gösteriliyor;
+  `App.tsx`/`NavBar.tsx`'e bağlandı.
+- **Gate kanıtı** (roadmap: "Bir kararın üzerine tıklayınca tam zincirin
+  göründüğü, gerçek veriyle çalışan bir demo"): `tests/test_explainability_chain.py`
+  — gerçek bir `CognitiveEngine.run()` çalıştırılıp gerçek `/explain`
+  endpoint'i çağrılıyor; `chain.belief` artık gerçekten `None` değil (yukarıdaki
+  bug'ın kanıtı) ve gerçek id içeriyor.
+- `pytest -q`: 316 passed.
 
 ## Mimari Notlar
 - **BinderStage kapsamı (Sprint 1 netleştirme, 2026-08-04):** BinderStage bilinçli olarak sadece
