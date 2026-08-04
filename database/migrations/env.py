@@ -9,8 +9,15 @@ from config import get_settings
 # Alembic Config objesi
 config = context.config
 
-# Uygulama ayarlarını yükle
+# Uygulama ayarlarını yükle ve gerçekten kullan — bu satır önceden sadece
+# import edilip hiç kullanılmıyordu, sqlalchemy.url alembic.ini'de sabit
+# kodlanmıştı (yani migration'lar ortam değişkeninden bağımsız hep aynı
+# DB'yi hedefliyordu — K8s/prod'da ayrı bir DB'ye migrate etmenin yolu
+# alembic.ini'yi elle değiştirmekti). DATABASE_URL_SYNC set edilmişse onu
+# kullan, yoksa ini'deki değere düş (geriye dönük uyumlu).
 settings = get_settings()
+if settings.DATABASE_URL_SYNC:
+    config.set_main_option("sqlalchemy.url", settings.DATABASE_URL_SYNC)
 
 # Logger'ı yapılandır
 if config.config_file_name is not None:

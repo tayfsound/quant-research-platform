@@ -1,19 +1,20 @@
 """Faz 165: weight_approvals TTL + decided_at columns.
 
-Branches off 0005 (not faz161) deliberately: faz161's create_hypertable() calls
-fail locally against non-empty tables (needs migrate_data=>true, a separate
-data-migration decision — see AI_MEMORY_SYSTEM/CURRENT_STATE.md known gaps).
-Alembic history still has two heads (0005-branch, faz161) until that is resolved.
+Depends on faz165_base (which creates the table this ALTERs) rather than
+0005 directly. Originally branched off 0005 to avoid faz161's
+create_hypertable() calls, which fail locally against non-empty tables
+(needs migrate_data=>true) — that reasoning is now moot, faz169 merges the
+faz161 branch back in and both are verified to apply cleanly on an empty DB.
 
 Revision ID: faz165
-Revises: 0005
+Revises: faz165_base
 Create Date: 2026-08-04
 """
 import sqlalchemy as sa
 from alembic import op
 
 revision = "faz165"
-down_revision = "0005"
+down_revision = "faz165_base"
 branch_labels = None
 depends_on = None
 

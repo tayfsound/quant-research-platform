@@ -1,4 +1,13 @@
-"""Decision persistence — Phase 171 outcome support."""
+"""Decision persistence — Phase 171 outcome support.
+
+Faz 182: `decisions` became a TimescaleDB hypertable partitioned on
+`timestamp` (faz161 migration), which requires the primary key to be
+`(id, timestamp)` rather than `id` alone — Timescale won't allow a
+standalone unique index on just `id` on a hypertable. ON CONFLICT below
+matches that composite key. id+timestamp are both set once at DecisionEvent
+construction, so retrying persist() on the same event still dedupes
+correctly.
+"""
 
 import json
 
@@ -59,7 +68,7 @@ class DecisionPersistor:
                     :status,
                     CAST(:outcome AS jsonb)
                 )
-                ON CONFLICT (id) DO NOTHING
+                ON CONFLICT (id, timestamp) DO NOTHING
             """),
             {
                 "id": str(event.id),

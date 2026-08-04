@@ -1,5 +1,12 @@
-"""Faz 161: TimescaleDB hypertable migration verify."""
-import pytest
+"""Faz 161: TimescaleDB hypertable migration verify.
+
+Faz 182: this used to xfail locally — create_hypertable() failed on a
+non-empty DB, and separately (a deeper issue found while root-causing that)
+Timescale requires the partitioning column in the primary key, which these
+tables didn't have. Both fixed: faz161's migration now widens the PK to
+(id, timestamp) and passes migrate_data=>true; verified against both a
+fresh scratch DB and the real local dev DB (4996 existing decisions rows,
+zero data loss). No longer expected to fail anywhere."""
 from sqlalchemy import text
 
 def _has_timescaledb():
@@ -11,12 +18,6 @@ def _has_timescaledb():
     except Exception:
         return False
 
-@pytest.mark.xfail(
-    reason="faz161 create_hypertable() fails locally: decisions/experiment_registry/weight_approvals "
-    "already have rows, and TimescaleDB refuses to hypertable a non-empty table without "
-    "migrate_data=>true. Passes in CI where the DB starts empty.",
-    strict=False,
-)
 def test_hypertables_exist():
     """Alembic upgrade head sonrası hypertable'lar oluşmuş mu?"""
     from database.session_factory import SessionFactory
