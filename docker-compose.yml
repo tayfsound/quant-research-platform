@@ -49,6 +49,22 @@ services:
       timeout: 10s
       retries: 3
 
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["celery", "-A", "services.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://quant:quantpass@postgres:5432/quantdb
+      - REDIS_URL=redis://redis:6379/0
+      - DEFAULT_SYMBOL=BTCUSDT
+      - DEFAULT_TIMEFRAME=1m
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 
 volumes:
   pgdata:

@@ -1,4 +1,4 @@
-"""Backtest API — Sprint 6."""
+"""Backtest API — Sprint 6, async dispatch added Sprint 27."""
 from fastapi import APIRouter
 
 from backtest.backtest_orchestrator import run_and_persist_backtest
@@ -28,6 +28,33 @@ async def run_backtest(symbols: str = "BTCUSDT", bars: int = 200, seed: int = 42
             "total_pnl": run.total_pnl,
             "metrics": run.metrics,
         }
+
+
+@router.post("/run-async")
+async def run_backtest_async(symbols: str = "BTCUSDT", bars: int = 200, seed: int = 42, fee: float = 0.001):
+    """Sprint 27: dispatches the same backtest to a Celery worker instead of
+    running it inline — for a real historical run (thousands of bars, many
+    symbols) this is the "ağır işlem" the roadmap wants off the request
+    thread. Returns immediately with a task id."""
+    from services.tasks import run_backtest_task
+
+    symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
+    task = run_backtest_task.delay(symbol_list, bars, seed, fee)
+    return {"task_id": task.id, "status": "queued"}
+
+
+@router.get("/tasks/{task_id}")
+async def get_backtest_task(task_id: str):
+    from services.celery_app import celery_app
+    from celery.result import AsyncResult
+
+    result = AsyncResult(task_id, app=celery_app)
+    body = {"task_id": task_id, "status": result.status}
+    if result.successful():
+        body["result"] = result.result
+    elif result.failed():
+        body["error"] = str(result.result)
+    return body
 
 
 @router.get("/runs")
