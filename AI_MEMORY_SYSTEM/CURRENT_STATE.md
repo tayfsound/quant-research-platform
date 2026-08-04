@@ -2,8 +2,8 @@
 
 **Tarih:** 2026-08-04
 **Branch:** main
-**Son commit (HEAD):** 151e4b2 Sprint 2 (services/replay/ gerçek motor) + bu oturumun devamı
-**Test:** 271 passed, 1 xfailed (TimescaleDB hypertable, local'de non-empty table nedeniyle — bkz. borç #6), 1 skipped
+**Son commit (HEAD):** f46a117 Sprint 2 gate (dashboard replay) + bu oturumun devamı (Sprint 3)
+**Test:** 280 passed, 1 xfailed (TimescaleDB hypertable, local'de non-empty table nedeniyle — bkz. borç #6), 1 skipped
 
 **Önemli not:** Bu dosya, Faz 161-167 commit'lerinden sonra güncellenmemiş kalmıştı (dokümantasyon
 sürüklenmesi — roadmap'te 5 kez tekrarlanan risk, burada gerçekleşti). Aşağıdaki liste 2026-08-04
@@ -114,6 +114,39 @@ Yapılanlar (C1 kanıtlı):
 | 12 | **İki ayrı `DecisionPersistor` sınıfı var:** `database/repositories/decision_persistor.py` (gerçek üretim yolu — `DecisionRecorder` bunu kullanıyor, `list_recent`/`get_by_symbol`/`outcome` kolonu/`ON CONFLICT DO NOTHING` var) ve `services/decision_persistor.py` (sadece testlerin ve eski replay kodunun kullandığı, `list_recent` yok, `outcome` yazmıyor). API artık production'ın kullandığı (`database/repositories/...`) sınıfa bağlandı (replay, deneyler). Hangi sınıfın kalacağına — ya da `services/decision_persistor.py`'ın tamamen kaldırılıp testlerin de `database/repositories/...`'a taşınmasına — karar verilmedi. | P1 | Proje sahibi kararı |
 | 13 | **`experiment_registry` tablosu hiçbir migration'da `CREATE TABLE` ile oluşturulmuyordu — Faz 159'dan beri her `ExperimentRegistryRepository.save()` çağrısı `RecordingStage.execute()`'daki çıplak `except Exception: pass` içinde sessizce patlıyordu.** Yani "ExperimentRegistry bound to RecordingStage" iddiası hiçbir zaman gerçek bir DB satırı üretmemişti. `faz166_experiment_registry_table.py` migration'ı eklendi ve uygulandı; `GET /api/v1/experiments/` de aslında `{"experiments": []}` döndüren bir placeholder'dı (`repo.get_by_git_sha("")` çağırıp sonucu atıyordu) — `ExperimentRegistryRepository.list_recent()` eklendi, endpoint gerçek veriyi dönüyor artık. Kanıt: `tests/test_experiment_registry_real_persist.py` — gerçek bir cognitive cycle çalıştırılıp API'den gerçek (non-"unknown") git_sha ile geri geldiği doğrulanıyor. | ~~P0~~ **Kapandı** | — |
 | 14 | **Sprint 2 dashboard gate kapandı (2026-08-04):** `LatestCycle`, `PendingApprovals`, `ExperimentList` bileşenleri Faz 164'te yazılmış ama `App.tsx`'e hiç import edilmemiş/render edilmemişti — NavBar'da sekmeleri bile yoktu, tarayıcıdan asla erişilemiyorlardı. Üçü de artık `App.tsx`/`NavBar.tsx`'e bağlı (`cycle`/`approvals`/`experiments` sekmeleri). Yeni `ReplayView.tsx` eklendi (`POST /replay/decision/{id}` tetikler, `verification.verified`'ı gösterir) — roadmap'in "tarayıcıdan replay tetiklenip aynı sonucu üretebiliyor mu" gate'i buna karşılık geliyor. Doğrulama: `vite dev` sunucusu ayağa kalktı, `App.tsx`'in transpile edilmiş halinde `ReplayView` gerçekten yükleniyor (curl ile doğrulandı); gerçek bir tarayıcıda tıklama testi yapılmadı (bu ortamda tarayıcı yok) ama backend endpoint'i ayrıca gerçek DB'ye karşı test edildi (`test_replay_decision_api.py`). **Önceden var olan, ilgisiz bir sorun:** `npm run build` (`tsc -b`) `AIReasoning.tsx` ve `LivePredictions.tsx`'te bu oturumdan önce var olan tip hatalarıyla başarısız oluyor (muhtemelen tipsiz `useState()` → `never[]` çıkarımı); bu dosyalara dokunulmadı, kapsam dışı bırakıldı. | P2 (build hatası) | Hayır (dev server çalışıyor) |
+
+### Sprint 3 (Faz 167 bloğu) — Vektörize backtest çekirdeği (2026-08-04)
+Önceki durumda `backtest/` klasörü zaten vardı ama roadmap'in istediği şey değildi:
+`WalkForwardEngine` tek bir `List[float]` fiyat serisi + `strategy(train) -> int`
+callable'ı üzerinde çalışıyordu (çok-sembol matris işlemi yok), embargo/gap
+kavramı yoktu (train ile test bitişik — leakage riski). Onu yerinde bozmadım
+(mevcut `tests/test_backtest.py` hâlâ ona bağlı), yanına gerçek olanı ekledim:
+
+- `backtest/vectorized_engine.py` — `VectorizedBacktestEngine`: `{symbol: [OHLCV,...]}`
+  + `signals[n_symbols, n_bars]` alıp tamamen numpy matris işlemleriyle (bar
+  başına Python döngüsü yok) pnl/fee/equity curve hesaplıyor. Test:
+  `test_vectorized_engine_handles_full_symbol_time_matrix_at_once` — 50 sembol
+  × 5000 bar'lık gerçekçi bir matrisi hızlıca işliyor.
+- `backtest/embargo_walk_forward.py` — `EmbargoWalkForwardSplitter`: train/test
+  arasına zorunlu `embargo` bar'lık bir boşluk koyan index splitter (lookback
+  pencereli feature'ların sızıntısını önlemek için). `embargo=0` eski
+  bitişik davranışla geriye dönük uyumlu.
+- Doğruluk kanıtı: `tests/test_vectorized_backtest.py` — elle hesaplanmış 2
+  sembollü bir örnek üzerinde pnl/fee/equity curve tam olarak doğrulanıyor
+  (D1 barı: "bilinen bir sentetik equity curve'de doğru sonucu üretiyor mu");
+  embargo gap'in gerçekten uygulandığı, train/test index'lerinin hiç
+  kesişmediği, geçersiz parametrelerin reddedildiği ayrı testlerle kanıtlı.
+- `pyproject.toml`'a `numpy` eklendi — zaten kurulu/kullanılıyordu (muhtemelen
+  transformers/sklearn'den geliyordu) ama hiç deklare edilmemişti; artık
+  doğrudan import ettiğim için deklare ettim.
+- **Bilinçli olarak yapılmadı:** CognitiveEngine entegrasyonu (roadmap bunu
+  Sprint 5'e koyuyor — "Replay ↔ Backtest entegrasyonu", aynı `CognitiveEngine.run()`
+  çağrısının farklı ölçekte kullanıldığını doğrulama). Bugünkü motor bağımsız,
+  strateji-agnostik bir çekirdek; henüz gerçek karar mantığına bağlanmadı.
+- **Kalan Sprint 3-6 işi:** Sprint 4 (Sharpe/Sortino/Calmar/... metrik motoru +
+  birim testleri), Sprint 5 (Replay↔Backtest, aynı CognitiveEngine.run()
+  paylaşımı + determinism audit), Sprint 6 (`backtest_runs` tablosu + persist
+  + dashboard bağlantısı) henüz başlanmadı.
 
 ## Mimari Notlar
 - **BinderStage kapsamı (Sprint 1 netleştirme, 2026-08-04):** BinderStage bilinçli olarak sadece
