@@ -2,8 +2,8 @@
 
 **Tarih:** 2026-08-04
 **Branch:** main
-**Son commit (HEAD):** f46a117 Sprint 2 gate (dashboard replay) + bu oturumun devamı (Sprint 3)
-**Test:** 280 passed, 1 xfailed (TimescaleDB hypertable, local'de non-empty table nedeniyle — bkz. borç #6), 1 skipped
+**Son commit (HEAD):** 8319c0a Sprint 3 (vektörize backtest çekirdeği) + bu oturumun devamı (Sprint 4)
+**Test:** 295 passed, 1 xfailed (TimescaleDB hypertable, local'de non-empty table nedeniyle — bkz. borç #6), 1 skipped
 
 **Önemli not:** Bu dosya, Faz 161-167 commit'lerinden sonra güncellenmemiş kalmıştı (dokümantasyon
 sürüklenmesi — roadmap'te 5 kez tekrarlanan risk, burada gerçekleşti). Aşağıdaki liste 2026-08-04
@@ -143,10 +143,32 @@ kavramı yoktu (train ile test bitişik — leakage riski). Onu yerinde bozmadı
   Sprint 5'e koyuyor — "Replay ↔ Backtest entegrasyonu", aynı `CognitiveEngine.run()`
   çağrısının farklı ölçekte kullanıldığını doğrulama). Bugünkü motor bağımsız,
   strateji-agnostik bir çekirdek; henüz gerçek karar mantığına bağlanmadı.
-- **Kalan Sprint 3-6 işi:** Sprint 4 (Sharpe/Sortino/Calmar/... metrik motoru +
-  birim testleri), Sprint 5 (Replay↔Backtest, aynı CognitiveEngine.run()
+- **Kalan Sprint 5-6 işi:** Sprint 5 (Replay↔Backtest, aynı CognitiveEngine.run()
   paylaşımı + determinism audit), Sprint 6 (`backtest_runs` tablosu + persist
   + dashboard bağlantısı) henüz başlanmadı.
+
+### Sprint 4 (Faz 167 bloğu) — Metrik motoru (2026-08-04)
+`analytics/metrics/engine.py` (`MetricsEngine`) ve `analytics/metrics/equity.py`
+(`EquityAnalytics`) zaten vardı — Sharpe, Sortino, Max Drawdown, Calmar, VaR95,
+Win Rate, Profit Factor tanımlıydı — ama **hiçbir yerden çağrılmıyordu ve tek
+bir testi yoktu**, bir başka saf ada. Roadmap'in istediği listeye göre:
+
+- Eksik metrikler eklendi: `expectancy()`, `recovery_factor()`, `ulcer_index()`,
+  `mar_ratio()` (roadmap MAR'ı Calmar'dan ayrı bir kalem olarak listeliyor;
+  bu motor rolling-window ayrımı yapmadığı için ikisi aynı formülü kullanıyor —
+  yorum satırında dürüstçe belirtildi).
+- **Gerçek bug bulundu ve düzeltildi:** `calmar_ratio`'nun CAGR hesabı üs olarak
+  `1/len(equity)` kullanıyordu — bu her bar'ı bir YIL gibi ele alır, günlük/saatlik
+  bar'larda CAGR'ı ciddi şekilde yanlış hesaplar (sessizce). `periods_per_year`
+  parametresi eklendi (varsayılan 252); regresyon testi eski formülle yeniyi
+  karşılaştırıp gerçekten farklı sonuç ürettiğini kanıtlıyor.
+- Kanıt: `tests/test_metrics_engine.py` — her metrik, temiz sayılar üreten
+  elle seçilmiş bir `equity=[100,200,100,400]` eğrisi üzerinde elle hesaplanmış
+  referans değerle karşılaştırılıyor (D1 barı). Ayrıca Sprint 3'ün
+  `VectorizedBacktestEngine.equity_curve` çıktısının doğrudan bu metriklere
+  beslenebildiğini kanıtlayan bir entegrasyon testi eklendi — ikisi ayrı ada
+  olarak kalmasın diye.
+- `pytest -q`: 295 passed.
 
 ## Mimari Notlar
 - **BinderStage kapsamı (Sprint 1 netleştirme, 2026-08-04):** BinderStage bilinçli olarak sadece
