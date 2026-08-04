@@ -37,3 +37,11 @@ class ExperimentRegistryRepository:
 
     def get_by_git_sha(self, git_sha: str):
         return self.session.query(ExperimentRegistryModel).filter_by(git_sha=git_sha).all()
+
+    def list_recent(self, limit: int = 20):
+        return (
+            self.session.query(ExperimentRegistryModel)
+            .order_by(ExperimentRegistryModel.timestamp.desc())
+            .limit(limit)
+            .all()
+        )

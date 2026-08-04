@@ -71,7 +71,10 @@ def test_decision_persisted_to_db():
     persistor = DecisionPersistor(session)
     persistor.persist(event)
 
-    rows = persistor.get_by_symbol("BTCUSDT", limit=10)
-    assert len(rows) >= 1
-    assert rows[0]["symbol"] == "BTCUSDT"
-    assert rows[0]["direction"] == "LONG"
+    # Look up this exact row by id, not "most recent BTCUSDT" — the decisions
+    # table is shared across the whole test suite (many other tests persist
+    # BTCUSDT decisions too), so "most recent" is inherently order-dependent.
+    row = persistor.get_by_id(str(event.id))
+    assert row is not None
+    assert row["symbol"] == "BTCUSDT"
+    assert row["direction"] == "LONG"

@@ -20,6 +20,12 @@ class DecisionPersistor:
                 "data": event.risk_evaluation,
             })
 
+        if event.market_snapshot:
+            contributions.append({
+                "type": "market_snapshot",
+                "data": event.market_snapshot,
+            })
+
         self.session.execute(
             text("""
                 INSERT INTO decisions (
