@@ -3,7 +3,13 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from market_data.ingestion.data_provider import MockProvider, BinanceProvider, get_ohlcv_provider
+from market_data.ingestion.data_provider import (
+    MockProvider,
+    BinanceProvider,
+    RoutingProvider,
+    get_ohlcv_provider,
+    get_provider_for_symbol,
+)
 from market_data.ingestion.ohlcv import OHLCV, from_binance_klines
 from market_data.features.indicators import rsi
 
@@ -46,6 +52,45 @@ def test_binance_fallback_on_error(monkeypatch):
         p = BinanceProvider()
         data = p.get_ohlcv("BTCUSDT", "1m", 20)
         assert len(data) == 20
+
+
+def test_get_provider_for_symbol_is_always_mock_outside_binance_mode(monkeypatch):
+    """Faz 194: test/mock modunda AAPL/^GSPC gibi semboller için bile gerçek
+    Yahoo Finance ağ çağrısı yapılmamalı — deterministik mock veri."""
+    monkeypatch.setenv("MARKET_DATA_SOURCE", "mock")
+    from config import get_settings
+    get_settings.cache_clear()
+    assert isinstance(get_provider_for_symbol("AAPL"), MockProvider)
+    assert isinstance(get_provider_for_symbol("BTCUSDT"), MockProvider)
+    assert isinstance(get_provider_for_symbol("^GSPC"), MockProvider)
+
+
+def test_get_provider_for_symbol_routes_binance_pairs_to_binance(monkeypatch):
+    monkeypatch.setenv("MARKET_DATA_SOURCE", "binance")
+    from config import get_settings
+    get_settings.cache_clear()
+    assert isinstance(get_provider_for_symbol("BTCUSDT"), BinanceProvider)
+    assert isinstance(get_provider_for_symbol("ETHUSDT"), BinanceProvider)
+
+
+def test_get_provider_for_symbol_routes_non_crypto_to_yahoo(monkeypatch):
+    monkeypatch.setenv("MARKET_DATA_SOURCE", "binance")
+    from config import get_settings
+    get_settings.cache_clear()
+    from market_data.ingestion.yahoo_provider import YahooProvider
+
+    assert isinstance(get_provider_for_symbol("AAPL"), YahooProvider)
+    assert isinstance(get_provider_for_symbol("^GSPC"), YahooProvider)
+    assert isinstance(get_provider_for_symbol("GC=F"), YahooProvider)
+
+
+def test_routing_provider_delegates_by_symbol_shape(monkeypatch):
+    monkeypatch.setenv("MARKET_DATA_SOURCE", "mock")
+    from config import get_settings
+    get_settings.cache_clear()
+
+    data = RoutingProvider().get_ohlcv("AAPL", "1m", limit=10)
+    assert len(data) == 10
 
 
 @pytest.mark.asyncio

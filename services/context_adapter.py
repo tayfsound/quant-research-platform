@@ -48,7 +48,80 @@ class ContextAdapter:
             mvrv_zscore=self._get(ctx, "mvrv_zscore", 0.0),
         )
 
+    def _latest_external_signal(self, symbol: str, max_age_seconds: float = 1800.0):
+        """Faz 193: TradingView webhook alarmları event-driven'dır (sürekli
+        akmaz) — bu yüzden eski bir alarmı hâlâ geçerliymiş gibi kullanmamak
+        için 30 dakikadan eski olanlar yok sayılır. Serbest metin formatı
+        (Pine Script'in ne yazdığına bağlı) basit anahtar kelime eşlemesiyle
+        bullish/bearish'e normalize ediliyor; tanınmayan bir format icat
+        edilmez, sadece None döner."""
+        if not symbol:
+            return None, None
+        from database.repositories.external_signal_repository import ExternalSignalRepository
+        from database.session_factory import SessionFactory
+
+        with SessionFactory.get_session() as session:
+            row = ExternalSignalRepository(session).get_latest_for_symbol(symbol)
+
+        if not row:
+            return None, None
+
+        signal_time = row.get("time")
+        if signal_time is not None:
+            now = datetime.now(UTC)
+            if signal_time.tzinfo is None:
+                age = (now.replace(tzinfo=None) - signal_time).total_seconds()
+            else:
+                age = (now - signal_time).total_seconds()
+            if age > max_age_seconds:
+                return None, None
+
+        raw = (row.get("signal") or "").lower()
+        if any(k in raw for k in ("buy", "long", "bull")):
+            return "bullish", row.get("source")
+        if any(k in raw for k in ("sell", "short", "bear")):
+            return "bearish", row.get("source")
+        return None, None
+
+    def _correlated_market_trend(self, symbol: str) -> str | None:
+        """Faz 194: "kripto Nasdaq/S&P500 ile korele gidiyor" — ikisinin de
+        EN SON analiz edilmiş, gerçek trend'i aynı yöndeyse (sadece ikisi
+        de bullish ya da ikisi de bearish) bir korelasyon sinyali üretir.
+        Sadece kripto sembolleri için; endeksler henüz hiç analiz
+        edilmediyse (fresh deploy) ya da anlaşmıyorlarsa None döner —
+        icat edilmiş bir "zayıf sinyal" değil."""
+        if not symbol.upper().endswith(("USDT", "BUSD", "USDC", "FDUSD")):
+            return None
+
+        from database.repositories.decision_persistor import DecisionPersistor
+        from database.session_factory import SessionFactory
+
+        trends = []
+        with SessionFactory.get_session() as session:
+            repo = DecisionPersistor(session)
+            for index_symbol in ("^IXIC", "^GSPC"):
+                rows = repo.get_by_symbol(index_symbol, limit=1)
+                if not rows:
+                    continue
+                for contrib in (rows[0].get("agent_contributions") or []):
+                    if isinstance(contrib, dict) and contrib.get("type") == "market_snapshot":
+                        trend = (contrib.get("data", {}).get("features") or {}).get("trend")
+                        if trend:
+                            trends.append(trend)
+                        break
+
+        if len(trends) < 2:
+            return None
+        if all(t == "bullish" for t in trends):
+            return "bullish"
+        if all(t == "bearish" for t in trends):
+            return "bearish"
+        return None
+
     def to_technical(self, ctx: CognitiveCycleContext) -> TechnicalContext:
+        symbol = ctx.market.symbol or ""
+        external_signal, external_signal_source = self._latest_external_signal(symbol)
+        correlated_market_trend = self._correlated_market_trend(symbol)
         return TechnicalContext(
             trend=self._get(ctx, "trend", "neutral"),
             momentum=self._get(ctx, "momentum", "neutral"),
@@ -64,6 +137,9 @@ class ContextAdapter:
             rsi_value=self._get(ctx, "RSI", 50.0),
             ema_alignment=self._get(ctx, "ema_alignment", "neutral"),
             volatility_regime=self._get(ctx, "volatility_regime", "normal"),
+            external_signal=external_signal,
+            external_signal_source=external_signal_source,
+            correlated_market_trend=correlated_market_trend,
         )
 
     def to_pattern(self, ctx: CognitiveCycleContext) -> PatternContext:

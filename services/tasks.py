@@ -4,32 +4,40 @@ from services.celery_app import celery_app
 
 @celery_app.task(name="run_trading_cycle_task")
 def run_trading_cycle_task(symbol: str | None = None) -> dict:
-    """Faz 190: "gerçek işlem alıyormuş gibi" — AI'ın sadece birisi
+    """Faz 190/194: "gerçek işlem alıyormuş gibi" — AI'ın sadece birisi
     dashboard'u açık tutunca değil, gerçekten sürekli, bağımsız çalışması.
     celery beat tarafından periyodik tetiklenir (bkz. celery_app.py:
     beat_schedule). ai_enabled=false ise RiskEngine zaten reddeder ama
     burada erken çıkmak gereksiz bir cycle'ı (embedding dahil) baştan
-    engelliyor."""
-    from config import get_settings
+    engelliyor. symbol verilmezse (celery beat'in gerçek çağrı şekli)
+    kullanıcının Settings'te belirlediği watchlist'teki TÜM enstrümanlar
+    (kripto + endeks/emtia/hisse) sırayla işlenir."""
     from database.repositories.app_settings_repository import AppSettingsRepository
     from database.session_factory import SessionFactory
+    from market_data.ingestion.data_provider import get_provider_for_symbol
     from services.orchestrator import CognitiveOrchestrator
 
     with SessionFactory.get_session() as session:
-        ai_enabled = AppSettingsRepository(session).get("ai_enabled") == "true"
+        settings_repo = AppSettingsRepository(session)
+        ai_enabled = settings_repo.get("ai_enabled") == "true"
+        watchlist = [s.strip() for s in settings_repo.get("watchlist").split(",") if s.strip()]
 
     if not ai_enabled:
         return {"skipped": "ai_disabled"}
 
-    symbol = symbol or get_settings().DEFAULT_SYMBOL
-    result = CognitiveOrchestrator().run_cycle(symbol=symbol)
+    symbols = [symbol] if symbol else watchlist
+    results = []
+    for sym in symbols:
+        orch = CognitiveOrchestrator(data_provider=get_provider_for_symbol(sym))
+        result = orch.run_cycle(symbol=sym)
+        results.append({
+            "symbol": result.get("symbol"),
+            "direction": result.get("direction"),
+            "risk_verdict": result.get("risk_verdict"),
+            "risk_reasons": result.get("risk_reasons"),
+        })
 
-    return {
-        "symbol": result.get("symbol"),
-        "direction": result.get("direction"),
-        "risk_verdict": result.get("risk_verdict"),
-        "risk_reasons": result.get("risk_reasons"),
-    }
+    return results[0] if symbol else {"cycles": results}
 
 
 @celery_app.task(name="close_due_positions_task")
@@ -44,7 +52,7 @@ def close_due_positions_task(hold_seconds: int | None = None) -> dict:
     )
     from database.repositories.decision_persistor import DecisionPersistor
     from database.session_factory import SessionFactory
-    from market_data.ingestion.data_provider import get_ohlcv_provider
+    from market_data.ingestion.data_provider import RoutingProvider
     from services.position_closer import PositionCloser
 
     if hold_seconds is None:
@@ -52,7 +60,10 @@ def close_due_positions_task(hold_seconds: int | None = None) -> dict:
             horizon = AppSettingsRepository(session).get("trade_horizon")
         hold_seconds = TRADE_HORIZON_SECONDS.get(horizon, 600)
 
-    closer = PositionCloser(get_ohlcv_provider(), hold_seconds=hold_seconds)
+    # Faz 194: açık pozisyonlar artık farklı varlık sınıflarında olabilir
+    # (kripto + hisse/endeks/emtia) — RoutingProvider her pozisyonu kendi
+    # gerçek fiyat kaynağına yönlendiriyor.
+    closer = PositionCloser(RoutingProvider(), hold_seconds=hold_seconds)
     with SessionFactory.get_session() as session:
         closed = closer.close_due_positions(DecisionPersistor(session))
 

@@ -15,3 +15,15 @@ class TechnicalContext(BaseModel):
     volatility_regime: str = "normal"   # "low", "normal", "high"
     key_levels: list[float] = Field(default_factory=list)  # Kritik destek/direnç seviyeleri
     timestamp: datetime = Field(default_factory=datetime.now)
+    # Faz 193: TradingView webhook alarmı — ikinci görüş, hiçbir zaman
+    # ajanın kendi hesapladığı yönü tek başına belirlemiyor/ezmiyor.
+    # "bullish"/"bearish"/None (yakın zamanda alarm yoksa ya da
+    # tanınmayan bir format geldiyse).
+    external_signal: str | None = None
+    external_signal_source: str | None = None
+    # Faz 194: Nasdaq + S&P500'ün GERÇEKTEN ikisi de aynı yönde ise (ikisi
+    # de bullish ya da ikisi de bearish) — kripto, geleneksel risk-varlığı
+    # piyasalarıyla korele gidiyor. Sadece kripto sembolleri için doldurulur;
+    # ikisi anlaşmazsa ya da henüz analiz edilmemişlerse None (icat edilmiş
+    # bir "hafif korelasyon" sinyali değil, ya net bir uyum ya da hiç sinyal).
+    correlated_market_trend: str | None = None

@@ -65,12 +65,40 @@ class TechnicalAgent:
         if context.volatility_regime == "high":
             caveats.append("High volatility regime — reduced position sizing recommended")
 
+        # Kendi hesapladığı yön ÖNCE belirleniyor — TradingView alarmı
+        # sadece bir onay/uyarı notu ekliyor, kendi başına yönü belirlemiyor
+        # ya da ezmiyor (Faz 193: "ikinci görüş" isteğinin doğrudan karşılığı).
         if score > 0.5:
             direction = "LONG"
         elif score < -0.5:
             direction = "SHORT"
         else:
             direction = "WAIT"
+
+        if context.external_signal == "bullish":
+            if direction == "LONG":
+                evidence.append(f"TradingView alarmı teyit ediyor (kaynak: {context.external_signal_source})")
+            elif direction == "SHORT":
+                caveats.append("TradingView alarmı kendi teknik görüşümüzle çelişiyor (bullish alarm, bearish iç görüş)")
+        elif context.external_signal == "bearish":
+            if direction == "SHORT":
+                evidence.append(f"TradingView alarmı teyit ediyor (kaynak: {context.external_signal_source})")
+            elif direction == "LONG":
+                caveats.append("TradingView alarmı kendi teknik görüşümüzle çelişiyor (bearish alarm, bullish iç görüş)")
+
+        # Faz 194: Nasdaq+S&P500 korelasyonu — sadece ikisi de aynı yönde
+        # anlaştığında bir sinyal var, ve yine sadece onay/uyarı notu,
+        # kendi başına yönü belirlemiyor.
+        if context.correlated_market_trend == "bullish":
+            if direction == "LONG":
+                evidence.append("Nasdaq + S&P500 ikisi de bullish — geleneksel risk-varlığı piyasalarıyla uyumlu")
+            elif direction == "SHORT":
+                caveats.append("Nasdaq + S&P500 bullish ama kendi teknik görüşümüz bearish — korelasyon çelişiyor")
+        elif context.correlated_market_trend == "bearish":
+            if direction == "SHORT":
+                evidence.append("Nasdaq + S&P500 ikisi de bearish — geleneksel risk-varlığı piyasalarıyla uyumlu")
+            elif direction == "LONG":
+                caveats.append("Nasdaq + S&P500 bearish ama kendi teknik görüşümüz bullish — korelasyon çelişiyor")
 
         confidence = min(abs(score) / 5.0, 0.85)
 

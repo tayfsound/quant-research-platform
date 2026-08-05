@@ -49,6 +49,10 @@ def _validate(key: str, value: str) -> None:
     elif key == "ai_enabled":
         if value not in ("true", "false"):
             raise HTTPException(400, "ai_enabled must be 'true' or 'false'")
+    elif key == "watchlist":
+        symbols = [s.strip() for s in value.split(",") if s.strip()]
+        if not symbols:
+            raise HTTPException(400, "watchlist must be a non-empty comma-separated symbol list")
     else:
         raise HTTPException(400, f"unknown setting key: {key}")
 

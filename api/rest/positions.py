@@ -12,7 +12,7 @@ from database.repositories.app_settings_repository import (
 )
 from database.repositories.decision_persistor import DecisionPersistor
 from database.session_factory import SessionFactory
-from market_data.ingestion.data_provider import get_ohlcv_provider
+from market_data.ingestion.data_provider import RoutingProvider
 from services.auth_service import AuthContext, get_current_user, require_role
 from services.position_closer import PositionCloser
 
@@ -75,7 +75,7 @@ async def close_due_positions(
             horizon = AppSettingsRepository(session).get("trade_horizon")
         hold_seconds = TRADE_HORIZON_SECONDS.get(horizon, 600)
 
-    closer = PositionCloser(get_ohlcv_provider(), hold_seconds=hold_seconds)
+    closer = PositionCloser(RoutingProvider(), hold_seconds=hold_seconds)
     with SessionFactory.get_session() as session:
         closed = closer.close_due_positions(DecisionPersistor(session))
     return {"closed_count": len(closed), "closed": closed}

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { setToken } from '../api/auth';
 import { Button, Input } from '../components/ui';
 
@@ -9,7 +9,8 @@ function Login({ onLogin }: { onLogin: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const submit = () => {
+  const submit = (e?: FormEvent) => {
+    e?.preventDefault();
     setError(null);
     setLoading(true);
     const path = mode === 'login' ? '/api/v1/auth/login' : '/api/v1/auth/register';
@@ -70,14 +71,14 @@ function Login({ onLogin }: { onLogin: () => void }) {
             </button>
           </div>
 
-          <div className="flex flex-col gap-3">
+          <form onSubmit={submit} className="flex flex-col gap-3">
             <Input value={username} onChange={setUsername} placeholder="Username" />
             <Input value={password} onChange={setPassword} placeholder="Password" type="password" />
             {error && <div className="text-fall text-xs bg-fall-soft rounded-lg px-3 py-2">{error}</div>}
-            <Button onClick={submit} disabled={loading} className="w-full mt-1">
+            <Button type="submit" disabled={loading} className="w-full mt-1">
               {loading ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
             </Button>
-          </div>
+          </form>
         </div>
       </div>
     </div>

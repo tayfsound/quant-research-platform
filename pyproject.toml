@@ -44,6 +44,9 @@ dependencies = [
     "filelock>=3.13.0",
     "websockets>=13.0",
     "celery>=5.4.0",
+    # Faz 194: kripto-olmayan varlıklar (endeks/emtia/hisse) için — Binance
+    # bunları sağlamıyor, ücretsiz/key gerektirmeyen tek pratik seçenek.
+    "yfinance>=1.5.0",
 ]
 
 [project.optional-dependencies]

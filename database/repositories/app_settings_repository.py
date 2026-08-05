@@ -24,6 +24,11 @@ DEFAULTS: dict[str, str] = {
     # bağımsız çalışmaya devam eder — hedefine ulaşan/vadesi dolan pozisyon
     # yine kapanır. Varsayılan "true" (önceki davranışla aynı, regresyon yok).
     "ai_enabled": "true",
+    # Faz 194: AI'ın sürekli izlediği/işlem yapabildiği enstrümanlar —
+    # kripto (Binance) + endeks/emtia/hisse (Yahoo Finance). Nasdaq/S&P500
+    # ayrıca crypto sembollerine korelasyon sinyali olarak da besleniyor
+    # (bkz. agents/technical_agent.py).
+    "watchlist": "BTCUSDT,ETHUSDT,SOLUSDT,AAPL,NVDA,MSFT,GC=F,SI=F,^IXIC,^GSPC",
 }
 
 # Faz 187'nin PositionCloser.hold_seconds'ına karşılık gelen ön tanımlı

@@ -65,3 +65,35 @@ def get_ohlcv_provider(seed: int = 42) -> OHLCVProvider:
     if settings.MARKET_DATA_SOURCE == "binance":
         return BinanceProvider()
     return MockProvider(seed=seed)
+
+
+# Faz 194: kripto-olmayan varlıklar (endeks/emtia/hisse) — Binance bunları
+# sağlamıyor, sembol formatına göre doğru kaynağa yönlendiriyoruz. Binance
+# sembolleri bu kod tabanında hep "BTCUSDT" tarzı (quote asset soneki) —
+# Yahoo Finance sembolleri ("AAPL", "^GSPC", "GC=F") bu kalıba hiç uymuyor.
+_BINANCE_QUOTE_SUFFIXES = ("USDT", "BUSD", "USDC", "FDUSD")
+
+
+def _looks_like_binance_pair(symbol: str) -> bool:
+    return symbol.upper().endswith(_BINANCE_QUOTE_SUFFIXES)
+
+
+def get_provider_for_symbol(symbol: str, seed: int = 42) -> OHLCVProvider:
+    settings = get_settings()
+    if settings.MARKET_DATA_SOURCE != "binance":
+        # Test/mock modunda gerçek Yahoo Finance ağ çağrısı yapmıyoruz —
+        # sembol ne olursa olsun (AAPL dahil) deterministik mock veri.
+        return MockProvider(seed=seed)
+    if _looks_like_binance_pair(symbol):
+        return BinanceProvider()
+    from market_data.ingestion.yahoo_provider import YahooProvider
+    return YahooProvider()
+
+
+class RoutingProvider:
+    """Tek bir OHLCVProvider gibi davranır ama her çağrıda sembolün
+    formatına göre gerçek kaynağa (Binance/Yahoo/Mock) yönlendirir — karışık
+    varlık sınıflarından oluşan bir watchlist/açık pozisyon listesi tek bir
+    provider nesnesiyle doğru şekilde işlenebilsin diye."""
+    def get_ohlcv(self, symbol: str, timeframe: str, limit: int = 100) -> list[OHLCV]:
+        return get_provider_for_symbol(symbol).get_ohlcv(symbol, timeframe, limit)
