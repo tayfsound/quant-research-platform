@@ -1,9 +1,26 @@
-# Mevcut Durum -- v1.9.0 (Faz 180 gerçek bir K8s cluster'da uçtan uca doğrulandı)
+# Mevcut Durum -- v1.9.0 (Faz 180 uçtan uca doğrulandı + Faz 181 minimal layout)
 
 **Tarih:** 2026-08-05
 **Branch:** main
-**Son commit (HEAD):** bkz. git log — bu oturumun devamı (Faz 180 tam doğrulama + 4 tablo daha migration borcu kapatıldı)
+**Son commit (HEAD):** bkz. git log — bu oturumun devamı (Faz 180 tam doğrulama + 4 tablo migration borcu + Faz 181 minimal sidebar layout)
 **Test:** 340 passed, 1 skipped, 1 xpassed, 0 xfailed
+
+## Faz 181 — Final UI: bilinçli olarak minimal tutuldu (2026-08-05)
+Roadmap tam bir "Bloomberg/TradingView/Cursor/VSCode/Notion karışımı"
+profesyonel terminal deneyimi istiyor — bu, projenin kendi AGENT_MEMORY
+kuralıyla ("UI büyük geliştirme yok") doğrudan çelişiyor. Proje sahibiyle
+netleştirildi: tam terminal UI'ı KURULMADI, bunun yerine mevcut 13 view'ı
+(bu oturumda eklenenler dahil) tek satırlık, taşma riski olan bir tab
+listesinden gruplu bir sidebar'a taşıyan minimal bir düzenleme yapıldı:
+- `dashboard/src/components/Sidebar.tsx` — Live / Research / Risk & Ops
+  olarak gruplanmış, sabit genişlikte sol menü. Eski `NavBar.tsx` (13
+  buton tek satırda — gerçek kullanımda taşardı) kaldırıldı, hiçbir yerde
+  kullanılmıyordu.
+- `App.tsx` flex layout'a geçti (sidebar + içerik alanı).
+- **Kapsam dışı bırakılan (bilinçli):** gerçek bir "terminal" deneyimi
+  (çoklu panel, sürükle-bırak, canlı grafik widget'ları vb.) — bu, roadmap'in
+  kendi tahmini gibi ayrı, büyük bir iş. Mevcut 13 view'ın kendisi de
+  yeniden tasarlanmadı, sadece nasıl gezinildiği değişti.
 **Not:** Faz 172 (Execution Layer) hâlâ bekliyor — gerçek (testnet) borsa API key'i proje sahibinden bekleniyor.
 
 ## Faz 180 — gerçek `kind` cluster'da uçtan uca doğrulama (2026-08-05)

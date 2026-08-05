@@ -13,7 +13,7 @@ import ReplayView from './views/ReplayView';
 import BacktestRuns from './views/BacktestRuns';
 import DecisionExplain from './views/DecisionExplain';
 import ResearchWorkspace from './views/ResearchWorkspace';
-import NavBar from './components/NavBar';
+import Sidebar from './components/Sidebar';
 import { clearToken } from './api/auth';
 
 function App() {
@@ -30,9 +30,9 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100">
-      <NavBar current={view} onChange={setView} onLogout={handleLogout} />
-      <main className="p-6 max-w-7xl mx-auto">
+    <div className="min-h-screen bg-gray-950 text-gray-100 flex">
+      <Sidebar current={view} onChange={setView} onLogout={handleLogout} />
+      <main className="flex-1 p-6 min-w-0 overflow-x-auto">
         {view === 'live' && <LivePredictions />}
         {view === 'market' && <MarketOverview />}
         {view === 'predictions' && <Predictions />}
