@@ -1,5 +1,8 @@
 """Phase 183 — data provider testleri."""
 from unittest.mock import AsyncMock, patch
+
+import pytest
+
 from market_data.ingestion.data_provider import MockProvider, BinanceProvider, get_ohlcv_provider
 from market_data.ingestion.ohlcv import OHLCV, from_binance_klines
 from market_data.features.indicators import rsi
@@ -43,3 +46,20 @@ def test_binance_fallback_on_error(monkeypatch):
         p = BinanceProvider()
         data = p.get_ohlcv("BTCUSDT", "1m", 20)
         assert len(data) == 20
+
+
+@pytest.mark.asyncio
+async def test_binance_provider_works_from_inside_a_running_event_loop():
+    """Real bug (found live, confirmed 2026-08-05): BinanceProvider.get_ohlcv()
+    called `asyncio.run()` unconditionally, which raises RuntimeError when
+    already inside a running loop — exactly the situation for any async
+    FastAPI/WebSocket path (e.g. api/websocket/live_predictions.py calling
+    CognitiveOrchestrator.run_cycle() synchronously from an async handler).
+    The old code swallowed that RuntimeError in a generic except, silently
+    fell back to mock data, and leaked an un-awaited coroutine (RuntimeWarning).
+    This test itself runs inside a live event loop (pytest-asyncio), so it
+    reproduces the exact failure condition against the real Binance REST API."""
+    provider = BinanceProvider()
+    data = provider.get_ohlcv("BTCUSDT", "1m", limit=3)
+    assert len(data) == 3
+    assert data[0].close > 0

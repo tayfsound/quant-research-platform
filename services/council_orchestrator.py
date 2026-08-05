@@ -1,4 +1,5 @@
 """Council Orchestrator — belief, opinions ve debate birlikte yönetilir."""
+from agents.critics.alter_ego import AlterEgoChallenger
 from agents.critics.risk_challenger import RiskChallenger
 from contracts.agent import AgentDomain, AgentOpinion, DebateResult
 from services.agent_debate import AgentDebate
@@ -30,6 +31,16 @@ class CouncilOrchestrator:
         self.debate.register_challenger(
             AgentDomain.RISK,
             RiskChallenger()
+        )
+        # Agent kalitesi bulgusu: agent_debate.py::_run_cognitive_audit()
+        # zaten AgentDomain.ALTER_EGO'yu challengers'tan arıyordu ama hiçbir
+        # yerde register edilmediği için hep None dönüyordu, CognitiveAudit
+        # (confirmation_bias/herd_behavior_risk/overconfidence_risk) hep boş
+        # kalıyordu. Bu, "psychology"/"behavioral" domain'lerinin gerçek
+        # karşılığı — ayrı, Sentiment'la çakışan oy-ajanları değil.
+        self.debate.register_challenger(
+            AgentDomain.ALTER_EGO,
+            AlterEgoChallenger()
         )
         # Agent kalitesi bulgusu: SourceReliabilityAgent/ReliabilityAnnotator
         # tamamen yazılmış ve kendi testinde çalışıyordu ama hiçbir yerden

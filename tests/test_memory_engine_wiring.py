@@ -11,27 +11,35 @@ the moment this got called more than once in a live pipeline).
 This proves the real, end-to-end fix: two consecutive live cycles through
 CognitiveOrchestrator (which calls engine.finalize()) each persist exactly
 one new episode with a real embedding — no duplicates, no crash — and a
-subsequent semantic search actually finds one of them."""
-from database.repositories.episode_repository import EpisodeRepository
+subsequent semantic search actually finds one of them.
+
+Uses a unique-per-run symbol rather than a global row count: this dev
+environment often has a real API server (and possibly a live dashboard
+WebSocket) concurrently writing real episodes to the same shared DB, which
+made a global "before/after" count assertion genuinely flaky (extra rows
+from unrelated live traffic, not a bug in this code)."""
+from uuid import uuid4
+
+from sqlalchemy import text
+
 from database.session_factory import SessionFactory
 from services.orchestrator import CognitiveOrchestrator
 
 
 def test_two_live_cycles_persist_exactly_two_new_episodes_with_embeddings():
-    with SessionFactory.get_session() as session:
-        before = len(EpisodeRepository(session).latest(limit=100000))
-
+    symbol = f"MEMWIRE{uuid4().hex[:8]}"
     orch = CognitiveOrchestrator()
-    orch.run_cycle(seed=101)
-    orch.run_cycle(seed=102)
+    orch.run_cycle(seed=101, symbol=symbol)
+    orch.run_cycle(seed=102, symbol=symbol)
 
     with SessionFactory.get_session() as session:
-        rows = EpisodeRepository(session).latest(limit=100000)
+        rows = session.execute(
+            text("SELECT embedding FROM episodes WHERE symbol = :symbol"),
+            {"symbol": symbol},
+        ).mappings().all()
 
-    assert len(rows) == before + 2
-
-    newest_two = list(rows)[:2]
-    for row in newest_two:
+    assert len(rows) == 2
+    for row in rows:
         assert row["embedding"] is not None
 
 

@@ -27,11 +27,17 @@ beri en çok vurgulanan kuralı olduğu için, burada da abartısız yazılıyor
 
 ## Bu oturumun sayısal özeti
 
-- **36+ commit**, tamamı push edildi (proje sahibi onayıyla).
+- **40+ commit**, tamamı push edildi (proje sahibi onayıyla).
 - Test sayısı: session başında **çöküyordu** (indent hatası yüzünden 19 test
-  dosyası collection'da patlıyordu) → **348 passed, 1 xpassed, 0 xfailed**.
+  dosyası collection'da patlıyordu) → **399 passed, 1 xpassed, 0 xfailed**.
   `npm run build` (tsc -b + vite) de artık temiz (önceden belgelenmiş, kalan
   bir tip hatası da bu turda kapandı).
+- Market Data Service v0 kuruldu (Binance OHLCV + order book, gerçek DB'ye
+  yazıyor) + TradingView webhook alıcısı. Council 4'ten 9 oy-veren ajana
+  çıktı (Pattern/Quant/Order Flow/Time/Epistemology) + Alter Ego eleştirmen
+  gerçekten bağlandı. Üç bağımsız AI code review'u (Manus/Grok/Kimi) tek tek
+  doğrulandı — bir kısmı gerçekti (asyncio.run() event-loop bug'ı, ölü
+  ResearchEngine kümesi), bir kısmı uydurmaydı (bkz. CURRENT_STATE.md).
 - **~30 gerçek, sessiz bug** bulundu ve düzeltildi — bunların çoğu "kod
   yazıldı ama hiçbir yere bağlanmadı" ya da "test yeşil ama gerçekte hiçbir
   şey kanıtlamıyor" kalıbındaydı (roadmap'in kendi en çok vurguladığı risk).

@@ -56,6 +56,47 @@ class IngestionPipeline:
 
         return len(snapshots)
 
+    async def ingest_order_book(self, symbol: str, depth: int = 20) -> dict:
+        """Faz 186: ham order book'un tamamını değil, Order Flow ajanının
+        gerçekten ihtiyaç duyduğu türetilmiş metrikleri saklar (best bid/ask,
+        toplam hacim, dengesizlik, spread) — depolama maliyeti tartışmasından
+        çıkan bilinçli bir tasarım kararı."""
+        await self.adapter.connect()
+        try:
+            book = await self.adapter.get_order_book(symbol, depth=depth)
+        finally:
+            await self.adapter.disconnect()
+
+        best_bid = book.bids[0][0]
+        best_ask = book.asks[0][0]
+        bid_volume = sum(qty for _, qty in book.bids)
+        ask_volume = sum(qty for _, qty in book.asks)
+        total_volume = bid_volume + ask_volume
+        imbalance = (bid_volume - ask_volume) / total_volume if total_volume > 0 else 0.0
+        spread_bps = (best_ask - best_bid) / best_bid * 10_000 if best_bid > 0 else 0.0
+
+        with SessionFactory.get_session() as session:
+            MarketDataRepository(session).save_order_book_snapshot(
+                exchange=DataSource.BINANCE,
+                symbol=symbol,
+                time=book.time,
+                best_bid=best_bid,
+                best_ask=best_ask,
+                bid_volume=bid_volume,
+                ask_volume=ask_volume,
+                imbalance=imbalance,
+                spread_bps=spread_bps,
+            )
+
+        return {
+            "best_bid": best_bid,
+            "best_ask": best_ask,
+            "bid_volume": bid_volume,
+            "ask_volume": ask_volume,
+            "imbalance": imbalance,
+            "spread_bps": spread_bps,
+        }
+
     def _to_snapshot(self, symbol: str, timeframe: str, candle: dict) -> MarketSnapshot:
         return MarketSnapshot(
             time=datetime.fromtimestamp(candle["time"] / 1000, tz=UTC),

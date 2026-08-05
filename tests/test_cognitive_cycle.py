@@ -1,4 +1,6 @@
 """Tam Bilişsel Döngü testi — pipeline."""
+from uuid import uuid4
+
 from contracts.context import CognitiveCycleContext
 from services.cognitive_engine import CognitiveEngine
 
@@ -8,7 +10,13 @@ def test_full_cognitive_cycle_with_council():
     engine = CognitiveEngine()
     ctx = CognitiveCycleContext(
         market={
-            "symbol": "BTCUSDT",
+            # Gap #8 (MemoryEngine) kapandıktan sonra semantic recall gerçekten
+            # çalışıyor — paylaşılan test DB'sinde biriken gürültülü geçmiş
+            # (bu oturumun kendi test çalıştırmalarından) bu testin "net
+            # bullish girdi -> pozitif güven" varsayımını bozabiliyordu. Her
+            # zaman hiç geçmişi olmayan benzersiz bir sembol kullanarak
+            # memory_confidence'ı nötr (0.5) varsayılanda tutuyoruz.
+            "symbol": f"CYCLETEST{uuid4().hex[:8]}",
             "timeframe": "4H",
             "features": {"RSI": 35.0},
             "raw_snapshot": {
@@ -23,6 +31,13 @@ def test_full_cognitive_cycle_with_council():
                 "momentum": "strengthening",
                 "market_structure": "higher_highs",
                 "volume_confirmation": True,
+                "structure_phase": "accumulation",
+                "break_of_structure": "bullish",
+                "swing_structure": "higher_highs_higher_lows",
+                "zscore": -2.2,
+                "hurst_exponent": 0.35,
+                "bid_ask_imbalance": 0.5,
+                "spread_bps": 2.0,
             }
         },
         decision={"proposed_size": 0.5},

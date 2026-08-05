@@ -53,3 +53,26 @@ async def test_ingest_candles_upserts_without_duplicating_on_repeat_call():
     # Same 3 most-recent bars re-fetched — at most one new bar could have
     # appeared if a minute rolled over between calls, never 3 more.
     assert second_count <= first_count + 1
+
+
+@pytest.mark.asyncio
+async def test_ingest_order_book_persists_real_binance_derived_metrics():
+    """BinanceAdapter.get_order_book() would have crashed if ever called —
+    OrderBookSnapshot construction was missing required exchange/source_version
+    fields. Fixed as part of this sprint; this proves the real end-to-end
+    path: real book -> derived metrics -> order_book_snapshots row."""
+    pipeline = IngestionPipeline(BinanceAdapter())
+    result = await pipeline.ingest_order_book("BTCUSDT", depth=10)
+
+    assert result["best_bid"] > 0
+    assert result["best_ask"] >= result["best_bid"]
+    assert result["bid_volume"] > 0
+    assert result["ask_volume"] > 0
+    assert -1.0 <= result["imbalance"] <= 1.0
+    assert result["spread_bps"] >= 0
+
+    with SessionFactory.get_session() as session:
+        row = MarketDataRepository(session).get_latest_order_book_snapshot(DataSource.BINANCE, "BTCUSDT")
+
+    assert row is not None
+    assert row["best_bid"] == result["best_bid"]

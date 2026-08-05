@@ -24,6 +24,7 @@ class AgentDomain(StrEnum):
     SENTIMENT = "sentiment"
     EPISTEMOLOGY = "epistemology"
     TIME = "time"
+    PATTERN = "pattern"
 
 class AgentOpinion(BaseModel):
     """6 boyutlu uzman görüşü + epistemik katmanlar."""

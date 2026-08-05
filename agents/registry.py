@@ -1,8 +1,13 @@
 """Agent Registry — tüm uzman ajanları merkezi olarak yönetir."""
+from agents.epistemology_agent import EpistemologyAgent
 from agents.macro_agent import MacroAgent
 from agents.onchain_agent import OnChainAgent
+from agents.order_flow_agent import OrderFlowAgent
+from agents.pattern_agent import PatternAgent
+from agents.quant_agent import QuantAgent
 from agents.sentiment_agent import SentimentAgent
 from agents.technical_agent import TechnicalAgent
+from agents.time_agent import TimeAgent
 from contracts.agent import AgentDomain
 
 
@@ -24,8 +29,9 @@ class AgentRegistry:
 
     @classmethod
     def create_default(cls) -> "AgentRegistry":
-        """Dört temel uzman ajanla hazır bir registry oluşturur, sonra
-        agents/plugins/'daki güvenilir (hash'i TRUSTED_PLUGIN_HASHES'te
+        """Dokuz uzman ajanla (4 orijinal + 5 bu turda eklenen: Pattern,
+        Quant, Order Flow, Time, Epistemology) hazır bir registry oluşturur,
+        sonra agents/plugins/'daki güvenilir (hash'i TRUSTED_PLUGIN_HASHES'te
         olan) eklentileri keşfeder. TRUSTED_PLUGIN_HASHES varsayılan olarak
         boş — hiçbir plugin, bir insan onun hash'ini gözden geçirip
         eklemeden otomatik yüklenmez (Sprint 17-18)."""
@@ -34,6 +40,11 @@ class AgentRegistry:
         registry.register(AgentDomain.SENTIMENT, SentimentAgent())
         registry.register(AgentDomain.ONCHAIN, OnChainAgent())
         registry.register(AgentDomain.TECHNICAL, TechnicalAgent())
+        registry.register(AgentDomain.PATTERN, PatternAgent())
+        registry.register(AgentDomain.QUANT, QuantAgent())
+        registry.register(AgentDomain.ORDER_FLOW, OrderFlowAgent())
+        registry.register(AgentDomain.TIME, TimeAgent())
+        registry.register(AgentDomain.EPISTEMOLOGY, EpistemologyAgent())
 
         from agents.plugin_loader import discover_plugins
         discover_plugins(registry)

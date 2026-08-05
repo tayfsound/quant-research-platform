@@ -131,3 +131,48 @@ class MarketDataRepository:
             {"symbol": symbol, "limit": limit},
         ).mappings().all()
         return [dict(r) for r in rows]
+
+    def save_order_book_snapshot(
+        self,
+        *,
+        exchange: DataSource,
+        symbol: str,
+        time: datetime,
+        best_bid: float,
+        best_ask: float,
+        bid_volume: float,
+        ask_volume: float,
+        imbalance: float,
+        spread_bps: float,
+    ) -> None:
+        self.session.execute(
+            text("""
+                INSERT INTO order_book_snapshots
+                    (exchange, symbol, time, best_bid, best_ask, bid_volume, ask_volume, imbalance, spread_bps)
+                VALUES
+                    (:exchange, :symbol, :time, :best_bid, :best_ask, :bid_volume, :ask_volume, :imbalance, :spread_bps)
+            """),
+            {
+                "exchange": exchange.value,
+                "symbol": symbol,
+                "time": time,
+                "best_bid": best_bid,
+                "best_ask": best_ask,
+                "bid_volume": bid_volume,
+                "ask_volume": ask_volume,
+                "imbalance": imbalance,
+                "spread_bps": spread_bps,
+            },
+        )
+        self.session.commit()
+
+    def get_latest_order_book_snapshot(self, exchange: DataSource, symbol: str) -> dict | None:
+        row = self.session.execute(
+            text("""
+                SELECT * FROM order_book_snapshots
+                WHERE exchange = :exchange AND symbol = :symbol
+                ORDER BY time DESC LIMIT 1
+            """),
+            {"exchange": exchange.value, "symbol": symbol},
+        ).mappings().first()
+        return dict(row) if row else None

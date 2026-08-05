@@ -60,6 +60,11 @@ class CouncilStage:
             AgentDomain.SENTIMENT: self.adapter.to_sentiment(ctx),
             AgentDomain.ONCHAIN: self.adapter.to_onchain(ctx),
             AgentDomain.TECHNICAL: self.adapter.to_technical(ctx),
+            AgentDomain.PATTERN: self.adapter.to_pattern(ctx),
+            AgentDomain.QUANT: self.adapter.to_quant(ctx),
+            AgentDomain.ORDER_FLOW: self.adapter.to_order_flow(ctx),
+            AgentDomain.TIME: self.adapter.to_time(ctx),
+            AgentDomain.EPISTEMOLOGY: self.adapter.to_epistemology(ctx),
         }
 
         belief, opinions = self.orchestrator.deliberate(contexts)

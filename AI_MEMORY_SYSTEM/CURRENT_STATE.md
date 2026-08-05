@@ -1,9 +1,139 @@
-# Mevcut Durum -- v1.13.0 (Faz 183 sonrası temizlik turu + agent kalitesi turu)
+# Mevcut Durum -- v1.14.0 (Market Data Service v0 + 9-agent council + üç bağımsız AI incelemesinin doğrulanması)
 
 **Tarih:** 2026-08-05
 **Branch:** main
-**Son commit (HEAD):** bkz. git log — bu oturumun devamı (auth yayılımı + risk limit P0 fix + ölü kod temizliği + WS gerçek veri + MemoryEngine wiring + admin bootstrap token + RiskChallenger/SourceReliability wiring)
-**Test:** 351 passed, 1 xpassed, 0 xfailed. `npm run build` (tsc -b + vite build) temiz.
+**Son commit (HEAD):** bkz. git log — bu oturumun devamı (Market Data Service + TradingView webhook + 5 yeni agent + Alter Ego + asyncio.run() bug fix + ölü ResearchEngine kümesi silindi)
+**Test:** 399 passed, 1 xpassed, 0 xfailed. `npm run build` (tsc -b + vite build) temiz.
+
+## Market Data Service v0 (2026-08-05, aynı oturum)
+
+`exchange_gateway/binance/adapter.py` (REST) ve `market_data/ingestion/
+pipeline.py` gerçek kodlardı ama hiçbir yerden çağrılmıyordu; çağrılsalar
+bile `events/message_bus.py` sadece in-memory'di (kalıcı subscriber yok),
+`market_snapshots` tablosu da yoktu — veri publish edilir edilmez kaybolurdu.
+`contracts/market_data.py::MarketSnapshot` tam bu iş için tasarlanmış, hiç
+kullanılmayan bir contract'tı.
+
+- `faz184` migration: `market_snapshots` (OHLCV, doğal composite key) +
+  `market_trades`. `faz186`: `order_book_snapshots` (ham order book değil,
+  sadece türetilmiş metrikler — saklama maliyeti kararı). Yan bulgu: local
+  DB'de `market_snapshots` adında, repo geçmişinde izi olmayan bir "ghost
+  table" vardı (risk_limits'te görülen aynı desen) — drop edilip yeniden
+  oluşturuldu.
+- `MarketDataRepository`: OHLCV upsert (aynı bar tekrar gelirse günceller),
+  trade save/list, order book snapshot save/get_latest.
+- `IngestionPipeline.ingest_candles()`/`ingest_order_book()`: artık
+  gerçekten DB'ye yazıyor. Orijinal kod `MarketSnapshotEvent`'i zorunlu
+  `exchange` alanı olmadan construct ediyordu — hiç çalıştırılmamış olduğu
+  için yakalanmamış bir `ValidationError`. `BinanceAdapter.get_order_book()`
+  aynı sınıf hata — `OrderBookSnapshot` zorunlu `exchange`/`source_version`
+  alanları olmadan construct ediliyordu. İkisi de düzeltildi, gerçek
+  Binance'a karşı doğrulandı.
+- **TradingView webhook:** TradingView klasik API-key modeliyle çalışmıyor
+  (Pine Script alert → HTTP POST). `faz185` migration (`external_signals`) +
+  `ExternalSignalRepository` + `POST/GET /webhooks/tradingview` (paylaşılan
+  secret ile korumalı, boşsa dev modu) + Pine Script şablonu
+  (`docs/tradingview_webhook_setup.md`). Gelen sinyal şu an sadece
+  saklanıyor — `TechnicalAgent`'a "ikinci görüş" olarak bağlanması ayrı,
+  sonraki bir adım.
+- **Gerçek, canlı olarak bulunan kritik bug (Manus AI incelemesi,
+  doğrulandı):** `BinanceProvider.get_ohlcv()` zaten çalışan bir event loop
+  içinden (örn. `/stream/live`'ın async WS handler'ı) çağrılırsa
+  `asyncio.run()` `RuntimeError` fırlatıyordu; genel bir `except Exception`
+  bunu yutup sessizce mock veriye düşüyordu, üstelik oluşturulan coroutine
+  hiç await edilmeden sızıyordu. `_run_coroutine_sync()` eklendi — çalışan
+  bir loop varsa coroutine'i ayrı bir thread'de çalıştırıyor. Gerçek
+  Binance'a karşı, gerçek bir event loop içinden çağrılarak doğrulandı.
+
+## Agent kalitesi turu 2 — 9 oy-veren ajan + Alter Ego (2026-08-05, aynı oturum)
+
+Proje sahibiyle ChatGPT'nin önerdiği ~16-20 agent listesi tartışıldı, mevcut
+kod + önceki agent turu + bu öneriler sentezlenip nihai bir mimari karara
+varıldı: `AgentDomain` enum'daki 16 rolün **hepsi** mimaride gerçek bir role
+sahip — ama hepsi "oy" değil, doğru role göre.
+
+**5 yeni gerçek oy-veren ajan** (her biri gerçek `contracts/xxx.py` context'i
++ `ContextAdapter.to_xxx()` mapping + `AgentRegistry`'ye register + test):
+- **Pattern** — Wyckoff/BOS/CHoCH/FVG/swing structure.
+- **Quant** — z-score/Hurst exponent/autocorrelation (rejime göre mean-reversion
+  vs momentum bahsi).
+- **Order Flow** — gerçek order book verisiyle besleniyor (Faz 186).
+  `ContextAdapter.to_order_flow()` diğerlerinin aksine gerçek bir DB okuması
+  içeriyor.
+- **Time** — dürüstlük ilkesi: kanıtlanmamış "Pazartesi etkisi" gibi yön
+  sinyalleri UYDURMUYOR, her zaman WAIT döner, sadece funding/hafta sonu
+  riskini işaretler.
+- **Epistemology** — yön tahmini yapmaz, veri tamlığını/tazeliğini ölçüp
+  zayıfsa yüksek-güvenli bir WAIT ile council'in genel konviksiyonunu
+  dengeler.
+
+**Alter Ego Challenger** (`agents/critics/alter_ego.py`) — `agent_debate.py::
+_run_cognitive_audit()` zaten bu rolü `self.challengers.get(AgentDomain.
+ALTER_EGO.value)` ile arıyordu ama hiç register edilmediği için hep `None`
+dönüyordu, `CognitiveAudit` hep boştu. Herd behavior / overconfidence /
+confirmation bias'ı gerçek opinion/debate verisinden hesaplayan bir
+implementasyon eklendi — bu, "psychology"/"behavioral" domain'lerinin
+gerçek karşılığı (ayrı, Sentiment'la çakışan oy-ajanları değil).
+
+**News/Psychology/Behavioral için ayrı ajan yapılmadı** (Sentiment'la ciddi
+çakışıyor — aynı veriyi iki kez oylamak "iki beyin" olurdu). **Portfolio**
+zaten `PortfolioRiskEngine`/`PortfolioFusionStage` (Faz 171) ile doğru
+yerde. **Executive** zaten debate'in sentez çıktısı.
+
+Kanıt: `tests/test_nine_agent_council.py` — 9 ajanın hepsi
+`AgentRegistry.create_default()` ile register, gerçek bir council
+deliberation'ı tek bir belief'e sentezliyor, Time/Epistemology'nin WAIT
+oyları gerçekten kayda geçiyor (sessizce yutulmuyor).
+
+## Üç bağımsız AI incelemesi doğrulandı (Manus/Grok/Kimi, 2026-08-05)
+
+Proje sahibi üç farklı AI'dan (Manus, Grok, Kimi) bağımsız kod incelemesi
+istedi, bulguları buraya getirdi. Her iddia gerçek koda karşı tek tek
+doğrulandı — körü körüne kabul edilmedi (bu projenin "yazıldı ≠
+tamamlandı" ilkesinin AI-review'lara da uygulanması):
+
+**Gerçek ve düzeltildi:**
+- Manus: `asyncio.run()` RuntimeError (yukarıda, Market Data Service
+  bölümünde).
+- Kimi: "çift risk engine çağrısı" — gerçek ama Kimi'nin düşündüğünden
+  farklı: `engines/live_executor.py` + `services/execution_router.py` +
+  `services/research_engine.py` diye **tamamen ayrı, ikinci bir "cognitive
+  pipeline"** vardı (Observation→Knowledge→Belief→Hypothesis→Risk→Decision→
+  Execute), **sıfır caller** (grep ile doğrulandı) — `services/
+  research_engine.py`'nin kendi `from engines.belief_engine import
+  BeliefEngine` importu bile KIRIKTI (`engines/belief_engine.py` diye bir
+  dosya hiç yoktu — sadece `services/belief_engine.py` var, farklı bir
+  sınıf). Yani bu kod import edilse bile çökerdi. Kesin ölü:
+  `services/research_engine.py`, `engines/observation_pipeline.py`,
+  `engines/knowledge_builder.py`, `engines/hypothesis_engine.py`,
+  `engines/decision_engine.py` silindi. `LiveExecutor`/`ExecutionRouter`/
+  `SandboxExecutor` SİLİNMEDİ — `tests/test_agent_capability.py` bunları
+  gerçek `CognitiveEngine` çıktısıyla gerçekten test ediyor (mode-izolasyon
+  sistemi). Ama `ExecutionRouter`'da bulunan `RiskEngine(secret=
+  "production-secret")` hardcoded secret'ı düzeltildi
+  (`get_settings().SECRET_KEY`'e) — bu, gap #15'te kurulan gerçek risk limit
+  imzalama sistemini tamamen bypass ediyordu.
+- Kimi: `.bak` dosyaları (5 tane) ve `test_intelligence_logs/` (git'e
+  tracked 11 JSON dosyası) — silindi, `.gitignore`'a eklendi.
+
+**Zaten kapatılmış, review'lar eski bilgiye dayanıyordu:** store_episode/
+MemoryEngine (gap #8), RiskChallenger boş context, risk limitlerinin set
+edilmemesi.
+
+**UYDURMA (Kimi) — gerçek koda bakılmadan yazılmış, doğrulanınca çürüdü:**
+`SECRET_KEY = "change-me"` (yanlış — gerçek placeholder farklı bir metin),
+`dashboard/App.tsx` bozuk/kırık (yanlış — dosya tam ve doğru), `dashboard/
+api/client.ts`'de hardcoded `http://localhost:8000` (yanlış — aslında
+`import.meta.env.VITE_API_URL || ""`, relative URL).
+
+**Manus'un ForwardOutcome bulgusu da yanlış çıktı** — kod gerçek fill
+price'ı entry olarak kullanıyor (`if entry_price and entry_price > 0: entry
+= entry_price`), tarihsel bar sadece "pending" fallback'i için.
+
+**Ders:** Üç review'un hepsi gerçek CURRENT_STATE.md'yi okuyup güncel kodu
+çalıştırmadan yazılmış görünüyor — bazı bulgular kesinlikle değerli
+(asyncio bug, ölü ResearchEngine kümesi), bazıları tamamen hayal ürünü.
+Doğrulamadan hiçbirine güvenilmemeli.
 
 ## Agent kalitesi turu — Council/Debate katmanındaki iki gizli ada kapatıldı (2026-08-05, aynı oturum)
 
