@@ -41,8 +41,16 @@ class ContextAdapter:
         )
 
     def to_sentiment(self, ctx: CognitiveCycleContext) -> SentimentContext:
+        # Faz 198: Crypto Fear & Greed Index sadece kripto için anlamlı —
+        # AAPL/altın için "kripto piyasası korkuyor mu" alakasız olurdu.
+        symbol = ctx.market.symbol or ""
+        real_fgi = None
+        if symbol.upper().endswith(("USDT", "BUSD", "USDC", "FDUSD")):
+            from market_data.sentiment.fear_greed_provider import fetch_fear_greed_index
+            real_fgi = fetch_fear_greed_index()
+
         return SentimentContext(
-            fear_greed_index=self._get(ctx, "fear_greed_index", 50.0),
+            fear_greed_index=self._get(ctx, "fear_greed_index", real_fgi if real_fgi is not None else 50.0),
             social_media_sentiment=self._get(ctx, "social_media_sentiment", 0.0),
             news_tone=self._get(ctx, "news_tone", "neutral"),
             positioning=self._get(ctx, "positioning", "neutral"),
