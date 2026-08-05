@@ -32,11 +32,19 @@ spec:
               memory: "1536Mi"
           # No HTTP probes — a worker has no server. `celery inspect ping`
           # is the standard liveness check for a Celery worker process.
+          # `$(HOSTNAME)` is NOT shell-expanded by a bare exec probe (no
+          # shell involved, K8s just execs the argv array) — it would be
+          # passed as the literal string "celery@$(HOSTNAME)", never
+          # matching a real worker. Wrapped in `sh -c` so $HOSTNAME (a real
+          # env var, always == the pod name) actually expands. Found this
+          # while debugging why the worker pods kept getting warm-shutdown
+          # by kubelet in a live kind cluster.
           livenessProbe:
             exec:
-              command: ["celery", "-A", "services.celery_app", "inspect", "ping", "-d", "celery@$(HOSTNAME)"]
+              command: ["sh", "-c", "celery -A services.celery_app inspect ping -d celery@$HOSTNAME"]
             initialDelaySeconds: 30
             periodSeconds: 30
+            timeoutSeconds: 10
             failureThreshold: 3
 ---
 apiVersion: autoscaling/v2

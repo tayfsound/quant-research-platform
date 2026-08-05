@@ -1,0 +1,32 @@
+# Sprint 25-26 fix: there was no .dockerignore at all, so `COPY . .` in the
+# Dockerfile baked the LOCAL .env file (with dev DB credentials, whatever
+# SECRET_KEY happens to be set locally) directly into every image build.
+# That's a real secrets-hygiene issue if the image is ever pushed to a
+# registry — and it's also *why* every K8s pod ignored the Secret/ConfigMap
+# env vars entirely: pydantic-settings' env_file=".env" loading found this
+# baked-in file inside the container and used its localhost values instead
+# of the real environment. Confirmed by `docker run ... cat /app/.env`
+# showing the exact local file. Same rule as .gitignore: never ship .env.
+.env
+.env.*
+!.env.example
+
+.git/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+
+# Runtime state that shouldn't be baked into an image either.
+agent_memory_history/
+decision_logs/
+weight_history/
+agents/plugins/*.py
+!agents/plugins/__init__.py
+storage/
+
+# Not needed at runtime.
+tests/
+dashboard/node_modules/
+k8s/secret.yaml

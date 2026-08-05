@@ -36,6 +36,22 @@ spec:
             limits:
               cpu: "1000m"
               memory: "1536Mi"
+          # startupProbe: loading sentence-transformers/torch at process
+          # start takes longer than the liveness probe's initialDelaySeconds
+          # allows — without this, kubelet kills and restarts the container
+          # for being "unhealthy" before it ever finishes starting up,
+          # producing an endless crash loop. Verified against a real kind
+          # cluster: the api pod restart-looped on liveness failures
+          # ("connection refused" — nothing was listening on 8000 yet) until
+          # this was added. Liveness/readiness only start being checked
+          # after this succeeds once.
+          startupProbe:
+            httpGet:
+              path: /live
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 30 # up to 150s to finish starting
           # These probes hit the real /ready and /live endpoints fixed in
           # Sprint 28 — /ready actually checks DB connectivity now (it used
           # to unconditionally return "ready", which would have made this
@@ -45,14 +61,12 @@ spec:
             httpGet:
               path: /ready
               port: 8000
-            initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /live
               port: 8000
-            initialDelaySeconds: 15
             periodSeconds: 20
             failureThreshold: 3
 ---

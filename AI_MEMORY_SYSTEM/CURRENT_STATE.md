@@ -1,10 +1,65 @@
-# Mevcut Durum -- v1.8.0 (Cloud/K8s + kritik DB-bağlantı düzeltmesi + migration zinciri tam yeşil)
+# Mevcut Durum -- v1.9.0 (Faz 180 gerçek bir K8s cluster'da uçtan uca doğrulandı)
 
-**Tarih:** 2026-08-04
+**Tarih:** 2026-08-05
 **Branch:** main
-**Son commit (HEAD):** fff5a59 Faz 178-179 (Auth, kısmi) + bu oturumun devamı (Faz 180 Cloud + Faz 182 migration/health)
-**Test:** 340 passed, 1 skipped, 1 xpassed (0 xfailed — TimescaleDB hypertable borcu tamamen kapandı, bkz. aşağı)
-**Not:** Faz 172 (Execution Layer) hâlâ bekliyor — gerçek (testnet) borsa API key'i proje sahibinden bekleniyor, roadmap'in kendisi bu bloğu "hız değil doğruluk" diye işaretliyor.
+**Son commit (HEAD):** bkz. git log — bu oturumun devamı (Faz 180 tam doğrulama + 4 tablo daha migration borcu kapatıldı)
+**Test:** 340 passed, 1 skipped, 1 xpassed, 0 xfailed
+**Not:** Faz 172 (Execution Layer) hâlâ bekliyor — gerçek (testnet) borsa API key'i proje sahibinden bekleniyor.
+
+## Faz 180 — gerçek `kind` cluster'da uçtan uca doğrulama (2026-08-05)
+
+`k8s/README.md`'de "postgres/redis Ready oldu ama api/worker doğrulanamadı"
+yazıyordu — bu oturumda tamamlandı. Yerel bir `kind` cluster'a gerçekten
+deploy edilip **5 gerçek, art arda bulunan hata** düzeltildi (her biri
+gerçek pod loglarından teşhis edildi, tahmin değil):
+
+1. `imagePullPolicy` eksikti — `:latest` tag'i K8s'i var olmayan bir
+   registry'den çekmeye zorluyordu. `IfNotPresent` eklendi.
+2. Worker `celery: executable file not found` ile crashlooped — image
+   celery pyproject.toml'a eklenmeden önce build edilmişti. Yeniden build.
+3. **`.dockerignore` hiç yoktu** — `COPY . .` yerel `.env` dosyasını
+   (gerçek dev DB kimlik bilgileriyle) doğrudan image'a gömüyordu. Bu hem
+   gerçek bir secrets-hijyeni sorunu hem de `database/connection.py`
+   düzeltmesinin container içinde etkisiz görünmesinin sebebiydi (image
+   HÂLÂ eski/gömülü `.env`'i içeriyordu, düzeltme image'a hiç girmemişti —
+   iki ayrı build denemesi bunu ortaya çıkardı). `.dockerignore` eklendi.
+4. api pod'u `startupProbe` olmadan liveness probe'un `initialDelaySeconds`'ı
+   dolmadan (ML modelleri yüklenirken) "unhealthy" sayılıp sürekli
+   yeniden başlatılıyordu — `startupProbe` eklendi (150s'ye kadar tolerans).
+5. worker `livenessProbe`'unda `celery@$(HOSTNAME)` — K8s exec probe'ları
+   shell üzerinden çalışmadığı için `$(HOSTNAME)` hiç genişletilmiyordu,
+   literal string olarak geçiyordu, hiçbir zaman eşleşen bir worker
+   bulamıyordu. `sh -c` ile sarmalandı.
+
+**Bunların hiçbiri "manifest'i yazdım, muhtemelen çalışır" değildi —
+her biri gerçek pod crash log'undan bulundu ve gerçek bir yeniden deploy'la
+doğrulandı.** Son durum: `api` (2/2 Ready, 0 restart), `worker` (2/2 Ready,
+0 restart), `postgres`/`redis` (8+ saat kararlı). **Gerçek bir HTTP isteği**
+(`kubectl port-forward` + `curl`) ile `/health`, `/ready` (`"database":true`
+— gerçek DB kontrolü çalışıyor), ve `POST /auth/register` (gerçek bir
+kullanıcı, gerçek Postgres'e, Service üzerinden) uçtan uca doğrulandı.
+
+### Yan bulgu: migration borcu 4 tablo daha genişledi
+K8s postgres'ini migrate ederken `episodes` tablosunun olmadığı ortaya
+çıktı — `MemoryConsolidator` API başlangıcında bunu okumaya çalışıp
+crashlooped. `f8fa21f0e94a_reconcile_initial_memory_schema.py` migration'ı
+bunu KENDİ docstring'inde zaten itiraf ediyordu: *"Tables already exist
+from legacy initialization: observations, episodes, beliefs, experiments,
+lessons... No DDL changes applied."* — yani sorun biliniyordu ama hiç
+çözülmemişti. `faz171_memory_tables.py` eklendi: `episodes`/`observations`
+(gerçek DB'dekiyle birebir aynı — composite `(id, created_at)` PK,
+zaten hypertable), `beliefs`, `lessons`. Boş scratch DB'de doğrulandı;
+gerçek local dev DB'de tablolar zaten var olduğu için (`alembic stamp
+faz171`) — DDL'i tekrar çalıştırmadan hizalandı; K8s postgres'inde
+gerçekten `CREATE TABLE` ile çalıştırıldı (orada gerçekten yoktu).
+Tek head hâlâ `faz171`.
+**Migration testi gate'i artık gerçekten tam:** roadmap'in Faz 182'de
+istediği "Alembic geçmişinin tamamının sıfırdan bir DB'de sorunsuz
+uygulanabildiği" — 3 farklı boş DB'de (2 scratch container + 1 K8s pod)
+doğrulandı.
+
+pytest -q: 340 passed, 1 skipped, 1 xpassed, 0 xfailed (değişmedi — bu
+tablolar zaten local dev'de vardı, testler hep yeşildi; asıl kanıt K8s'te).
 
 **Önemli not:** Bu dosya, Faz 161-167 commit'lerinden sonra güncellenmemiş kalmıştı (dokümantasyon
 sürüklenmesi — roadmap'te 5 kez tekrarlanan risk, burada gerçekleşti). Aşağıdaki liste 2026-08-04
