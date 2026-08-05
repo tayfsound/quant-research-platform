@@ -14,7 +14,7 @@ def run_trading_cycle_task(symbol: str | None = None) -> dict:
     (kripto + endeks/emtia/hisse) sırayla işlenir."""
     from database.repositories.app_settings_repository import AppSettingsRepository
     from database.session_factory import SessionFactory
-    from market_data.ingestion.data_provider import get_provider_for_symbol
+    from market_data.ingestion.data_provider import RoutingProvider, get_provider_for_symbol
     from market_data.market_hours import is_market_open
     from services.orchestrator import CognitiveOrchestrator
 
@@ -26,26 +26,41 @@ def run_trading_cycle_task(symbol: str | None = None) -> dict:
     if not ai_enabled:
         return {"skipped": "ai_disabled"}
 
-    symbols = [symbol] if symbol else watchlist
-    results = []
-    for sym in symbols:
-        # Faz 195: piyasa kapalıyken (gece/hafta sonu NYSE/NASDAQ/CME)
-        # o sembol için cycle hiç çalıştırılmıyor — eski kapanış fiyatıyla
-        # "gerçek" bir işlem denenmiyor. Kripto için her zaman True.
-        if not is_market_open(sym):
-            results.append({"symbol": sym, "skipped": "market_closed"})
-            continue
-
-        orch = CognitiveOrchestrator(data_provider=get_provider_for_symbol(sym))
-        result = orch.run_cycle(symbol=sym)
-        results.append({
+    if symbol:
+        # Tek-sembol açık çağrı (test/manuel tetik) — eski, basit davranış.
+        if not is_market_open(symbol):
+            return {"symbol": symbol, "skipped": "market_closed"}
+        orch = CognitiveOrchestrator(data_provider=get_provider_for_symbol(symbol))
+        result = orch.run_cycle(symbol=symbol)
+        return {
             "symbol": result.get("symbol"),
             "direction": result.get("direction"),
             "risk_verdict": result.get("risk_verdict"),
             "risk_reasons": result.get("risk_reasons"),
-        })
+        }
 
-    return results[0] if symbol else {"cycles": results}
+    # celery beat'in gerçek çağrı şekli: kapalı piyasaları eleyip kalan
+    # watchlist'i TEK bir orchestrator/RoutingProvider ile toplu işliyoruz —
+    # Faz 199: bu, run_portfolio_aware_cycle'ın 2+ sembol eşzamanlı yönlü
+    # öneri gördüğünde gerçek portföy VaR'ına göre ölçeklendirme yapabilmesi
+    # için şart (tek tek ayrı orchestrator'larla mümkün değil).
+    open_symbols = [s for s in watchlist if is_market_open(s)]
+    closed_symbols = [s for s in watchlist if s not in open_symbols]
+
+    orch = CognitiveOrchestrator(data_provider=RoutingProvider())
+    cycles = orch.run_portfolio_aware_cycle(open_symbols) if open_symbols else []
+    cycles += [{"symbol": s, "skipped": "market_closed"} for s in closed_symbols]
+
+    return {"cycles": [
+        {
+            "symbol": c.get("symbol"),
+            "direction": c.get("direction"),
+            "risk_verdict": c.get("risk_verdict"),
+            "risk_reasons": c.get("risk_reasons"),
+            "skipped": c.get("skipped"),
+        }
+        for c in cycles
+    ]}
 
 
 @celery_app.task(name="close_due_positions_task")

@@ -53,6 +53,13 @@ def _validate(key: str, value: str) -> None:
         symbols = [s.strip() for s in value.split(",") if s.strip()]
         if not symbols:
             raise HTTPException(400, "watchlist must be a non-empty comma-separated symbol list")
+    elif key == "max_portfolio_var_pct":
+        try:
+            v = float(value)
+            if not (0 < v <= 1):
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "max_portfolio_var_pct must be a number in (0, 1]")
     else:
         raise HTTPException(400, f"unknown setting key: {key}")
 

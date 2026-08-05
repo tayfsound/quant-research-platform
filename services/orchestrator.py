@@ -34,15 +34,178 @@ class CognitiveOrchestrator:
         self.max_drawdown_limit = max_drawdown
         self.current_drawdown = current_drawdown
 
-    def run_cycle(self, seed: int = 42, symbol: str | None = None) -> dict[str, Any]:
+    def propose(self, symbol: str) -> dict | None:
+        """Faz 199: 'öner ama henüz açma' — services/portfolio_fusion.py'yi
+        gerçekten bağlamak için run_cycle()'dan ayrıldı. Birden fazla
+        sembolün eşzamanlı önerisini GERÇEKTEN açmadan önce portföy-seviyesi
+        VaR'a göre ölçeklendirebilmek gerekiyor (bkz. run_portfolio_aware_
+        cycle) — run_cycle() hâlâ tek-sembol, anında-finalize eski
+        davranışını koruyor, regresyon yok."""
         settings = get_settings()
-        symbol = symbol or settings.DEFAULT_SYMBOL
         timeframe = settings.DEFAULT_TIMEFRAME
-        
+
         data = self.data_provider.get_ohlcv(symbol, timeframe, limit=100)
         if not data:
-            return {"direction": "NEUTRAL", "error": "no_data", "memory_size": len(self.memory.memory)}
-        
+            return None
+
+        ctx = self._build_context(symbol, timeframe, data)
+        ctx = self.engine.run(ctx, persist=False)
+
+        market_price = data[-1].close
+        direction = ctx.decision.proposed_direction if ctx.decision.proposed_direction else "NEUTRAL"
+        size = ctx.decision.final_size if ctx.decision.final_size else 0.0
+
+        if direction != "NEUTRAL" and size > 0:
+            result = self.fill_engine.simulate({"direction": direction, "size": size}, market_price)
+            filled_price, fee = result.filled_price, result.fee
+        else:
+            filled_price, fee = market_price, 0.0
+
+        # Faz 187: filled_price'ı ctx'e yaz ki RecordingStage (finalize()
+        # içinde) gerçek entry_price'ı persist edebilsin.
+        ctx.decision.filled_price = filled_price
+
+        return {"ctx": ctx, "data": data, "fee": fee, "direction": direction}
+
+    def finalize_proposal(self, proposal: dict, seed: int = 42) -> dict[str, Any]:
+        """propose()'un çıktısını (portföy fusion varsa ctx.decision.
+        final_size değişmiş olabilir) al, gerçekten kaydet/aç. run_cycle()
+        ile aynı sözlük şeklini döndürür."""
+        ctx = proposal["ctx"]
+        data = proposal["data"]
+        fee = proposal["fee"]
+        direction = proposal["direction"]
+        filled_price = ctx.decision.filled_price
+        size = ctx.decision.final_size or 0.0
+
+        # Bu anlık "n-bar forward" hesaplaması iki farklı amaca hizmet
+        # ediyor ve bunları birbirinden ayırmak önemli:
+        # 1) ctx.outcome (TradeOutcome) — CognitiveEngine.finalize()'ın
+        #    memory_engine/learning_loop/weight_optimizer'ı tetiklemek için
+        #    HER cycle'da ihtiyaç duyduğu öğrenme sinyali (ctx.outcome is
+        #    None ise learning tamamen atlanıyor — bkz. cognitive_engine.py).
+        #    Bunu kaldırmak öğrenme döngüsünü tamamen kırar (gerçek bulgu,
+        #    tests/test_memory_engine_wiring.py ile yakalandı).
+        # 2) decisions.status/entry_price/exit_price/opened_at/closed_at —
+        #    Faz 187'nin GERÇEK, zaman-bazlı pozisyon yaşam döngüsü. Bu ikisi
+        #    kasıtlı olarak birbirinden bağımsız: decisions.outcome kolonu
+        #    artık kayıt anında hep boş kalıyor (DecisionRecorder), pozisyon
+        #    gerçekten services/position_closer.py ile kapanana kadar.
+        outcome = self.forward.calculate(filled_price, direction, data)
+        pnl = outcome["pnl"] - fee
+        win = outcome["win"]
+        from contracts.outcome import TradeOutcome
+        ctx.outcome = TradeOutcome(
+            pnl=outcome["pnl"],
+            win=outcome["win"],
+            decision=direction,
+            confidence_at_decision=ctx.decision.confidence,
+        )
+
+        # Memory (sadece risk-onaylı)
+        ctx = self.engine.finalize(ctx)
+
+        if direction != "NEUTRAL" and size > 0:
+            self.memory.add({
+                "decision_id": f"cycle_{seed}",
+                "features": ctx.market.features,
+                "label": 1 if win else 0,
+                "pnl": pnl,
+                "quality_score": 0.8,
+                "timestamp": data[-1].timestamp.isoformat(),
+                "direction": direction,
+            })
+
+        return {
+            "direction": direction,
+            "size": size,
+            "filled_price": filled_price,
+            "fee": fee,
+            "pnl": pnl,
+            "win": win,
+            "memory_size": len(self.memory.memory),
+            "risk_verdict": ctx.risk.evaluation.verdict if ctx.risk.evaluation else "unknown",
+            "risk_reasons": [str(r) for r in ctx.risk.evaluation.reasons] if ctx.risk.evaluation else [],
+            "action": ctx.decision.action.value if ctx.decision.action else "WAIT",
+            "confidence": ctx.decision.confidence,
+            "features": ctx.market.features,
+            "symbol": ctx.market.symbol,
+        }
+
+    def run_portfolio_aware_cycle(self, symbols: list[str], seed: int = 42) -> list[dict[str, Any]]:
+        """Faz 199: services/portfolio_fusion.py + risk/limits/portfolio.py'yi
+        (yazılmış, test edilmiş ama hiçbir yerden çağrılmayan portföy VaR
+        motoru) gerçekten bağlıyor. Aynı cycle'da 2+ sembol eşzamanlı yönlü
+        öneri üretirse, GERÇEKTEN açılmadan önce gerçek kovaryans matrisiyle
+        (korelasyon dahil) hesaplanan portföy VaR'ı kullanıcının belirlediği
+        sınırı (max_portfolio_var_pct) aşarsa önerilen büyüklükler orantılı
+        şekilde küçültülüyor — "sinyal limitleri gevşetemez" kuralı burada
+        da geçerli, sadece küçültebiliyor."""
+        proposals: dict[str, dict] = {}
+        for sym in symbols:
+            p = self.propose(sym)
+            if p is not None:
+                proposals[sym] = p
+
+        directional = {
+            sym: p for sym, p in proposals.items()
+            if p["direction"] in ("LONG", "SHORT") and (p["ctx"].decision.final_size or 0) > 0
+        }
+
+        if len(directional) >= 2:
+            self._apply_portfolio_fusion(directional)
+
+        return [
+            self.finalize_proposal(proposals[sym], seed=seed) if sym in proposals
+            else {"symbol": sym, "direction": "NEUTRAL", "error": "no_data", "memory_size": len(self.memory.memory)}
+            for sym in symbols
+        ]
+
+    def _apply_portfolio_fusion(self, directional: dict[str, dict]) -> None:
+        from database.repositories.app_settings_repository import AppSettingsRepository
+        from database.session_factory import SessionFactory
+        from risk.limits.portfolio import PortfolioRiskEngine
+        from services.portfolio_fusion import PortfolioFusionStage
+
+        with SessionFactory.get_session() as session:
+            settings_repo = AppSettingsRepository(session)
+            starting_capital = float(settings_repo.get("starting_capital"))
+            max_var_pct = float(settings_repo.get("max_portfolio_var_pct"))
+
+        returns: dict[str, list[float]] = {}
+        proposed_sizes: dict[str, float] = {}
+        for sym, p in directional.items():
+            closes = [bar.close for bar in p["data"]]
+            rets = [
+                (closes[i] - closes[i - 1]) / closes[i - 1]
+                for i in range(1, len(closes)) if closes[i - 1]
+            ]
+            if len(rets) < 2:
+                continue
+            returns[sym] = rets
+            sign = 1.0 if p["direction"] == "LONG" else -1.0
+            proposed_sizes[sym] = sign * (p["ctx"].decision.final_size or 0.0)
+
+        if len(returns) < 2:
+            return
+
+        min_len = min(len(v) for v in returns.values())
+        returns = {s: v[-min_len:] for s, v in returns.items()}
+        proposed_sizes = {s: v for s, v in proposed_sizes.items() if s in returns}
+
+        fusion = PortfolioFusionStage(PortfolioRiskEngine())
+        result = fusion.fuse(
+            proposed_sizes=proposed_sizes,
+            returns=returns,
+            portfolio_value=starting_capital,
+            max_var=starting_capital * max_var_pct,
+        )
+
+        if result.scaled_down:
+            for sym, signed_size in result.final_sizes.items():
+                directional[sym]["ctx"].decision.final_size = abs(signed_size)
+
+    def _build_context(self, symbol: str, timeframe: str, data) -> CognitiveCycleContext:
         # Build cognitive context
         ctx = CognitiveCycleContext()
         ctx.market.symbol = symbol
@@ -85,82 +248,14 @@ class CognitiveOrchestrator:
         ctx.risk.min_seconds_between_trades = risk_state["min_seconds_between_trades"]
         ctx.risk.ai_enabled = risk_state["ai_enabled"]
 
-        # Run cognitive engine (council + meta + fusion + risk)
-        ctx = self.engine.run(ctx, persist=False)
-        
-        market_price = data[-1].close
-        direction = ctx.decision.proposed_direction if ctx.decision.proposed_direction else "NEUTRAL"
-        size = ctx.decision.final_size if ctx.decision.final_size else 0.0
-        
-        # Execution simulation
-        if direction != "NEUTRAL" and size > 0:
-            decision = {"direction": direction, "size": size}
-            result = self.fill_engine.simulate(decision, market_price)
-            filled_price = result.filled_price
-            fee = result.fee
-        else:
-            filled_price = market_price
-            fee = 0.0
+        return ctx
 
-        # Faz 187: filled_price'ı ctx'e yaz ki RecordingStage (aşağıdaki
-        # finalize() içinde çalışır) gerçek entry_price'ı persist edebilsin —
-        # pozisyon burada GERÇEKTEN açılıyor, kapanışı services/
-        # position_closer.py gerçek zaman geçtikten sonra yapıyor.
-        ctx.decision.filled_price = filled_price
+    def run_cycle(self, seed: int = 42, symbol: str | None = None) -> dict[str, Any]:
+        settings = get_settings()
+        symbol = symbol or settings.DEFAULT_SYMBOL
 
-        # Bu anlık "n-bar forward" hesaplaması iki farklı amaca hizmet
-        # ediyor ve bunları birbirinden ayırmak önemli:
-        # 1) ctx.outcome (TradeOutcome) — CognitiveEngine.finalize()'ın
-        #    memory_engine/learning_loop/weight_optimizer'ı tetiklemek için
-        #    HER cycle'da ihtiyaç duyduğu öğrenme sinyali (ctx.outcome is
-        #    None ise learning tamamen atlanıyor — bkz. cognitive_engine.py).
-        #    Bunu kaldırmak öğrenme döngüsünü tamamen kırar (gerçek bulgu,
-        #    tests/test_memory_engine_wiring.py ile yakalandı).
-        # 2) decisions.status/entry_price/exit_price/opened_at/closed_at —
-        #    Faz 187'nin GERÇEK, zaman-bazlı pozisyon yaşam döngüsü. Bu ikisi
-        #    kasıtlı olarak birbirinden bağımsız: decisions.outcome kolonu
-        #    artık kayıt anında hep boş kalıyor (DecisionRecorder), pozisyon
-        #    gerçekten services/position_closer.py ile kapanana kadar.
-        outcome = self.forward.calculate(filled_price, direction, data)
-        pnl = outcome["pnl"] - fee
-        win = outcome["win"]
-        from contracts.outcome import TradeOutcome
-        ctx.outcome = TradeOutcome(
-            pnl=outcome["pnl"],
-            win=outcome["win"],
-            decision=direction,
-            confidence_at_decision=ctx.decision.confidence,
-        )
+        proposal = self.propose(symbol)
+        if proposal is None:
+            return {"direction": "NEUTRAL", "error": "no_data", "memory_size": len(self.memory.memory)}
 
-        # REMOVED: self.recorder.record(ctx, [], None)
-        # Engine RecordingStage zaten kaydediyor -- cift kayit yok (P1-8)
-        
-        # Memory (sadece risk-onaylı)
-        ctx = self.engine.finalize(ctx)
-
-        if direction != "NEUTRAL" and size > 0:
-            self.memory.add({
-                "decision_id": f"cycle_{seed}",
-                "features": ctx.market.features,
-                "label": 1 if win else 0,
-                "pnl": pnl,
-                "quality_score": 0.8,
-                "timestamp": data[-1].timestamp.isoformat(),
-                "direction": direction,
-            })
-        
-        return {
-            "direction": direction,
-            "size": size,
-            "filled_price": filled_price,
-            "fee": fee,
-            "pnl": pnl,
-            "win": win,
-            "memory_size": len(self.memory.memory),
-            "risk_verdict": ctx.risk.evaluation.verdict if ctx.risk.evaluation else "unknown",
-            "risk_reasons": [str(r) for r in ctx.risk.evaluation.reasons] if ctx.risk.evaluation else [],
-            "action": ctx.decision.action.value if ctx.decision.action else "WAIT",
-            "confidence": ctx.decision.confidence,
-            "features": ctx.market.features,
-            "symbol": symbol,
-        }
+        return self.finalize_proposal(proposal, seed=seed)

@@ -29,6 +29,11 @@ DEFAULTS: dict[str, str] = {
     # ayrıca crypto sembollerine korelasyon sinyali olarak da besleniyor
     # (bkz. agents/technical_agent.py).
     "watchlist": "BTCUSDT,ETHUSDT,SOLUSDT,AAPL,NVDA,MSFT,GC=F,SI=F,^IXIC,^GSPC",
+    # Faz 199: portfolio_fusion.py'nin gerçekten bağlanması — aynı cycle'da
+    # birden fazla sembol eşzamanlı yönlü öneri üretirse, gerçek kovaryans
+    # matrisiyle hesaplanan portföy VaR'ı bu yüzdeyi (sermayenin) aşarsa
+    # önerilen büyüklükler orantılı olarak küçültülür.
+    "max_portfolio_var_pct": "0.1",
 }
 
 # Faz 187'nin PositionCloser.hold_seconds'ına karşılık gelen ön tanımlı
