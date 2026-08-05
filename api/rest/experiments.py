@@ -18,6 +18,7 @@ async def list_experiments(limit: int = 20, user: AuthContext = Depends(get_curr
                     "git_sha": r.git_sha,
                     "timestamp": r.timestamp.isoformat(),
                     "decision_count": len(r.decision_ids or []),
+                    "decision_ids": [str(d) for d in (r.decision_ids or [])],
                 }
                 for r in rows
             ]

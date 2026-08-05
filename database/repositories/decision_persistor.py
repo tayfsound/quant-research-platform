@@ -10,6 +10,7 @@ correctly.
 """
 
 import json
+from uuid import UUID
 
 from sqlalchemy import text
 
@@ -102,6 +103,15 @@ class DecisionPersistor:
         self.session.commit()
 
     def get_by_id(self, decision_id: str):
+        # Gerçek bulgu: geçersiz bir UUID string'i (örn. dashboard'dan yanlışlıkla
+        # bir session_id yapıştırılırsa) Postgres'te "invalid input syntax for
+        # type uuid" fırlatıyordu — yakalanmadan FastAPI'nin düz metin 500
+        # sayfasına düşüyordu, dashboard bunu JSON sanıp parse hatası veriyordu.
+        try:
+            UUID(str(decision_id))
+        except (ValueError, AttributeError, TypeError):
+            return None
+
         row = self.session.execute(
             text("SELECT * FROM decisions WHERE id = :id"),
             {"id": decision_id},
