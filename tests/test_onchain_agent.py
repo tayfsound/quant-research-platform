@@ -49,3 +49,36 @@ def test_conflicting_whale_signal_waits():
     assert opinion.direction == "WAIT"
     assert len(opinion.caveats) > 0
     assert any("Conflicting" in c for c in opinion.caveats)
+
+
+def test_high_gas_price_adds_caveat_but_does_not_change_direction():
+    """Faz 196: gerçek gas price sadece bağlam notu — yönü tek başına
+    belirlemiyor (yüksek gas'ın fiyat için bullish mi bearish mi olduğu
+    literatürde net değil)."""
+    agent = OnChainAgent()
+    ctx = OnChainContext(whale_accumulation=True, eth_gas_price_gwei=120.0)
+    opinion = agent.analyze(ctx)
+    assert opinion.direction == "LONG"  # whale_accumulation'dan geliyor
+    assert any("congestion" in c for c in opinion.caveats)
+
+
+def test_low_gas_price_adds_no_caveat():
+    agent = OnChainAgent()
+    ctx = OnChainContext(eth_gas_price_gwei=5.0)
+    opinion = agent.analyze(ctx)
+    assert not any("congestion" in c for c in opinion.caveats)
+
+
+def test_solana_tps_appears_as_evidence_when_present():
+    agent = OnChainAgent()
+    ctx = OnChainContext(solana_tps=3500.0)
+    opinion = agent.analyze(ctx)
+    assert any("Solana" in e for e in opinion.evidence)
+
+
+def test_no_onchain_network_signals_means_no_extra_evidence_or_caveat():
+    agent = OnChainAgent()
+    ctx = OnChainContext()
+    opinion = agent.analyze(ctx)
+    assert not any("Solana" in e for e in opinion.evidence)
+    assert not any("congestion" in c for c in opinion.caveats)

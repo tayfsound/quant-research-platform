@@ -39,6 +39,15 @@ class OnChainAgent:
         if context.dormant_coins_moved:
             caveats.append("Dormant coins moved — potential market anomaly")
 
+        # Faz 196: ETH gas fiyatı + Solana TPS — gerçek, kolay ölçülen ağ
+        # aktivitesi metrikleri. Kasıtlı olarak yönü DEĞİŞTİRMİYOR (yüksek
+        # gas'ın fiyat için bullish mi bearish mi olduğu literatürde net
+        # değil) — sadece bağlam/uyarı notu olarak ekleniyor.
+        if context.eth_gas_price_gwei is not None and context.eth_gas_price_gwei > 50:
+            caveats.append(f"High ETH network congestion (gas: {context.eth_gas_price_gwei:.1f} gwei)")
+        if context.solana_tps is not None:
+            evidence.append(f"Solana network activity: {context.solana_tps:.0f} tx/s")
+
         # MVRV Z-Score
         if context.mvrv_zscore > 3.0:
             score -= 2.0

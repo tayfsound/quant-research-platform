@@ -38,14 +38,57 @@ class ContextAdapter:
             positioning=self._get(ctx, "positioning", "neutral"),
         )
 
+    def _real_onchain_metrics(self, symbol: str) -> dict:
+        """Faz 196: SADECE gerçekten kolay/dürüst ölçülen metrikler —
+        exchange akışı/whale/MVRV kasıtlı olarak burada yok (indexer
+        gerektirir, icat edilmedi). Sadece kripto sembolleri için; ağ
+        hatası olursa (provider zaten None döner) sessizce atlanır, hiçbir
+        sayı uydurulmaz."""
+        if not symbol.upper().endswith(("USDT", "BUSD", "USDC", "FDUSD")):
+            return {}
+
+        from database.repositories.onchain_snapshot_repository import OnChainSnapshotRepository
+        from database.session_factory import SessionFactory
+        from market_data.onchain.onchain_provider import (
+            fetch_eth_gas_price_gwei,
+            fetch_solana_tps,
+            fetch_usdt_total_supply,
+        )
+
+        result: dict = {}
+
+        gas_price = fetch_eth_gas_price_gwei()
+        if gas_price is not None:
+            result["eth_gas_price_gwei"] = gas_price
+
+        tps = fetch_solana_tps()
+        if tps is not None:
+            result["solana_tps"] = tps
+
+        supply = fetch_usdt_total_supply()
+        if supply is not None:
+            with SessionFactory.get_session() as session:
+                repo = OnChainSnapshotRepository(session)
+                delta = repo.get_delta_24h("usdt_total_supply", supply)
+                repo.save("usdt_total_supply", supply)
+            if delta is not None:
+                result["stablecoin_mint_24h"] = delta
+
+        return result
+
     def to_onchain(self, ctx: CognitiveCycleContext) -> OnChainContext:
+        real_metrics = self._real_onchain_metrics(ctx.market.symbol or "")
         return OnChainContext(
             exchange_outflow_24h=self._get(ctx, "exchange_outflow_24h", 0.0),
             exchange_inflow_24h=self._get(ctx, "exchange_inflow_24h", 0.0),
             whale_accumulation=self._get(ctx, "whale_accumulation", False),
             whale_distribution=self._get(ctx, "whale_distribution", False),
-            stablecoin_mint_24h=self._get(ctx, "stablecoin_mint_24h", 0.0),
+            stablecoin_mint_24h=self._get(
+                ctx, "stablecoin_mint_24h", real_metrics.get("stablecoin_mint_24h", 0.0)
+            ),
             mvrv_zscore=self._get(ctx, "mvrv_zscore", 0.0),
+            eth_gas_price_gwei=real_metrics.get("eth_gas_price_gwei"),
+            solana_tps=real_metrics.get("solana_tps"),
         )
 
     def _latest_external_signal(self, symbol: str, max_age_seconds: float = 1800.0):

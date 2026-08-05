@@ -53,6 +53,13 @@ class Settings(BaseSettings):
     DEFAULT_TIMEFRAME: str = "1m"
     MARKET_DATA_FALLBACK_TO_MOCK: bool = True
 
+    # Faz 196: on-chain metrik motoru — sadece gerçekten kolay/dürüst
+    # ölçülebilen metrikler (bkz. market_data/onchain/onchain_provider.py).
+    INFURA_API_KEY: str = ""
+    INFURA_MAINNET_URL: str = ""
+    ALCHEMY_API_KEY: str = ""
+    HELIUS_API_KEY: str = ""
+
     # TradingView webhook'ları custom auth header göndermiyor (Pine Script
     # alert mekanizması bunu desteklemiyor) — paylaşılan bir secret'ı alert
     # mesajının JSON gövdesine gömüp burada doğruluyoruz. Boşsa (dev modu)

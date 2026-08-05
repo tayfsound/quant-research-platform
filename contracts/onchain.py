@@ -15,3 +15,7 @@ class OnChainContext(BaseModel):
     dormant_coins_moved: bool = False      # Uyuyan coin'ler uyandı mı?
     mvrv_zscore: float = 0.0              # Market Value to Realized Value Z-Score
     timestamp: datetime = Field(default_factory=datetime.now)
+    # Faz 196: gerçekten ölçülen, "kolay/dürüst" iki ek metrik — indexer
+    # gerektirmeyen, tek RPC çağrısıyla alınan gerçek değerler.
+    eth_gas_price_gwei: float | None = None
+    solana_tps: float | None = None
