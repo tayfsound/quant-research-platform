@@ -51,8 +51,12 @@ jobs:
 
       - name: Run tests
         run: |
-          alembic upgrade head
+          alembic upgrade heads
           pytest -q --ignore=tests/test_ml.py
         env:
           DATABASE_URL: postgresql+asyncpg://quant:quantpass@localhost:5432/quantdb
+          DATABASE_URL_SYNC: postgresql+psycopg2://quant:quantpass@localhost:5432/quantdb
           REDIS_URL: redis://localhost:6379/0
+
+      - name: Check CURRENT_STATE.md is consistent with the actual test suite
+        run: python scripts/check_docs_consistency.py

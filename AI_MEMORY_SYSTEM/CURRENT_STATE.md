@@ -728,8 +728,8 @@ timescale/timescaledb`, hiç veri yok) üzerinde **tüm migration zincirini**
 | # | Ne | Neden şimdi değil |
 |---|----|--------------------|
 | 20 | Stress/soak test, profiling + performans optimizasyonu. | Bu ortamda gerçek yük üretecek altyapı (çoklu eşzamanlı kullanıcı simülasyonu) yok; `qrp-api` image'ı da 11.6GB (torch/sentence-transformers ağırlıklı) — CPU-only torch wheel ile küçültülebilir, yapılmadı (bkz. `k8s/README.md`). |
-| 21 | Bağımsız/üçüncü taraf güvenlik denetimi + penetrasyon testi. | Auth altyapısı bu oturumda yeni kuruldu (Faz 178-179), henüz olgunlaşmadı; roadmap zaten bunu ayrı bir adım olarak görüyor. |
-| 22 | "Dokümantasyonun tamamının koda karşı otomatik doğrulanması" — CI'da CURRENT_STATE.md'nin koddan sapmadığını kontrol eden bir script. | Roadmap'in kendi önerdiği bu mekanizma henüz yazılmadı; bu oturum boyunca dokümantasyon elle (ama titizlikle, her adımda koda karşı doğrulanarak) güncellendi. |
+| 21 | ~~Bağımsız güvenlik denetimi~~ **Kısmen kapandı:** yukarıdaki "Faz 182 — Güvenlik incelemesi" bölümüne bakın (6 aday bulgu, bağımsız doğrulama, hiçbiri yüksek güven eşiğini geçmedi). Gerçek bir üçüncü taraf/insan denetimi hâlâ değil — penetrasyon testi de yapılmadı. | P2 | Gerçek üçüncü taraf denetimi proje sahibinin kararı |
+| 22 | ~~Dokümantasyonun otomatik doğrulanması~~ **Kapandı:** `scripts/check_docs_consistency.py` — CURRENT_STATE.md'deki `**Test:** N passed` satırını gerçek `pytest --collect-only` sayısıyla karşılaştırıyor, sapma >5 ise CI'ı kırıyor. `.github/workflows/ci.yml`'e eklendi. Yan bulgu: CI `alembic upgrade head` (tekil) kullanıyordu — migration zincirinde 2 head varken (bu oturumdan önce) bu komut CI'da hata verirdi; `heads` (çoğul) yapıldı, ayrıca `DATABASE_URL_SYNC` env var'ı eksikti (tesadüfen doğru varsayılana düşüyordu), eklendi. | — | — |
 
 ## Mimari Notlar
 - **BinderStage kapsamı (Sprint 1 netleştirme, 2026-08-04):** BinderStage bilinçli olarak sadece
