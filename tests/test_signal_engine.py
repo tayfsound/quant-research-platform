@@ -116,3 +116,16 @@ def test_too_few_bars_returns_safe_quant_defaults():
     signals = compute_quant_signals(_bars([100.0, 101.0]))
     assert signals["hurst_exponent"] == 0.5
     assert signals["zscore"] == 0.0
+
+
+def test_atr_is_positive_and_scales_with_real_range():
+    """Faz 191: ATR artık gerçekten hesaplanıyor — DecisionFusion'ın
+    take_profit/stop_loss hedeflerini kurmak için kullandığı tek gerçek
+    volatilite ölçüsü. Daha geniş bar aralığı -> daha yüksek ATR."""
+    tight = compute_technical_signals(_bars([100.0] * 20))["atr"]
+    assert tight > 0  # _bars zaten her barda ±%0.1 gerçek high/low aralığı veriyor
+
+    base = 100.0
+    wide_closes = [base + (5 if i % 2 == 0 else -5) for i in range(20)]
+    wide = compute_technical_signals(_bars(wide_closes))["atr"]
+    assert wide > tight

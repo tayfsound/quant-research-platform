@@ -141,6 +141,34 @@ class MetaStage:
         return ctx
 
 
+class RiskTargetStage:
+    """Faz 191 — gerçek bulgu: DecisionFusion (aşağıda) `ctx.decision.
+    take_profit`/`stop_loss`'a bakıp Expected Value hesaplıyordu, ama
+    hiçbir kod bu iki alanı hiçbir zaman set etmiyordu (hep None) — yani
+    win=0, loss=0, ev her zaman <=0, Council ne önerirse önersin HER
+    işlem WAIT'e zorlanıyordu. Bu aşama, MetaStage'in belirlediği yön için
+    gerçek ATR'den (signal_engine.py) standart bir 1:2 risk/ödül hedefi
+    kuruyor — icat edilmiş bir "hedef fiyat" değil, ATR-tabanlı stop
+    literatürde yaygın, kesin tanımlı bir yöntem. ATR yoksa (yetersiz
+    veri) hedef set edilmez — DecisionFusion böyle bir durumda hâlâ
+    (doğru şekilde) reddeder, çünkü gerçek volatilite bilgisi yok."""
+    STOP_ATR_MULT = 1.0
+    TARGET_ATR_MULT = 2.0
+
+    def execute(self, ctx: CognitiveCycleContext) -> CognitiveCycleContext:
+        direction = (ctx.decision.proposed_direction or "").upper()
+        if direction not in ("LONG", "SHORT"):
+            return ctx
+
+        atr = (ctx.market.features or {}).get("atr", 0.0) or 0.0
+        if atr <= 0:
+            return ctx
+
+        ctx.decision.stop_loss = atr * self.STOP_ATR_MULT
+        ctx.decision.take_profit = atr * self.TARGET_ATR_MULT
+        return ctx
+
+
 class DecisionFusionStage:
     def __init__(self):
         self.fusion = DecisionFusion()

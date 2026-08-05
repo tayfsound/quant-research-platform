@@ -57,6 +57,7 @@ def compute_technical_signals(data: list[OHLCV]) -> dict:
             "RSI": 50.0, "ema": data[-1].close if data else 0.0, "macd": 0.0,
             "trend": "neutral", "momentum": "neutral", "market_structure": "neutral",
             "ema_alignment": "neutral", "volatility_regime": "normal", "volume_confirmation": False,
+            "atr": 0.0,
         }
 
     closes = _closes(data)
@@ -104,6 +105,7 @@ def compute_technical_signals(data: list[OHLCV]) -> dict:
 
     period = min(14, n - 1)
     rsi_value = _rsi(closes, period)
+    atr_value = _atr(data, min(14, n - 1))
 
     return {
         "RSI": round(float(rsi_value), 2),
@@ -115,6 +117,7 @@ def compute_technical_signals(data: list[OHLCV]) -> dict:
         "ema_alignment": ema_alignment,
         "volatility_regime": volatility_regime,
         "volume_confirmation": volume_confirmation,
+        "atr": round(float(atr_value), 6),
     }
 
 
@@ -130,6 +133,25 @@ def _rsi(closes: np.ndarray, period: int) -> float:
         return 100.0
     rs = avg_gain / avg_loss
     return 100.0 - (100.0 / (1.0 + rs))
+
+
+def _atr(data: list[OHLCV], period: int) -> float:
+    """Average True Range — standart, kesin tanımlı volatilite ölçüsü.
+    True Range = max(high-low, |high-prev_close|, |low-prev_close|); ATR
+    burada basit hareketli ortalama (Wilder'ın üstel düzeltmesi değil,
+    daha basit ama eşdeğer bir varyant — açıkça belirtiliyor)."""
+    if len(data) < 2 or period < 1:
+        return 0.0
+    highs = np.array([d.high for d in data], dtype=float)
+    lows = np.array([d.low for d in data], dtype=float)
+    closes = np.array([d.close for d in data], dtype=float)
+    prev_closes = closes[:-1]
+    true_ranges = np.maximum(
+        highs[1:] - lows[1:],
+        np.maximum(np.abs(highs[1:] - prev_closes), np.abs(lows[1:] - prev_closes)),
+    )
+    window = true_ranges[-period:] if len(true_ranges) >= period else true_ranges
+    return float(window.mean()) if len(window) else 0.0
 
 
 def _find_swings(closes: np.ndarray, window: int = 3) -> tuple[list[int], list[int]]:
