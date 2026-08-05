@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from config import get_settings
 from contracts.auth import Role, User
 from database.repositories.auth_repository import APIKeyRepository, AuditLogRepository, UserRepository
 from database.session_factory import SessionFactory
@@ -21,6 +22,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 class RegisterRequest(BaseModel):
     username: str
     password: str
+    setup_token: str | None = None
 
 
 class LoginRequest(BaseModel):
@@ -41,7 +43,18 @@ async def register(req: RegisterRequest):
         # Bootstrap: the very first user becomes ADMIN (there is no other
         # authenticated actor yet to grant that role); every user after
         # that defaults to VIEWER and must be promoted by an admin.
-        role = Role.ADMIN if repo.count() == 0 else Role.VIEWER
+        is_bootstrap = repo.count() == 0
+        if is_bootstrap:
+            setup_token = get_settings().ADMIN_SETUP_TOKEN
+            # Security review finding (confidence 5/10): with no setup
+            # token configured, anyone who registers first becomes ADMIN —
+            # fine for local dev (the empty-token default, same convention
+            # as SECRET_KEY/RiskLimitEntry elsewhere), but a real deployment
+            # should set ADMIN_SETUP_TOKEN so bootstrap admin can't be raced.
+            if setup_token and req.setup_token != setup_token:
+                raise HTTPException(status_code=403, detail="invalid_setup_token")
+
+        role = Role.ADMIN if is_bootstrap else Role.VIEWER
 
         user = User(username=req.username, password_hash=hash_password(req.password), role=role)
         repo.create(user)

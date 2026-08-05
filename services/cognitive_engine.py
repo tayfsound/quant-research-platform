@@ -15,6 +15,7 @@ from engines.cognitive_pipeline import (
     RecordingStage,
     RiskGateStage,
 )
+from engines.memory_engine import MemoryEngine
 from engines.risk_engine import RiskEngine
 from services.guardrail_stage import GuardrailStage
 from services.learning_loop import LearningLoop
@@ -46,6 +47,13 @@ class CognitiveEngine:
         self.decision_fusion = DecisionFusionStage()
         self.record_stage = RecordingStage()
         self.risk_gate_stage = RiskGateStage(self.guardrail_stage.risk_engine)
+        # Gap #8: MemoryEngine existed, worked (once its own two bugs were
+        # fixed — see services/memory_consolidator.py), and was never called
+        # from anywhere. Only wired into finalize(), not run(): backtests
+        # call run(persist=False) and never finalize(), so replaying
+        # thousands of historical bars doesn't spam real embedding
+        # computation + episodic DB writes for synthetic data.
+        self.memory_engine = MemoryEngine()
 
         self.outcome_evaluator = OutcomeEvaluator()
         self.learning_loop = LearningLoop()
@@ -85,6 +93,8 @@ class CognitiveEngine:
         opinions = ctx.__dict__.get("_last_opinions") or []
         event = self.record_stage.execute(ctx, belief, opinions)
         self._persist_and_learn(event, ctx)
+        if ctx.outcome is not None:
+            self.memory_engine.execute(ctx)
         return ctx
 
     def _persist_and_learn(

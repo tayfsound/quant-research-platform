@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     SECRET_KEY: str = ""
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 1440
+    # Güvenlik incelemesi bulgusu (güven 5/10): boşsa ilk /auth/register
+    # çağrısı otomatik ADMIN olur (dev/local kolaylığı, geriye dönük uyumlu).
+    # Prod'da set edilirse, o ilk-admin bootstrap'ı bu token'ı bilmeyen biri
+    # yapamaz — TOCTOU'yu kapatmaz ama saldırı yüzeyini "token'ı bilen"e indirir.
+    ADMIN_SETUP_TOKEN: str = ""
 
     RISK_SIGNING_KEY_PATH: Path = Path("./keys/risk_private.pem")
 

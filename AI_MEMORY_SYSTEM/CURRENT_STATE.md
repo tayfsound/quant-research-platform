@@ -1,9 +1,62 @@
-# Mevcut Durum -- v1.11.0 (Faz 183 sonrası temizlik turu: gap #7/#12/#15/#16/#18 kapatıldı)
+# Mevcut Durum -- v1.12.0 (Faz 183 sonrası temizlik turu: gap #7/#8/#12/#15/#16/#18 + auth bootstrap kapatıldı)
 
 **Tarih:** 2026-08-05
 **Branch:** main
-**Son commit (HEAD):** bkz. git log — bu oturumun devamı (auth yayılımı + risk limit P0 fix + ölü kod temizliği + WS gerçek veri)
-**Test:** 343 passed, 1 xpassed, 0 xfailed. `npm run build` (tsc -b + vite build) temiz.
+**Son commit (HEAD):** bkz. git log — bu oturumun devamı (auth yayılımı + risk limit P0 fix + ölü kod temizliği + WS gerçek veri + MemoryEngine wiring + admin bootstrap token)
+**Test:** 348 passed, 1 xpassed, 0 xfailed. `npm run build` (tsc -b + vite build) temiz.
+
+## Gap #8 — MemoryEngine gerçekten kablolandı (2026-08-05, aynı oturum)
+
+`engines/memory_engine.py::MemoryEngine` production'da **hiçbir yerden çağrılmıyordu**
+(grep ile doğrulandı — sadece kendi dosyasında tanımlıydı). Onu `CognitiveEngine.finalize()`'a
+bağlamaya çalışırken, hiç çalıştırılmamış olmasının **üç ayrı, bağımsız bug**
+yüzünden olduğu ortaya çıktı — hiçbiri daha önce hiçbir testte yakalanmamıştı
+çünkü hiç kimse bu kod yolunu hiç çalıştırmamıştı:
+
+1. `MemoryEngine.execute()` `self.consolidator.consolidate_if_ready()` çağırıyordu
+   ama `MemoryConsolidator`'da böyle bir metod hiç yoktu — ilk çağrıda anında
+   `AttributeError`.
+2. `MemoryEngine.execute()` `self.consolidator.working.observations`'a erişiyordu
+   ama `MemoryConsolidator.__init__` hiçbir zaman bir `WorkingMemory` kurmuyordu —
+   ikinci bir `AttributeError`.
+3. `MemoryConsolidator.commit_to_episodic()` **her çağrıda `self.episodic.episodes`
+   listesinin TAMAMINI** (DB'den restore edilen 100 eski episode dahil) yeniden
+   `INSERT` ediyordu — tek seferlik bir batch-yükleme varsayımıyla yazılmış, ama
+   canlı pipeline'a bağlanınca her cycle'da restore edilen geçmişi + önceden zaten
+   kaydedilmiş episode'ları tekrar tekrar duplicate satır olarak yazacaktı (composite
+   PK `(id, created_at)` farklı `created_at` ile aynı `id`'yi kabul ediyor —
+   sessizce çoğalan satırlar, tespit edilmesi zor bir veri bütünlüğü sorunu).
+
+Üçü de düzeltildi: `consolidate_if_ready()` eklendi (`SemanticMemory.consolidate()`'e
+delege ediyor), `MemoryConsolidator.__init__`'e gerçek bir `WorkingMemory` eklendi
+(`capture_cycle()` artık gerçek bir working-memory observation'ı da ekliyor),
+`commit_to_episodic()` artık `_committed_ids` ile sadece YENİ episode'ları yazıyor.
+Ayrıca (gap #16 ile aynı kök neden) `commit_to_episodic()` artık her save'den önce
+`EmbeddingService.encode_episode()` çağırıp gerçek bir embedding yazıyor — önceden
+hep `None` yazılıyordu, semantic search hiçbir şey bulamıyordu.
+
+`CognitiveEngine.__init__`'e `self.memory_engine = MemoryEngine()` eklendi,
+`finalize()`'a (`run()`'a değil — backtest'ler `run(persist=False)` çağırıp
+hiç `finalize()` çağırmıyor, yani binlerce sentetik bar için gereksiz embedding/DB
+yazımı olmuyor) `if ctx.outcome is not None: self.memory_engine.execute(ctx)` eklendi.
+`services/orchestrator.py`'nin `run_cycle()`'ı zaten `finalize()`'ı çağırıyordu
+(`/orchestrator/cycle`, `/dashboard/latest`, `/stream/live`) — üçü de artık her
+gerçek cycle'da gerçek bir episodic memory satırı yazıyor.
+
+Kanıt: `tests/test_memory_engine_wiring.py` — iki ardışık gerçek `run_cycle()`
+çağrısı tam olarak 2 yeni (duplicate değil) episode yazıyor, ikisi de gerçek
+embedding'le; ayrıca gerçek bir cycle'ın yazdığı episode'u semantic search'ün
+gerçekten bulduğu ayrıca kanıtlanıyor.
+
+## Auth bootstrap yarışı kapatıldı (2026-08-05, aynı oturum)
+
+Güvenlik incelemesinin bulduğu (güven 5/10) `/auth/register`'da ilk kaydolanın
+otomatik ADMIN olması riski: `ADMIN_SETUP_TOKEN` env değişkeni eklendi (boşsa
+eski davranış aynen devam ediyor — local dev/test'i bozmuyor). Set edilmişse,
+ilk (bootstrap) kayıt `setup_token` alanında doğru değeri göndermek zorunda,
+yoksa 403. Kanıt: `tests/test_auth_bootstrap_token.py` (3 test: yanlış token
+reddedilir, doğru token ADMIN olarak kabul edilir, token hiç set edilmemişse
+davranış değişmez).
 
 ## Faz 183 sonrası temizlik turu (2026-08-05, aynı oturum)
 
@@ -332,7 +385,7 @@ Yapılanlar (C1 kanıtlı):
 | # | Borç | Öncelik | Bloklayan |
 |---|------|---------|-----------|
 | 3 | E2E DB persist + belief + weight update zinciri integration testi eksik | ~~P1~~ **Kapandı** | tests/test_e2e_scenarios.py — guardrail-red/outcome-none/outcome-var, üçü de gerçek DB'ye karşı yeşil (2026-08-04) |
-| 8 | `engines/memory_engine.py` (`MemoryEngine.record_cycle` → `MemoryConsolidator.capture_cycle`) `CognitiveEngine.run()`/`finalize()` içinde hiçbir yerden çağrılmıyor — gerçek ada. `capture_cycle`, `relevant_knowledge` içindeki `type="observation"` öğelerini `semantic.consolidated_beliefs`'e taşıyor ama şu an pipeline'da hiçbir stage `"observation"` tipi üretmiyor, yani şu anda zararsız ama tamamen kopuk. | P2 | Hayır |
+| 8 | ~~`engines/memory_engine.py` hiçbir yerden çağrılmıyor — gerçek ada.~~ **KAPANDI** (2026-08-05, bkz. "Gap #8 — MemoryEngine gerçekten kablolandı"): `CognitiveEngine.finalize()`'a bağlandı, üç bağımsız gizli bug (`consolidate_if_ready` yoktu, `working` yoktu, `commit_to_episodic` duplicate satır üretiyordu) düzeltildi, gerçek embedding'le kanıtlı. `relevant_knowledge`'daki `"observation"` tipi hâlâ hiçbir stage tarafından üretilmiyor (zararsız, ayrı bir P2 — bir gün üretilmeye başlarsa `semantic.consolidated_beliefs`'e taşınması zaten çalışıyor). | ~~P2~~ **Kapandı** | — |
 | 6 | Alembic history'de 2 head var: `faz165` (0005 zincirinden) ve `faz161` (f8fa21f0e94a zincirinden, hiç merge edilmedi). `faz161`'in `create_hypertable()` çağrıları local DB'de `decisions`/`experiment_registry`/`weight_approvals` tabloları dolu olduğu için başarısız oluyor (`migrate_data=>true` gerekiyor — Timescale, boş olmayan tabloyu varsayılan olarak hypertable'a çevirmiyor). Bu bir alan/version eksikliği değil, gerçek veri var. CI'da DB boş başladığı için sorun yok. Local'de düzeltmek için: ya `migrate_data=>true` ile devam et (veri kaybı yok ama chunk'lara bölünür), ya da local DB'yi sıfırdan kurup migration zincirini baştan çalıştır. | P2 | Migration testi (roadmap Faz 182 gate) |
 | 7 | ~~`weight_approvals` tablosunun kendisi migration zincirinde hiçbir yerde `CREATE TABLE` ile oluşturulmuyor.~~ **KAPANDI** (bu tablo doğrudan Faz 182 bölümünde anlatıldı ama bu satır güncellenmemiş kalmıştı — dokümantasyon sürüklenmesinin kendisine bir örnek): `faz165_base_weight_approvals_table.py` eklendi ve uygulandı. | — | — |
 | 9 | ~~İkinci, kopuk Replay motoru~~ **Kapandı (2026-08-04):** Proje sahibi kararı: `services/replay/` gerçek motor, `services/replay_engine.py` bunun üstünde ince facade. Yapılanlar: (1) `engines/replay/replay_engine.py`'deki `DeterministicReplayEngine` düzeltildi — eskiden `decision_engine.evaluate()` snapshot'ı hiç kullanmıyordu ve verification'ı orijinal event'e karşı (yani kendi kendine, tautolojik — hep True) yapıyordu; şimdi `evaluate(snapshot)` restore edilmiş state'i kullanıyor ve replay edilmiş sonucu orijinalin hash'ine karşı doğruluyor (bkz. yeni test: `test_replay_engine_flags_divergence_when_replay_differs`, replay farklı sonuç üretirse `verified=False` gerçekten yakalanıyor). (2) `services/replay_engine.py.replay_decision()` artık `build_snapshot()` + `ReplayVerifier` + `ReplaySeedManager` kullanıyor (eski ad-hoc `hashlib`+global `random.seed()` yerine); dönüş sözlüğüne gerçek `verification` alanı eklendi. (3) `verify_integrity()` — eskiden var olmayan bir `integrity_hash` DB kolonuna karşı kıyaslıyordu, yani her zaman `False` dönen ölü kod idi; artık `replay_decision()`'ı çağırıp gerçek hash doğrulamasını delegize ediyor. (4) Yan bulgu: real-DB replay path'inde `ctx.decision.proposed_direction` restore edilirken sadece `proposed_direction` anahtarına bakıyordu ama gerçek DB satırında bu alan `direction` — yani gerçek kayıtlarda yön hiç restore edilmiyordu (sadece mock'lu testler çalışıyordu); `direction` fallback eklendi. Kanıt: `tests/test_faz164_replay_determinism.py::test_persist_then_replay` artık `result["verification"]["verified"] is True`'yu gerçek DB'ye karşı assert ediyor. `pytest -q`: 269 passed. | ~~P1~~ **Kapandı** | — |

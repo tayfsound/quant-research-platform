@@ -16,7 +16,7 @@ beri en çok vurgulanan kuralı olduğu için, burada da abartısız yazılıyor
 |---|---|---|
 | Paper trading + gerçek borsa execution | ❌ **Yok** | Faz 172 (Execution Layer) proje sahibinden gerçek (testnet) borsa API key'i bekliyor — bu oturumda kasıtlı olarak dokunulmadı. `exchange_gateway/binance/adapter.py` sadece salt-okunur genel piyasa verisi; emir verme/testnet/paper-live switch mimarisi hiç yok. |
 | Replay + Backtest (deterministik, doğrulanmış) | ✅ **Var, gerçekten doğrulandı** | `services/replay_engine.py` (services/replay/'ın gerçek motor haline getirilmiş hali) + `backtest/` (vektörize motor, embargo walk-forward, metrik motoru, Celery worker). Determinizm: aynı pinlenmiş weight snapshot ile iki backtest çalıştırması birebir aynı sonucu üretiyor (gerçek testle kanıtlı). |
-| AI Learning + Cognitive Memory + Belief/Debate Engine (gerçekten bağlı, ada değil) | ✅ **Büyük ölçüde** | Bu oturumda kapatılan gerçek "ada" örnekleri: `belief_snapshot_id` hiç set edilmiyordu (artık set ediliyor), `debate_result` sessizce atılıyordu (artık explainability zincirine giriyor), `episodes`/`beliefs`/`observations`/`lessons` tabloları hiçbir migration'da yoktu (artık var). |
+| AI Learning + Cognitive Memory + Belief/Debate Engine (gerçekten bağlı, ada değil) | ✅ | Bu oturumda kapatılan gerçek "ada" örnekleri: `belief_snapshot_id` hiç set edilmiyordu, `debate_result` sessizce atılıyordu, `episodes`/`beliefs`/`observations`/`lessons` tabloları hiçbir migration'da yoktu, `MemoryEngine` (episodic memory + embedding) hiçbir yerden çağrılmıyordu (3 gizli bug'ıyla birlikte, çağrılsaydı anında crash ederdi) — hepsi artık gerçek, test kanıtlı. |
 | Risk Engine (fusion-öncesi VE fusion-sonrası, ikisi de gerçek) | ✅ | `GuardrailStage` (erken) + `RiskGateStage` (fusion sonrası) — ikisi de gerçek DB'ye karşı test edilmiş entegrasyon testleriyle kanıtlı (bkz. `tests/test_e2e_scenarios.py`). Risk limitleri artık gerçekten DB-backed ve ADMIN-onaylı (`POST /risk-limits`) — üretimde `/cognitive/run` VE `CognitiveOrchestrator.run_cycle()` (iki bağımsız yol) artık gerçek limitlerle çalışıyor, önceden ikisi de her zaman `MISSING_LIMIT` ile reddediyordu. |
 | Portfolio Management | ✅ | `risk/limits/portfolio.py` (kovaryans + VaR) + `services/portfolio_fusion.py` — 3+ varlık sınıfı ile gerçek entegrasyon testi. |
 | Monitoring + Explainability | ✅ | Prometheus metrikleri artık gerçek kod yollarına bağlı (önceden tamamen dekoratifti). `GET /decisions/{id}/explain` — tam zincir (agent→evidence→belief→debate→risk→weight→outcome), gerçek veriyle kanıtlı. |
@@ -27,9 +27,9 @@ beri en çok vurgulanan kuralı olduğu için, burada da abartısız yazılıyor
 
 ## Bu oturumun sayısal özeti
 
-- **34+ commit**, tamamı push edildi (proje sahibi onayıyla).
+- **36+ commit**, tamamı push edildi (proje sahibi onayıyla).
 - Test sayısı: session başında **çöküyordu** (indent hatası yüzünden 19 test
-  dosyası collection'da patlıyordu) → **343 passed, 1 xpassed, 0 xfailed**.
+  dosyası collection'da patlıyordu) → **348 passed, 1 xpassed, 0 xfailed**.
   `npm run build` (tsc -b + vite) de artık temiz (önceden belgelenmiş, kalan
   bir tip hatası da bu turda kapandı).
 - **~30 gerçek, sessiz bug** bulundu ve düzeltildi — bunların çoğu "kod
@@ -53,13 +53,12 @@ beri en çok vurgulanan kuralı olduğu için, burada da abartısız yazılıyor
 ## Bilinen borçlar (özet — tam liste `AI_MEMORY_SYSTEM/CURRENT_STATE.md`'de)
 
 - Faz 172 (Execution Layer) — gerçek borsa API key'i bekliyor.
-- `/auth/register` bootstrap yarışı — production öncesi bir setup-token
-  ile kapatılmalı (güvenlik incelemesinde bulundu, güven: 5/10).
+- `SECRET_KEY` hâlâ `.env`'deki geliştirme placeholder'ı — gerçek prod'a
+  çıkmadan önce gerçek bir secret üretilip güvenli bir yere konmalı.
 - K8s Ingress'te TLS yok — manifest'ler açıkça "template" olarak işaretli.
-- `MemoryService.store_episode()` production'da hiçbir yerden çağrılmıyor —
-  semantic memory recall şu an boş dönüyor (gap #8'in kapsamına taşındı,
-  proje sahibinin "hangi stage çağırmalı" kararı gerekiyor).
-- Stress/soak test ve gerçek üçüncü taraf güvenlik denetimi yapılmadı.
+- Stress/soak test ve gerçek üçüncü taraf güvenlik denetimi yapılmadı — bu
+  ortamda gerçek eşzamanlı yük üretecek altyapı yok, bağımsız bir denetim
+  için dış bir insan/kurum gerekiyor.
 
 ## Bu sürümün gerçek anlamı
 
