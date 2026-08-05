@@ -88,12 +88,29 @@ class CognitiveOrchestrator:
         else:
             filled_price = market_price
             fee = 0.0
-        
-        # Forward outcome
+
+        # Faz 187: filled_price'ı ctx'e yaz ki RecordingStage (aşağıdaki
+        # finalize() içinde çalışır) gerçek entry_price'ı persist edebilsin —
+        # pozisyon burada GERÇEKTEN açılıyor, kapanışı services/
+        # position_closer.py gerçek zaman geçtikten sonra yapıyor.
+        ctx.decision.filled_price = filled_price
+
+        # Bu anlık "n-bar forward" hesaplaması iki farklı amaca hizmet
+        # ediyor ve bunları birbirinden ayırmak önemli:
+        # 1) ctx.outcome (TradeOutcome) — CognitiveEngine.finalize()'ın
+        #    memory_engine/learning_loop/weight_optimizer'ı tetiklemek için
+        #    HER cycle'da ihtiyaç duyduğu öğrenme sinyali (ctx.outcome is
+        #    None ise learning tamamen atlanıyor — bkz. cognitive_engine.py).
+        #    Bunu kaldırmak öğrenme döngüsünü tamamen kırar (gerçek bulgu,
+        #    tests/test_memory_engine_wiring.py ile yakalandı).
+        # 2) decisions.status/entry_price/exit_price/opened_at/closed_at —
+        #    Faz 187'nin GERÇEK, zaman-bazlı pozisyon yaşam döngüsü. Bu ikisi
+        #    kasıtlı olarak birbirinden bağımsız: decisions.outcome kolonu
+        #    artık kayıt anında hep boş kalıyor (DecisionRecorder), pozisyon
+        #    gerçekten services/position_closer.py ile kapanana kadar.
         outcome = self.forward.calculate(filled_price, direction, data)
         pnl = outcome["pnl"] - fee
         win = outcome["win"]
-        # Outcome'u TradeOutcome contract'ina cevir (P1-12)
         from contracts.outcome import TradeOutcome
         ctx.outcome = TradeOutcome(
             pnl=outcome["pnl"],

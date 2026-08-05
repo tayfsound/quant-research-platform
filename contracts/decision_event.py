@@ -30,3 +30,11 @@ class DecisionEvent(BaseModel):
     weight_snapshot_id: UUID | None = None
     belief_snapshot_id: UUID | None = None
     decision_latency_ms: float = 0.0
+    # Faz 187: gerçek pozisyon yaşam döngüsü (open -> closed), backtest-tarzı
+    # anlık ForwardOutcome hesaplamasından ayrı — bkz. services/position_closer.py
+    status: str = "no_trade"  # "open" | "closed" | "no_trade"
+    entry_price: float | None = None
+    exit_price: float | None = None
+    quantity: float | None = None
+    opened_at: datetime | None = None
+    closed_at: datetime | None = None

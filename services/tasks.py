@@ -2,6 +2,23 @@
 from services.celery_app import celery_app
 
 
+@celery_app.task(name="close_due_positions_task")
+def close_due_positions_task(hold_seconds: int = 600) -> dict:
+    """Faz 187: celery beat tarafından periyodik çalıştırılır (bkz.
+    celery_app.py:beat_schedule) — açık pozisyonlardan yeterince zaman
+    geçmiş olanları gerçek güncel fiyatla kapatır."""
+    from database.repositories.decision_persistor import DecisionPersistor
+    from database.session_factory import SessionFactory
+    from market_data.ingestion.data_provider import get_ohlcv_provider
+    from services.position_closer import PositionCloser
+
+    closer = PositionCloser(get_ohlcv_provider(), hold_seconds=hold_seconds)
+    with SessionFactory.get_session() as session:
+        closed = closer.close_due_positions(DecisionPersistor(session))
+
+    return {"closed_count": len(closed), "closed": closed}
+
+
 @celery_app.task(name="run_backtest_task", bind=True)
 def run_backtest_task(self, symbols: list[str], bars: int = 200, seed: int = 42, fee: float = 0.001) -> dict:
     """Runs the same real CognitiveEngine-backed backtest pipeline

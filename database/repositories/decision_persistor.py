@@ -54,7 +54,10 @@ class DecisionPersistor:
                     weight_snapshot_id,
                     belief_snapshot_id,
                     status,
-                    outcome
+                    outcome,
+                    entry_price,
+                    quantity,
+                    opened_at
                 )
                 VALUES (
                     :id,
@@ -67,7 +70,10 @@ class DecisionPersistor:
                     :weight_snapshot_id,
                     :belief_snapshot_id,
                     :status,
-                    CAST(:outcome AS jsonb)
+                    CAST(:outcome AS jsonb),
+                    :entry_price,
+                    :quantity,
+                    :opened_at
                 )
                 ON CONFLICT (id, timestamp) DO NOTHING
             """),
@@ -92,11 +98,14 @@ class DecisionPersistor:
                     if event.belief_snapshot_id
                     else None
                 ),
-                "status": "pending",
+                "status": event.status,
                 "outcome": json.dumps(
                     event.outcome,
                     default=str,
                 ) if event.outcome else None,
+                "entry_price": event.entry_price,
+                "quantity": event.quantity,
+                "opened_at": event.opened_at,
             },
         )
 
@@ -138,6 +147,58 @@ class DecisionPersistor:
         ).mappings().all()
 
         return [dict(r) for r in rows]
+
+    def list_open_positions(self, limit: int = 200):
+        rows = self.session.execute(
+            text(
+                "SELECT * FROM decisions WHERE status = 'open' "
+                "ORDER BY opened_at DESC LIMIT :limit"
+            ),
+            {"limit": limit},
+        ).mappings().all()
+
+        return [dict(r) for r in rows]
+
+    def list_closed_trades(self, limit: int = 200):
+        rows = self.session.execute(
+            text(
+                "SELECT * FROM decisions WHERE status = 'closed' "
+                "ORDER BY closed_at DESC LIMIT :limit"
+            ),
+            {"limit": limit},
+        ).mappings().all()
+
+        return [dict(r) for r in rows]
+
+    def close_position(
+        self,
+        decision_id: str,
+        exit_price: float,
+        pnl: float,
+        closed_at,
+        outcome: dict | None = None,
+    ) -> None:
+        self.session.execute(
+            text("""
+                UPDATE decisions
+                SET
+                    status = 'closed',
+                    exit_price = :exit_price,
+                    pnl = :pnl,
+                    closed_at = :closed_at,
+                    outcome = CAST(:outcome AS jsonb)
+                WHERE id = :id
+            """),
+            {
+                "id": decision_id,
+                "exit_price": exit_price,
+                "pnl": pnl,
+                "closed_at": closed_at,
+                "outcome": json.dumps(outcome, default=str) if outcome else None,
+            },
+        )
+
+        self.session.commit()
 
     def update_outcome(
         self,

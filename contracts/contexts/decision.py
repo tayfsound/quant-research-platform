@@ -33,3 +33,4 @@ class Decision(BaseModel):
     reconsideration_count: int = 0
     take_profit: float | None = None
     stop_loss: float | None = None
+    filled_price: float | None = None

@@ -5,7 +5,6 @@ import Predictions from './views/Predictions';
 import LivePredictions from './views/LivePredictions';
 import Strategies from './views/Strategies';
 import RiskDashboard from './views/RiskDashboard';
-import AIReasoning from './views/AIReasoning';
 import LatestCycle from './views/LatestCycle';
 import PendingApprovals from './views/PendingApprovals';
 import ExperimentList from './views/ExperimentList';
@@ -39,7 +38,6 @@ function App() {
           {view === 'predictions' && <Predictions />}
           {view === 'strategies' && <Strategies />}
           {view === 'risk' && <RiskDashboard />}
-          {view === 'reasoning' && <AIReasoning />}
           {view === 'cycle' && <LatestCycle />}
           {view === 'approvals' && <PendingApprovals />}
           {view === 'experiments' && <ExperimentList />}

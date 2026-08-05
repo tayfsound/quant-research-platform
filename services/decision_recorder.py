@@ -29,6 +29,14 @@ class DecisionRecorder:
             or getattr(ctx.decision, "final_action", "WAIT")
         )
 
+        # Faz 187: gerçek pozisyon yaşam döngüsü — sadece risk onaylı VE
+        # yönlü (LONG/SHORT) bir işlem gerçekten "açılmış" sayılır. WAIT/
+        # NEUTRAL veya risk tarafından reddedilen bir öneri hiçbir zaman
+        # pozisyon açmaz (no_trade).
+        risk_approved = ctx.risk.evaluation.verdict == "approved"
+        is_directional = direction.upper() in ("LONG", "SHORT")
+        opens_position = risk_approved and is_directional and getattr(ctx.decision, "final_size", 0.0) > 0
+
         agent_opinions_data = [op.model_dump() for op in (opinions or [])]
         if debate_result is not None:
             # Explainability chain (Sprint 16): debate_result used to be
@@ -44,6 +52,12 @@ class DecisionRecorder:
                     else debate_result
                 ),
             })
+
+        # filled_price varsa (orchestrator.py fill_engine.simulate ile
+        # gerçek slippage uygulayıp set ediyor) onu kullan; yoksa (örn.
+        # /cognitive/run fill simülasyonu yapmıyor) en azından gerçek
+        # güncel kapanış fiyatına düş — hiçbir zaman uydurma bir sayı değil.
+        entry_price = getattr(ctx.decision, "filled_price", None) or (ctx.market.raw_snapshot or {}).get("close")
 
         event = DecisionEvent(
             id=ctx.cycle_id,
@@ -66,11 +80,7 @@ class DecisionRecorder:
                 if belief and hasattr(belief, "model_dump")
                 else None
             ),
-            outcome=(
-                ctx.outcome.model_dump()
-                if ctx.outcome and hasattr(ctx.outcome, "model_dump")
-                else None
-            ),
+            outcome=None,
             weight_snapshot_id=weight_snapshot_id,
             # Explainability chain: without this, belief_snapshot_id was
             # always NULL in the decisions table — belief IS saved
@@ -78,6 +88,10 @@ class DecisionRecorder:
             # nothing linked the decision row back to it. "hangi belief?"
             # was unanswerable for any real decision.
             belief_snapshot_id=belief.id if belief is not None else None,
+            status="open" if opens_position else "no_trade",
+            entry_price=entry_price if opens_position else None,
+            quantity=getattr(ctx.decision, "final_size", 0.0) if opens_position else None,
+            opened_at=ctx.timestamp if opens_position else None,
         )
 
         self.persistor.persist(event)

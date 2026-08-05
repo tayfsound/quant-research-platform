@@ -29,3 +29,13 @@ celery_app.conf.update(
 )
 
 celery_app.autodiscover_tasks(["services"], related_name="tasks")
+
+# Faz 187: açık pozisyonları periyodik olarak kontrol edip süresi dolanları
+# gerçek güncel fiyatla kapatır — "sürekli çalışan worker" ihtiyacının ilk
+# gerçek örneği (celery beat ile, `celery -A services.celery_app beat`).
+celery_app.conf.beat_schedule = {
+    "close-due-positions-every-minute": {
+        "task": "close_due_positions_task",
+        "schedule": 60.0,
+    },
+}
