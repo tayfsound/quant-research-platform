@@ -11,6 +11,8 @@ function StatusCard({
   isOn,
   onLabel,
   offLabel,
+  actionOnLabel,
+  actionOffLabel,
   glow,
   loading,
   onToggle,
@@ -21,6 +23,8 @@ function StatusCard({
   isOn: boolean;
   onLabel: string;
   offLabel: string;
+  actionOnLabel: string;
+  actionOffLabel: string;
   glow: "rise" | "accent";
   loading: boolean;
   onToggle: () => void;
@@ -57,7 +61,7 @@ function StatusCard({
         onClick={onToggle}
         className="mt-5"
       >
-        {isOn ? `${offLabel}'a geç` : `${onLabel}'a geç`}
+        {isOn ? actionOffLabel : actionOnLabel}
       </Button>
     </div>
   );
@@ -128,6 +132,8 @@ export default function Dashboard() {
           isOn={isRunning}
           onLabel="Çalışıyor"
           offLabel="Durduruldu"
+          actionOnLabel="Başlat"
+          actionOffLabel="Durdur"
           glow="rise"
           loading={saving === "ai_enabled"}
           onToggle={() => save("ai_enabled", isRunning ? "false" : "true")}
@@ -143,6 +149,8 @@ export default function Dashboard() {
           isOn={isLive}
           onLabel="Live"
           offLabel="Test"
+          actionOnLabel="Live'a geç"
+          actionOffLabel="Test'e dön"
           glow="accent"
           loading={saving === "trading_mode"}
           onToggle={() => save("trading_mode", isLive ? "test" : "live")}

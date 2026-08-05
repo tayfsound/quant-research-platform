@@ -32,9 +32,28 @@ class PositionCloser:
             return (now.replace(tzinfo=None) - opened_at).total_seconds()
         return (now - opened_at).total_seconds()
 
+    def _exit_reason(self, direction: str, current_price: float, stop_loss_price, take_profit_price) -> str | None:
+        """Faz 192: gerçek fiyat, gerçek stop/target seviyesine ulaştı mı?
+        Vade dolmasını beklemeden hemen kapatmak için — hold_seconds sadece
+        hiçbir hedef/stop tanımlı değilse ya da hiçbiri tetiklenmemişse
+        devreye giren bir üst sınır."""
+        if direction == "LONG":
+            if stop_loss_price is not None and current_price <= stop_loss_price:
+                return "stop_loss"
+            if take_profit_price is not None and current_price >= take_profit_price:
+                return "take_profit"
+        elif direction == "SHORT":
+            if stop_loss_price is not None and current_price >= stop_loss_price:
+                return "stop_loss"
+            if take_profit_price is not None and current_price <= take_profit_price:
+                return "take_profit"
+        return None
+
     def close_due_positions(self, decision_repo: DecisionPersistor, timeframe: str = "1m") -> list[dict]:
-        """Yeterince zaman geçmiş (hold_seconds) açık pozisyonları gerçek
-        güncel fiyatla kapatır. Kapatılanların özetini döndürür."""
+        """Açık pozisyonları gerçek güncel fiyatla kontrol eder: fiyat gerçek
+        stop-loss/take-profit seviyesine ulaştıysa hemen kapatır (vade
+        beklemeden); ulaşmadıysa ve hold_seconds dolduysa vadeden kapatır.
+        Kapatılanların özetini döndürür."""
         now = datetime.now(UTC)
         closed = []
 
@@ -43,16 +62,26 @@ class PositionCloser:
             entry_price = pos.get("entry_price")
             if opened_at is None or entry_price is None:
                 continue
-            if self._age_seconds(opened_at, now) < self.hold_seconds:
-                continue
 
             symbol = pos["symbol"]
+            quantity = pos.get("quantity") or 0.0
+            direction = (pos.get("direction") or "").upper()
+            age = self._age_seconds(opened_at, now)
+
             data = self.data_provider.get_ohlcv(symbol, timeframe, limit=1)
             if not data:
                 continue
-            exit_price = data[-1].close
-            quantity = pos.get("quantity") or 0.0
-            direction = (pos.get("direction") or "").upper()
+            current_price = data[-1].close
+
+            exit_reason = self._exit_reason(
+                direction, current_price, pos.get("stop_loss_price"), pos.get("take_profit_price")
+            )
+            if exit_reason is None:
+                if age < self.hold_seconds:
+                    continue
+                exit_reason = "time_expired"
+
+            exit_price = current_price
 
             if direction == "LONG":
                 gross_pnl = (exit_price - entry_price) * quantity
@@ -77,9 +106,13 @@ class PositionCloser:
                     "entry_price": entry_price,
                     "exit_price": exit_price,
                     "quantity": quantity,
-                    "hold_seconds": self._age_seconds(opened_at, now),
+                    "hold_seconds": age,
+                    "exit_reason": exit_reason,
                 },
             )
-            closed.append({"decision_id": str(pos["id"]), "symbol": symbol, "pnl": pnl, "win": pnl > 0})
+            closed.append({
+                "decision_id": str(pos["id"]), "symbol": symbol, "pnl": pnl, "win": pnl > 0,
+                "exit_reason": exit_reason,
+            })
 
         return closed

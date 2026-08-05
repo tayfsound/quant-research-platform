@@ -57,7 +57,9 @@ class DecisionPersistor:
                     outcome,
                     entry_price,
                     quantity,
-                    opened_at
+                    opened_at,
+                    stop_loss_price,
+                    take_profit_price
                 )
                 VALUES (
                     :id,
@@ -73,7 +75,9 @@ class DecisionPersistor:
                     CAST(:outcome AS jsonb),
                     :entry_price,
                     :quantity,
-                    :opened_at
+                    :opened_at,
+                    :stop_loss_price,
+                    :take_profit_price
                 )
                 ON CONFLICT (id, timestamp) DO NOTHING
             """),
@@ -106,6 +110,8 @@ class DecisionPersistor:
                 "entry_price": event.entry_price,
                 "quantity": event.quantity,
                 "opened_at": event.opened_at,
+                "stop_loss_price": event.stop_loss_price,
+                "take_profit_price": event.take_profit_price,
             },
         )
 

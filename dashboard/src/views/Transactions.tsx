@@ -11,8 +11,17 @@ type Position = {
   quantity: number | null;
   status: string;
   pnl: number | null;
+  stop_loss_price: number | null;
+  take_profit_price: number | null;
+  exit_reason: string | null;
   opened_at: string | null;
   closed_at: string | null;
+};
+
+const EXIT_REASON_LABELS: Record<string, string> = {
+  take_profit: "Hedefe ulaştı",
+  stop_loss: "Stop oldu",
+  time_expired: "Vadesi doldu",
 };
 
 function fmt(n: number | null | undefined, digits = 2) {
@@ -71,6 +80,7 @@ export default function Transactions() {
                 <th className="py-2 pr-4">Yön</th>
                 <th className="py-2 pr-4">Giriş Fiyatı</th>
                 <th className="py-2 pr-4">Miktar</th>
+                <th className="py-2 pr-4">Stop / Hedef</th>
                 <th className="py-2 pr-4">Açıldı</th>
               </tr>
             </thead>
@@ -83,6 +93,11 @@ export default function Transactions() {
                   </td>
                   <td className="py-2 pr-4 font-mono text-ink-soft">{fmt(p.entry_price)}</td>
                   <td className="py-2 pr-4 font-mono text-ink-soft">{fmt(p.quantity, 4)}</td>
+                  <td className="py-2 pr-4 font-mono text-xs">
+                    <span className="text-fall">{fmt(p.stop_loss_price)}</span>
+                    {" / "}
+                    <span className="text-rise">{fmt(p.take_profit_price)}</span>
+                  </td>
                   <td className="py-2 pr-4 text-ink-faint">{p.opened_at ? new Date(p.opened_at).toLocaleString() : "—"}</td>
                 </tr>
               ))}
@@ -104,6 +119,7 @@ export default function Transactions() {
                 <th className="py-2 pr-4">Giriş</th>
                 <th className="py-2 pr-4">Çıkış</th>
                 <th className="py-2 pr-4">PnL</th>
+                <th className="py-2 pr-4">Nasıl Kapandı</th>
                 <th className="py-2 pr-4">Kapandı</th>
               </tr>
             </thead>
@@ -118,6 +134,13 @@ export default function Transactions() {
                   <td className="py-2 pr-4 font-mono text-ink-soft">{fmt(t.exit_price)}</td>
                   <td className={`py-2 pr-4 font-mono ${t.pnl && t.pnl > 0 ? "text-rise" : t.pnl && t.pnl < 0 ? "text-fall" : "text-ink-soft"}`}>
                     {fmt(t.pnl)}
+                  </td>
+                  <td className="py-2 pr-4">
+                    {t.exit_reason && (
+                      <Badge tone={t.exit_reason === "take_profit" ? "rise" : t.exit_reason === "stop_loss" ? "fall" : "neutral"}>
+                        {EXIT_REASON_LABELS[t.exit_reason] || t.exit_reason}
+                      </Badge>
+                    )}
                   </td>
                   <td className="py-2 pr-4 text-ink-faint">{t.closed_at ? new Date(t.closed_at).toLocaleString() : "—"}</td>
                 </tr>

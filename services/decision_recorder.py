@@ -59,6 +59,24 @@ class DecisionRecorder:
         # güncel kapanış fiyatına düş — hiçbir zaman uydurma bir sayı değil.
         entry_price = getattr(ctx.decision, "filled_price", None) or (ctx.market.raw_snapshot or {}).get("close")
 
+        # Faz 192: RiskTargetStage'in gerçek ATR'den kurduğu risk/ödül
+        # magnitüdlerini (ctx.decision.stop_loss/take_profit), pozisyon
+        # gerçekten açıldığı andaki entry_price'a göre mutlak fiyat
+        # seviyesine çeviriyoruz — PositionCloser bu seviyeleri kontrol edip
+        # hedefine ulaşan/stop'a takılan pozisyonu vade dolmadan kapatabiliyor.
+        stop_loss_price = None
+        take_profit_price = None
+        if opens_position and entry_price:
+            risk_mag = getattr(ctx.decision, "stop_loss", None)
+            reward_mag = getattr(ctx.decision, "take_profit", None)
+            if risk_mag is not None and reward_mag is not None:
+                if direction.upper() == "LONG":
+                    stop_loss_price = entry_price - risk_mag
+                    take_profit_price = entry_price + reward_mag
+                else:
+                    stop_loss_price = entry_price + risk_mag
+                    take_profit_price = entry_price - reward_mag
+
         event = DecisionEvent(
             id=ctx.cycle_id,
             timestamp=ctx.timestamp,
@@ -92,6 +110,8 @@ class DecisionRecorder:
             entry_price=entry_price if opens_position else None,
             quantity=getattr(ctx.decision, "final_size", 0.0) if opens_position else None,
             opened_at=ctx.timestamp if opens_position else None,
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price,
         )
 
         self.persistor.persist(event)

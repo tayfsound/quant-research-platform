@@ -38,3 +38,8 @@ class DecisionEvent(BaseModel):
     quantity: float | None = None
     opened_at: datetime | None = None
     closed_at: datetime | None = None
+    # Faz 192: RiskTargetStage'in gerçek ATR'den kurduğu risk/ödül
+    # magnitüdlerinin (ctx.decision.stop_loss/take_profit), pozisyon
+    # gerçekten açıldığı andaki entry_price'a göre mutlak fiyat karşılığı.
+    stop_loss_price: float | None = None
+    take_profit_price: float | None = None

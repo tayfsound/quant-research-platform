@@ -20,6 +20,7 @@ router = APIRouter(tags=["positions"])
 
 
 def _serialize(row: dict) -> dict:
+    outcome = row.get("outcome") or {}
     return {
         "id": str(row["id"]),
         "symbol": row["symbol"],
@@ -30,6 +31,9 @@ def _serialize(row: dict) -> dict:
         "confidence": row.get("confidence"),
         "status": row.get("status"),
         "pnl": row.get("pnl"),
+        "stop_loss_price": row.get("stop_loss_price"),
+        "take_profit_price": row.get("take_profit_price"),
+        "exit_reason": outcome.get("exit_reason"),
         "opened_at": row["opened_at"].isoformat() if row.get("opened_at") else None,
         "closed_at": row["closed_at"].isoformat() if row.get("closed_at") else None,
     }

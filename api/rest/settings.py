@@ -60,7 +60,12 @@ async def get_settings_(user: AuthContext = Depends(get_current_user)):
 
 
 @router.post("/{key}")
-async def set_setting(key: str, value: str, user: AuthContext = Depends(require_role(Role.ADMIN))):
+async def set_setting(key: str, value: str, user: AuthContext = Depends(require_role(Role.OPERATOR))):
+    # Faz 192 düzeltmesi: bunlar risk_limits.py'deki hash-imzalı, çok
+    # kullanıcılı onay gerektiren eşiklerden farklı — Dashboard'daki
+    # Start/Stop ve Test/Live gibi günlük operasyonel anahtarlar. ADMIN
+    # zorunluluğu tek kullanıcılı yerel kurulumda gereksiz sürtünmeydi
+    # (gerçek bulgu: kullanıcı Dashboard'da "insufficient_role" hatası aldı).
     _validate(key, value)
     with SessionFactory.get_session() as session:
         AppSettingsRepository(session).set(key, value, updated_by=user.username)
