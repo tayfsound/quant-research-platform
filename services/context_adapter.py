@@ -54,6 +54,13 @@ class ContextAdapter:
             momentum=self._get(ctx, "momentum", "neutral"),
             market_structure=self._get(ctx, "market_structure", "neutral"),
             volume_confirmation=self._get(ctx, "volume_confirmation", False),
+            # Kritik bulgu (2026-08-05): "RSI" (büyük harf) burada zaten
+            # kod tabanının genel konvansiyonuyla (CognitiveBinder,
+            # inner_critic.py, outcome_evaluator.py, salience_detector.py,
+            # onlarca test — hepsi "RSI") tutarlıydı. Asıl kırık taraf
+            # services/orchestrator.py'nin "rsi" (küçük harf) yazması idi —
+            # bu yüzden TechnicalAgent üretimde HİÇBİR ZAMAN gerçek RSI
+            # görmedi, hep 50.0 varsayılanı kullandı. Düzeltme orada.
             rsi_value=self._get(ctx, "RSI", 50.0),
             ema_alignment=self._get(ctx, "ema_alignment", "neutral"),
             volatility_regime=self._get(ctx, "volatility_regime", "normal"),

@@ -39,6 +39,15 @@ beri en çok vurgulanan kuralı olduğu için, burada da abartısız yazılıyor
   devre dışı). Üç bağımsız AI code review'u (Manus/Grok/Kimi) tek tek
   doğrulandı — bir kısmı gerçekti (asyncio.run() event-loop bug'ı, ölü
   ResearchEngine kümesi), bir kısmı uydurmaydı (bkz. CURRENT_STATE.md).
+- **P0 kritik bulgu:** `CognitiveOrchestrator.run_cycle()` (tek gerçek
+  üretim girişi) TechnicalAgent'ın gerçekten skorladığı kategorik alanları
+  (trend, market_structure, vb.) hiç üretmiyordu, RSI de büyük/küçük harf
+  uyuşmazlığı yüzünden hiç gerçek değildi — 9 ajandan 6'sı üretimde her
+  zaman aynı nötr görüşü veriyordu. `market_data/features/signal_engine.py`
+  (yeni) gerçek OHLCV geçmişinden gerçek sinyaller hesaplıyor, hem
+  `run_cycle()` hem `/cognitive/run` artık bunu kullanıyor. Macro/Sentiment/
+  OnChain hâlâ dürüstçe blocked (gerçek dış veri kaynağı yok, icat
+  edilmedi) — FRED/on-chain sprintini bekliyor.
 - Dashboard baştan tasarlandı (Tailwind v4 `@theme` tabanlı, ferah/doğal
   palet) ve önceden placeholder olan 4 sayfa (Market Overview, Predictions,
   Strategies→Agents, Risk Dashboard) gerçek veriye bağlandı — `GET

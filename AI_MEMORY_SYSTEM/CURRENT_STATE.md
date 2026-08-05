@@ -1,9 +1,67 @@
-# Mevcut Durum -- v1.15.0 (Dashboard baştan tasarım + auto-bench + Market Data/Agents API)
+# Mevcut Durum -- v1.16.0 (P0: Council artık üretimde gerçek piyasa verisi görüyor)
 
 **Tarih:** 2026-08-05
 **Branch:** main
-**Son commit (HEAD):** bkz. git log — bu oturumun devamı (dashboard yeniden tasarım + auto-bench + gerçek OHLCV/agent roster endpoint'leri)
-**Test:** 405 passed, 1 xpassed, 0 xfailed. `npm run build` (tsc -b + vite build) temiz.
+**Son commit (HEAD):** bkz. git log — bu oturumun devamı (gerçek feature engineering: signal_engine.py + orchestrator/cognitive.run wiring)
+**Test:** 417 passed, 1 xpassed, 0 xfailed. `npm run build` (tsc -b + vite build) temiz.
+
+## P0 — Council'in üretimde neredeyse tamamen kör olması (2026-08-05, aynı oturum)
+
+Proje sahibinin istediği mimari değerlendirme sırasında bulunan, bu
+oturumun en kritik bulgusu: `CognitiveOrchestrator.run_cycle()` — sistemin
+**tek gerçek üretim giriş noktası** — `ctx.market.features`'a sadece ham
+`rsi`/`ema`/`macd` sayılarını yazıyordu. Ama `ContextAdapter.to_technical()`
+gerçekten `trend`/`momentum`/`market_structure`/`ema_alignment`/
+`volatility_regime` gibi KATEGORİK alanları okuyor — ve **hiçbir kod bu
+alanları üretmiyordu**. Üstüne `orchestrator` `"rsi"` (küçük harf)
+yazıyordu ama kod tabanının geneli (`CognitiveBinder`, `inner_critic.py`,
+`outcome_evaluator.py`, `salience_detector.py`, onlarca test) `"RSI"`
+(büyük harf) bekliyordu — case-sensitivity uyuşmazlığı yüzünden RSI de
+hiç gerçek değildi.
+
+**Gerçek etki:** 9 oy-veren ajandan, üretimde gerçek veriyle çalışan
+sadece **Order Flow** (bu oturumda doğrudan DB'ye bağlandı) ve **Time/
+Epistemology** (kendi kendine hesaplıyor) idi. **Technical, Macro,
+Sentiment, OnChain, Pattern, Quant — 6 ajan her zaman aynı nötr varsayılan
+görüşü üretiyordu, piyasa ne olursa olsun.** Council gerçek bir analiz
+yapıyormuş gibi görünüyordu ama büyük ölçüde sabit girdilerle çalışıyordu.
+
+### Yapılan (gerçek, test kanıtlı)
+- `market_data/features/signal_engine.py` (yeni) — ham OHLCV geçmişinden:
+  - **Technical:** gerçek RSI (case düzeltildi), gerçek MACD signal line
+    (eskiden `macd * 0.9` gibi sahte bir yaklaşıklamaydı — Grok'un
+    bulduğu, doğrulanan bir sorun — artık gerçek bir EMA9-of-MACD serisi),
+    trend (EMA20 vs EMA50), momentum (MACD histogram yönü), market_structure
+    (gerçek swing high/low tespiti), ema_alignment, volatility_regime
+    (rolling realized vol), volume_confirmation.
+  - **Pattern:** break_of_structure/change_of_character/fair_value_gap/
+    swing_structure/liquidity_sweep — kesin tanımlı kurallarla gerçekten
+    hesaplanıyor (ICT/BOS/CHoCH standart tanımları). `structure_phase`
+    (Wyckoff) kasıtlı olarak basitleştirilmiş bir yaklaşım — gerçek Wyckoff
+    analizi çok daha derin hacim/fiyat çalışması gerektirir, bu açıkça
+    kod içinde belirtiliyor, sofistike bir şeymiş gibi sunulmuyor.
+  - **Quant:** zscore, realized_vol_percentile, autocorrelation, Hurst
+    exponent (R/S analizi) — standart, kesin tanımlı istatistiksel
+    hesaplamalar.
+- `services/orchestrator.py`'nin `run_cycle()`'ı ve `api/rest/cognitive.py`'nin
+  `POST /cognitive/run`'ı (eskiden TAMAMEN boş bir context kullanıyordu —
+  hiç market verisi bile çekmiyordu) artık bu gerçek sinyalleri kullanıyor.
+- Kanıt: `tests/test_signal_engine.py` (10 test — elle hazırlanmış,
+  gerçekçi osilasyonlu trend serileri üzerinde trend/market_structure/RSI/
+  FVG/BOS/Hurst doğrulanıyor) + `tests/test_council_sees_real_market_data.py`
+  (gerçek `run_cycle()`/`POST /cognitive/run` çağrısının artık gerçek
+  kategorik sinyaller ürettiğini kanıtlıyor).
+
+### Dürüstçe kapatılmadı — icat edilmedi
+**Macro, Sentiment, OnChain ajanları hâlâ üretimde gerçek dış veri kaynağına
+sahip değil** (`inflation_trend`, `fear_greed_index`, `exchange_outflow_24h`
+gibi alanları hiçbir gerçek kod set etmiyor). Bunun gerçek çözümü sahte
+veri uydurmak değil, gerçek dış kaynaklara bağlanmak — FRED (proje
+sahibinden bekleniyor, ücretsiz), Alternative.me Fear&Greed (key gerekmiyor),
+on-chain metrik motoru (Infura/Alchemy/Helius key'leri hazır, sadece
+kolay/dürüst metrikler — sonraki sprint). Bu üç ajan, o veri kaynakları
+bağlanana kadar bilinçli olarak nötr/varsayılan kalacak — fail-closed,
+fail-fake değil.
 
 ## Dashboard baştan tasarım + gerçek veri (2026-08-05, aynı oturum)
 

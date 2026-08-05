@@ -2,7 +2,11 @@
 from typing import Any
 from database.repositories.risk_limit_repository import load_active_limits
 from market_data.ingestion.data_provider import get_ohlcv_provider, OHLCVProvider
-from market_data.features.indicators import rsi, ema, macd
+from market_data.features.signal_engine import (
+    compute_pattern_signals,
+    compute_quant_signals,
+    compute_technical_signals,
+)
 from simulator.fill_engine import FillEngine
 from ml.training.replay_memory import ReplayMemory
 from services.cognitive_engine import CognitiveEngine
@@ -42,16 +46,25 @@ class CognitiveOrchestrator:
         ctx = CognitiveCycleContext()
         ctx.market.symbol = symbol
         ctx.market.timeframe = timeframe
-        ctx.market.features = {
-            "rsi": rsi(data),
-            "ema": ema(data),
-            "macd": macd(data)["macd"],
-        }
+
+        # Kritik bulgu (2026-08-05): buradan sadece ham rsi/ema/macd sayıları
+        # geçiyordu — TechnicalAgent'ın gerçekten skorladığı trend/momentum/
+        # market_structure/ema_alignment/volatility_regime alanlarını HİÇBİR
+        # kod üretmiyordu (hep varsayılan/nötr), ve Pattern/Quant ajanları da
+        # (bu oturumda eklenen) üretimde tamamen kör çalışıyordu. Artık
+        # gerçek OHLCV geçmişinden hesaplanıyor — bkz. market_data/features/
+        # signal_engine.py.
+        technical_signals = compute_technical_signals(data)
+        pattern_signals = compute_pattern_signals(data)
+        quant_signals = compute_quant_signals(data)
+
+        ctx.market.features = {**technical_signals, **quant_signals}
         ctx.market.raw_snapshot = {
             "close": data[-1].close,
             "volume": data[-1].volume,
             "high": data[-1].high,
             "low": data[-1].low,
+            **pattern_signals,
         }
         # Gap #15: same fix as api/rest/cognitive.py — this used to be an
         # empty dict, so RiskEngine rejected every cycle with MISSING_LIMIT
