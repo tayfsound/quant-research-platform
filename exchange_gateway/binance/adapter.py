@@ -8,6 +8,7 @@ import httpx
 
 from config import get_settings
 from contracts.exchange import OrderBookSnapshot, SymbolInfo
+from contracts.market_data import DataSource
 from exchange_gateway.base import BaseExchangeAdapter
 
 settings = get_settings()
@@ -61,9 +62,11 @@ class BinanceAdapter(BaseExchangeAdapter):
         data = await self._get("/api/v3/depth", {"symbol": symbol, "limit": depth})
         return OrderBookSnapshot(
             time=datetime.now(),
+            exchange=DataSource.BINANCE,
             symbol=symbol,
             bids=[(float(b[0]), float(b[1])) for b in data["bids"]],
             asks=[(float(a[0]), float(a[1])) for a in data["asks"]],
+            source_version="v1",
         )
 
     async def subscribe_to_streams(self, symbols: list[str]) -> None:

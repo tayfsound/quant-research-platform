@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     DEFAULT_TIMEFRAME: str = "1m"
     MARKET_DATA_FALLBACK_TO_MOCK: bool = True
 
+    # TradingView webhook'ları custom auth header göndermiyor (Pine Script
+    # alert mekanizması bunu desteklemiyor) — paylaşılan bir secret'ı alert
+    # mesajının JSON gövdesine gömüp burada doğruluyoruz. Boşsa (dev modu)
+    # doğrulama atlanır — aynı SECRET_KEY/ADMIN_SETUP_TOKEN konvansiyonu.
+    TRADINGVIEW_WEBHOOK_SECRET: str = ""
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings()

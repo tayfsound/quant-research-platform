@@ -3,29 +3,41 @@ import { authHeaders } from '../api/auth';
 
 function AIReasoning() {
   const [explanation, setExplanation] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const testRequest = async () => {
     setLoading(true);
-    const res = await fetch('http://localhost:8000/api/v1/reasoning/explain', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json', ...authHeaders()},
-      body: JSON.stringify({
-        symbol: "BTCUSDT",
-        direction: "LONG",
-        confidence: 0.82,
-        agent_votes: {
-          trend_agent: {direction: "LONG", confidence: 0.85},
-          momentum_agent: {direction: "LONG", confidence: 0.78}
-        },
-        market_snapshot: {price: 50250, rsi_14: 32.5, macd: -125, regime: "sideways"},
-        onchain_signals: {whale_accumulation: true, exchange_outflow_24h: 12500},
-        macro_context: {next_fomc: "2026-07-30", fear_greed_index: 65}
-      })
-    });
-    const data = await res.json();
-    setExplanation(data);
-    setLoading(false);
+    setError(null);
+    setExplanation(null);
+    try {
+      const res = await fetch('/api/v1/reasoning/explain', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', ...authHeaders()},
+        body: JSON.stringify({
+          symbol: "BTCUSDT",
+          direction: "LONG",
+          confidence: 0.82,
+          agent_votes: {
+            trend_agent: {direction: "LONG", confidence: 0.85},
+            momentum_agent: {direction: "LONG", confidence: 0.78}
+          },
+          market_snapshot: {price: 50250, rsi_14: 32.5, macd: -125, regime: "sideways"},
+          onchain_signals: {whale_accumulation: true, exchange_outflow_24h: 12500},
+          macro_context: {next_fomc: "2026-07-30", fear_greed_index: 65}
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(`HTTP ${res.status}: ${data.detail || JSON.stringify(data)}`);
+        return;
+      }
+      setExplanation(data);
+    } catch (e: any) {
+      setError(`Network error: ${e.message || e}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -38,6 +50,11 @@ function AIReasoning() {
       >
         {loading ? 'Thinking...' : 'Test LLM Reasoning'}
       </button>
+      {error && (
+        <div className="bg-red-950 border border-red-800 rounded-lg p-3 mb-4 text-red-300 text-sm">
+          {error}
+        </div>
+      )}
       {explanation && (
         <div className="bg-gray-900 rounded-lg p-4 border border-gray-800">
           <p className="text-green-400 font-semibold">Explanation:</p>
