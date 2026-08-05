@@ -1,9 +1,34 @@
-# Mevcut Durum -- v1.19.0 (Faz 187-189: gerçek pozisyon yaşam döngüsü + kullanıcı risk ayarları + test/dev DB izolasyonu)
+# Mevcut Durum -- v1.24.0 (Faz 187-200: gerçek pozisyon yaşam döngüsü + çoklu varlık + gerçek dış veri + portfolio/pairs trading)
 
-**Tarih:** 2026-08-05
+**Tarih:** 2026-08-06
 **Branch:** main
 **Son commit (HEAD):** bkz. git log
-**Test:** 442 passed (441 + 1 bilinen ağa-bağımlı flaky Ollama testi hariç), 1 xpassed. `npm run build` temiz.
+**Test:** 526 passed, 1 xpassed. `npm run build` temiz.
+
+## Faz 200 — bilinçli olarak yapılmayan trading teknikleri (dürüst sınır)
+
+Proje sahibi "hiçbir yönden eksik kalmasın" isteğiyle opsiyon stratejileri,
+Elliott Wave, Gann, istatistiksel arbitraj/pairs trading sordu. Pairs
+trading gerçekten inşa edildi (Faz 200 — statsmodels ile gerçek Engle-
+Granger kointegrasyon testi). Diğer ikisi BİLİNÇLİ OLARAK yapılmadı:
+
+- **Elliott Wave**: Dalga sayımı büyük ölçüde sübjektif — profesyonel
+  analistler aynı grafikte farklı sayım yapar, kesin tanımlı bir algoritma
+  yok. Kodda "kesin" bir tespit yapılamaz, olsa olsa kaba bir zikzak/pivot
+  tespiti olurdu (structure_phase/Wyckoff'ta zaten yapılan basitleştirme
+  gibi) — katma değeri şüpheli, sahte sofistikasyon riski gerçek.
+- **Gann açıları/kareleri**: Kuant camiada büyük ölçüde pseudo-bilimsel
+  kabul ediliyor (fiyat-zaman simetrisi varsayımının matematiksel/istatistiksel
+  bir temeli kanıtlanmamış). Bunu inşa etmek bu oturumun baştan beri
+  kaçındığı "sahte sofistikasyon" tuzağı olurdu.
+- **Opsiyon stratejileri**: Sistem şu an sadece spot (anlık alım-satım)
+  işlem yapıyor. Opsiyon eklemek yeni bir veri kaynağı (opsiyon zinciri),
+  yeni bir fiyatlama modeli (Black-Scholes, Greeks) ve yeni bir risk modeli
+  gerektirir — teknik olarak yapılabilir ama bugünkü işin kat kat üstünde
+  bir kapsam, ayrı bir proje olarak planlanmalı. Şimdilik yapılmadı.
+
+Bu üçü proje sahibiyle konuşulup onaylandı — "eksik" değil, bilinçli kapsam
+kararı.
 
 ## Faz 189 — testler artık gerçek dev DB'ye asla yazmıyor (kritik altyapı düzeltmesi)
 
