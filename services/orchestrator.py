@@ -75,12 +75,15 @@ class CognitiveOrchestrator:
 
         # Faz 188: test/live modu + gerçek açık pozisyon sayısı/sermaye
         # yüzdesi — RiskEngine (ön) ve RiskGateStage (son) bunları kullanıyor.
-        risk_state = load_position_risk_state()
+        risk_state = load_position_risk_state(symbol=symbol)
         ctx.risk.trading_mode = risk_state["trading_mode"]
         ctx.risk.open_position_count = risk_state["open_position_count"]
         ctx.risk.max_concurrent_positions = risk_state["max_concurrent_positions"]
         ctx.risk.capital_used_pct = risk_state["capital_used_pct"]
         ctx.risk.max_capital_pct = risk_state["max_capital_pct"]
+        ctx.risk.seconds_since_last_trade = risk_state["seconds_since_last_trade"]
+        ctx.risk.min_seconds_between_trades = risk_state["min_seconds_between_trades"]
+        ctx.risk.ai_enabled = risk_state["ai_enabled"]
 
         # Run cognitive engine (council + meta + fusion + risk)
         ctx = self.engine.run(ctx, persist=False)

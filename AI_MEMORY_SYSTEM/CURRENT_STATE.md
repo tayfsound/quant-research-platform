@@ -1,9 +1,69 @@
-# Mevcut Durum -- v1.16.0 (P0: Council artık üretimde gerçek piyasa verisi görüyor)
+# Mevcut Durum -- v1.19.0 (Faz 187-189: gerçek pozisyon yaşam döngüsü + kullanıcı risk ayarları + test/dev DB izolasyonu)
 
 **Tarih:** 2026-08-05
 **Branch:** main
-**Son commit (HEAD):** bkz. git log — bu oturumun devamı (gerçek feature engineering: signal_engine.py + orchestrator/cognitive.run wiring)
-**Test:** 417 passed, 1 xpassed, 0 xfailed. `npm run build` (tsc -b + vite build) temiz.
+**Son commit (HEAD):** bkz. git log
+**Test:** 442 passed (441 + 1 bilinen ağa-bağımlı flaky Ollama testi hariç), 1 xpassed. `npm run build` temiz.
+
+## Faz 189 — testler artık gerçek dev DB'ye asla yazmıyor (kritik altyapı düzeltmesi)
+
+**Bulgu:** Tüm test suite (400+ test) `SessionFactory` üzerinden AYNI gerçek
+geliştirme veritabanına (`quantdb`) yazıyordu — dashboard'un baktığı DB ile
+birebir aynı. Bu, oturum içinde ÜÇ AYRI kullanıcı-görünür yerde gerçek
+bozulmaya sebep oldu: Experiments listesi rastgele test sembolleriyle
+doluyordu, yeni Transactions sayfası "%100 kazanma oranı" gibi anlamsız
+veri gösteriyordu (test'in kendi ürettiği sahte `entry_price=100` vs gerçek
+piyasa fiyatı ~50000 farkından), ve bir test çalıştırması sessizce
+`app_settings`teki `trading_mode`'u `live`'a çevirebiliyordu.
+
+**Düzeltme:** Kök `conftest.py` — pytest herhangi bir test modülünü import
+etmeden önce `DATABASE_URL_SYNC`/`DATABASE_URL`/`TIMESCALE_URL`'i ayrı bir
+`quantdb_test` veritabanına çeviriyor (`config.get_settings()` `@lru_cache`
+olduğu için bunun tüm app import'larından ÖNCE olması şart). `quantdb_test`
+gerçek migration zincirinin tamamıyla (`alembic upgrade head`) kuruldu.
+
+**Bu izolasyon iki gerçek, önceden gizli bug'ı ortaya çıkardı** (migration'lar
+dışında hiç dokunulmamış taze bir DB'de her ikisi de anında patladı):
+1. `EpisodeRepository.save()` / `ObservationRepository.save()` hiçbir zaman
+   `created_at` set etmiyordu — migration'da `nullable=False`, server_default
+   yok. Gerçek dev DB'de sadece şans eseri (elle/dışarıdan eklenmiş
+   `DEFAULT now()` şema kayması) çalışıyor gibi görünüyordu. Artık kod
+   tarafında açıkça `datetime.now(UTC)` set ediliyor.
+2. `experiments` tablosu (curiosity engine, faz166'daki `experiment_registry`
+   ile karıştırılmamalı) hiçbir migration'da tanımlı değildi — yine sadece
+   gerçek dev DB'de dışarıdan var olduğu için hiç fark edilmemişti. faz189
+   migration'ı `CREATE TABLE IF NOT EXISTS` ile hem taze DB'de hem mevcut
+   ghost table'lı dev DB'de güvenle çalışıyor.
+
+**Bir kerelik temizlik:** `quantdb`'deki `decisions` (8917 satır, ezici
+çoğunluğu test sembolleri/varsayılan BTCUSDT test verisi) ve
+`experiment_registry` (5016 satır) tabloları TRUNCATE edildi — hiçbiri
+gerçek bir işlemi temsil etmiyordu (Execution Layer hâlâ yok, Transactions
+özelliği bu oturumda yeni kuruldu). `app_settings` gerçek varsayılanlara
+(`trading_mode=test`, `starting_capital=10000`) sıfırlandı.
+
+## Faz 187-188 — gerçek pozisyon yaşam döngüsü + kullanıcı risk ayarları
+
+- `decisions` artık gerçek `entry_price/exit_price/quantity/opened_at/
+  closed_at` kolonlarına sahip. `services/position_closer.py` açık
+  pozisyonları GERÇEK zaman geçtikten sonra GERÇEK güncel fiyatla kapatıyor
+  (önceki `ForwardOutcome` anlık backtest-tarzı hesaplamasından ayrı — o hâlâ
+  var ama artık sadece learning_loop/memory_engine'in öğrenme sinyali,
+  kullanıcıya gösterilen "gerçek işlem sonucu" değil).
+- `app_settings` (yeni tablo) + `api/rest/settings.py`: `trading_mode`
+  (test/live), `max_concurrent_positions`, `max_capital_pct`,
+  `starting_capital`, `trade_horizon` (kısa/orta/uzun → hold_seconds),
+  `min_seconds_between_trades` (cooldown, mod'dan bağımsız uygulanır),
+  `ai_enabled` (dashboard Start/Stop — kapalıyken yeni pozisyon açılmaz,
+  mevcut açık pozisyonlar etkilenmez).
+- `RiskEngine` + `RiskGateStage`: `AI_STOPPED`/`COOLDOWN_ACTIVE` her modda
+  uygulanır; `trading_mode=test` iken geri kalan tüm kontroller (pozisyon
+  sayısı, sermaye %'si, mevcut limit kontrolleri) tamamen atlanır.
+- Dashboard: Transactions (açık pozisyonlar + kapanmış işlemler + PnL
+  özeti) ve Settings (belirgin Start/Stop + Test/Live düğmeleri + limit
+  formları) sayfaları eklendi. AI Reasoning (Ollama LLM explainer) sayfası
+  kaldırıldı — hardcoded demo payload'ıyla çalışıyordu, gerçek bir karara
+  hiç bağlı değildi.
 
 ## P0 — Council'in üretimde neredeyse tamamen kör olması (2026-08-05, aynı oturum)
 

@@ -1,5 +1,6 @@
 """Observation repository — commit yok, cycle_id opsiyonel."""
 import json
+from datetime import UTC, datetime
 
 from sqlalchemy import text
 
@@ -25,10 +26,14 @@ class ObservationRepository:
             data["cycle_id"] = str(data["cycle_id"])
         if isinstance(data.get("data"), dict):
             data["data"] = json.dumps(data["data"])
+        # Aynı gerçek bulgu: created_at hiç set edilmiyordu, migration'da
+        # nullable=False + server_default yok — sadece gerçek dev DB'nin
+        # şema kayması (elle eklenmiş DEFAULT now()) yüzünden çalışıyordu.
+        data["created_at"] = datetime.now(UTC)
 
         self.session.execute(
-            text("""INSERT INTO observations (id, cycle_id, symbol, observation_type, data)
-               VALUES (:id, :cycle_id, :symbol, :observation_type, :data)"""),
+            text("""INSERT INTO observations (id, cycle_id, symbol, observation_type, data, created_at)
+               VALUES (:id, :cycle_id, :symbol, :observation_type, :data, :created_at)"""),
             data,
         )
 

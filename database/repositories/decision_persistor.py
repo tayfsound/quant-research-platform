@@ -128,6 +128,21 @@ class DecisionPersistor:
 
         return dict(row) if row else None
 
+    def get_last_opened_at(self, symbol: str):
+        """Faz 189: bu sembol için en son gerçekten açılmış pozisyonun
+        opened_at'i (open ya da closed, fark etmez) — cooldown kontrolü
+        için. Hiç pozisyon açılmadıysa None."""
+        row = self.session.execute(
+            text(
+                "SELECT opened_at FROM decisions "
+                "WHERE symbol = :symbol AND opened_at IS NOT NULL "
+                "ORDER BY opened_at DESC LIMIT 1"
+            ),
+            {"symbol": symbol},
+        ).mappings().first()
+
+        return row["opened_at"] if row else None
+
     def list_recent(self, limit: int = 100):
         rows = self.session.execute(
             text(

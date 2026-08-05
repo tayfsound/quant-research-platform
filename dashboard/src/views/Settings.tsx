@@ -50,6 +50,7 @@ export default function Settings() {
   };
 
   const isLive = settings.trading_mode === "live";
+  const isRunning = settings.ai_enabled !== "false";
 
   return (
     <div>
@@ -59,6 +60,29 @@ export default function Settings() {
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}
+
+      <Card className="mb-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="text-sm font-semibold text-ink">AI Durumu</h3>
+              <Badge tone={isRunning ? "rise" : "neutral"}>{isRunning ? "ÇALIŞIYOR" : "DURDURULDU"}</Badge>
+            </div>
+            <p className="text-xs text-ink-soft max-w-md">
+              {isRunning
+                ? "AI yeni pozisyon açabiliyor. Durdurursan yeni işlem almaz, ama açık pozisyonların vadesi dolduğunda/hedefine ulaştığında normal şekilde kapanmaya devam eder."
+                : "AI durduruldu — yeni pozisyon açmıyor. Mevcut açık pozisyonlar etkilenmez, normal şekilde kapanmaya devam ediyor."}
+            </p>
+          </div>
+          <Button
+            variant={isRunning ? "danger" : "primary"}
+            disabled={saving === "ai_enabled"}
+            onClick={() => save("ai_enabled", isRunning ? "false" : "true")}
+          >
+            {isRunning ? "Durdur" : "Başlat"}
+          </Button>
+        </div>
+      </Card>
 
       <Card className="mb-4">
         <div className="flex items-center justify-between">

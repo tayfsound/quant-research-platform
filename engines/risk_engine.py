@@ -11,6 +11,42 @@ class RiskEngine:
     def execute(self, ctx: CognitiveCycleContext) -> CognitiveCycleContext:
         symbol = ctx.market.symbol or "unknown"
 
+        # Faz 190: dashboard Start/Stop düğmesi — kapalıyken (test ya da live
+        # fark etmez) yeni pozisyon açılmaz. Mevcut açık pozisyonlar
+        # PositionCloser üzerinden tamamen bağımsız çalışmaya devam eder.
+        if not ctx.risk.ai_enabled:
+            ctx.risk.evaluation.verdict = "rejected"
+            ctx.risk.evaluation.reasons = [RiskReason(
+                code="AI_STOPPED",
+                message="AI is stopped (dashboard Start/Stop) — no new positions",
+                severity="info",
+            )]
+            risk_decisions_total.labels(verdict="rejected", symbol=symbol).inc()
+            risk_rejections_total.labels(reason="AI_STOPPED").inc()
+            return ctx
+
+        # Faz 189: "stopsuz işlem yapmasın test modunda bile olsa" — bu
+        # kontrol trading_mode="test" iken de uygulanır (aşağıdaki bypass'ın
+        # DIŞINDA), çünkü amaç sermaye riski değil, art arda anlamsız işlem
+        # açılmasını engellemek.
+        if (
+            ctx.risk.seconds_since_last_trade is not None
+            and ctx.risk.min_seconds_between_trades is not None
+            and ctx.risk.seconds_since_last_trade < ctx.risk.min_seconds_between_trades
+        ):
+            ctx.risk.evaluation.verdict = "rejected"
+            ctx.risk.evaluation.reasons = [RiskReason(
+                code="COOLDOWN_ACTIVE",
+                message=(
+                    f"{ctx.risk.seconds_since_last_trade:.0f}s < "
+                    f"{ctx.risk.min_seconds_between_trades}s cooldown"
+                ),
+                severity="info",
+            )]
+            risk_decisions_total.labels(verdict="rejected", symbol=symbol).inc()
+            risk_rejections_total.labels(reason="COOLDOWN_ACTIVE").inc()
+            return ctx
+
         # Faz 188: "test modunda ai sınırsız takılabilsin ... live moda
         # geçtiğinde kurallar devreye girsin" — test modunda tüm kontroller
         # atlanır, her şey onaylanır. Varsayılan "live" (güvenli taraf).

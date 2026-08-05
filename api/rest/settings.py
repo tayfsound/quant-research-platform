@@ -40,6 +40,15 @@ def _validate(key: str, value: str) -> None:
     elif key == "trade_horizon":
         if value not in TRADE_HORIZON_SECONDS:
             raise HTTPException(400, f"trade_horizon must be one of {list(TRADE_HORIZON_SECONDS)}")
+    elif key == "min_seconds_between_trades":
+        try:
+            if int(value) < 0:
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "min_seconds_between_trades must be a non-negative integer")
+    elif key == "ai_enabled":
+        if value not in ("true", "false"):
+            raise HTTPException(400, "ai_enabled must be 'true' or 'false'")
     else:
         raise HTTPException(400, f"unknown setting key: {key}")
 

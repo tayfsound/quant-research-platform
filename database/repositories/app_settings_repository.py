@@ -16,6 +16,14 @@ DEFAULTS: dict[str, str] = {
     "max_capital_pct": "0.5",
     "starting_capital": "10000",
     "trade_horizon": "short",
+    # Faz 189: "stopsuz işlem yapmasın test modunda bile olsa" — aynı sembol
+    # için art arda iki işlem açılışı arasında zorunlu minimum bekleme.
+    "min_seconds_between_trades": "60",
+    # Faz 190: dashboard'daki Start/Stop düğmesi. "false" iken AI yeni
+    # pozisyon AÇMAZ ama mevcut açık pozisyonlar (PositionCloser) tamamen
+    # bağımsız çalışmaya devam eder — hedefine ulaşan/vadesi dolan pozisyon
+    # yine kapanır. Varsayılan "true" (önceki davranışla aynı, regresyon yok).
+    "ai_enabled": "true",
 }
 
 # Faz 187'nin PositionCloser.hold_seconds'ına karşılık gelen ön tanımlı

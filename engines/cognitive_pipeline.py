@@ -253,6 +253,33 @@ class RiskGateStage:
         self.risk_engine = risk_engine
 
     def execute(self, ctx):
+        # Faz 190: Start/Stop düğmesi — bkz. risk_engine.py.
+        if not ctx.risk.ai_enabled:
+            ctx.risk.evaluation.verdict = "rejected"
+            ctx.risk.evaluation.reasons = [RiskReason(
+                code="AI_STOPPED",
+                message="AI is stopped (dashboard Start/Stop) — no new positions",
+                severity="info",
+            )]
+            return ctx
+
+        # Faz 189: cooldown, test modunda bile atlanmaz (bkz. risk_engine.py).
+        if (
+            ctx.risk.seconds_since_last_trade is not None
+            and ctx.risk.min_seconds_between_trades is not None
+            and ctx.risk.seconds_since_last_trade < ctx.risk.min_seconds_between_trades
+        ):
+            ctx.risk.evaluation.verdict = "rejected"
+            ctx.risk.evaluation.reasons = [RiskReason(
+                code="COOLDOWN_ACTIVE",
+                message=(
+                    f"{ctx.risk.seconds_since_last_trade:.0f}s < "
+                    f"{ctx.risk.min_seconds_between_trades}s cooldown"
+                ),
+                severity="info",
+            )]
+            return ctx
+
         # Faz 188: test modunda hem ön hem son risk kapısı devre dışı.
         if ctx.risk.trading_mode == "test":
             ctx.risk.evaluation.verdict = "approved"

@@ -1,5 +1,6 @@
 """Episode repository — CAST ile embedding."""
 import json
+from datetime import UTC, datetime
 
 from sqlalchemy import text
 
@@ -23,10 +24,16 @@ class EpisodeRepository:
             data["embedding"] = "[" + ",".join(str(v) for v in embedding) + "]"
         else:
             data["embedding"] = None
+        # Gerçek bulgu: created_at hiç set edilmiyordu — migration'da
+        # nullable=False ve server_default yok, sadece gerçek dev DB'de
+        # şema kayması (elle eklenmiş DEFAULT now()) yüzünden çalışıyor
+        # gibi görünüyordu. Ayrı, migrations-only bir test DB'sinde
+        # NotNullViolation ile patlıyordu — kod tarafında açıkça set ediliyor.
+        data["created_at"] = datetime.now(UTC)
 
         self.session.execute(
-            text("""INSERT INTO episodes (id, cycle_id, symbol, observation, binding_expression, decision, outcome, lesson, embedding)
-               VALUES (:id, :cycle_id, :symbol, :observation, :binding_expression, :decision, :outcome, :lesson, CAST(:embedding AS vector))"""),
+            text("""INSERT INTO episodes (id, cycle_id, symbol, observation, binding_expression, decision, outcome, lesson, embedding, created_at)
+               VALUES (:id, :cycle_id, :symbol, :observation, :binding_expression, :decision, :outcome, :lesson, CAST(:embedding AS vector), :created_at)"""),
             data,
         )
 
