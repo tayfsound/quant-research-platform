@@ -1,9 +1,27 @@
-# Mevcut Durum -- v1.9.0 (Faz 180 uçtan uca doğrulandı + Faz 181 minimal layout)
+# Mevcut Durum -- v1.9.0 (Faz 180 uçtan uca doğrulandı + Faz 181 minimal layout + Faz 182 güvenlik incelemesi)
 
 **Tarih:** 2026-08-05
 **Branch:** main
-**Son commit (HEAD):** bkz. git log — bu oturumun devamı (Faz 180 tam doğrulama + 4 tablo migration borcu + Faz 181 minimal sidebar layout)
+**Son commit (HEAD):** bkz. git log — bu oturumun devamı (Faz 180 tam doğrulama + 4 tablo migration borcu + Faz 181 minimal sidebar layout + güvenlik incelemesi)
 **Test:** 340 passed, 1 skipped, 1 xpassed, 0 xfailed
+
+## Faz 182 — Güvenlik incelemesi (2026-08-05)
+Bu oturumdaki 26 commit'lik diff (auth sistemi, plugin loader, Celery,
+K8s manifest'leri dahil) üzerinde bağımsız bir güvenlik incelemesi
+(`security-review` skill'i, 6 paralel doğrulama alt-görevi) çalıştırıldı.
+**6 aday bulgu tespit edildi, hepsi bağımsız doğrulamadan geçti, hiçbiri
+yüksek güven eşiğini (≥8/10) geçmedi** — yani şu an "acil düzeltilmeli"
+diyebileceğimiz somut bir güvenlik açığı yok. En değerli bulgu (güven: 5/10,
+düzeltilmesi önerilir ama acil değil): `/auth/register`'da ilk kaydolan
+kullanıcı otomatik ADMIN oluyor ve sonradan rol yükseltme endpoint'i yok —
+bilinçli bir bootstrap deseni (kod yorumunda açıklanıyor) ama gerçek bir
+prod dağıtımından önce tek kullanımlık bir setup token'ıyla kapatılması
+önerilir. Diğer 5 bulgu (plugin trust endpoint'inde path traversal,
+`__init__.py` üzerinden hash-gate bypass, login timing side-channel, Redis
+auth'suzluğu, Ingress'te TLS eksikliği) doğrulamada ya gerçek bir
+exploit yolu bulunamadığı ya da zaten bilinen/belgelenmiş kapsam
+kararlarıyla (örn. ~30 endpoint'in bilinçli olarak auth'suz bırakılması,
+gap #17) çakıştığı için elendi.
 
 ## Faz 181 — Final UI: bilinçli olarak minimal tutuldu (2026-08-05)
 Roadmap tam bir "Bloomberg/TradingView/Cursor/VSCode/Notion karışımı"
