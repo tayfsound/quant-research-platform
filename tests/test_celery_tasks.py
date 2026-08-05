@@ -65,6 +65,32 @@ def test_run_async_endpoint_dispatches_and_task_status_endpoint_reports_it():
                 celery_app.conf.task_always_eager = False
 
 
+def test_run_pairs_trading_task_runs_and_returns_pair_results():
+    """Faz 200: celery beat'in periyodik tetiklediği görev gerçekten
+    analytics/pairs_trading.py'yi çalıştırıp PAIR_CANDIDATES'teki her
+    çift için bir sonuç döndürüyor."""
+    with patch("transformers.AutoModel.from_pretrained"):
+        with patch("transformers.AutoTokenizer.from_pretrained"):
+            from database.repositories.app_settings_repository import AppSettingsRepository
+            from database.session_factory import SessionFactory
+            from services.celery_app import celery_app
+            from services.tasks import run_pairs_trading_task
+
+            with SessionFactory.get_session() as session:
+                AppSettingsRepository(session).set("ai_enabled", "true", updated_by="test")
+
+            celery_app.conf.task_always_eager = True
+            celery_app.conf.task_eager_propagates = True
+            try:
+                async_result = run_pairs_trading_task.delay()
+                assert async_result.successful()
+                body = async_result.result
+                assert "pairs" in body
+                assert len(body["pairs"]) == 3  # PAIR_CANDIDATES'teki 3 çift
+            finally:
+                celery_app.conf.task_always_eager = False
+
+
 def test_run_trading_cycle_task_runs_a_real_cycle_when_ai_enabled():
     """Faz 190: 'gerçek işlem alıyormuş gibi' — celery beat'in periyodik
     tetiklediği görev, gerçek CognitiveOrchestrator.run_cycle()'ı çalıştırır."""

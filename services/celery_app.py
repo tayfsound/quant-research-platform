@@ -50,4 +50,11 @@ celery_app.conf.beat_schedule = {
         "task": "run_trading_cycle_task",
         "schedule": 90.0,
     },
+    # Faz 200: kointegrasyon/spread z-score, teknik göstergelerden çok daha
+    # yavaş değişen istatistiksel ilişkiler — her 90sn'de kontrol etmenin
+    # bir anlamı yok. 5 dakikada bir yeterli.
+    "run-pairs-trading-every-5m": {
+        "task": "run_pairs_trading_task",
+        "schedule": 300.0,
+    },
 }

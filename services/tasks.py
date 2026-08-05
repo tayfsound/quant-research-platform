@@ -63,6 +63,18 @@ def run_trading_cycle_task(symbol: str | None = None) -> dict:
     ]}
 
 
+@celery_app.task(name="run_pairs_trading_task")
+def run_pairs_trading_task() -> dict:
+    """Faz 200: pairs trading / istatistiksel arbitraj — gerçek Engle-
+    Granger kointegrasyon testi + spread z-score (bkz. analytics/
+    pairs_trading.py). Kointegrasyon/z-score yavaş değişen istatistiksel
+    ilişkiler olduğu için trading cycle'dan (90sn) daha seyrek çalışıyor."""
+    from services.pairs_trader import PairsTrader
+
+    results = PairsTrader().check_and_trade_pairs()
+    return {"pairs": results}
+
+
 @celery_app.task(name="close_due_positions_task")
 def close_due_positions_task(hold_seconds: int | None = None) -> dict:
     """Faz 187/188: celery beat tarafından periyodik çalıştırılır (bkz.
