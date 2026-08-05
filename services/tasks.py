@@ -3,14 +3,24 @@ from services.celery_app import celery_app
 
 
 @celery_app.task(name="close_due_positions_task")
-def close_due_positions_task(hold_seconds: int = 600) -> dict:
-    """Faz 187: celery beat tarafından periyodik çalıştırılır (bkz.
-    celery_app.py:beat_schedule) — açık pozisyonlardan yeterince zaman
-    geçmiş olanları gerçek güncel fiyatla kapatır."""
+def close_due_positions_task(hold_seconds: int | None = None) -> dict:
+    """Faz 187/188: celery beat tarafından periyodik çalıştırılır (bkz.
+    celery_app.py:beat_schedule) — açık pozisyonlardan kullanıcının
+    app_settings'te seçtiği vadeden (trade_horizon) fazla süredir açık
+    olanları gerçek güncel fiyatla kapatır."""
+    from database.repositories.app_settings_repository import (
+        TRADE_HORIZON_SECONDS,
+        AppSettingsRepository,
+    )
     from database.repositories.decision_persistor import DecisionPersistor
     from database.session_factory import SessionFactory
     from market_data.ingestion.data_provider import get_ohlcv_provider
     from services.position_closer import PositionCloser
+
+    if hold_seconds is None:
+        with SessionFactory.get_session() as session:
+            horizon = AppSettingsRepository(session).get("trade_horizon")
+        hold_seconds = TRADE_HORIZON_SECONDS.get(horizon, 600)
 
     closer = PositionCloser(get_ohlcv_provider(), hold_seconds=hold_seconds)
     with SessionFactory.get_session() as session:

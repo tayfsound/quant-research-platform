@@ -3,6 +3,7 @@ const GROUPS: { label: string; items: { key: string; label: string }[] }[] = [
     label: "Live",
     items: [
       { key: "live", label: "Live Predictions" },
+      { key: "transactions", label: "Transactions" },
       { key: "cycle", label: "Latest Cycle" },
       { key: "market", label: "Market" },
       { key: "predictions", label: "Predictions" },
@@ -22,6 +23,7 @@ const GROUPS: { label: string; items: { key: string; label: string }[] }[] = [
     label: "Risk & Ops",
     items: [
       { key: "risk", label: "Risk" },
+      { key: "settings", label: "Settings" },
       { key: "approvals", label: "Approvals" },
       { key: "workspace", label: "Workspace" },
     ],

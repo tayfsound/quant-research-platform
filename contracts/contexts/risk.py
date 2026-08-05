@@ -41,3 +41,11 @@ class RiskContext(BaseModel):
     daily_pnl: float = 0.0
     adjustment: RiskAdjustment = Field(default_factory=RiskAdjustment)
     evaluation: RiskEvaluation = Field(default_factory=RiskEvaluation)
+    # Faz 188: kullanıcının app_settings üzerinden kontrol ettiği operasyonel
+    # sınırlar (bkz. services/risk_state.py) — "test" modunda RiskEngine tüm
+    # kontrolleri atlar, "live" modunda hepsi devreye girer.
+    trading_mode: str = "live"
+    open_position_count: int = 0
+    max_concurrent_positions: int | None = None
+    capital_used_pct: float = 0.0
+    max_capital_pct: float | None = None

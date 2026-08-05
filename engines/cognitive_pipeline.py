@@ -253,6 +253,11 @@ class RiskGateStage:
         self.risk_engine = risk_engine
 
     def execute(self, ctx):
+        # Faz 188: test modunda hem ön hem son risk kapısı devre dışı.
+        if ctx.risk.trading_mode == "test":
+            ctx.risk.evaluation.verdict = "approved"
+            return ctx
+
         limits = ctx.risk.limits
         final_size = getattr(ctx.decision, "final_size", 0.0)
         reasons = []
@@ -286,6 +291,20 @@ class RiskGateStage:
             reasons.append(RiskReason(
                 code="DAILY_LOSS_LIMIT",
                 message="Daily loss limit exceeded",
+                severity="critical",
+            ))
+
+        if ctx.risk.max_concurrent_positions is not None and ctx.risk.open_position_count >= ctx.risk.max_concurrent_positions:
+            reasons.append(RiskReason(
+                code="MAX_CONCURRENT_POSITIONS",
+                message=f"{ctx.risk.open_position_count} open >= limit {ctx.risk.max_concurrent_positions}",
+                severity="critical",
+            ))
+
+        if ctx.risk.max_capital_pct is not None and ctx.risk.capital_used_pct >= ctx.risk.max_capital_pct:
+            reasons.append(RiskReason(
+                code="MAX_CAPITAL_PCT",
+                message=f"{ctx.risk.capital_used_pct:.1%} used >= limit {ctx.risk.max_capital_pct:.1%}",
                 severity="critical",
             ))
 

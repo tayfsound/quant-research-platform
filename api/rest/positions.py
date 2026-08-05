@@ -6,6 +6,10 @@ tarafından gerçek zaman geçtikten sonra gerçek fiyatla kapatılıyor."""
 from fastapi import APIRouter, Depends
 
 from contracts.auth import Role
+from database.repositories.app_settings_repository import (
+    TRADE_HORIZON_SECONDS,
+    AppSettingsRepository,
+)
 from database.repositories.decision_persistor import DecisionPersistor
 from database.session_factory import SessionFactory
 from market_data.ingestion.data_provider import get_ohlcv_provider
@@ -56,11 +60,17 @@ async def list_closed_trades(limit: int = 100, user: AuthContext = Depends(get_c
 
 @router.post("/positions/close-due")
 async def close_due_positions(
-    hold_seconds: int = 600,
+    hold_seconds: int | None = None,
     user: AuthContext = Depends(require_role(Role.OPERATOR)),
 ):
     """Prod'da celery beat periyodik çalıştırır (close_due_positions_task);
-    bu endpoint manuel tetikleme ve test için."""
+    bu endpoint manuel tetikleme ve test için. hold_seconds verilmezse
+    kullanıcının Settings'te seçtiği trade_horizon kullanılır."""
+    if hold_seconds is None:
+        with SessionFactory.get_session() as session:
+            horizon = AppSettingsRepository(session).get("trade_horizon")
+        hold_seconds = TRADE_HORIZON_SECONDS.get(horizon, 600)
+
     closer = PositionCloser(get_ohlcv_provider(), hold_seconds=hold_seconds)
     with SessionFactory.get_session() as session:
         closed = closer.close_due_positions(DecisionPersistor(session))

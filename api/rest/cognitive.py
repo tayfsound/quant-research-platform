@@ -4,6 +4,7 @@ from config import get_settings
 from contracts.auth import Role
 from contracts.context import CognitiveCycleContext
 from database.repositories.risk_limit_repository import load_active_limits
+from services.risk_state import load_position_risk_state
 from market_data.features.signal_engine import (
     compute_pattern_signals,
     compute_quant_signals,
@@ -51,6 +52,14 @@ async def run_cognitive_cycle(
     # intentional fail-closed behavior (a fresh deployment must not silently
     # approve trades against no real limit).
     ctx.risk.limits = load_active_limits()
+
+    risk_state = load_position_risk_state()
+    ctx.risk.trading_mode = risk_state["trading_mode"]
+    ctx.risk.open_position_count = risk_state["open_position_count"]
+    ctx.risk.max_concurrent_positions = risk_state["max_concurrent_positions"]
+    ctx.risk.capital_used_pct = risk_state["capital_used_pct"]
+    ctx.risk.max_capital_pct = risk_state["max_capital_pct"]
+
     result = engine.run(ctx)
 
     return {
