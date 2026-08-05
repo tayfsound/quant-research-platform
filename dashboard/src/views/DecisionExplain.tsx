@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { authHeaders } from "../api/auth";
 
 export default function DecisionExplain() {
   const [decisionId, setDecisionId] = useState("");
@@ -9,7 +10,7 @@ export default function DecisionExplain() {
     if (!decisionId.trim()) return;
     setError(null);
     setData(null);
-    fetch(`/api/v1/decisions/${decisionId.trim()}/explain`)
+    fetch(`/api/v1/decisions/${decisionId.trim()}/explain`, { headers: authHeaders() })
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();

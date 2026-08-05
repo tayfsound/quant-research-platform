@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
+import { authHeaders } from "../api/auth";
 
 export default function ExperimentList() {
   const [experiments, setExperiments] = useState<any[]>([]);
 
   useEffect(() => {
-    fetch("/api/v1/experiments/")
+    fetch("/api/v1/experiments/", { headers: authHeaders() })
       .then((r) => r.json())
       .then((data) => setExperiments(data.experiments || []));
   }, []);

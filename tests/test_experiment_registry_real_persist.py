@@ -29,8 +29,14 @@ def test_real_cycle_persists_experiment_registry_row_and_api_lists_it():
             ctx.risk.limits = {"max_position_size": FakeLimit()}
             engine.run(ctx, persist=True)
 
+            from contracts.auth import Role
+            from tests.auth_helpers import make_authed_headers
+
             client = TestClient(app)
-            response = client.get("/api/v1/experiments/?limit=50")
+            response = client.get(
+                "/api/v1/experiments/?limit=50",
+                headers=make_authed_headers(Role.VIEWER),
+            )
 
             assert response.status_code == 200
             experiments = response.json()["experiments"]

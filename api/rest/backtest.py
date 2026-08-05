@@ -1,16 +1,24 @@
 """Backtest API — Sprint 6, async dispatch added Sprint 27."""
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from backtest.backtest_orchestrator import run_and_persist_backtest
+from contracts.auth import Role
 from database.repositories.backtest_run_repository import BacktestRunRepository
 from database.session_factory import SessionFactory
 from market_data.ingestion.mock_adapter import MockOHLCVAdapter
+from services.auth_service import AuthContext, get_current_user, require_role
 
 router = APIRouter(prefix="/backtest", tags=["backtest"])
 
 
 @router.post("/run")
-async def run_backtest(symbols: str = "BTCUSDT", bars: int = 200, seed: int = 42, fee: float = 0.001):
+async def run_backtest(
+    symbols: str = "BTCUSDT",
+    bars: int = 200,
+    seed: int = 42,
+    fee: float = 0.001,
+    user: AuthContext = Depends(require_role(Role.OPERATOR)),
+):
     """Runs a real CognitiveEngine-backed backtest against deterministic mock
     OHLCV data and persists the result. Real historical data ingestion isn't
     wired up yet (see AI_MEMORY_SYSTEM/CURRENT_STATE.md) — this is enough to
@@ -31,7 +39,13 @@ async def run_backtest(symbols: str = "BTCUSDT", bars: int = 200, seed: int = 42
 
 
 @router.post("/run-async")
-async def run_backtest_async(symbols: str = "BTCUSDT", bars: int = 200, seed: int = 42, fee: float = 0.001):
+async def run_backtest_async(
+    symbols: str = "BTCUSDT",
+    bars: int = 200,
+    seed: int = 42,
+    fee: float = 0.001,
+    user: AuthContext = Depends(require_role(Role.OPERATOR)),
+):
     """Sprint 27: dispatches the same backtest to a Celery worker instead of
     running it inline — for a real historical run (thousands of bars, many
     symbols) this is the "ağır işlem" the roadmap wants off the request
@@ -44,7 +58,7 @@ async def run_backtest_async(symbols: str = "BTCUSDT", bars: int = 200, seed: in
 
 
 @router.get("/tasks/{task_id}")
-async def get_backtest_task(task_id: str):
+async def get_backtest_task(task_id: str, user: AuthContext = Depends(get_current_user)):
     from services.celery_app import celery_app
     from celery.result import AsyncResult
 
@@ -58,7 +72,7 @@ async def get_backtest_task(task_id: str):
 
 
 @router.get("/runs")
-async def list_runs(limit: int = 20):
+async def list_runs(limit: int = 20, user: AuthContext = Depends(get_current_user)):
     with SessionFactory.get_session() as session:
         rows = BacktestRunRepository(session).list_recent(limit=limit)
         return {

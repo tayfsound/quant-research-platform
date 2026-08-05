@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
+import { authHeaders } from "../api/auth";
 
 export default function BacktestRuns() {
   const [runs, setRuns] = useState<any[]>([]);
   const [running, setRunning] = useState(false);
 
   const load = () => {
-    fetch("/api/v1/backtest/runs?limit=20")
+    fetch("/api/v1/backtest/runs?limit=20", { headers: authHeaders() })
       .then((r) => r.json())
       .then((data) => setRuns(data.runs || []));
   };
@@ -16,7 +17,7 @@ export default function BacktestRuns() {
 
   const handleRun = () => {
     setRunning(true);
-    fetch("/api/v1/backtest/run?symbols=BTCUSDT&bars=200", { method: "POST" })
+    fetch("/api/v1/backtest/run?symbols=BTCUSDT&bars=200", { method: "POST", headers: authHeaders() })
       .then(() => load())
       .finally(() => setRunning(false));
   };

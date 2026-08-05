@@ -21,7 +21,7 @@ beri en çok vurgulanan kuralı olduğu için, burada da abartısız yazılıyor
 | Portfolio Management | ✅ | `risk/limits/portfolio.py` (kovaryans + VaR) + `services/portfolio_fusion.py` — 3+ varlık sınıfı ile gerçek entegrasyon testi. |
 | Monitoring + Explainability | ✅ | Prometheus metrikleri artık gerçek kod yollarına bağlı (önceden tamamen dekoratifti). `GET /decisions/{id}/explain` — tam zincir (agent→evidence→belief→debate→risk→weight→outcome), gerçek veriyle kanıtlı. |
 | Research Workspace + Plugin System | ✅ | Hash-gated plugin loader + Research Workspace UI — kod değiştirmeden, sadece UI'dan yeni bir agent eklenip çalıştığı gerçek bir testle kanıtlı. |
-| API + Auth | ⚠️ **Kısmi** | Gerçek User/Role/API Key/Audit Log altyapısı var, JWT+bcrypt kullanıyor, her yetkilendirme kararı loglanıyor. Ama roadmap'in istediği gibi TÜM endpoint'lere yayılmadı — sadece en yüksek riskli olanlar (weight approval, plugin trust/upload) korumalı; ~30 endpoint hâlâ auth'suz (bilinçli, belgelenmiş kapsam kararı). |
+| API + Auth | ✅ | Gerçek User/Role/API Key/Audit Log altyapısı var, JWT+bcrypt kullanıyor, her yetkilendirme kararı loglanıyor. Tüm REST router'ları artık en az `get_current_user` (VIEWER+) ile korumalı; hesaplama tetikleyen POST'lar (cognitive/run, orchestrator/cycle, backtest/run, strategies/simulate) `require_role(OPERATOR)`, en yüksek riskli olanlar (weight approval, plugin trust/upload) `require_role(ADMIN)`. Dashboard frontend de auth header'larıyla güncellendi. |
 | Cloud deployment | ✅ **Gerçek bir K8s cluster'da uçtan uca doğrulandı** | Docker image build edildi, gerçek bir `kind` cluster'a deploy edildi, 5 gerçek bug bulunup düzeltildi (hardcoded DB bağlantısı, eksik Dockerfile, eksik 13 bağımlılık, `.env`'in image'a gömülmesi, yanlış health check'ler, startup/liveness probe hataları). Gerçek bir HTTP isteği gerçek Postgres'e gerçek bir kullanıcı yazdı. |
 | Profesyonel UI | ⚠️ **Bilinçli olarak minimal** | Tam "Bloomberg/TradingView" terminal deneyimi kurulmadı — projenin kendi "büyük UI geliştirme yok" kuralıyla çelişiyordu. Bunun yerine 13 view'ı gruplu bir sidebar'a taşıyan minimal bir düzenleme yapıldı. |
 
@@ -47,7 +47,6 @@ beri en çok vurgulanan kuralı olduğu için, burada da abartısız yazılıyor
 ## Bilinen borçlar (özet — tam liste `AI_MEMORY_SYSTEM/CURRENT_STATE.md`'de)
 
 - Faz 172 (Execution Layer) — gerçek borsa API key'i bekliyor.
-- Auth'un tam endpoint kapsaması — bilinçli olarak ertelendi.
 - `/auth/register` bootstrap yarışı — production öncesi bir setup-token
   ile kapatılmalı (güvenlik incelemesinde bulundu, güven: 5/10).
 - K8s Ingress'te TLS yok — manifest'ler açıkça "template" olarak işaretli.

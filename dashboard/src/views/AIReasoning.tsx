@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { authHeaders } from '../api/auth';
 
 function AIReasoning() {
   const [explanation, setExplanation] = useState(null);
@@ -8,7 +9,7 @@ function AIReasoning() {
     setLoading(true);
     const res = await fetch('http://localhost:8000/api/v1/reasoning/explain', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: {'Content-Type': 'application/json', ...authHeaders()},
       body: JSON.stringify({
         symbol: "BTCUSDT",
         direction: "LONG",

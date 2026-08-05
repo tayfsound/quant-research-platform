@@ -23,8 +23,14 @@ def test_replay_decision_endpoint_verifies_real_recorded_decision():
             with SessionFactory.get_session() as session:
                 DecisionPersistor(session).persist(event)
 
+            from contracts.auth import Role
+            from tests.auth_helpers import make_authed_headers
+
             client = TestClient(app)
-            response = client.post(f"/api/v1/replay/decision/{event.id}")
+            response = client.post(
+                f"/api/v1/replay/decision/{event.id}",
+                headers=make_authed_headers(Role.VIEWER),
+            )
 
             assert response.status_code == 200
             body = response.json()

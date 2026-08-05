@@ -1,6 +1,8 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from contracts.auth import Role
 from contracts.context import CognitiveCycleContext
+from services.auth_service import AuthContext, require_role
 from services.cognitive_engine import CognitiveEngine
 
 router = APIRouter(prefix="/cognitive", tags=["cognitive"])
@@ -9,7 +11,7 @@ engine = CognitiveEngine()
 
 
 @router.post("/run")
-async def run_cognitive_cycle():
+async def run_cognitive_cycle(user: AuthContext = Depends(require_role(Role.OPERATOR))):
     ctx = CognitiveCycleContext()
     result = engine.run(ctx)
 

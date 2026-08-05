@@ -42,12 +42,21 @@ def test_run_async_endpoint_dispatches_and_task_status_endpoint_reports_it():
             celery_app.conf.task_always_eager = True
             celery_app.conf.task_eager_propagates = True
             try:
+                from contracts.auth import Role
+                from tests.auth_helpers import make_authed_headers
+
                 client = TestClient(app)
-                dispatch = client.post("/api/v1/backtest/run-async?symbols=BTCUSDT&bars=15")
+                dispatch = client.post(
+                    "/api/v1/backtest/run-async?symbols=BTCUSDT&bars=15",
+                    headers=make_authed_headers(Role.OPERATOR),
+                )
                 assert dispatch.status_code == 200
                 task_id = dispatch.json()["task_id"]
 
-                status = client.get(f"/api/v1/backtest/tasks/{task_id}")
+                status = client.get(
+                    f"/api/v1/backtest/tasks/{task_id}",
+                    headers=make_authed_headers(Role.VIEWER),
+                )
                 assert status.status_code == 200
                 body = status.json()
                 assert body["status"] == "SUCCESS"

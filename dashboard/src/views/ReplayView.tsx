@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { authHeaders } from "../api/auth";
 
 export default function ReplayView() {
   const [decisionId, setDecisionId] = useState("");
@@ -10,7 +11,7 @@ export default function ReplayView() {
     if (!decisionId.trim()) return;
     setLoading(true);
     setError(null);
-    fetch(`/api/v1/replay/decision/${decisionId.trim()}`, { method: "POST" })
+    fetch(`/api/v1/replay/decision/${decisionId.trim()}`, { method: "POST", headers: authHeaders() })
       .then((r) => r.json())
       .then((data) => {
         if (data.error) setError(data.error);

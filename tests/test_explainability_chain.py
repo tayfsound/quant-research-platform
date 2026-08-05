@@ -35,8 +35,14 @@ def test_explain_endpoint_resolves_the_full_chain_from_real_data():
             result_ctx = engine.run(ctx, persist=True)
             decision_id = str(result_ctx.cycle_id)
 
+            from contracts.auth import Role
+            from tests.auth_helpers import make_authed_headers
+
             client = TestClient(app)
-            response = client.get(f"/api/v1/decisions/{decision_id}/explain")
+            response = client.get(
+                f"/api/v1/decisions/{decision_id}/explain",
+                headers=make_authed_headers(Role.VIEWER),
+            )
 
             assert response.status_code == 200
             body = response.json()
@@ -62,6 +68,12 @@ def test_explain_endpoint_404s_for_unknown_decision():
             from fastapi.testclient import TestClient
             from api.main import app
 
+            from contracts.auth import Role
+            from tests.auth_helpers import make_authed_headers
+
             client = TestClient(app)
-            response = client.get("/api/v1/decisions/00000000-0000-0000-0000-000000000000/explain")
+            response = client.get(
+                "/api/v1/decisions/00000000-0000-0000-0000-000000000000/explain",
+                headers=make_authed_headers(Role.VIEWER),
+            )
             assert response.status_code == 404

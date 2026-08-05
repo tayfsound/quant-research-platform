@@ -1,8 +1,10 @@
 // Minimal API client -- P2-15
+import { authHeaders } from "./auth";
+
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
 export async function fetchLatestCycle() {
-  const res = await fetch(`${API_BASE}/api/v1/dashboard/latest`);
+  const res = await fetch(`${API_BASE}/api/v1/dashboard/latest`, { headers: authHeaders() });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }

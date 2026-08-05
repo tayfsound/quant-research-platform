@@ -1,9 +1,34 @@
-# Mevcut Durum -- v1.9.0 (Faz 180 uçtan uca doğrulandı + Faz 181 minimal layout + Faz 182 güvenlik incelemesi)
+# Mevcut Durum -- v1.10.0 (Faz 180 uçtan uca doğrulandı + Faz 181 minimal layout + Faz 182 güvenlik incelemesi + gap #17 kapatıldı)
 
 **Tarih:** 2026-08-05
 **Branch:** main
-**Son commit (HEAD):** bkz. git log — bu oturumun devamı (Faz 180 tam doğrulama + 4 tablo migration borcu + Faz 181 minimal sidebar layout + güvenlik incelemesi)
-**Test:** 340 passed, 1 skipped, 1 xpassed, 0 xfailed
+**Son commit (HEAD):** bkz. git log — bu oturumun devamı (Faz 180 tam doğrulama + 4 tablo migration borcu + Faz 181 minimal sidebar layout + güvenlik incelemesi + auth'un kalan endpoint'lere yayılması)
+**Test:** 340 passed, 1 xpassed, 0 xfailed
+
+## Faz 183+ — Auth: kalan ~12 router'a yayılım, gap #17 kapatıldı (2026-08-05)
+Faz 178-179'da bilinçli olarak ertelenen "TÜM endpoint'lere auth" işi
+tamamlandı. `api/rest/cognitive.py`, `orchestrator.py`, `dashboard.py`,
+`memory.py`, `models.py`, `reasoning.py`, `strategies.py`, `audit.py`,
+`experiments.py`, `explainability.py`, `replay.py`, `backtest.py` — hepsine
+`Depends(get_current_user)` (salt-okuma, VIEWER+) ya da
+`Depends(require_role(Role.OPERATOR))` (gerçek hesaplama tetikleyen POST'lar:
+cognitive/run, orchestrator/cycle, dashboard/latest, strategies/simulate,
+backtest/run, backtest/run-async) eklendi. `weights.py` ve `workspace.py`
+zaten korumalıydı (Faz 178-179).
+
+Bunu bozan 6 test dosyası (`test_api_orchestrator.py`, `test_dashboard_api.py`,
+`test_celery_tasks.py`, `test_experiment_registry_real_persist.py`,
+`test_explainability_chain.py`, `test_replay_decision_api.py`)
+`tests/auth_helpers.py`'ın `make_authed_headers()` yardımcısıyla güncellendi.
+
+Bu değişiklik dashboard frontend'ini de kırıyordu — `dashboard/src/api/client.ts`
+(`fetchLatestCycle`) ve 5 view (`AIReasoning.tsx`, `DecisionExplain.tsx`,
+`BacktestRuns.tsx`, `ExperimentList.tsx`, `ReplayView.tsx`) artık-korumalı
+endpoint'leri `authHeaders()` olmadan çağırıyordu (401 alırlardı). Hepsine
+`dashboard/src/api/auth.ts`'deki `authHeaders()` eklendi; `npx tsc --noEmit`
+temiz.
+
+`pytest -q`: 340 passed, 1 xpassed (backend); gap #17 artık kapalı.
 
 ## Faz 182 — Güvenlik incelemesi (2026-08-05)
 Bu oturumdaki 26 commit'lik diff (auth sistemi, plugin loader, Celery,
@@ -594,7 +619,7 @@ gerektirmiyordu, bu yüzden kurulabildi.
 ### Bilinçli yapılmayanlar (proje sahibiyle kapsam anlaşması)
 | # | Ne | Neden şimdi değil |
 |---|----|--------------------|
-| 17 | Roadmap'in istediği geri kalan ~30 endpoint (cognitive/run, replay, backtest, experiments, dashboard, vb.) hâlâ auth'suz — herkes çağırabilir. | Kapsam bilinçli olarak "gerçek altyapı + en yüksek riskli endpoint" ile sınırlandı; tam yayılma ayrı, büyük bir iş (her router'ı gözden geçir, hangi rolün neye erişmesi gerektiğine karar ver). |
+| 17 | ~~Roadmap'in istediği geri kalan ~30 endpoint (cognitive/run, replay, backtest, experiments, dashboard, vb.) hâlâ auth'suz.~~ **KAPANDI** (bkz. yukarıdaki "Faz 183+" bölümü, 2026-08-05) — tüm router'lar artık en az `get_current_user` (VIEWER+) ile korunuyor. | — |
 | 18 | Sprint 21 (REST+WS API yüzeyinin tamamlanması — backtest tetikleme/replay sorgulama zaten var ama "tam" değil) ve Sprint 24'ün "penetrasyon testi" kısmı yapılmadı. | Auth altyapısı yeni kuruldu; bağımsız bir güvenlik incelemesi (roadmap'in kendi önerisi) altyapı oturmadan anlamlı değil. |
 | 19 | `SECRET_KEY` hâlâ `.env`'deki geliştirme placeholder'ı (`degistirin-cok-gizli-bir-anahtar`) — gerçek sızıntı değil ama **production'a asla bu değerle çıkılmamalı**. | Gerçek rastgele bir `SECRET_KEY` üretmek/rotasyon prosedürü proje sahibinin production dağıtım kararına bağlı. |
 
