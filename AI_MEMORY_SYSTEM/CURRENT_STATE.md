@@ -1,9 +1,63 @@
-# Mevcut Durum -- v1.12.0 (Faz 183 sonrası temizlik turu: gap #7/#8/#12/#15/#16/#18 + auth bootstrap kapatıldı)
+# Mevcut Durum -- v1.13.0 (Faz 183 sonrası temizlik turu + agent kalitesi turu)
 
 **Tarih:** 2026-08-05
 **Branch:** main
-**Son commit (HEAD):** bkz. git log — bu oturumun devamı (auth yayılımı + risk limit P0 fix + ölü kod temizliği + WS gerçek veri + MemoryEngine wiring + admin bootstrap token)
-**Test:** 348 passed, 1 xpassed, 0 xfailed. `npm run build` (tsc -b + vite build) temiz.
+**Son commit (HEAD):** bkz. git log — bu oturumun devamı (auth yayılımı + risk limit P0 fix + ölü kod temizliği + WS gerçek veri + MemoryEngine wiring + admin bootstrap token + RiskChallenger/SourceReliability wiring)
+**Test:** 351 passed, 1 xpassed, 0 xfailed. `npm run build` (tsc -b + vite build) temiz.
+
+## Agent kalitesi turu — Council/Debate katmanındaki iki gizli ada kapatıldı (2026-08-05, aynı oturum)
+
+Proje sahibi "agent'ların çalışması konusunda yapabileceğimiz geliştirmeler
+var mı" diye sordu — `agents/`+`services/council_orchestrator.py`+
+`services/agent_debate.py` incelenirken, tam olarak bu oturumun geri kalanıyla
+aynı desende **iki gerçek, üretimi sessizce etkisiz kılan bug** bulundu:
+
+1. **RiskChallenger fiilen hiçbir zaman itiraz üretemiyordu.**
+   `CouncilOrchestrator.deliberate()` `self.debate.run_debate(opinions, {})`'ı
+   HARDCODED boş bir context ile çağırıyordu. `RiskChallenger.challenge()`'ın
+   iki ana kontrolü (`volatility > 0.7`, `crowding_risk > 0.6`)
+   `context.get(...)` üzerinden okuduğu için her zaman `0.0`'a düşüyordu —
+   eşikleri geçmesi matematiksel olarak imkansızdı. Üçüncü kontrol
+   (`data_quality < 0.5`) de ölüydü çünkü 4 gerçek ajanın hepsi
+   `data_quality`'yi sabit ≥0.75 raporluyor. Sonuç: roadmap'in vurguladığı
+   "risk katmanı kararları eleştirir" mekanizması production'da **hiçbir
+   zaman hiçbir şey yapmıyordu.** Düzeltme: `CouncilOrchestrator.
+   _build_debate_context()` eklendi — `volatility`'yi gerçek
+   `TechnicalContext.volatility_regime`'den, `crowding_risk`'i gerçek
+   opinion'ların yön dağılımından (çoğunluk yönü / toplam yönlü opinion)
+   hesaplıyor. Kanıt: `tests/test_risk_challenger_context.py` — yüksek
+   volatilite + unanimous yön + yüksek confidence senaryosu artık
+   gerçekten en az bir `RiskChallenge` üretiyor (öncesinde HİÇBİR girdi
+   için üretemezdi).
+
+2. **SourceReliabilityAgent/ReliabilityAnnotator hiçbir yerden çağrılmıyordu.**
+   Tam çalışan, kendi testi yeşil bir sınıftı ama hiç entegre edilmemişti —
+   her ajanın `source_reliability`'si sonsuza kadar kendi hardcoded
+   sabitinde donuk kalıyordu (`TechnicalAgent` hep 0.75, `MacroAgent` hep
+   0.9, vb.), gerçek geçmiş performansına göre HİÇ uyarlanmıyordu.
+   `source_reliability`, `intrinsic_trust`'ın %20'si ve `BeliefEngine.
+   apply_weights()`'in doğrudan kullandığı `effective_influence`'ı
+   etkiliyor — yani bu kozmetik değil, gerçek karar ağırlıklandırmasını
+   sessizce etkileyen bir eksiklik. `CouncilOrchestrator.__init__`'e
+   `self.reliability_annotator = ReliabilityAnnotator()` eklendi,
+   `deliberate()` artık her cycle'da opinion'ları annotate edip
+   `source_reliability`'yi gerçek geçmiş ortalamaya göre güncelliyor ve
+   `.recalculate()`'i tekrar çağırıyor. Kanıt: `tests/
+   test_council_reliability_wiring.py` — birkaç düşük-confidence'lı cycle
+   sonrası bir ajanın `source_reliability`'sinin artık kendi hardcoded
+   varsayılanından farklı olduğu (gerçek geçmişi yansıttığı) doğrulanıyor.
+
+**Yan not — proje sahibiyle konuşuldu, henüz başlanmadı:** Market data
+tarafında da aynı desen var — `exchange_gateway/binance/adapter.py`
+(REST), `exchange_gateway/binance/live_feed.py` (WS), `market_data/
+ingestion/pipeline.py` hepsi gerçek ve çalışır durumda ama **hiçbir
+yerden çağrılmıyor**, ve olsalar bile `events/message_bus.py` sadece
+in-memory (hiçbir kalıcı subscriber yok, hiçbir OHLCV/tick tablosu yok).
+Şu an gerçekte olan: `CognitiveOrchestrator.run_cycle()` her seferinde
+tek seferlik, kalıcı olmayan bir REST çekimi yapıyor. Gerçek, sürekli
+çalışan, DB'ye yazan bir Market Data Service'in inşası — Execution
+Layer'ın aksine testnet key GEREKTİRMİYOR (genel piyasa verisi kimlik
+doğrulama istemiyor) — ayrı, sıradaki bir sprint olarak planlandı.
 
 ## Gap #8 — MemoryEngine gerçekten kablolandı (2026-08-05, aynı oturum)
 
