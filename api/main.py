@@ -6,8 +6,8 @@ from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
-from api.rest import audit, auth, backtest, cognitive, dashboard, experiments, explainability, memory, models, orchestrator, reasoning, replay, strategies, weights, workspace
-from api.websocket import decisions, live_predictions
+from api.rest import audit, auth, backtest, cognitive, dashboard, experiments, explainability, memory, models, orchestrator, reasoning, replay, risk_limits, strategies, weights, workspace
+from api.websocket import live_predictions
 from api.websocket.cycle_feed import websocket_endpoint
 from observability.health import router as health_router
 from observability.metrics import api_request_latency_seconds, api_requests_total, get_metrics
@@ -62,7 +62,6 @@ app.include_router(weights.router, prefix="/api/v1")
 app.include_router(experiments.router, prefix="/api/v1")
 app.include_router(strategies.router, prefix="/api/v1")
 app.include_router(models.router, prefix="/api/v1")
-app.include_router(decisions.router, prefix="/api/v1")
 app.include_router(live_predictions.router, prefix="/api/v1")
 app.include_router(reasoning.router, prefix="/api/v1")
 app.include_router(audit.router, prefix="/api/v1")
@@ -74,6 +73,7 @@ app.include_router(backtest.router, prefix="/api/v1")
 app.include_router(explainability.router, prefix="/api/v1")
 app.include_router(workspace.router, prefix="/api/v1")
 app.include_router(auth.router, prefix="/api/v1")
+app.include_router(risk_limits.router, prefix="/api/v1")
 
 @app.websocket("/ws/cycle")
 async def cycle_websocket(websocket: WebSocket):

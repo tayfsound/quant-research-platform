@@ -2,7 +2,7 @@
 from uuid import uuid4
 from datetime import datetime, UTC
 from contracts.decision_event import DecisionEvent
-from services.decision_persistor import DecisionPersistor
+from database.repositories.decision_persistor import DecisionPersistor
 from services.replay_engine import ReplayEngine
 from database.session_factory import SessionFactory
 

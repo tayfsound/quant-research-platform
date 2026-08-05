@@ -1,5 +1,6 @@
 """End-to-end cognitive loop orchestrator — v1.1 trusted paper cycle."""
 from typing import Any
+from database.repositories.risk_limit_repository import load_active_limits
 from market_data.ingestion.data_provider import get_ohlcv_provider, OHLCVProvider
 from market_data.features.indicators import rsi, ema, macd
 from simulator.fill_engine import FillEngine
@@ -52,7 +53,12 @@ class CognitiveOrchestrator:
             "high": data[-1].high,
             "low": data[-1].low,
         }
-        
+        # Gap #15: same fix as api/rest/cognitive.py — this used to be an
+        # empty dict, so RiskEngine rejected every cycle with MISSING_LIMIT
+        # regardless of what self.max_position_size/max_drawdown_limit said
+        # (those constructor args were never actually wired to the risk gate).
+        ctx.risk.limits = load_active_limits()
+
         # Run cognitive engine (council + meta + fusion + risk)
         ctx = self.engine.run(ctx, persist=False)
         
@@ -111,4 +117,7 @@ class CognitiveOrchestrator:
             "risk_verdict": ctx.risk.evaluation.verdict if ctx.risk.evaluation else "unknown",
             "risk_reasons": [str(r) for r in ctx.risk.evaluation.reasons] if ctx.risk.evaluation else [],
             "action": ctx.decision.action.value if ctx.decision.action else "WAIT",
+            "confidence": ctx.decision.confidence,
+            "features": ctx.market.features,
+            "symbol": symbol,
         }

@@ -8,7 +8,7 @@ from contracts.decision_event import DecisionEvent
 from contracts.outcome import DecisionEvaluation, TradeOutcome
 from database.connection import get_session
 from services.agent_memory import AgentMemory
-from services.decision_persistor import DecisionPersistor
+from database.repositories.decision_persistor import DecisionPersistor
 from services.outcome_evaluator import OutcomeEvaluator
 from services.weight_optimizer import WeightOptimizer
 from services.weight_repository import WeightRepository

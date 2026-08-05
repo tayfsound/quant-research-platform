@@ -1,5 +1,6 @@
 """Cognitive Engine — opinions akışı + RecordingStage + feedback loop."""
 from agents.registry import AgentRegistry
+from config import get_settings
 from contracts.agent_weight_snapshot import AgentWeightSnapshot
 from contracts.context import CognitiveCycleContext
 from database.connection import get_session
@@ -31,7 +32,12 @@ class CognitiveEngine:
         data past that point in time."""
         registry = AgentRegistry.create_default()
 
-        self.guardrail_stage = GuardrailStage(RiskEngine())
+        # Gap #15: RiskLimitEntry.verify(secret) needs a real secret to mean
+        # anything — an empty secret (the old default) makes hash-signed
+        # limits unverifiable in any meaningful sense. SECRET_KEY empty in
+        # dev is fine: RiskLimitEntry.verify() already treats hash="" as
+        # "development mode, always pass".
+        self.guardrail_stage = GuardrailStage(RiskEngine(secret=get_settings().SECRET_KEY))
         self.memory_stage = MemoryStage()
         self.knowledge_stage = KnowledgeStage()
         self.binder_stage = BinderStage()

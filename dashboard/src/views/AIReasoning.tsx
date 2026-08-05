@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { authHeaders } from '../api/auth';
 
 function AIReasoning() {
-  const [explanation, setExplanation] = useState(null);
+  const [explanation, setExplanation] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
   const testRequest = async () => {

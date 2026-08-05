@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 
 function LivePredictions() {
-  const [prediction, setPrediction] = useState(null);
+  const [prediction, setPrediction] = useState<any>(null);
 
   useEffect(() => {
-    const ws = new WebSocket('ws://localhost:8000/stream/live');
+    const ws = new WebSocket('ws://localhost:8000/api/v1/stream/live');
     ws.onmessage = (event) => {
       setPrediction(JSON.parse(event.data));
     };

@@ -1,9 +1,120 @@
-# Mevcut Durum -- v1.10.0 (Faz 180 uçtan uca doğrulandı + Faz 181 minimal layout + Faz 182 güvenlik incelemesi + gap #17 kapatıldı)
+# Mevcut Durum -- v1.11.0 (Faz 183 sonrası temizlik turu: gap #7/#12/#15/#16/#18 kapatıldı)
 
 **Tarih:** 2026-08-05
 **Branch:** main
-**Son commit (HEAD):** bkz. git log — bu oturumun devamı (Faz 180 tam doğrulama + 4 tablo migration borcu + Faz 181 minimal sidebar layout + güvenlik incelemesi + auth'un kalan endpoint'lere yayılması)
-**Test:** 340 passed, 1 xpassed, 0 xfailed
+**Son commit (HEAD):** bkz. git log — bu oturumun devamı (auth yayılımı + risk limit P0 fix + ölü kod temizliği + WS gerçek veri)
+**Test:** 343 passed, 1 xpassed, 0 xfailed. `npm run build` (tsc -b + vite build) temiz.
+
+## Faz 183 sonrası temizlik turu (2026-08-05, aynı oturum)
+
+Roadmap'in kendi Faz 183 gate'i (RELEASE_NOTES.md) kapandıktan sonra, proje
+sahibi "bütün planlamayı tamamlayalım" dedi — geriye kalan gerçek, dokümante
+edilmiş borçlar (Execution Layer hariç, o proje sahibinin testnet key'ini
+bekliyor) üzerinde çalışıldı:
+
+### Gap #7 — dokümantasyon sürüklenmesi düzeltildi
+`weight_approvals` tablosu zaten Faz 182'de kapatılmıştı ama Bilinen Borçlar
+tablosundaki satır güncellenmemiş kalmıştı — dokümantasyon sürüklenmesinin
+kendisine bir örnek. Satır düzeltildi.
+
+### Gap #12 — İki DecisionPersistor sınıfı: tek sınıfa indirildi
+`services/decision_persistor.py` production'da **hiçbir yerden import
+edilmiyordu** (sadece 2 test dosyası kullanıyordu) — `database/repositories/
+decision_persistor.py` (gerçek üretim yolu, `DecisionRecorder` üzerinden)
+zaten kazanmıştı, kanıt netti. Silindi; `tests/test_feedback_loop.py` ve
+`tests/test_faz164_replay_determinism.py` gerçek sınıfa taşındı.
+
+### Gap #15 (P0) — risk limit'ler: gerçekten kapatıldı, İKİ ayrı yerde
+**Bu oturumun en önemli bulgusu.** Üç değil, gerçekte **beş** farklı "risk
+limit" temsili vardı: `risk/limits/schema.py::RiskLimit` (pydantic,
+`.verify()` yok, hiçbir yerde kullanılmıyor), `risk/limits/enforcement.py::
+RiskLimit`/`RiskEnforcer` (dataclass, sadece kendi testinde kullanılıyor),
+`contracts/risk.py::RiskLimit`/`RiskGatePort` (aspirational port tasarımı,
+hiçbir yerde implement edilmemiş), ve gerçek kazanan:
+`contracts/contexts/risk.py::RiskLimitEntry` (`RiskContext.limits`'in
+gerçek pydantic tipi, çalışan bir `.verify(secret)` metodu var, `RiskEngine`
+zaten bunu bekliyor). İlk üçü dead code olarak silindi (`risk/limits/
+schema.py`, `risk/limits/enforcement.py`, `tests/test_risk.py` — canlı kalan
+`VolatilityCircuitBreaker` testi `tests/test_circuit_breakers.py`'a taşındı).
+
+Eksik olan gerçek parça: `RiskLimitEntry`'yi DB'ye kalıcı, ADMIN-onaylı
+(Faz 160: "insan onayı zorunluluğu") yazan bir tablo/repository/endpoint hiç
+yoktu. Eklendi:
+- `database/migrations/versions/faz172_risk_limits_table.py` — yan bulgu:
+  local dev DB'de zaten adı `risk_limits` olan, repo geçmişinde hiçbir
+  SQLAlchemy modeli olmayan, boş (0 satır), FK'sız bir "ghost table" vardı
+  (weight_approvals/episodes'ta görülen aynı desen) — güvenle drop edilip
+  gerçek şemayla yeniden oluşturuldu.
+- `database/repositories/risk_limit_repository.py` — `RiskLimitRepository`
+  (Class 2: save/get_active/list_active) + `load_active_limits()` — **tek,
+  paylaşılan** yükleyici fonksiyon.
+- `api/rest/risk_limits.py` — `POST /risk-limits/{limit_type}` (ADMIN,
+  SECRET_KEY ile imzalar), `GET /risk-limits/` (VIEWER).
+- `services/cognitive_engine.py`: `RiskEngine(secret=get_settings().SECRET_KEY)`
+  — eskiden hep boş secret'la kuruluyordu, imza doğrulaması hiçbir zaman
+  gerçek anlamda çalışmıyordu.
+
+**Gerçek bug, iki ayrı üretim yolunda, ikisi de bulunup düzeltildi:**
+1. `api/rest/cognitive.py` `POST /cognitive/run` — `ctx.risk.limits` hiç
+   doldurulmuyordu, `RiskEngine` her zaman `MISSING_LIMIT` ile reddediyordu.
+2. `services/orchestrator.py` `CognitiveOrchestrator.run_cycle()` — **aynı
+   bug, bağımsız olarak** — bu fonksiyon `/orchestrator/cycle`,
+   `/dashboard/latest` ve (bu turda gerçeğe bağlanan) `/stream/live`'ın
+   arkasındaki gerçek motor, kendi `ctx.risk.limits`'ini de hiç
+   doldurmuyordu. `self.max_position_size`/`max_drawdown_limit` constructor
+   argümanları da risk gate'e hiçbir zaman bağlanmamıştı (dead parametreler).
+   İkisi de artık `load_active_limits()`'i çağırıyor.
+
+Kanıt: `tests/test_risk_limits_api.py` (gerçek HTTP: ADMIN limit set eder →
+`POST /cognitive/run` artık `MISSING_LIMIT` içermiyor; OPERATOR limit
+set edemez → 403) + `tests/test_orchestrator_risk_limits.py` (aynısı
+`CognitiveOrchestrator.run_cycle()` için).
+
+**Fail-closed davranış korundu:** hiç limit set edilmemişse `ctx.risk.limits`
+boş kalır, `MISSING_LIMIT` hâlâ doğru, kasıtlı davranış — taze bir
+deployment hiçbir gerçek limite karşı sessizce trade onaylamamalı.
+
+### Gap #16 — embedding_service: gerçek testle kanıtlandı
+Kök neden bulundu: `sentence_transformers`'ın `encode()`'u `self.device`'ı
+model parametrelerinden okuyor; standart `patch("transformers.AutoModel/
+AutoTokenizer.from_pretrained")` deseni (LLM reasoner testlerinde kullanılan)
+bunu bir `MagicMock`'a çeviriyor, `self.to(device)` `TypeError` patlıyor.
+Çözüm kod tarafında değil — `EmbeddingService`/`SemanticSearch` yerel
+cache'teki gerçek `all-MiniLM-L6-v2` ile (ağ gerekmeden) doğru çalışıyor,
+sadece bu testlerde o mock'u UYGULAMAMAK gerekiyor. `tests/
+test_embedding_semantic_search.py`: gerçek 384-boyutlu normalize vektör +
+gerçek pgvector benzerlik araması, gerçek DB'ye karşı.
+
+**Yan bulgu (kapatılmadı, gap #8'in bir uzantısı olarak belgeleniyor):**
+`MemoryService.store_episode()` — ve dolayısıyla `EmbeddingService.
+encode_episode()` — production'da **hiçbir yerden çağrılmıyor**. Yani
+episode'lar hiç embedding'siz kaydediliyor (zaten hiç kaydedilmiyorlar,
+gap #8), semantic memory recall şu an production'da tamamen boş dönüyor.
+Bu, gap #8'in kapsamına giren, proje sahibinin "hangi stage capture_cycle'ı
+çağırmalı" kararını gerektiren ayrı bir iş — burada sadece netleştirildi.
+
+### Gap #18 — Sprint 21 (REST+WS): iki sahte WS endpoint gerçeğe bağlandı
+`api/websocket/decisions.py` ve `api/websocket/live_predictions.py`
+**tamamen uydurma veri** üretiyordu (`random.choice`/`random.uniform`) —
+`LivePredictions.tsx` bunu gerçek bir model çıktısıymış gibi gösteriyordu.
+- `decisions.py`: hiçbir frontend dosyası tarafından hiç çağrılmıyordu —
+  silindi (dead code).
+- `live_predictions.py`: gerçek `CognitiveOrchestrator.run_cycle()`'a
+  bağlandı (aynı motor, `/orchestrator/cycle`/`/dashboard/latest` ile
+  paylaşılıyor — `services/orchestrator.py`'nin dönüş sözlüğüne
+  `confidence`/`features`/`symbol` eklendi).
+- **Ayrı bir gerçek bug:** `live_predictions.router` `/api/v1` prefix'i
+  altında kayıtlıydı ama `LivePredictions.tsx` `ws://localhost:8000/stream/
+  live`'a (prefix'siz) bağlanıyordu — gerçek bir tarayıcıda bu asla
+  bağlanamazdı (404). Düzeltildi: `/api/v1/stream/live`.
+- **Ayrı, önceden belgelenmiş bir build hatası de bu turda kapandı:**
+  `AIReasoning.tsx`/`LivePredictions.tsx`'te `useState(null)` tip
+  çıkarımının `never`'a düşmesi yüzünden `npm run build` (`tsc -b`) fail
+  ediyordu (gap #14'te not edilmişti, atlanmıştı) — `useState<any>(null)`
+  ile düzeltildi, `npm run build` artık temiz.
+- Kanıt: `tests/test_live_predictions_ws.py` — gerçek WS bağlantısı, gerçek
+  orchestrator cycle verisi (mock'suz — embedding path'i gerçek çalışması
+  gerekiyor, gap #16 ile aynı sebep).
 
 ## Faz 183+ — Auth: kalan ~12 router'a yayılım, gap #17 kapatıldı (2026-08-05)
 Faz 178-179'da bilinçli olarak ertelenen "TÜM endpoint'lere auth" işi
@@ -223,15 +334,15 @@ Yapılanlar (C1 kanıtlı):
 | 3 | E2E DB persist + belief + weight update zinciri integration testi eksik | ~~P1~~ **Kapandı** | tests/test_e2e_scenarios.py — guardrail-red/outcome-none/outcome-var, üçü de gerçek DB'ye karşı yeşil (2026-08-04) |
 | 8 | `engines/memory_engine.py` (`MemoryEngine.record_cycle` → `MemoryConsolidator.capture_cycle`) `CognitiveEngine.run()`/`finalize()` içinde hiçbir yerden çağrılmıyor — gerçek ada. `capture_cycle`, `relevant_knowledge` içindeki `type="observation"` öğelerini `semantic.consolidated_beliefs`'e taşıyor ama şu an pipeline'da hiçbir stage `"observation"` tipi üretmiyor, yani şu anda zararsız ama tamamen kopuk. | P2 | Hayır |
 | 6 | Alembic history'de 2 head var: `faz165` (0005 zincirinden) ve `faz161` (f8fa21f0e94a zincirinden, hiç merge edilmedi). `faz161`'in `create_hypertable()` çağrıları local DB'de `decisions`/`experiment_registry`/`weight_approvals` tabloları dolu olduğu için başarısız oluyor (`migrate_data=>true` gerekiyor — Timescale, boş olmayan tabloyu varsayılan olarak hypertable'a çevirmiyor). Bu bir alan/version eksikliği değil, gerçek veri var. CI'da DB boş başladığı için sorun yok. Local'de düzeltmek için: ya `migrate_data=>true` ile devam et (veri kaybı yok ama chunk'lara bölünür), ya da local DB'yi sıfırdan kurup migration zincirini baştan çalıştır. | P2 | Migration testi (roadmap Faz 182 gate) |
-| 7 | `weight_approvals` tablosunun kendisi migration zincirinde hiçbir yerde `CREATE TABLE` ile oluşturulmuyor (muhtemelen geçmişte `Base.metadata.create_all()` ile elle kuruldu). Sıfırdan bir DB'de `alembic upgrade head` bu tabloyu oluşturmaz. | P1 | Migration testi (roadmap Faz 182 gate) |
+| 7 | ~~`weight_approvals` tablosunun kendisi migration zincirinde hiçbir yerde `CREATE TABLE` ile oluşturulmuyor.~~ **KAPANDI** (bu tablo doğrudan Faz 182 bölümünde anlatıldı ama bu satır güncellenmemiş kalmıştı — dokümantasyon sürüklenmesinin kendisine bir örnek): `faz165_base_weight_approvals_table.py` eklendi ve uygulandı. | — | — |
 | 9 | ~~İkinci, kopuk Replay motoru~~ **Kapandı (2026-08-04):** Proje sahibi kararı: `services/replay/` gerçek motor, `services/replay_engine.py` bunun üstünde ince facade. Yapılanlar: (1) `engines/replay/replay_engine.py`'deki `DeterministicReplayEngine` düzeltildi — eskiden `decision_engine.evaluate()` snapshot'ı hiç kullanmıyordu ve verification'ı orijinal event'e karşı (yani kendi kendine, tautolojik — hep True) yapıyordu; şimdi `evaluate(snapshot)` restore edilmiş state'i kullanıyor ve replay edilmiş sonucu orijinalin hash'ine karşı doğruluyor (bkz. yeni test: `test_replay_engine_flags_divergence_when_replay_differs`, replay farklı sonuç üretirse `verified=False` gerçekten yakalanıyor). (2) `services/replay_engine.py.replay_decision()` artık `build_snapshot()` + `ReplayVerifier` + `ReplaySeedManager` kullanıyor (eski ad-hoc `hashlib`+global `random.seed()` yerine); dönüş sözlüğüne gerçek `verification` alanı eklendi. (3) `verify_integrity()` — eskiden var olmayan bir `integrity_hash` DB kolonuna karşı kıyaslıyordu, yani her zaman `False` dönen ölü kod idi; artık `replay_decision()`'ı çağırıp gerçek hash doğrulamasını delegize ediyor. (4) Yan bulgu: real-DB replay path'inde `ctx.decision.proposed_direction` restore edilirken sadece `proposed_direction` anahtarına bakıyordu ama gerçek DB satırında bu alan `direction` — yani gerçek kayıtlarda yön hiç restore edilmiyordu (sadece mock'lu testler çalışıyordu); `direction` fallback eklendi. Kanıt: `tests/test_faz164_replay_determinism.py::test_persist_then_replay` artık `result["verification"]["verified"] is True`'yu gerçek DB'ye karşı assert ediyor. `pytest -q`: 269 passed. | ~~P1~~ **Kapandı** | — |
 | 10 | **`api/rest/replay.py` iki endpoint'i de (`/sessions`, `/{session_id}`) hiç çalışmıyordu** — `ReplayEngine()` repo'suz (`belief_repo=None, decision_repo=None`) instantiate ediliyordu, her çağrı `{"error": "repositories_not_configured"}` dönüyordu. `SessionFactory` ile gerçek `BeliefRepository`/`DecisionPersistor` enjekte edildi; yeni `POST /replay/decision/{id}` endpoint'i eklendi (tek karar için gerçek hash-doğrulamalı replay). Kanıt: `tests/test_replay_decision_api.py` — gerçek DB'ye kaydedilmiş bir karar, gerçek HTTP çağrısıyla replay edilip `verification.verified=True` dönüyor. | ~~P1~~ **Kapandı** | — |
 | 11 | `database/repositories/decision_persistor.py` (production'ın gerçekten kullandığı, `DecisionRecorder` üzerinden) `market_snapshot`'ı `agent_contributions`'a hiç yazmıyordu — `services/decision_persistor.py` (sadece testlerin kullandığı, farklı bir kopya) yazıyordu. Sonuç: gerçek kaydedilmiş kararlarda replay'in snapshot restore'u hep boş dönüyordu. `market_snapshot` append'i eklendi, doğrulandı (`snapshot_restored: True`). **Kapatılmadı, ayrı borç olarak kaldı (#12): iki ayrı `DecisionPersistor` sınıfı var, tek kaynağa indirilmedi** — bu proje sahibinin kararını gerektiren bir "iki beyin" durumu, replay motoru kararına benzer. | ~~P1~~ (snapshot fix) **Kapandı** | — |
 | 12 | **İki ayrı `DecisionPersistor` sınıfı var:** `database/repositories/decision_persistor.py` (gerçek üretim yolu — `DecisionRecorder` bunu kullanıyor, `list_recent`/`get_by_symbol`/`outcome` kolonu/`ON CONFLICT DO NOTHING` var) ve `services/decision_persistor.py` (sadece testlerin ve eski replay kodunun kullandığı, `list_recent` yok, `outcome` yazmıyor). API artık production'ın kullandığı (`database/repositories/...`) sınıfa bağlandı (replay, deneyler). Hangi sınıfın kalacağına — ya da `services/decision_persistor.py`'ın tamamen kaldırılıp testlerin de `database/repositories/...`'a taşınmasına — karar verilmedi. | P1 | Proje sahibi kararı |
 | 13 | **`experiment_registry` tablosu hiçbir migration'da `CREATE TABLE` ile oluşturulmuyordu — Faz 159'dan beri her `ExperimentRegistryRepository.save()` çağrısı `RecordingStage.execute()`'daki çıplak `except Exception: pass` içinde sessizce patlıyordu.** Yani "ExperimentRegistry bound to RecordingStage" iddiası hiçbir zaman gerçek bir DB satırı üretmemişti. `faz166_experiment_registry_table.py` migration'ı eklendi ve uygulandı; `GET /api/v1/experiments/` de aslında `{"experiments": []}` döndüren bir placeholder'dı (`repo.get_by_git_sha("")` çağırıp sonucu atıyordu) — `ExperimentRegistryRepository.list_recent()` eklendi, endpoint gerçek veriyi dönüyor artık. Kanıt: `tests/test_experiment_registry_real_persist.py` — gerçek bir cognitive cycle çalıştırılıp API'den gerçek (non-"unknown") git_sha ile geri geldiği doğrulanıyor. | ~~P0~~ **Kapandı** | — |
 | 14 | **Sprint 2 dashboard gate kapandı (2026-08-04):** `LatestCycle`, `PendingApprovals`, `ExperimentList` bileşenleri Faz 164'te yazılmış ama `App.tsx`'e hiç import edilmemiş/render edilmemişti — NavBar'da sekmeleri bile yoktu, tarayıcıdan asla erişilemiyorlardı. Üçü de artık `App.tsx`/`NavBar.tsx`'e bağlı (`cycle`/`approvals`/`experiments` sekmeleri). Yeni `ReplayView.tsx` eklendi (`POST /replay/decision/{id}` tetikler, `verification.verified`'ı gösterir) — roadmap'in "tarayıcıdan replay tetiklenip aynı sonucu üretebiliyor mu" gate'i buna karşılık geliyor. Doğrulama: `vite dev` sunucusu ayağa kalktı, `App.tsx`'in transpile edilmiş halinde `ReplayView` gerçekten yükleniyor (curl ile doğrulandı); gerçek bir tarayıcıda tıklama testi yapılmadı (bu ortamda tarayıcı yok) ama backend endpoint'i ayrıca gerçek DB'ye karşı test edildi (`test_replay_decision_api.py`). **Önceden var olan, ilgisiz bir sorun:** `npm run build` (`tsc -b`) `AIReasoning.tsx` ve `LivePredictions.tsx`'te bu oturumdan önce var olan tip hatalarıyla başarısız oluyor (muhtemelen tipsiz `useState()` → `never[]` çıkarımı); bu dosyalara dokunulmadı, kapsam dışı bırakıldı. | P2 (build hatası) | Hayır (dev server çalışıyor) |
-| 15 | **🔴 `ctx.risk.limits`'i üretimde hiçbir kod yolu doldurmuyor.** `POST /cognitive/run` (`api/rest/cognitive.py`) boş bir context ile `engine.run()` çağırıyor; `RiskEngine.execute()` her zaman `MISSING_LIMIT` ile reddediyor. **CognitiveEngine tabanlı üretim yolu şu an asla gerçek bir işlem onaylamıyor.** Ayrıca üç ayrı, birbiriyle uyumsuz "risk limit" temsili var (`risk/limits/schema.py` pydantic `RiskLimit` — `.verify()` yok; `risk/limits/enforcement.py` `RiskEnforcer`/`RiskLimit` dataclass — ayrı arayüz; `RiskEngine.execute()`'ın gerçekte beklediği `.value`+`.verify(secret)->bool` arayüzü — hiçbir yerde gerçek implement edilmemiş, sadece testlerde `FakeLimit` olarak mock'lanmış). Üçünü tek bir gerçek implementasyona indirip `/cognitive/run`'a bağlamak gerekiyor — bu proje sahibinin önceliklendirme kararını gerektirir (hangi tasarım kalacak, imzalı/hash'li mi olacak). | **P0** | Gerçek bir kararın üretimde onaylanabilmesi |
-| 16 | `services/embedding_service.py` (`SentenceTransformer`) hiçbir testte çalıştırılmamış — sadece `ctx.market.features` doluyken tetiklenen yoldan geçiyor, ve standart `transformers.AutoModel/AutoTokenizer` mock deseninde gerçek bir `TypeError` ile patlıyor (`self.to(device)`, sentence-transformers kendi cihaz tespitini mock'lanmış modelle bozuyor). Gerçek bir backtest/production akışının feature vermesi gerekeceği an bu test-altyapısı sorunu da çözülmeli. | P2 | Backtest'e gerçek feature girişi |
+| 15 | ~~🔴 `ctx.risk.limits`'i üretimde hiçbir kod yolu doldurmuyor.~~ **KAPANDI** (2026-08-05, bkz. "Faz 183 sonrası temizlik turu"): DB-backed `risk_limits` tablosu + `RiskLimitRepository` + `POST /risk-limits` (ADMIN) eklendi; hem `/cognitive/run` hem `CognitiveOrchestrator.run_cycle()` (ikisi bağımsız olarak aynı bug'ı taşıyordu) artık `load_active_limits()`'i çağırıyor. Beş temsilden dördü dead code olarak silindi, kazanan `contracts/contexts/risk.py::RiskLimitEntry` tek gerçek implementasyon oldu. | ~~P0~~ **Kapandı** | — |
+| 16 | ~~`services/embedding_service.py` hiçbir testte çalıştırılmamış.~~ **Test-altyapısı kısmı KAPANDI** (2026-08-05): `tests/test_embedding_semantic_search.py` gerçek embedding + gerçek pgvector arama kanıtlıyor (kök neden: standart transformers mock'u `self.device`'ı bozuyor, çözüm o mock'u bu testlerde uygulamamak). **Yeni, dar bulgu:** `MemoryService.store_episode()` production'da hiçbir yerden çağrılmıyor — episode'lar embedding'siz (aslında hiç) kaydediliyor, semantic recall boş dönüyor. Bu gap #8'in kapsamına taşındı. | P2 (kalan kısım gap #8'e taşındı) | Gap #8 — hangi stage `capture_cycle`'ı/`store_episode`'ı çağırmalı, proje sahibi kararı |
 
 ### Sprint 3 (Faz 167 bloğu) — Vektörize backtest çekirdeği (2026-08-04)
 Önceki durumda `backtest/` klasörü zaten vardı ama roadmap'in istediği şey değildi:
@@ -620,7 +731,7 @@ gerektirmiyordu, bu yüzden kurulabildi.
 | # | Ne | Neden şimdi değil |
 |---|----|--------------------|
 | 17 | ~~Roadmap'in istediği geri kalan ~30 endpoint (cognitive/run, replay, backtest, experiments, dashboard, vb.) hâlâ auth'suz.~~ **KAPANDI** (bkz. yukarıdaki "Faz 183+" bölümü, 2026-08-05) — tüm router'lar artık en az `get_current_user` (VIEWER+) ile korunuyor. | — |
-| 18 | Sprint 21 (REST+WS API yüzeyinin tamamlanması — backtest tetikleme/replay sorgulama zaten var ama "tam" değil) ve Sprint 24'ün "penetrasyon testi" kısmı yapılmadı. | Auth altyapısı yeni kuruldu; bağımsız bir güvenlik incelemesi (roadmap'in kendi önerisi) altyapı oturmadan anlamlı değil. |
+| 18 | ~~Sprint 21 (REST+WS API yüzeyinin tamamlanması)~~ **Kısmen kapandı** (2026-08-05): iki tamamen uydurma WS endpoint'i (`/stream/decisions` silindi, `/stream/live` gerçek orchestrator cycle'a bağlandı, yanlış frontend URL'i düzeltildi) — bkz. "Faz 183 sonrası temizlik turu". Sprint 24'ün "penetrasyon testi" kısmı hâlâ yapılmadı. | Gerçek üçüncü taraf pentest proje sahibinin kararı |
 | 19 | `SECRET_KEY` hâlâ `.env`'deki geliştirme placeholder'ı (`degistirin-cok-gizli-bir-anahtar`) — gerçek sızıntı değil ama **production'a asla bu değerle çıkılmamalı**. | Gerçek rastgele bir `SECRET_KEY` üretmek/rotasyon prosedürü proje sahibinin production dağıtım kararına bağlı. |
 
 ## Faz 180 — Cloud/Kubernetes (2026-08-04, aynı oturum)
