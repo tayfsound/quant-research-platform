@@ -883,5 +883,11 @@ timescale/timescaledb`, hiç veri yok) üzerinde **tüm migration zincirini**
 - TimescaleDB migration: CI Docker Compose'da çalışıyor, local'de xfail
 - E2E testleri: mock → gerçek DB assert çevrildi (test_e2e_persist_chain, test_recording_stage_e2e)
 
-- **Açık borç:** İki beyin yasağı — CognitiveEngine (stage zinciri) vs Orchestrator (RSI shortcut). API `/cycle` belgelenmeli, tercihen Engine tek yol.
-- E2E testleri: mock → gerçek DB assert çevrildi (test_e2e_persist_chain, test_recording_stage_e2e)
+- ~~**Açık borç:** İki beyin yasağı — CognitiveEngine (stage zinciri) vs Orchestrator (RSI shortcut).~~
+  **Güncel durum (2026-08-05):** Bu not artık yanıltıcı — `CognitiveOrchestrator.__init__`
+  `self.engine = CognitiveEngine()` kuruyor, `run_cycle()` gerçek karar için
+  doğrudan `self.engine.run(ctx, persist=False)`'a delege ediyor (rsi/ema/macd
+  hesaplaması sadece `ctx.market.features`'ı doldurmak için bir veri-hazırlama
+  adımı, rakip bir karar mantığı değil). İki bağımsız "beyin" yok; tek risk
+  vardı ve gap #15'te bulunup kapandı: her iki giriş noktası da (`/cognitive/run`
+  ve `run_cycle()`) `ctx.risk.limits`'i bağımsız olarak hiç doldurmuyordu.
