@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import Login from './views/Login';
+import Dashboard from './views/Dashboard';
 import MarketOverview from './views/MarketOverview';
 import Predictions from './views/Predictions';
 import LivePredictions from './views/LivePredictions';
@@ -19,7 +20,7 @@ import { clearToken } from './api/auth';
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [view, setView] = useState('live');
+  const [view, setView] = useState('dashboard');
 
   if (!isLoggedIn) {
     return <Login onLogin={() => setIsLoggedIn(true)} />;
@@ -35,6 +36,7 @@ function App() {
       <Sidebar current={view} onChange={setView} onLogout={handleLogout} />
       <main className="flex-1 min-w-0 overflow-x-auto">
         <div className="max-w-6xl mx-auto px-8 py-8">
+          {view === 'dashboard' && <Dashboard />}
           {view === 'live' && <LivePredictions />}
           {view === 'transactions' && <Transactions />}
           {view === 'market' && <MarketOverview />}

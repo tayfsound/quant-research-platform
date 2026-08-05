@@ -38,4 +38,14 @@ celery_app.conf.beat_schedule = {
         "task": "close_due_positions_task",
         "schedule": 60.0,
     },
+    # Faz 190: "gerçek işlem alıyormuş gibi test başlasın" — AI'ın sadece
+    # birisi dashboard'u açık tutunca değil, gerçekten bağımsız/sürekli
+    # karar üretmesi. RiskEngine'in kendi cooldown'u (varsayılan 60sn)
+    # gerçek işlem açma sıklığını zaten sınırlıyor; bu sadece "döngünün
+    # kendisi ne sıklıkla dener" — 30sn, cooldown'dan daha sık deneyip her
+    # zaman en güncel piyasa/karar durumuna yakın kalmak için.
+    "run-trading-cycle-every-30s": {
+        "task": "run_trading_cycle_task",
+        "schedule": 30.0,
+    },
 }

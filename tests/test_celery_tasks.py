@@ -65,6 +65,54 @@ def test_run_async_endpoint_dispatches_and_task_status_endpoint_reports_it():
                 celery_app.conf.task_always_eager = False
 
 
+def test_run_trading_cycle_task_runs_a_real_cycle_when_ai_enabled():
+    """Faz 190: 'gerçek işlem alıyormuş gibi' — celery beat'in periyodik
+    tetiklediği görev, gerçek CognitiveOrchestrator.run_cycle()'ı çalıştırır."""
+    with patch("transformers.AutoModel.from_pretrained"):
+        with patch("transformers.AutoTokenizer.from_pretrained"):
+            from database.repositories.app_settings_repository import AppSettingsRepository
+            from database.session_factory import SessionFactory
+            from services.celery_app import celery_app
+            from services.tasks import run_trading_cycle_task
+
+            with SessionFactory.get_session() as session:
+                AppSettingsRepository(session).set("ai_enabled", "true", updated_by="test")
+
+            celery_app.conf.task_always_eager = True
+            celery_app.conf.task_eager_propagates = True
+            try:
+                async_result = run_trading_cycle_task.delay(symbol="BTCUSDT")
+                assert async_result.successful()
+                body = async_result.result
+                assert body["symbol"] == "BTCUSDT"
+                assert body.get("skipped") is None
+            finally:
+                celery_app.conf.task_always_eager = False
+
+
+def test_run_trading_cycle_task_skips_when_ai_disabled():
+    with patch("transformers.AutoModel.from_pretrained"):
+        with patch("transformers.AutoTokenizer.from_pretrained"):
+            from database.repositories.app_settings_repository import AppSettingsRepository
+            from database.session_factory import SessionFactory
+            from services.celery_app import celery_app
+            from services.tasks import run_trading_cycle_task
+
+            with SessionFactory.get_session() as session:
+                AppSettingsRepository(session).set("ai_enabled", "false", updated_by="test")
+
+            celery_app.conf.task_always_eager = True
+            celery_app.conf.task_eager_propagates = True
+            try:
+                async_result = run_trading_cycle_task.delay(symbol="BTCUSDT")
+                assert async_result.successful()
+                assert async_result.result == {"skipped": "ai_disabled"}
+            finally:
+                celery_app.conf.task_always_eager = False
+                with SessionFactory.get_session() as session:
+                    AppSettingsRepository(session).set("ai_enabled", "true", updated_by="test")
+
+
 @pytest.mark.xfail(reason="requires a real Celery worker process, not just broker reachability", strict=False)
 def test_broker_is_reachable_for_real_dispatch_without_eager_mode():
     """Sanity check against the actual local Redis (docker-compose) — proves

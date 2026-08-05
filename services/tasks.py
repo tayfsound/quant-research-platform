@@ -2,6 +2,36 @@
 from services.celery_app import celery_app
 
 
+@celery_app.task(name="run_trading_cycle_task")
+def run_trading_cycle_task(symbol: str | None = None) -> dict:
+    """Faz 190: "gerçek işlem alıyormuş gibi" — AI'ın sadece birisi
+    dashboard'u açık tutunca değil, gerçekten sürekli, bağımsız çalışması.
+    celery beat tarafından periyodik tetiklenir (bkz. celery_app.py:
+    beat_schedule). ai_enabled=false ise RiskEngine zaten reddeder ama
+    burada erken çıkmak gereksiz bir cycle'ı (embedding dahil) baştan
+    engelliyor."""
+    from config import get_settings
+    from database.repositories.app_settings_repository import AppSettingsRepository
+    from database.session_factory import SessionFactory
+    from services.orchestrator import CognitiveOrchestrator
+
+    with SessionFactory.get_session() as session:
+        ai_enabled = AppSettingsRepository(session).get("ai_enabled") == "true"
+
+    if not ai_enabled:
+        return {"skipped": "ai_disabled"}
+
+    symbol = symbol or get_settings().DEFAULT_SYMBOL
+    result = CognitiveOrchestrator().run_cycle(symbol=symbol)
+
+    return {
+        "symbol": result.get("symbol"),
+        "direction": result.get("direction"),
+        "risk_verdict": result.get("risk_verdict"),
+        "risk_reasons": result.get("risk_reasons"),
+    }
+
+
 @celery_app.task(name="close_due_positions_task")
 def close_due_positions_task(hold_seconds: int | None = None) -> dict:
     """Faz 187/188: celery beat tarafından periyodik çalıştırılır (bkz.

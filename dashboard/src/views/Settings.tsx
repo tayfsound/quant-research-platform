@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { authHeaders } from "../api/auth";
-import { Card, PageHeader, Button, Badge, ErrorNote, Input } from "../components/ui";
+import { Card, PageHeader, Button, ErrorNote, Input } from "../components/ui";
 
 type SettingsMap = Record<string, string>;
 
@@ -49,63 +49,14 @@ export default function Settings() {
       .finally(() => setSaving(null));
   };
 
-  const isLive = settings.trading_mode === "live";
-  const isRunning = settings.ai_enabled !== "false";
-
   return (
     <div>
       <PageHeader
         title="Settings"
-        description="Bunlar AI'ın değil, senin belirlediğin kurallar — kaç işlem aynı anda açık olabilir, kasanın max yüzde kaçı kullanılabilir, işlemler ne kadar vadeli olsun."
+        description="Bunlar AI'ın değil, senin belirlediğin kurallar — kaç işlem aynı anda açık olabilir, kasanın max yüzde kaçı kullanılabilir, işlemler ne kadar vadeli olsun. Start/Stop ve Test/Live düğmeleri Dashboard sayfasına taşındı."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}
-
-      <Card className="mb-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <h3 className="text-sm font-semibold text-ink">AI Durumu</h3>
-              <Badge tone={isRunning ? "rise" : "neutral"}>{isRunning ? "ÇALIŞIYOR" : "DURDURULDU"}</Badge>
-            </div>
-            <p className="text-xs text-ink-soft max-w-md">
-              {isRunning
-                ? "AI yeni pozisyon açabiliyor. Durdurursan yeni işlem almaz, ama açık pozisyonların vadesi dolduğunda/hedefine ulaştığında normal şekilde kapanmaya devam eder."
-                : "AI durduruldu — yeni pozisyon açmıyor. Mevcut açık pozisyonlar etkilenmez, normal şekilde kapanmaya devam ediyor."}
-            </p>
-          </div>
-          <Button
-            variant={isRunning ? "danger" : "primary"}
-            disabled={saving === "ai_enabled"}
-            onClick={() => save("ai_enabled", isRunning ? "false" : "true")}
-          >
-            {isRunning ? "Durdur" : "Başlat"}
-          </Button>
-        </div>
-      </Card>
-
-      <Card className="mb-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <h3 className="text-sm font-semibold text-ink">İşlem Modu</h3>
-              <Badge tone={isLive ? "fall" : "accent"}>{isLive ? "LIVE" : "TEST"}</Badge>
-            </div>
-            <p className="text-xs text-ink-soft max-w-md">
-              {isLive
-                ? "Live modda: aşağıdaki tüm kurallar (pozisyon sayısı, sermaye yüzdesi) gerçekten uygulanır."
-                : "Test modunda: AI sınırsız deneme yapabilir, hiçbir kural uygulanmaz. Her şeyin düzgün çalıştığından emin olunca Live'a geç."}
-            </p>
-          </div>
-          <Button
-            variant={isLive ? "secondary" : "primary"}
-            disabled={saving === "trading_mode"}
-            onClick={() => save("trading_mode", isLive ? "test" : "live")}
-          >
-            {isLive ? "Test moduna dön" : "Live moda geç"}
-          </Button>
-        </div>
-      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
@@ -158,6 +109,24 @@ export default function Settings() {
               onClick={() => save("starting_capital", draft.starting_capital)}
             >
               {saved === "starting_capital" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+        </Card>
+
+        <Card>
+          <h3 className="text-sm font-semibold text-ink mb-1">İki işlem arası min. bekleme (sn)</h3>
+          <p className="text-xs text-ink-soft mb-3">Test modunda bile geçerli — AI aynı sembolde art arda anlamsız işlem açmasın.</p>
+          <div className="flex gap-2">
+            <Input
+              type="number"
+              value={draft.min_seconds_between_trades ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, min_seconds_between_trades: v }))}
+            />
+            <Button
+              disabled={saving === "min_seconds_between_trades"}
+              onClick={() => save("min_seconds_between_trades", draft.min_seconds_between_trades)}
+            >
+              {saved === "min_seconds_between_trades" ? "Kaydedildi ✓" : "Kaydet"}
             </Button>
           </div>
         </Card>
