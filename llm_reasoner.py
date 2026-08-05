@@ -31,7 +31,15 @@ class OllamaExplainer:
     def __init__(self, model: str = "mistral:7b-instruct-v0.3-q4_K_M"):
         self.model = model
 
-    async def explain(self, ensemble_output: dict, prompt: str | None = None, timeout_ms: int = 500) -> LLMExplanation:
+    async def explain(self, ensemble_output: dict, prompt: str | None = None, timeout_ms: int = 15000) -> LLMExplanation:
+        # Gerçek bulgu: eski varsayılan (500ms) yerel Ollama üzerinde
+        # gerçek bir çağrının aldığı süreden (ölçüldü: ~7s, mistral:7b-instruct
+        # ile tam sistem prompt'u + JSON çıktı isteğiyle) 10 kattan fazla
+        # kısaydı — yani HER gerçek çağrı zaman aşımına uğrar, sessizce
+        # LLMExplanation.neutral() ("LLM unavailable...") dönerdi. Dashboard'da
+        # "LLM unavailable" hep görünmesinin sebebi buydu; Ollama'nın kendisi
+        # sorunsuz çalışıyordu. 15000ms, analyze_logs()'un zaten kullandığı
+        # (doğru) varsayılanla aynı.
         used_prompt = prompt or SYSTEM_PROMPT
         prompt_hash_val = hash_prompt(used_prompt)
         llm_timeout = timeout_ms / 1000
