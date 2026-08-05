@@ -5,6 +5,21 @@ from contracts.context import CognitiveCycleContext
 from services.context_adapter import ContextAdapter
 
 
+def test_to_macro_explicit_override_wins_over_real_fred_fetch():
+    ctx = CognitiveCycleContext(market={"raw_snapshot": {"inflation_trend": "rising"}})
+    result = ContextAdapter().to_macro(ctx)
+    assert result.inflation_trend == "rising"
+
+
+def test_to_macro_falls_back_to_real_fred_categories_when_no_override():
+    ctx = CognitiveCycleContext()
+    result = ContextAdapter().to_macro(ctx)
+    assert result.inflation_trend in ("rising", "falling", "stable")
+    assert result.employment_trend in ("improving", "weakening", "stable")
+    assert result.central_bank_bias in ("hawkish", "dovish", "neutral")
+    assert result.liquidity_condition in ("loose", "tight", "neutral")
+
+
 def test_to_pattern_reads_raw_snapshot():
     ctx = CognitiveCycleContext(market={"raw_snapshot": {"structure_phase": "accumulation"}})
     result = ContextAdapter().to_pattern(ctx)

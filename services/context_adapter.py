@@ -23,11 +23,21 @@ class ContextAdapter:
         return ctx.market.features.get(key, default)
 
     def to_macro(self, ctx: CognitiveCycleContext) -> MacroContext:
+        # Faz 197: gerçek FRED verisi — ağ hatası/key yoksa provider zaten
+        # None döner, o zaman dürüstçe nötr varsayılana düşülüyor (icat
+        # edilmiş bir "trend" değil).
+        from market_data.macro.fred_provider import (
+            fetch_central_bank_bias,
+            fetch_employment_trend,
+            fetch_inflation_trend,
+            fetch_liquidity_condition,
+        )
+
         return MacroContext(
-            inflation_trend=self._get(ctx, "inflation_trend", "stable"),
-            liquidity_condition=self._get(ctx, "liquidity_condition", "neutral"),
-            central_bank_bias=self._get(ctx, "central_bank_bias", "neutral"),
-            employment_trend=self._get(ctx, "employment_trend", "stable"),
+            inflation_trend=self._get(ctx, "inflation_trend", fetch_inflation_trend() or "stable"),
+            liquidity_condition=self._get(ctx, "liquidity_condition", fetch_liquidity_condition() or "neutral"),
+            central_bank_bias=self._get(ctx, "central_bank_bias", fetch_central_bank_bias() or "neutral"),
+            employment_trend=self._get(ctx, "employment_trend", fetch_employment_trend() or "stable"),
         )
 
     def to_sentiment(self, ctx: CognitiveCycleContext) -> SentimentContext:

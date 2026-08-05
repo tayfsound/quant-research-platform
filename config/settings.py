@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     INFURA_MAINNET_URL: str = ""
     ALCHEMY_API_KEY: str = ""
     HELIUS_API_KEY: str = ""
+    # Faz 197: MacroAgent'a gerçek FRED verisi.
+    FRED_API_KEY: str = ""
 
     # TradingView webhook'ları custom auth header göndermiyor (Pine Script
     # alert mekanizması bunu desteklemiyor) — paylaşılan bir secret'ı alert
