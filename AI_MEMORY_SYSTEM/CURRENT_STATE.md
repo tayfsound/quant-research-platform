@@ -52,6 +52,30 @@ yapıyormuş gibi görünüyordu ama büyük ölçüde sabit girdilerle çalış
   (gerçek `run_cycle()`/`POST /cognitive/run` çağrısının artık gerçek
   kategorik sinyaller ürettiğini kanıtlıyor).
 
+### P1 incelendi, düşük öncelikli olarak indirgendi: naive/aware datetime
+28 yerde naive `datetime.now()`, 9 yerde aware `datetime.now(UTC)` var —
+karışık görünüyor ama incelemede (weight_approval TTL, auth revoke, weight
+approval expiry) **hepsi kendi tablosunda/alanında tutarlı şekilde naive**
+— aynı alanı hem naive hem aware yazan gerçek bir karışıklık yok, 417
+testin hiçbiri bunu tetiklemiyor (naive/aware karışsaydı `TypeError`
+verirdi, sessiz değil). Gerçek risk sadece sunucu saat dilimi değişirse ya
+da dağıtık/çok-sunuculu bir deploy olursa ortaya çıkar — şu an aktif bir
+bug değil. Tüm persistence katmanını UTC-aware'e geçirmek büyük, riskli
+bir refactor (28+ yer) — şimdilik düşük öncelikli, dokümante edilmiş borç.
+
+### P2: LiveMarketFeed artık gerçekten market_trades'e yazıyor
+`exchange_gateway/binance/live_feed.py` hiçbir yerden çağrılmıyordu ve
+`MarketSnapshotEvent`'i zorunlu `exchange` alanı olmadan construct
+ediyordu (çalıştırılsaydı `ValidationError` verirdi) — sadece event bus'a
+publish ediyordu, kalıcı bir subscriber yoktu, hiçbir trade DB'ye
+ulaşmıyordu. Düzeltme: `handle_trade_message()` artık `async def`, her
+trade'i `MarketDataRepository.save_trade()` ile `market_trades`'e
+yazıyor, `side` Binance'ın `"m"` (is-buyer-market-maker) alanından doğru
+türetiliyor, çoklu sembol için combined-stream URL'i eklendi
+(`LiveMarketFeed(symbols=[...])`). Kanıt: `tests/test_live_market_feed.py`
+(5 test) — biri gerçek Binance WS'ine bağlanıp gerçek bir trade alıp
+DB'ye yazdığını doğruluyor.
+
 ### Dürüstçe kapatılmadı — icat edilmedi
 **Macro, Sentiment, OnChain ajanları hâlâ üretimde gerçek dış veri kaynağına
 sahip değil** (`inflation_trend`, `fear_greed_index`, `exchange_outflow_24h`
