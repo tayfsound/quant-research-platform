@@ -15,6 +15,7 @@ def run_trading_cycle_task(symbol: str | None = None) -> dict:
     from database.repositories.app_settings_repository import AppSettingsRepository
     from database.session_factory import SessionFactory
     from market_data.ingestion.data_provider import get_provider_for_symbol
+    from market_data.market_hours import is_market_open
     from services.orchestrator import CognitiveOrchestrator
 
     with SessionFactory.get_session() as session:
@@ -28,6 +29,13 @@ def run_trading_cycle_task(symbol: str | None = None) -> dict:
     symbols = [symbol] if symbol else watchlist
     results = []
     for sym in symbols:
+        # Faz 195: piyasa kapalıyken (gece/hafta sonu NYSE/NASDAQ/CME)
+        # o sembol için cycle hiç çalıştırılmıyor — eski kapanış fiyatıyla
+        # "gerçek" bir işlem denenmiyor. Kripto için her zaman True.
+        if not is_market_open(sym):
+            results.append({"symbol": sym, "skipped": "market_closed"})
+            continue
+
         orch = CognitiveOrchestrator(data_provider=get_provider_for_symbol(sym))
         result = orch.run_cycle(symbol=sym)
         results.append({
