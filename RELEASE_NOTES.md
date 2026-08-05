@@ -35,9 +35,14 @@ beri en çok vurgulanan kuralı olduğu için, burada da abartısız yazılıyor
 - Market Data Service v0 kuruldu (Binance OHLCV + order book, gerçek DB'ye
   yazıyor) + TradingView webhook alıcısı. Council 4'ten 9 oy-veren ajana
   çıktı (Pattern/Quant/Order Flow/Time/Epistemology) + Alter Ego eleştirmen
-  gerçekten bağlandı. Üç bağımsız AI code review'u (Manus/Grok/Kimi) tek tek
+  gerçekten bağlandı + auto-bench (sürekli düşük performanslı ajan otomatik
+  devre dışı). Üç bağımsız AI code review'u (Manus/Grok/Kimi) tek tek
   doğrulandı — bir kısmı gerçekti (asyncio.run() event-loop bug'ı, ölü
   ResearchEngine kümesi), bir kısmı uydurmaydı (bkz. CURRENT_STATE.md).
+- Dashboard baştan tasarlandı (Tailwind v4 `@theme` tabanlı, ferah/doğal
+  palet) ve önceden placeholder olan 4 sayfa (Market Overview, Predictions,
+  Strategies→Agents, Risk Dashboard) gerçek veriye bağlandı — `GET
+  /market-data/ohlcv`, `GET /market-data/order-book`, `GET /agents/`.
 - **~30 gerçek, sessiz bug** bulundu ve düzeltildi — bunların çoğu "kod
   yazıldı ama hiçbir yere bağlanmadı" ya da "test yeşil ama gerçekte hiçbir
   şey kanıtlamıyor" kalıbındaydı (roadmap'in kendi en çok vurguladığı risk).

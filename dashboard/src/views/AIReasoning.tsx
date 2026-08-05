@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { authHeaders } from '../api/auth';
+import { Card, PageHeader, Button, ErrorNote, EmptyState } from '../components/ui';
 
 function AIReasoning() {
   const [explanation, setExplanation] = useState<any>(null);
@@ -42,32 +43,35 @@ function AIReasoning() {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-4">AI Reasoning (LLM)</h2>
-      <button
-        onClick={testRequest}
-        disabled={loading}
-        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded mb-4"
-      >
-        {loading ? 'Thinking...' : 'Test LLM Reasoning'}
-      </button>
-      {error && (
-        <div className="bg-red-950 border border-red-800 rounded-lg p-3 mb-4 text-red-300 text-sm">
-          {error}
-        </div>
+      <PageHeader
+        title="AI Reasoning"
+        description="Yerel Ollama üzerinden LLM'in gerçek bir kararı Türkçe açıklaması."
+        action={
+          <Button onClick={testRequest} disabled={loading}>
+            {loading ? 'Düşünüyor…' : 'Test LLM Reasoning'}
+          </Button>
+        }
+      />
+      {error && <ErrorNote>{error}</ErrorNote>}
+      {!explanation && !error && (
+        <EmptyState label="Henüz çalıştırılmadı — gerçek bir LLM açıklaması görmek için butona basın (birkaç saniye sürer)." />
       )}
       {explanation && (
-        <div className="bg-gray-900 rounded-lg p-4 border border-gray-800">
-          <p className="text-green-400 font-semibold">Explanation:</p>
-          <p className="text-gray-200 mt-1">{explanation.explanation}</p>
+        <Card>
+          <p className="text-rise font-semibold text-sm mb-1">Explanation</p>
+          <p className="text-ink text-sm leading-relaxed">{explanation.explanation}</p>
           {explanation.risks && explanation.risks.length > 0 && (
-            <div className="mt-3">
-              <p className="text-red-400 font-semibold">Risks:</p>
-              <ul className="list-disc list-inside text-gray-300">
+            <div className="mt-4">
+              <p className="text-fall font-semibold text-sm mb-1">Risks</p>
+              <ul className="list-disc list-inside text-ink-soft text-sm space-y-0.5">
                 {explanation.risks.map((r: string, i: number) => <li key={i}>{r}</li>)}
               </ul>
             </div>
           )}
-        </div>
+          {explanation.confidence_comment && (
+            <p className="text-xs text-ink-faint mt-4 pt-3 border-t border-line-soft">{explanation.confidence_comment}</p>
+          )}
+        </Card>
       )}
     </div>
   );

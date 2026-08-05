@@ -1,9 +1,59 @@
-# Mevcut Durum -- v1.14.0 (Market Data Service v0 + 9-agent council + üç bağımsız AI incelemesinin doğrulanması)
+# Mevcut Durum -- v1.15.0 (Dashboard baştan tasarım + auto-bench + Market Data/Agents API)
 
 **Tarih:** 2026-08-05
 **Branch:** main
-**Son commit (HEAD):** bkz. git log — bu oturumun devamı (Market Data Service + TradingView webhook + 5 yeni agent + Alter Ego + asyncio.run() bug fix + ölü ResearchEngine kümesi silindi)
-**Test:** 399 passed, 1 xpassed, 0 xfailed. `npm run build` (tsc -b + vite build) temiz.
+**Son commit (HEAD):** bkz. git log — bu oturumun devamı (dashboard yeniden tasarım + auto-bench + gerçek OHLCV/agent roster endpoint'leri)
+**Test:** 405 passed, 1 xpassed, 0 xfailed. `npm run build` (tsc -b + vite build) temiz.
+
+## Dashboard baştan tasarım + gerçek veri (2026-08-05, aynı oturum)
+
+Proje sahibi dashboard'ın tasarımını "basık karanlık mekanik" bulup baştan
+istedi: modern, ferah, doğal, keskin köşe yerine katmanlı geçişler, sade
+ama sanat eseri gibi bir renk paleti. Ayrıca daha önce placeholder olduğu
+belgelenen 4 sayfa (Market Overview, Predictions, Strategies, Risk
+Dashboard) gerçek veriye bağlandı.
+
+- **Tasarım sistemi:** `dashboard/src/index.css`'de Tailwind v4 `@theme`
+  token'ları — sıcak kağıt-beyazı canvas, tek bir güvenli aksan rengi
+  (indigo-violet), sadece gerçek yükseliş/düşüş için kullanılan sage/rose,
+  `rounded-xl/2xl`, çok katmanlı yumuşak gölgeler (`shadow-layer-1/2/3`).
+  Sistem karanlık modu tercih ediyorsa otomatik koyu palet de tanımlı
+  (`prefers-color-scheme`). `dashboard/src/components/ui.tsx` — Card/
+  Badge/Button/Input/StatCard/EmptyState/ErrorNote/CodeBlock — 13 view'ın
+  hepsi bu ortak bileşenlerle tutarlı hale getirildi.
+- **Market Overview** — artık gerçek: `lightweight-charts` (zaten kurulu
+  ama hiç kullanılmıyordu) ile gerçek mum grafiği, `GET /market-data/ohlcv`
+  (yeni, `market_snapshots`'ı okuyor) + `GET /market-data/order-book`
+  (yeni, Faz 186 order book snapshot'larını okuyor) ile besleniyor.
+- **Strategies → Agents** — artık gerçek: `GET /agents/` (yeni)
+  `AgentRegistry.create_default()`'ın GERÇEKTEN register ettiği 9 oy-veren
+  ajanı + 3 eleştirmen/annotator'ı listeliyor — statik/uydurma değil, kod
+  değişirse liste de değişir.
+- **Predictions** — artık gerçek: `POST /orchestrator/cycle`'ı tetikleyip
+  gerçek council sonucunu (direction/confidence/risk_verdict/pnl/features)
+  gösteriyor.
+- **Risk Dashboard** — artık gerçek: `GET /risk-limits/` (gap #15) +
+  `GET /weights/metrics` (approval latency/pending count) — sahte
+  sabit sayılar yerine.
+- Kanıt: `tests/test_market_data_api.py` (4 test — gerçek DB'ye yazılan bir
+  bar'ın API'den geri okunduğu, auth zorunluluğu, agent roster'ın gerçek
+  registry'yi yansıttığı) + gerçek Binance verisi altı çözünürlükte
+  ingest edilip canlı sunucuya karşı curl ile doğrulandı.
+
+## Auto-bench: sürekli düşük performanslı ajan otomatik devre dışı (2026-08-05)
+
+Proje sahibinin "kötü performans gösteren ajan sistemden elenmeli" fikri —
+"stres" metaforu yerine gerçek bir kod mekanizmasına çevrildi:
+`SourceReliabilityAgent` artık bir domain art arda `BENCH_AFTER` (5) kez
+`BENCH_THRESHOLD` (0.35) altı güvenilirlik gösterirse onu "benched" işaretliyor;
+`CouncilOrchestrator.deliberate()` bu durumda `opinion.performance_weight = 0.0`
+set ediyor — `effective_influence` (intrinsic_trust × performance_weight)
+gerçekten sıfırlanıyor, yani o ajanın oyu nihai karara **hiç katkı vermiyor**.
+Opinion listede kalıyor (sessizce yutulmuyor, explainability zincirinde
+görünür, caveat olarak işaretleniyor) ve `RECOVERY_THRESHOLD` (0.5) ile
+gerçek toparlanma gösterirse otomatik geri dönüyor. Kanıt: `tests/
+test_agent_auto_bench.py` — hem benching hem gerçek toparlanma sonrası
+geri dönüş uçtan uca doğrulanıyor.
 
 ## Market Data Service v0 (2026-08-05, aynı oturum)
 

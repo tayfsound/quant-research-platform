@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { authHeaders } from "../api/auth";
+import { Card, PageHeader, Badge, EmptyState } from "../components/ui";
 
 export default function ExperimentList() {
   const [experiments, setExperiments] = useState<any[]>([]);
@@ -11,17 +12,17 @@ export default function ExperimentList() {
   }, []);
 
   return (
-    <div className="p-4 border rounded">
-      <h2 className="text-lg font-bold mb-2">Experiments</h2>
+    <div>
+      <PageHeader title="Experiments" description="Her cognitive cycle'ın git_sha'ya pinlenmiş kaydı." />
       {experiments.length === 0 ? (
-        <div>No experiments found</div>
+        <EmptyState label="Henüz deney kaydı yok." />
       ) : (
-        <div className="space-y-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {experiments.map((e: any) => (
-            <div key={e.id} className="text-sm p-2 bg-gray-50 rounded">
-              <div>SHA: {e.git_sha?.slice(0, 8)}</div>
-              <div>Decisions: {e.decision_count}</div>
-            </div>
+            <Card key={e.id} className="flex items-center justify-between">
+              <div className="text-sm font-mono text-ink-soft">{e.git_sha?.slice(0, 8)}</div>
+              <Badge tone="accent">{e.decision_count} decisions</Badge>
+            </Card>
           ))}
         </div>
       )}

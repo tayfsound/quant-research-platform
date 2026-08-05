@@ -30,22 +30,24 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 flex">
+    <div className="min-h-screen bg-canvas text-ink flex">
       <Sidebar current={view} onChange={setView} onLogout={handleLogout} />
-      <main className="flex-1 p-6 min-w-0 overflow-x-auto">
-        {view === 'live' && <LivePredictions />}
-        {view === 'market' && <MarketOverview />}
-        {view === 'predictions' && <Predictions />}
-        {view === 'strategies' && <Strategies />}
-        {view === 'risk' && <RiskDashboard />}
-        {view === 'reasoning' && <AIReasoning />}
-        {view === 'cycle' && <LatestCycle />}
-        {view === 'approvals' && <PendingApprovals />}
-        {view === 'experiments' && <ExperimentList />}
-        {view === 'replay' && <ReplayView />}
-        {view === 'backtest' && <BacktestRuns />}
-        {view === 'explain' && <DecisionExplain />}
-        {view === 'workspace' && <ResearchWorkspace />}
+      <main className="flex-1 min-w-0 overflow-x-auto">
+        <div className="max-w-6xl mx-auto px-8 py-8">
+          {view === 'live' && <LivePredictions />}
+          {view === 'market' && <MarketOverview />}
+          {view === 'predictions' && <Predictions />}
+          {view === 'strategies' && <Strategies />}
+          {view === 'risk' && <RiskDashboard />}
+          {view === 'reasoning' && <AIReasoning />}
+          {view === 'cycle' && <LatestCycle />}
+          {view === 'approvals' && <PendingApprovals />}
+          {view === 'experiments' && <ExperimentList />}
+          {view === 'replay' && <ReplayView />}
+          {view === 'backtest' && <BacktestRuns />}
+          {view === 'explain' && <DecisionExplain />}
+          {view === 'workspace' && <ResearchWorkspace />}
+        </div>
       </main>
     </div>
   );

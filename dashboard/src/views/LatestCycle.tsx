@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { CycleWebSocket } from "../api/ws_client";
+import { Card, PageHeader, Badge, Button, EmptyState } from "../components/ui";
 
 export default function LatestCycle() {
   const [data, setData] = useState<any>(null);
@@ -8,22 +9,29 @@ export default function LatestCycle() {
   useEffect(() => {
     ws.connect((newData) => setData(newData));
     return () => ws.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <div className="p-4 border rounded">
-      <h2 className="text-lg font-bold mb-2">Latest Cycle (Live)</h2>
-      <button onClick={() => ws.runCycle()} className="mb-2 px-3 py-1 bg-blue-500 text-white rounded">
-        Run Cycle
-      </button>
-      {data ? (
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          <div>Direction:</div><div className="font-mono">{data.direction}</div>
-          <div>PnL:</div><div className="font-mono">{data.pnl?.toFixed(2)}</div>
-          <div>Risk:</div><div className="font-mono">{data.risk_verdict}</div>
-        </div>
+    <div>
+      <PageHeader
+        title="Latest Cycle"
+        description="Canlı WebSocket üzerinden tetiklenen cycle sonucu."
+        action={<Button onClick={() => ws.runCycle()}>Run Cycle</Button>}
+      />
+      {!data ? (
+        <EmptyState label="Veri bekleniyor — bağlantı kurulunca veya Run Cycle'a basınca dolacak." />
       ) : (
-        <div>Waiting for data...</div>
+        <Card>
+          <div className="grid grid-cols-2 gap-y-3 text-sm">
+            <div className="text-ink-faint">Direction</div>
+            <div><Badge tone={data.direction === "LONG" ? "rise" : data.direction === "SHORT" ? "fall" : "neutral"}>{data.direction}</Badge></div>
+            <div className="text-ink-faint">PnL</div>
+            <div className={`font-mono ${data.pnl >= 0 ? "text-rise" : "text-fall"}`}>{data.pnl?.toFixed(2)}</div>
+            <div className="text-ink-faint">Risk</div>
+            <div className="font-mono text-ink">{data.risk_verdict}</div>
+          </div>
+        </Card>
       )}
     </div>
   );

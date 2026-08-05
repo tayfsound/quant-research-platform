@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { authHeaders } from "../api/auth";
+import { Card, PageHeader, Input, Button, ErrorNote, Badge, CodeBlock } from "../components/ui";
 
 export default function DecisionExplain() {
   const [decisionId, setDecisionId] = useState("");
@@ -19,59 +20,49 @@ export default function DecisionExplain() {
       .catch((e) => setError(String(e)));
   };
 
+  const sections: [string, string][] = [
+    ["agents", "Agents"],
+    ["evidence", "Evidence"],
+    ["belief", "Belief"],
+    ["debate", "Debate"],
+    ["risk", "Risk"],
+    ["weight_snapshot", "Weight snapshot"],
+    ["outcome", "Outcome"],
+  ];
+
   return (
-    <div className="p-4 border rounded">
-      <h2 className="text-lg font-bold mb-2">Explain a Decision</h2>
-      <div className="flex gap-2 mb-3">
-        <input
-          value={decisionId}
-          onChange={(e) => setDecisionId(e.target.value)}
-          placeholder="decision id"
-          className="flex-1 px-2 py-1 rounded bg-gray-800 text-sm"
-        />
-        <button onClick={handleExplain} className="px-3 py-1 bg-blue-500 text-white rounded text-sm">
-          Explain
-        </button>
-      </div>
-      {error && <div className="text-red-400 text-sm">{error}</div>}
+    <div>
+      <PageHeader title="Explain" description="Bir kararın tüm zincirini (agent→evidence→belief→debate→risk→weight→outcome) gösterir." />
+      <Card className="mb-4">
+        <div className="flex gap-2">
+          <Input value={decisionId} onChange={setDecisionId} placeholder="decision id" />
+          <Button onClick={handleExplain}>Explain</Button>
+        </div>
+      </Card>
+      {error && <ErrorNote>{error}</ErrorNote>}
       {data && (
-        <div className="space-y-3 text-sm">
-          <div>{data.symbol} · {data.direction} · size {data.size} · confidence {data.confidence}</div>
-
-          <details open className="bg-gray-900 rounded p-2">
-            <summary className="cursor-pointer font-semibold">Agents ({data.chain.agents.length})</summary>
-            <pre className="whitespace-pre-wrap text-xs mt-2">{JSON.stringify(data.chain.agents, null, 2)}</pre>
-          </details>
-
-          <details className="bg-gray-900 rounded p-2">
-            <summary className="cursor-pointer font-semibold">Evidence</summary>
-            <pre className="whitespace-pre-wrap text-xs mt-2">{JSON.stringify(data.chain.evidence, null, 2)}</pre>
-          </details>
-
-          <details className="bg-gray-900 rounded p-2">
-            <summary className="cursor-pointer font-semibold">Belief</summary>
-            <pre className="whitespace-pre-wrap text-xs mt-2">{JSON.stringify(data.chain.belief, null, 2)}</pre>
-          </details>
-
-          <details className="bg-gray-900 rounded p-2">
-            <summary className="cursor-pointer font-semibold">Debate</summary>
-            <pre className="whitespace-pre-wrap text-xs mt-2">{JSON.stringify(data.chain.debate, null, 2)}</pre>
-          </details>
-
-          <details className="bg-gray-900 rounded p-2">
-            <summary className="cursor-pointer font-semibold">Risk</summary>
-            <pre className="whitespace-pre-wrap text-xs mt-2">{JSON.stringify(data.chain.risk, null, 2)}</pre>
-          </details>
-
-          <details className="bg-gray-900 rounded p-2">
-            <summary className="cursor-pointer font-semibold">Weight snapshot</summary>
-            <pre className="whitespace-pre-wrap text-xs mt-2">{JSON.stringify(data.chain.weight_snapshot, null, 2)}</pre>
-          </details>
-
-          <details className="bg-gray-900 rounded p-2">
-            <summary className="cursor-pointer font-semibold">Outcome</summary>
-            <pre className="whitespace-pre-wrap text-xs mt-2">{JSON.stringify(data.chain.outcome, null, 2)}</pre>
-          </details>
+        <div className="space-y-3">
+          <Card>
+            <div className="flex flex-wrap gap-4 items-center text-sm">
+              <span className="font-medium text-ink">{data.symbol}</span>
+              <Badge tone={data.direction === "LONG" ? "rise" : data.direction === "SHORT" ? "fall" : "neutral"}>{data.direction}</Badge>
+              <span className="text-ink-soft">size {data.size}</span>
+              <span className="text-ink-soft">confidence {data.confidence}</span>
+            </div>
+          </Card>
+          {sections.map(([key, label]) => (
+            <details key={key} className="group bg-surface border border-line rounded-xl shadow-layer-1 overflow-hidden">
+              <summary className="cursor-pointer select-none px-5 py-3 text-sm font-medium text-ink hover:bg-canvas-soft flex items-center justify-between">
+                {label}
+                {key === "agents" && Array.isArray(data.chain?.agents) && (
+                  <span className="text-xs text-ink-faint">{data.chain.agents.length}</span>
+                )}
+              </summary>
+              <div className="px-5 pb-4">
+                <CodeBlock>{JSON.stringify(data.chain?.[key], null, 2)}</CodeBlock>
+              </div>
+            </details>
+          ))}
         </div>
       )}
     </div>

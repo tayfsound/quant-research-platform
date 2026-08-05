@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { authHeaders } from "../api/auth";
+import { Card, PageHeader, Button, ErrorNote, EmptyState } from "../components/ui";
 
 export default function PendingApprovals() {
   const [approvals, setApprovals] = useState<any[]>([]);
@@ -28,23 +29,21 @@ export default function PendingApprovals() {
   };
 
   return (
-    <div className="p-4 border rounded">
-      <h2 className="text-lg font-bold mb-2">Pending Weight Approvals</h2>
-      {error && <div className="text-red-400 text-sm mb-2">{error}</div>}
+    <div>
+      <PageHeader title="Pending Approvals" description="Ajan ağırlık güncellemeleri — insan onayı zorunlu." />
+      {error && <ErrorNote>{error}</ErrorNote>}
       {approvals.length === 0 ? (
-        <div>No pending approvals</div>
+        <EmptyState label="Bekleyen onay yok." />
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {approvals.map((a) => (
-            <div key={a.id} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+            <Card key={a.id} className="flex justify-between items-center">
               <div className="text-sm">
-                <div>ID: {a.id.slice(0, 8)}...</div>
-                <div>Proposed: {JSON.stringify(a.proposed)}</div>
+                <div className="text-ink font-medium">{a.id.slice(0, 8)}…</div>
+                <div className="text-xs text-ink-faint mt-1 font-mono">{JSON.stringify(a.proposed)}</div>
               </div>
-              <button onClick={() => handleApprove(a.id)} className="px-3 py-1 bg-green-500 text-white rounded text-sm">
-                Approve
-              </button>
-            </div>
+              <Button onClick={() => handleApprove(a.id)}>Approve</Button>
+            </Card>
           ))}
         </div>
       )}

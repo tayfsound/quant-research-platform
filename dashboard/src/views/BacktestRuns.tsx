@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { authHeaders } from "../api/auth";
+import { Card, PageHeader, Button, EmptyState } from "../components/ui";
 
 export default function BacktestRuns() {
   const [runs, setRuns] = useState<any[]>([]);
@@ -23,27 +24,32 @@ export default function BacktestRuns() {
   };
 
   return (
-    <div className="p-4 border rounded">
-      <div className="flex justify-between items-center mb-2">
-        <h2 className="text-lg font-bold">Backtest Runs</h2>
-        <button
-          onClick={handleRun}
-          disabled={running}
-          className="px-3 py-1 bg-blue-500 text-white rounded text-sm disabled:opacity-50"
-        >
-          {running ? "Running..." : "Run Backtest"}
-        </button>
-      </div>
+    <div>
+      <PageHeader
+        title="Backtests"
+        description="Vektörize motor + gerçek CognitiveEngine ile deterministik geçmiş test."
+        action={
+          <Button onClick={handleRun} disabled={running}>
+            {running ? "Running…" : "Run Backtest"}
+          </Button>
+        }
+      />
       {runs.length === 0 ? (
-        <div>No backtest runs yet</div>
+        <EmptyState label="Henüz backtest çalıştırılmadı." />
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {runs.map((r: any) => (
-            <div key={r.id} className="text-sm p-2 bg-gray-50 rounded">
-              <div>Symbols: {r.symbols.join(", ")}</div>
-              <div>Total PnL: {r.total_pnl?.toFixed(2)}</div>
-              <div>Sharpe: {r.metrics?.sharpe_ratio?.toFixed(3)} · Max DD: {r.metrics?.max_drawdown?.toFixed(3)}</div>
-            </div>
+            <Card key={r.id}>
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium text-ink">{r.symbols.join(", ")}</div>
+                <div className={`text-sm font-semibold ${r.total_pnl >= 0 ? "text-rise" : "text-fall"}`}>
+                  {r.total_pnl?.toFixed(2)}
+                </div>
+              </div>
+              <div className="text-xs text-ink-soft mt-2">
+                Sharpe {r.metrics?.sharpe_ratio?.toFixed(3)} · Max DD {r.metrics?.max_drawdown?.toFixed(3)}
+              </div>
+            </Card>
           ))}
         </div>
       )}

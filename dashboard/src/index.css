@@ -1,1 +1,126 @@
 @import "tailwindcss";
+
+@theme {
+  /* Natural, airy palette — warm paper background instead of flat dark,
+     a single confident accent (deep indigo-violet) instead of a rainbow
+     of status colors, muted sage/rose only for real up/down signals. */
+  --color-canvas: #f7f5f1;
+  --color-canvas-soft: #efece5;
+  --color-surface: #ffffff;
+  --color-surface-soft: #fbfaf7;
+  --color-ink: #2a2622;
+  --color-ink-soft: #6b645b;
+  --color-ink-faint: #a39c8f;
+  --color-line: #e7e2d8;
+  --color-line-soft: #f0ece3;
+
+  --color-accent: #5b4fd6;
+  --color-accent-soft: #eeecfb;
+  --color-accent-ink: #3f35a8;
+
+  --color-rise: #3f7d58;
+  --color-rise-soft: #e7f2eb;
+  --color-fall: #b3543f;
+  --color-fall-soft: #f8ebe7;
+  --color-warn: #b8863a;
+  --color-warn-soft: #faf1e3;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, ui-sans-serif, sans-serif;
+
+  --radius-md: 0.75rem;
+  --radius-lg: 1.25rem;
+  --radius-xl: 1.75rem;
+
+  --shadow-layer-1: 0 1px 2px rgba(42, 38, 34, 0.04), 0 1px 1px rgba(42, 38, 34, 0.03);
+  --shadow-layer-2: 0 6px 16px -4px rgba(42, 38, 34, 0.08), 0 2px 6px -2px rgba(42, 38, 34, 0.05);
+  --shadow-layer-3: 0 20px 40px -12px rgba(42, 38, 34, 0.16), 0 8px 16px -8px rgba(42, 38, 34, 0.08);
+}
+
+:root[data-theme="dark"] {
+  --color-canvas: #17151b;
+  --color-canvas-soft: #1e1b24;
+  --color-surface: #221f29;
+  --color-surface-soft: #1c1a22;
+  --color-ink: #ece9f2;
+  --color-ink-soft: #a8a2b8;
+  --color-ink-faint: #6f6a80;
+  --color-line: #322e3d;
+  --color-line-soft: #2a2733;
+
+  --color-accent: #9b8fff;
+  --color-accent-soft: #2c2740;
+  --color-accent-ink: #cabfff;
+
+  --color-rise: #6fcf97;
+  --color-rise-soft: #1e2f26;
+  --color-fall: #ef8b78;
+  --color-fall-soft: #33221f;
+  --color-warn: #f0c374;
+  --color-warn-soft: #362b1c;
+
+  --shadow-layer-1: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-layer-2: 0 6px 16px -4px rgba(0, 0, 0, 0.35), 0 2px 6px -2px rgba(0, 0, 0, 0.25);
+  --shadow-layer-3: 0 20px 40px -12px rgba(0, 0, 0, 0.5), 0 8px 16px -8px rgba(0, 0, 0, 0.3);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-canvas: #17151b;
+    --color-canvas-soft: #1e1b24;
+    --color-surface: #221f29;
+    --color-surface-soft: #1c1a22;
+    --color-ink: #ece9f2;
+    --color-ink-soft: #a8a2b8;
+    --color-ink-faint: #6f6a80;
+    --color-line: #322e3d;
+    --color-line-soft: #2a2733;
+
+    --color-accent: #9b8fff;
+    --color-accent-soft: #2c2740;
+    --color-accent-ink: #cabfff;
+
+    --color-rise: #6fcf97;
+    --color-rise-soft: #1e2f26;
+    --color-fall: #ef8b78;
+    --color-fall-soft: #33221f;
+    --color-warn: #f0c374;
+    --color-warn-soft: #362b1c;
+
+    --shadow-layer-1: 0 1px 2px rgba(0, 0, 0, 0.2);
+    --shadow-layer-2: 0 6px 16px -4px rgba(0, 0, 0, 0.35), 0 2px 6px -2px rgba(0, 0, 0, 0.25);
+    --shadow-layer-3: 0 20px 40px -12px rgba(0, 0, 0, 0.5), 0 8px 16px -8px rgba(0, 0, 0, 0.3);
+  }
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+::selection {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-ink);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line);
+  border-radius: 999px;
+  border: 2px solid var(--color-canvas);
+}

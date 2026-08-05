@@ -1,25 +1,51 @@
-function Strategies() {
+import { useEffect, useState } from "react";
+import { authHeaders } from "../api/auth";
+import { Card, PageHeader, Badge } from "../components/ui";
+
+export default function Strategies() {
+  const [agents, setAgents] = useState<any[]>([]);
+  const [critics, setCritics] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch("/api/v1/agents/", { headers: authHeaders() })
+      .then((r) => r.json())
+      .then((data) => {
+        setAgents(data.agents || []);
+        setCritics(data.critics || []);
+      });
+  }, []);
+
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-4">Strategy Explorer</h2>
-      <div className="bg-gray-900 rounded-lg p-4">
-        <table className="w-full text-left">
-          <thead>
-            <tr className="border-b border-gray-800">
-              <th className="p-2">Name</th><th className="p-2">Generation</th><th className="p-2">Sharpe</th><th className="p-2">Return</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr className="border-b border-gray-800">
-              <td className="p-2">AlphaGen-42</td><td className="p-2">12</td><td className="p-2 text-green-400">2.31</td><td className="p-2 text-green-400">+34%</td>
-            </tr>
-            <tr className="border-b border-gray-800">
-              <td className="p-2">BetaV-7</td><td className="p-2">5</td><td className="p-2">1.12</td><td className="p-2">+12%</td>
-            </tr>
-          </tbody>
-        </table>
+      <PageHeader
+        title="Agents"
+        description="AgentRegistry.create_default()'ın gerçekten register ettiği council — 9 oy-veren ajan + eleştirmenler."
+      />
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        {agents.map((a) => (
+          <Card key={a.domain}>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold text-ink capitalize">{a.domain.replaceAll("_", " ")}</h3>
+              <Badge tone="accent">vote</Badge>
+            </div>
+            <p className="text-xs text-ink-soft leading-relaxed">{a.description}</p>
+          </Card>
+        ))}
+      </div>
+
+      <h3 className="text-sm font-semibold text-ink-soft uppercase tracking-wide mb-3">Critics &amp; annotators</h3>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {critics.map((c) => (
+          <Card key={c.domain}>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold text-ink capitalize">{c.domain.replaceAll("_", " ")}</h3>
+              <Badge tone="warn">{c.role}</Badge>
+            </div>
+            <p className="text-xs text-ink-soft leading-relaxed">{c.description}</p>
+          </Card>
+        ))}
       </div>
     </div>
   );
 }
-export default Strategies;

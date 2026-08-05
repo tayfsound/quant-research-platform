@@ -85,6 +85,21 @@ class CouncilOrchestrator:
         )
         for opinion, info in zip(opinions, annotated):
             opinion.source_reliability = info["source_reliability"]
+            if info.get("benched"):
+                # Auto-bench: bu domain art arda BENCH_AFTER kez düşük
+                # güvenilirlik gösterdi. Metafor değil — performance_weight=0
+                # effective_influence'ı (intrinsic_trust * performance_weight)
+                # gerçekten sıfırlar, yani bu oy nihai karara hiç katkı
+                # vermiyor. Opinion listede KALIYOR (sessizce yutulmuyor,
+                # explainability zincirinde görünür) ve gelecek cycle'larda
+                # gerçekten toparlanırsa (RECOVERY_THRESHOLD) otomatik geri
+                # döner.
+                opinion.performance_weight = 0.0
+                opinion.caveats.append(
+                    f"Benched: {opinion.domain.value} reliability stayed below "
+                    f"{self.reliability_annotator.agent.BENCH_THRESHOLD} for "
+                    f"{self.reliability_annotator.agent.BENCH_AFTER}+ cycles — vote weight zeroed until it recovers."
+                )
             opinion.recalculate()
 
         self.last_debate_result = self.debate.run_debate(
