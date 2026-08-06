@@ -78,7 +78,7 @@ class WeightOptimizer:
 
 
         previous = self.weight_repository.get_latest()
-
+        previous_weights = dict(previous.weights) if previous else {}
 
         snapshot = AgentWeightSnapshot(
             weights=proposed,
@@ -90,6 +90,37 @@ class WeightOptimizer:
             ),
         ).finalize()
 
+        # Faz 214: kritik bulgu — bu metod optimize()'daki (aynı sınıfın
+        # diğer ağırlık güncelleme yolu) >%10 değişiklik için insan onayı
+        # zorunluluğunu (WeightApproval, Faz 160-165) hiç uygulamıyordu,
+        # doğrudan kaydediyordu. services/position_closer.py (Faz 210b/211b)
+        # gerçek kapanan her işlemde bunu çağırınca, büyük ağırlık
+        # sıçramaları hiç insan gözünden geçmeden canlıya uygulanmaya
+        # başladı — kasıtlı güvenlik kontrolünü fark etmeden atlıyordu.
+        if previous_weights:
+            max_change = max(
+                abs(proposed.get(k, 0) - previous_weights.get(k, 0))
+                for k in set(proposed) | set(previous_weights)
+            )
+            if max_change > MAX_WEIGHT_DELTA:
+                try:
+                    approval = WeightApproval(
+                        expires_at=datetime.now() + timedelta(hours=24),
+                        proposed_weights=proposed,
+                        previous_weights=previous_weights,
+                        max_delta=MAX_WEIGHT_DELTA,
+                        status="pending",
+                    )
+                    with SessionFactory.get_session() as session:
+                        WeightApprovalRepository(session).save(approval)
+                    return previous  # onaylanana kadar mevcut snapshot geçerli
+                except Exception as e:
+                    import structlog
+                    logger = structlog.get_logger()
+                    logger.error('weight_approval_save_failed', error=str(e), max_change=max_change)
+                    # Tablo henüz yoksa (ör. eski migration) eskisi gibi
+                    # doğrudan kaydetmeye düş — sessizce hiçbir şeyin
+                    # güncellenmemesi daha kötü.
 
         self.weight_repository.save(snapshot)
 
