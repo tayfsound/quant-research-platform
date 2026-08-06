@@ -28,7 +28,12 @@ DEFAULTS: dict[str, str] = {
     # kripto (Binance) + endeks/emtia/hisse (Yahoo Finance). Nasdaq/S&P500
     # ayrıca crypto sembollerine korelasyon sinyali olarak da besleniyor
     # (bkz. agents/technical_agent.py).
-    "watchlist": "BTCUSDT,ETHUSDT,SOLUSDT,AAPL,NVDA,MSFT,GC=F,SI=F,^IXIC,^GSPC",
+    # Faz 202: kullanıcı isteğiyle piyasa değeri/hacmi yüksek 3 kripto daha
+    # eklendi (BNB, XRP, ADA — hepsi gerçek Binance USDT çiftleri).
+    # PAXGUSDT/XAUTUSDT: gerçek altın-destekli kripto tokenlar (Binance'te
+    # işlem görüyor, 24/7 — GC=F'nin CME saatleriyle sınırlı olmasının
+    # tersine) — kullanıcı isteğiyle eklendi.
+    "watchlist": "BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,ADAUSDT,PAXGUSDT,XAUTUSDT,AAPL,NVDA,MSFT,GC=F,SI=F,^IXIC,^GSPC",
     # Faz 199: portfolio_fusion.py'nin gerçekten bağlanması — aynı cycle'da
     # birden fazla sembol eşzamanlı yönlü öneri üretirse, gerçek kovaryans
     # matrisiyle hesaplanan portföy VaR'ı bu yüzdeyi (sermayenin) aşarsa

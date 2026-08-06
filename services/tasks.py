@@ -63,6 +63,43 @@ def run_trading_cycle_task(symbol: str | None = None) -> dict:
     ]}
 
 
+@celery_app.task(name="ingest_order_book_task")
+def ingest_order_book_task() -> dict:
+    """Faz 201: gerçek bulgu — market_data/ingestion/pipeline.py::
+    IngestionPipeline.ingest_order_book() tam çalışan, gerçek bir metod
+    olarak yazılmıştı (best bid/ask, imbalance, spread_bps — Order Flow
+    ajanının gerçekten ihtiyaç duyduğu her şey) ama hiçbir üretim kodu onu
+    hiç çağırmıyordu — order_book_snapshots tablosunda ayların birikimi
+    sadece 16 satır vardı, OrderFlowAgent neredeyse her zaman boş/varsayılan
+    veri görüp hep WAIT üretiyordu. Sadece Binance sembolleri için (order
+    book derinliği yfinance'te yok) — kripto olmayan semboller için
+    OrderFlowAgent'ın nötr kalması dürüst, eksik değil."""
+    import asyncio
+
+    from database.repositories.app_settings_repository import AppSettingsRepository
+    from database.session_factory import SessionFactory
+    from exchange_gateway.binance.adapter import BinanceAdapter
+    from market_data.ingestion.data_provider import looks_like_binance_pair
+    from market_data.ingestion.pipeline import IngestionPipeline
+
+    with SessionFactory.get_session() as session:
+        watchlist = [
+            s.strip() for s in AppSettingsRepository(session).get("watchlist").split(",") if s.strip()
+        ]
+
+    crypto_symbols = [s for s in watchlist if looks_like_binance_pair(s)]
+    pipeline = IngestionPipeline(BinanceAdapter())
+
+    results = {}
+    for sym in crypto_symbols:
+        try:
+            results[sym] = asyncio.run(pipeline.ingest_order_book(sym))
+        except Exception as exc:
+            results[sym] = {"error": str(exc)}
+
+    return {"ingested": results}
+
+
 @celery_app.task(name="run_pairs_trading_task")
 def run_pairs_trading_task() -> dict:
     """Faz 200: pairs trading / istatistiksel arbitraj — gerçek Engle-

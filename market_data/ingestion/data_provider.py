@@ -74,7 +74,7 @@ def get_ohlcv_provider(seed: int = 42) -> OHLCVProvider:
 _BINANCE_QUOTE_SUFFIXES = ("USDT", "BUSD", "USDC", "FDUSD")
 
 
-def _looks_like_binance_pair(symbol: str) -> bool:
+def looks_like_binance_pair(symbol: str) -> bool:
     return symbol.upper().endswith(_BINANCE_QUOTE_SUFFIXES)
 
 
@@ -84,7 +84,7 @@ def get_provider_for_symbol(symbol: str, seed: int = 42) -> OHLCVProvider:
         # Test/mock modunda gerçek Yahoo Finance ağ çağrısı yapmıyoruz —
         # sembol ne olursa olsun (AAPL dahil) deterministik mock veri.
         return MockProvider(seed=seed)
-    if _looks_like_binance_pair(symbol):
+    if looks_like_binance_pair(symbol):
         return BinanceProvider()
     from market_data.ingestion.yahoo_provider import YahooProvider
     return YahooProvider()

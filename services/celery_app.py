@@ -46,9 +46,12 @@ celery_app.conf.beat_schedule = {
     # her biri gerçek bir ağ çağrısı) geçince 30sn çok sıkı oldu — 90sn'ye
     # çıkarıldı, hâlâ "sürekli" ama art arda çağrıların kuyruğa yığılmasını
     # önlüyor.
-    "run-trading-cycle-every-90s": {
+    # Faz 202: watchlist 10'dan 15 kaleme çıkınca (kullanıcı isteğiyle
+    # yüksek hacimli kripto + altın-destekli token eklendi) 90sn'de sıraya
+    # yığılma riski arttı — 120sn'ye çıkarıldı.
+    "run-trading-cycle-every-120s": {
         "task": "run_trading_cycle_task",
-        "schedule": 90.0,
+        "schedule": 120.0,
     },
     # Faz 200: kointegrasyon/spread z-score, teknik göstergelerden çok daha
     # yavaş değişen istatistiksel ilişkiler — her 90sn'de kontrol etmenin
@@ -56,5 +59,15 @@ celery_app.conf.beat_schedule = {
     "run-pairs-trading-every-5m": {
         "task": "run_pairs_trading_task",
         "schedule": 300.0,
+    },
+    # Faz 201: gerçek bulgu — IngestionPipeline.ingest_order_book() tam
+    # çalışan bir metod olarak yazılmıştı ama hiçbir üretim kodu hiç
+    # çağırmıyordu; order_book_snapshots tablosu ayların birikimiyle
+    # sadece 16 satırdı, OrderFlowAgent (9 oy veren ajandan biri) neredeyse
+    # hep boş veri görüp hep WAIT üretiyordu. Order book saniyeler içinde
+    # değiştiği için trading cycle'dan (90sn) daha sık, 20sn'de bir.
+    "ingest-order-book-every-20s": {
+        "task": "ingest_order_book_task",
+        "schedule": 20.0,
     },
 }
