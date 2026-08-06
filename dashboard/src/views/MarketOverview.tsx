@@ -11,8 +11,21 @@ export default function MarketOverview() {
   const [barCount, setBarCount] = useState(0);
   const [orderBook, setOrderBook] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [watchlist, setWatchlist] = useState<string[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+
+  useEffect(() => {
+    // Faz 212: kullanıcı "BTCUSDT'ye tıklayınca dropdown açılmıyor" dedi —
+    // burası serbest metin kutusuydu, gerçek bir dropdown hiç yoktu.
+    fetch("/api/v1/settings/", { headers: authHeaders() })
+      .then((r) => r.json())
+      .then((data) => {
+        const raw = data.settings?.watchlist || "";
+        setWatchlist(raw.split(",").map((s: string) => s.trim()).filter(Boolean));
+      })
+      .catch(() => setWatchlist([]));
+  }, []);
 
   const load = (sym: string, res: string) => {
     setError(null);
@@ -98,6 +111,24 @@ export default function MarketOverview() {
 
       <Card className="mb-4" padded>
         <div className="flex flex-wrap items-center gap-3">
+          <div className="w-40">
+            <select
+              value={watchlist.includes(symbol) ? symbol : ""}
+              onChange={(e) => {
+                if (e.target.value) setSymbol(e.target.value);
+              }}
+              className="w-full px-3 py-2 rounded-lg bg-canvas-soft border border-line text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent"
+            >
+              <option value="" disabled>
+                Watchlist'ten seç
+              </option>
+              {watchlist.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="w-40">
             <Input value={symbol} onChange={setSymbol} placeholder="BTCUSDT" />
           </div>

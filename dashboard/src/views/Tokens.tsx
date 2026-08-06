@@ -11,6 +11,7 @@ type Token = {
   size: number | null;
   status: string | null;
   updated_at: string | null;
+  market_open: boolean;
 };
 
 type Decision = {
@@ -62,7 +63,11 @@ function TokenList({ tokens, onSelect }: { tokens: Token[]; onSelect: (symbol: s
               {t.price != null ? t.price.toLocaleString(undefined, { maximumFractionDigits: 4 }) : "—"}
             </p>
             <div className="flex items-center justify-between mt-3">
-              <Badge tone={directionTone(t.direction)}>{t.direction ?? "no data"}</Badge>
+              {t.market_open ? (
+                <Badge tone={directionTone(t.direction)}>{t.direction ?? "no data"}</Badge>
+              ) : (
+                <Badge tone="neutral">Piyasa kapalı</Badge>
+              )}
               {t.confidence != null && (
                 <span className="text-xs text-ink-soft">{(t.confidence * 100).toFixed(0)}% confidence</span>
               )}

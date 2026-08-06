@@ -10,6 +10,7 @@ from database.repositories.decision_persistor import DecisionPersistor
 from database.repositories.market_data_repository import MarketDataRepository
 from database.session_factory import SessionFactory
 from market_data.ingestion.data_provider import looks_like_binance_pair
+from market_data.market_hours import is_market_open
 from services.auth_service import AuthContext, get_current_user
 
 router = APIRouter(prefix="/tokens", tags=["tokens"])
@@ -63,6 +64,12 @@ async def list_tokens(user: AuthContext = Depends(get_current_user)):
                 "size": float(latest["size"]) if latest and latest["size"] is not None else None,
                 "status": latest["status"] if latest else None,
                 "updated_at": latest["timestamp"].isoformat() if latest else None,
+                # Faz 212: kullanıcı NVDA/AAPL/^IXIC gibi hisse/endeks
+                # sembollerinde hiç veri görmeyince bunu bug sandı — gerçek
+                # sebep piyasa saatleri dışında bu sembollerin cycle'a hiç
+                # girmemesi (run_trading_cycle_task açıkça atlıyor). Şimdi
+                # bu ayrım UI'da da görünür.
+                "market_open": is_market_open(symbol),
             })
 
         return {"tokens": tokens}
