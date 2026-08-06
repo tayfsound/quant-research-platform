@@ -79,11 +79,20 @@ def _validate(key: str, value: str) -> None:
         if value not in CANDLE_TIMEFRAMES:
             raise HTTPException(400, f"candle_timeframe must be one of {list(CANDLE_TIMEFRAMES)}")
     elif key == "candle_lookback":
+        # Faz 222: kullanıcı bulgusu — "20-1000 arası çok yetersiz." Eski
+        # 1000 tavanı keyfi değildi, Binance'in TEK istekteki gerçek API
+        # tavanıydı (doğrulandı: limit=1001 istense bile 1000 döner).
+        # BinanceAdapter.fetch_ohlcv artık limit>1000 için pagination
+        # yapıyor (art arda 1000'er mumluk istekler), bu yüzden tavan
+        # yükseltildi. 5000 üst sınırı: 15m'de ~52 gün geçmiş (yeni
+        # long_term_trend_regime göstergesi için anlamlı), ama tek
+        # cycle'da sembol başına en fazla 5 art arda Binance isteğiyle
+        # sınırlı kalıyor (watchlist geneli için makul gecikme/yük).
         try:
-            if not (20 <= int(value) <= 1000):
+            if not (20 <= int(value) <= 5000):
                 raise ValueError
         except ValueError:
-            raise HTTPException(400, "candle_lookback must be an integer in [20, 1000]")
+            raise HTTPException(400, "candle_lookback must be an integer in [20, 5000]")
     else:
         raise HTTPException(400, f"unknown setting key: {key}")
 

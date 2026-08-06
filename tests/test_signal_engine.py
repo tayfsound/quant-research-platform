@@ -116,6 +116,29 @@ def test_too_few_bars_returns_safe_quant_defaults():
     signals = compute_quant_signals(_bars([100.0, 101.0]))
     assert signals["hurst_exponent"] == 0.5
     assert signals["zscore"] == 0.0
+    assert signals["long_term_trend_regime"] == "insufficient_data"
+
+
+def test_long_term_trend_regime_needs_deep_history_not_just_20_bars():
+    # Faz 222: kullanıcı bulgusu — "geçmiş pencere 20-1000 arası çok
+    # yetersiz." 20 bar (compute_quant_signals'ın genel minimumu) gerçek
+    # bir 200-EMA için yeterli değil — kısa pencereyle sahte bir "200 EMA"
+    # gibi davranmak yerine dürüstçe insufficient_data dönmeli.
+    closes = _oscillating_trend(100, 1.0, 60)
+    signals = compute_quant_signals(_bars(closes))
+    assert signals["long_term_trend_regime"] == "insufficient_data"
+
+
+def test_long_term_trend_regime_detects_a_real_sustained_uptrend():
+    closes = _oscillating_trend(100, 0.5, 300)
+    signals = compute_quant_signals(_bars(closes))
+    assert signals["long_term_trend_regime"] == "bull_trend"
+
+
+def test_long_term_trend_regime_detects_a_real_sustained_downtrend():
+    closes = _oscillating_trend(500, -0.5, 300)
+    signals = compute_quant_signals(_bars(closes))
+    assert signals["long_term_trend_regime"] == "bear_trend"
 
 
 def test_atr_is_positive_and_scales_with_real_range():

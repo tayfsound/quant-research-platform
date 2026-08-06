@@ -257,6 +257,7 @@ class ContextAdapter:
             realized_vol_percentile=self._get(ctx, "realized_vol_percentile", 50.0),
             autocorrelation=self._get(ctx, "autocorrelation", 0.0),
             hurst_exponent=self._get(ctx, "hurst_exponent", 0.5),
+            long_term_trend_regime=self._get(ctx, "long_term_trend_regime", "insufficient_data"),
         )
 
     def to_order_flow(self, ctx: CognitiveCycleContext) -> OrderFlowContext:

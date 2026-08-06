@@ -72,13 +72,8 @@ class BinanceAdapter(BaseExchangeAdapter):
     async def subscribe_to_streams(self, symbols: list[str]) -> None:
         pass  # WebSocket, Faz 18'de
 
-    async def fetch_ohlcv(
-        self, symbol: str, timeframe: str, since: datetime | None = None, limit: int = 1000
-    ) -> list[dict[str, Any]]:
-        params: dict[str, Any] = {"symbol": symbol, "interval": timeframe, "limit": limit}
-        if since:
-            params["startTime"] = int(since.timestamp() * 1000)
-        data = await self._get("/api/v3/klines", params)
+    @staticmethod
+    def _parse_klines(data: list[list]) -> list[dict[str, Any]]:
         return [
             {
                 "time": d[0],
@@ -90,6 +85,43 @@ class BinanceAdapter(BaseExchangeAdapter):
             }
             for d in data
         ]
+
+    async def fetch_ohlcv(
+        self, symbol: str, timeframe: str, since: datetime | None = None, limit: int = 1000
+    ) -> list[dict[str, Any]]:
+        """Faz 222: kullanıcı bulgusu — "20-1000 arası çok yetersiz." Doğrulandı:
+        Binance'in /api/v3/klines'ı gerçekten TEK istekte 1000 mumdan fazlasını
+        vermiyor (limit=1001 istense bile sessizce 1000 döner). limit<=1000 için
+        davranış birebir eskisiyle aynı (regresyon yok). limit>1000 için
+        `endTime`'ı geriye doğru kaydırarak art arda 1000'er mumluk istekler
+        atıp birleştiriyoruz (pagination) — borsa daha eski veri kalmayınca
+        (batch, istenenden az mum dönerse) duruyoruz."""
+        if limit <= 1000:
+            params: dict[str, Any] = {"symbol": symbol, "interval": timeframe, "limit": limit}
+            if since:
+                params["startTime"] = int(since.timestamp() * 1000)
+            data = await self._get("/api/v3/klines", params)
+            return self._parse_klines(data)
+
+        all_bars: list[dict[str, Any]] = []
+        end_time: int | None = None
+        remaining = limit
+        while remaining > 0:
+            batch_limit = min(1000, remaining)
+            params = {"symbol": symbol, "interval": timeframe, "limit": batch_limit}
+            if end_time is not None:
+                params["endTime"] = end_time
+            if since:
+                params["startTime"] = int(since.timestamp() * 1000)
+            data = await self._get("/api/v3/klines", params)
+            if not data:
+                break
+            all_bars = self._parse_klines(data) + all_bars
+            remaining -= len(data)
+            end_time = data[0][0] - 1
+            if len(data) < batch_limit:
+                break
+        return all_bars[-limit:]
 
     async def fetch_recent_trades(self, symbol: str, limit: int = 200) -> list[dict[str, Any]]:
         """Faz 214: kimliksiz/genel erişilebilen son-işlemler uç noktası —

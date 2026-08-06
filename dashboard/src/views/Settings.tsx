@@ -244,7 +244,10 @@ export default function Settings() {
               </button>
             ))}
           </div>
-          <p className="text-xs text-ink-soft mb-2">Geçmiş pencere (kaç bar): 20-1000 arası.</p>
+          <p className="text-xs text-ink-soft mb-2">
+            Geçmiş pencere (kaç bar): 20-5000 arası (1000'in üzerinde Binance'e art arda istek atılır —
+            daha yüksek gecikme, ama uzun-vade trend rejimi göstergesi için gerekli).
+          </p>
           <div className="flex gap-2">
             <Input
               type="number"

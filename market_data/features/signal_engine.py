@@ -301,7 +301,10 @@ def compute_quant_signals(data: list[OHLCV]) -> dict:
     """zscore/realized_vol_percentile/autocorrelation/hurst_exponent —
     hepsi standart, kesin tanımlı istatistiksel hesaplamalar."""
     if len(data) < 20:
-        return {"zscore": 0.0, "realized_vol_percentile": 50.0, "autocorrelation": 0.0, "hurst_exponent": 0.5}
+        return {
+            "zscore": 0.0, "realized_vol_percentile": 50.0, "autocorrelation": 0.0,
+            "hurst_exponent": 0.5, "long_term_trend_regime": "insufficient_data",
+        }
 
     closes = _closes(data)
     returns = _returns(closes)
@@ -314,13 +317,43 @@ def compute_quant_signals(data: list[OHLCV]) -> dict:
     realized_vol_percentile = _realized_vol_percentile(returns)
     autocorrelation = _autocorrelation(returns)
     hurst_exponent = _hurst_exponent(closes)
+    long_term_trend_regime = _long_term_trend_regime(closes)
 
     return {
         "zscore": round(float(zscore), 3),
         "realized_vol_percentile": round(float(realized_vol_percentile), 1),
         "autocorrelation": round(float(autocorrelation), 3),
         "hurst_exponent": round(float(hurst_exponent), 3),
+        "long_term_trend_regime": long_term_trend_regime,
     }
+
+
+def _long_term_trend_regime(closes: np.ndarray) -> str:
+    """Faz 222: kullanıcı bulgusu — "geçmiş pencere 20-1000 arası çok
+    yetersiz." Araştırınca gerçek bulgu şuydu: mevcut hiçbir gösterge
+    50 bardan fazlasını kullanmıyordu (compute_technical_signals'daki
+    "ema200" bile aslında min(50, n-1) periyotlu, gerçek bir 200 EMA
+    değildi) — yani 1000'e kadar olan derin geçmişin canlı sinyallere
+    hiçbir katkısı yoktu. candle_lookback artık pagination ile 1000'in
+    üzerine çıkabiliyor (BinanceAdapter.fetch_ohlcv) — bu, o derin
+    geçmişi GERÇEKTEN kullanan ilk gösterge: gerçek (yaklaştırma değil)
+    200-periyotluk EMA + son 20 barlık eğimi.
+
+    En az 220 bar (200 EMA'nın anlamlı yakınsaması için tampon) ister —
+    yetersizse kısa bir pencereyle sahte bir "200 EMA" gibi davranmak
+    yerine dürüstçe "insufficient_data" döner."""
+    n = len(closes)
+    if n < 220:
+        return "insufficient_data"
+    ema200 = _ema_series(closes, 200)
+    current_price = closes[-1]
+    current_ema = ema200[-1]
+    slope = ema200[-1] - ema200[-20]
+    if current_price > current_ema and slope > 0:
+        return "bull_trend"
+    if current_price < current_ema and slope < 0:
+        return "bear_trend"
+    return "transition"
 
 
 def _realized_vol_percentile(returns: np.ndarray, window: int = 10) -> float:

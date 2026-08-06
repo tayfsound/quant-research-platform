@@ -37,6 +37,19 @@ class QuantAgent:
         else:
             caveats.append(f"Hurst exponent {context.hurst_exponent:.2f} — near random walk, no statistical edge")
 
+        # Faz 222: gerçek 200 EMA'ya göre uzun-vade rejim — Hurst'ün ölçtüğü
+        # kısa-vadeli istatistiksel karakterden (trending mi mean-reverting mi)
+        # bağımsız, ayrı bir kanıt: fiyat gerçekten uzun vadede yükseliş/düşüş
+        # trendinde mi. candle_lookback yeterince derinse (>=220 bar) hesaplanır.
+        if context.long_term_trend_regime == "bull_trend":
+            score += 1.0
+            evidence.append("Long-term regime (real 200-EMA, 220+ bar lookback): bull trend")
+        elif context.long_term_trend_regime == "bear_trend":
+            score -= 1.0
+            evidence.append("Long-term regime (real 200-EMA, 220+ bar lookback): bear trend")
+        elif context.long_term_trend_regime == "insufficient_data":
+            caveats.append("Long-term trend regime unavailable — candle_lookback < 220 bars")
+
         # Aşırı volatilite — güveni azalt
         if context.realized_vol_percentile > 90:
             caveats.append(f"Realized volatility at {context.realized_vol_percentile:.0f}th percentile — reduced statistical reliability")
