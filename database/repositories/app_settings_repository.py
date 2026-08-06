@@ -51,22 +51,27 @@ DEFAULTS: dict[str, str] = {
     # XAUTUSDT) gerçekten take_profit hedefine ulaştı ama net PnL yine de
     # eksiye düştü, çünkü RiskTargetStage'in ATR-tabanlı hedefi (2x ATR)
     # bu fiyat seviyesinde (~4270) round-trip komisyona (~%0.1) kıyasla
-    # çok küçüktü (%0.07). Bu, hedefin fiyatın en az bu yüzdesi kadar
-    # olmasını zorunlu kılan bir alt sınır — komisyonu (%0.1) rahat
-    # karşılayacak ama Faz 208'in "test modunda deneyim kazansın" amacını
-    # (5% gibi çok yüksek bir eşik neredeyse hiçbir ATR-tabanlı işlemi
-    # geçiremez) boğmayacak şekilde %0.5 varsayılan — kullanıcı Settings'ten
-    # istediği gibi yükseltebilir/düşürebilir.
-    "min_profit_target_pct": "0.005",
+    # çok küçüktü (%0.07).
+    #
+    # Faz 214: gerçek geçmiş veriyle backtest edince (bkz. commit mesajı)
+    # %0.5'in KATASTROFİK derecede yanlış kalibre olduğu ortaya çıktı —
+    # 1m mumda BTCUSDT'nin 2x ATR hedefi medyan %0.036 (%0.5'in ~14 katı
+    # altında), yani gerçek Binance verisiyle 133 yönlü sinyalin
+    # TAMAMI reddediliyordu, hiç işlem açılamıyordu. Gerçek ölçüm: 5m
+    # mumda BTCUSDT medyan hedef %0.147 — round-trip komisyonu (~%0.1)
+    # rahat aşıyor. Bu yüzden hem candle_timeframe varsayılanı 5m'e
+    # çekildi (aşağıda) hem de bu eşik gerçek round-trip komisyonun
+    # hemen üstüne (%0.1) indirildi — "hedefi tutturmak zaten net kâr
+    # demek" ilkesini koruyor ama artık gerçek sinyalleri boğmuyor.
+    "min_profit_target_pct": "0.001",
     # Faz 214: kullanıcı isteği — "4 saatlik verileri kullanmak daha isabetli
-    # olmaz mı, geçmiş pencere çok kısa" (bu turdan önce ele alınmamıştı).
-    # Varsayılan öncekiyle birebir aynı (1m, 100 bar) — regresyon yok,
-    # kullanıcı Settings'ten değiştirebiliyor. candle_timeframe, işlem
-    # vadesinden (trade_horizon) ayrı: bu, ajanların hangi mum aralığından
-    # sinyal ürettiği (RSI/ATR/Hurst vb.), pozisyonun ne kadar açık
-    # kalacağı değil — ikisini karıştırmak "4h analiz = 4h pozisyon"
-    # yanılgısına düşürür, kasıtlı olarak ayrı tutuldu.
-    "candle_timeframe": "1m",
+    # olmaz mı, geçmiş pencere çok kısa." Gerçek geçmiş veriyle ölçüldü:
+    # 1m'de ATR-tabanlı hedef komisyonun çok altında kalıyor (yukarıdaki
+    # not), 5m'de gerçek bir kâr marjı bırakıyor — varsayılan 5m'e
+    # çekildi (kullanıcı Settings'ten istediği gibi değiştirebilir,
+    # 4h dahil — candle_timeframe işlem vadesinden ayrı, "4h analiz" ≠
+    # "4h pozisyon tutma").
+    "candle_timeframe": "5m",
     "candle_lookback": "100",
 }
 
