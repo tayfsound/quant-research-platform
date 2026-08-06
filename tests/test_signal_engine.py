@@ -205,3 +205,130 @@ def test_atr_is_positive_and_scales_with_real_range():
     wide_closes = [base + (5 if i % 2 == 0 else -5) for i in range(20)]
     wide = compute_technical_signals(_bars(wide_closes))["atr"]
     assert wide > tight
+
+
+# Faz 237: kullanıcı isteği — "eklenebilecek bütün teknik analiz
+# yöntemlerini ekleyelim eğer matematiksel bir yöntemse." Bollinger/VWAP/
+# ADX/OBV — dördü de kesin tanımlı, standart formüller.
+
+def test_bollinger_percent_b_is_near_one_when_price_spikes_above_recent_range():
+    closes = [100.0] * 25 + [130.0]  # son barda büyük bir sıçrama
+    signals = compute_technical_signals(_bars(closes))
+    assert signals["bollinger_percent_b"] > 1.0  # üst bandın da üstünde
+
+
+def test_bollinger_bandwidth_is_near_zero_for_a_flat_series():
+    signals = compute_technical_signals(_bars([100.0] * 25))
+    assert signals["bollinger_bandwidth"] < 0.01
+
+
+def test_vwap_deviation_is_positive_when_price_closes_above_volume_weighted_average():
+    # İlk barlar düşük fiyat + YÜKSEK hacim (VWAP'ı aşağı çekiyor), son
+    # bar yüksek fiyat + düşük hacim — kapanış VWAP'ın üstünde olmalı.
+    bars = _bars([90.0] * 10 + [110.0], volumes=[1000.0] * 10 + [1.0])
+    signals = compute_technical_signals(bars)
+    assert signals["vwap_deviation_pct"] > 0
+
+
+def test_adx_is_high_for_a_real_strong_directional_trend():
+    from market_data.features.signal_engine import _adx
+
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    # Gerçek, güçlü, kesintisiz bir yükseliş trendi — her bar öncekinden
+    # yüksek high/low.
+    bars = [
+        OHLCV(timestamp=base + timedelta(minutes=i), open=100 + i, high=101 + i, low=99.5 + i, close=100.5 + i, volume=100)
+        for i in range(40)
+    ]
+    adx, di_plus, di_minus = _adx(bars, 14)
+    assert adx > 25  # standart "güçlü trend" eşiği
+    assert di_plus > di_minus
+
+
+def test_adx_is_low_for_a_choppy_sideways_series():
+    from market_data.features.signal_engine import _adx
+
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    import math
+    bars = [
+        OHLCV(
+            timestamp=base + timedelta(minutes=i),
+            open=100 + math.sin(i) * 2, high=101 + math.sin(i) * 2, low=99 + math.sin(i) * 2,
+            close=100 + math.sin(i) * 2, volume=100,
+        )
+        for i in range(40)
+    ]
+    adx, _, _ = _adx(bars, 14)
+    assert adx < 25
+
+
+def test_obv_trend_rising_when_volume_flows_into_up_days():
+    closes = [100 + i for i in range(20)]  # her bar bir öncekinden yüksek
+    volumes = [100.0] * 20
+    signals = compute_technical_signals(_bars(closes, volumes))
+    assert signals["obv_trend"] == "rising"
+
+
+def test_price_obv_bearish_divergence_when_price_rises_but_volume_flow_falls():
+    from market_data.features.signal_engine import _obv_signal
+    import numpy as np
+
+    # Fiyat net yükseliyor ama YUKARI barlarda hacim küçük, AŞAĞI
+    # (geri çekilme) barlarında hacim büyük -> gerçek hacim akışı (OBV) net düşüyor.
+    closes = np.array([100.0, 105.0, 102.0, 108.0, 104.0, 112.0, 107.0, 115.0])
+    volumes = np.array([10.0, 10.0, 100.0, 10.0, 100.0, 10.0, 100.0, 10.0])
+    obv_trend, divergence = _obv_signal(closes, volumes, window=7)
+    assert divergence == "bearish_divergence"
+
+
+# Faz 237: gerçek, kesin tanımlı Wyckoff olayları (structure_phase'in kaba
+# genel-rejim yaklaşıklamasından AYRI, ayrık kurallarla tespit edilen
+# olaylar).
+
+def _range_bars(support: float, resistance: float, n: int, volume: float = 100.0) -> list[OHLCV]:
+    """support-resistance arasında düz bir menzil oluşturan n bar."""
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    mid = (support + resistance) / 2
+    return [
+        OHLCV(timestamp=base + timedelta(minutes=i), open=mid, high=resistance - 0.1, low=support + 0.1, close=mid, volume=volume)
+        for i in range(n)
+    ]
+
+
+def test_wyckoff_spring_detected_on_false_breakdown_that_closes_back_inside_range():
+    from market_data.features.signal_engine import _wyckoff_event
+
+    bars = _range_bars(support=95.0, resistance=105.0, n=21)
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    # Son bar: destek altına sarkıyor (low=93) ama menzil içine kapanıyor (close=97).
+    spring_bar = OHLCV(timestamp=base + timedelta(minutes=20), open=96, high=97, low=93.0, close=97.0, volume=100.0)
+    result = _wyckoff_event(bars + [spring_bar])
+    assert result == "spring"
+
+
+def test_wyckoff_upthrust_detected_on_false_breakout_that_closes_back_inside_range():
+    from market_data.features.signal_engine import _wyckoff_event
+
+    bars = _range_bars(support=95.0, resistance=105.0, n=21)
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    ut_bar = OHLCV(timestamp=base + timedelta(minutes=20), open=104, high=107.0, low=103, close=103.0, volume=100.0)
+    result = _wyckoff_event(bars + [ut_bar])
+    assert result == "upthrust"
+
+
+def test_wyckoff_sign_of_strength_needs_a_real_volume_confirmed_breakout():
+    from market_data.features.signal_engine import _wyckoff_event
+
+    bars = _range_bars(support=95.0, resistance=105.0, n=21, volume=100.0)
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    # Gerçek kırılım: kapanış direncin ÜSTÜNDE, hacim ortalamanın üstünde.
+    sos_bar = OHLCV(timestamp=base + timedelta(minutes=20), open=105, high=110, low=104, close=109.0, volume=500.0)
+    result = _wyckoff_event(bars + [sos_bar])
+    assert result == "sign_of_strength"
+
+
+def test_wyckoff_none_when_price_stays_inside_the_range():
+    from market_data.features.signal_engine import _wyckoff_event
+
+    bars = _range_bars(support=95.0, resistance=105.0, n=21)
+    assert _wyckoff_event(bars) == "none"

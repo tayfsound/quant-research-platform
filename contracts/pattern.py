@@ -17,4 +17,9 @@ class PatternContext(BaseModel):
     # seviyeye göre konumu ("at_support"/"at_resistance"/"none").
     fibonacci_nearest_level: str = "none"
     fibonacci_price_position: str = "none"
+    # Faz 237: kullanıcı isteği — "gerçek Wyckoff analizi yaptıralım."
+    # Kesin tanımlı, ayrık Wyckoff olayları — structure_phase'in (yukarıda)
+    # kasıtlı olarak kaba genel-rejim yaklaşıklamasından farklı olarak.
+    # "spring", "upthrust", "sign_of_strength", "sign_of_weakness", "none".
+    wyckoff_event: str = "none"
     timestamp: datetime = Field(default_factory=datetime.now)

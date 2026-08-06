@@ -249,6 +249,14 @@ class ContextAdapter:
             external_signal=external_signal,
             external_signal_source=external_signal_source,
             correlated_market_trend=correlated_market_trend,
+            bollinger_percent_b=self._get(ctx, "bollinger_percent_b", 0.5),
+            bollinger_bandwidth=self._get(ctx, "bollinger_bandwidth", 0.0),
+            vwap_deviation_pct=self._get(ctx, "vwap_deviation_pct", 0.0),
+            adx=self._get(ctx, "adx", 0.0),
+            di_plus=self._get(ctx, "di_plus", 0.0),
+            di_minus=self._get(ctx, "di_minus", 0.0),
+            obv_trend=self._get(ctx, "obv_trend", "flat"),
+            price_obv_divergence=self._get(ctx, "price_obv_divergence", "none"),
         )
 
     def to_pattern(self, ctx: CognitiveCycleContext) -> PatternContext:
@@ -261,6 +269,7 @@ class ContextAdapter:
             liquidity_sweep=self._get(ctx, "liquidity_sweep", "none"),
             fibonacci_nearest_level=self._get(ctx, "fibonacci_nearest_level", "none"),
             fibonacci_price_position=self._get(ctx, "fibonacci_price_position", "none"),
+            wyckoff_event=self._get(ctx, "wyckoff_event", "none"),
         )
 
     def to_quant(self, ctx: CognitiveCycleContext) -> QuantContext:

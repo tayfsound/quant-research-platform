@@ -58,6 +58,9 @@ def compute_technical_signals(data: list[OHLCV]) -> dict:
             "trend": "neutral", "momentum": "neutral", "market_structure": "neutral",
             "ema_alignment": "neutral", "volatility_regime": "normal", "volume_confirmation": False,
             "atr": 0.0,
+            "bollinger_percent_b": 0.5, "bollinger_bandwidth": 0.0, "vwap_deviation_pct": 0.0,
+            "adx": 0.0, "di_plus": 0.0, "di_minus": 0.0,
+            "obv_trend": "flat", "price_obv_divergence": "none",
         }
 
     closes = _closes(data)
@@ -107,6 +110,18 @@ def compute_technical_signals(data: list[OHLCV]) -> dict:
     rsi_value = _rsi(closes, period)
     atr_value = _atr(data, min(14, n - 1))
 
+    # Faz 237: kullanıcı isteği — "eklenebilecek bütün teknik analiz
+    # yöntemlerini ekleyelim eğer matematiksel bir yöntemse." Bollinger/
+    # VWAP/ADX/OBV — dördü de kesin tanımlı, standart formüller (Stochastic/
+    # Williams %R/CCI kasıtlı olarak eklenmedi: RSI'ın zaten kapsadığı
+    # "aşırı alım/satım" fikrini büyük ölçüde tekrarlıyorlar, katma değerleri
+    # düşük; Parabolic SAR/Keltner/Donchian de mevcut trend/ATR/swing
+    # göstergeleriyle ciddi örtüşüyor).
+    bollinger_percent_b, bollinger_bandwidth = _bollinger_bands(closes)
+    vwap_deviation_pct = _vwap_deviation(data)
+    adx_value, di_plus, di_minus = _adx(data, min(14, n - 1))
+    obv_trend, price_obv_divergence = _obv_signal(closes, volumes)
+
     return {
         "RSI": round(float(rsi_value), 2),
         "ema": round(float(ema20), 6),
@@ -118,7 +133,140 @@ def compute_technical_signals(data: list[OHLCV]) -> dict:
         "volatility_regime": volatility_regime,
         "volume_confirmation": volume_confirmation,
         "atr": round(float(atr_value), 6),
+        "bollinger_percent_b": round(float(bollinger_percent_b), 3),
+        "bollinger_bandwidth": round(float(bollinger_bandwidth), 4),
+        "vwap_deviation_pct": round(float(vwap_deviation_pct), 4),
+        "adx": round(float(adx_value), 2),
+        "di_plus": round(float(di_plus), 2),
+        "di_minus": round(float(di_minus), 2),
+        "obv_trend": obv_trend,
+        "price_obv_divergence": price_obv_divergence,
     }
+
+
+def _bollinger_bands(closes: np.ndarray, period: int = 20, k: float = 2.0) -> tuple[float, float]:
+    """Standart Bollinger Bands — SMA ± k*std. percent_b: fiyatın bantlar
+    arasındaki konumu (0=alt bant, 1=üst bant, aralık dışına da çıkabilir).
+    bandwidth: bantların SMA'ya göre göreli genişliği (düşük = sıkışma,
+    genelde bir sonraki büyük harekete işaret eder)."""
+    window = min(period, len(closes))
+    if window < 2:
+        return 0.5, 0.0
+    recent = closes[-window:]
+    sma = recent.mean()
+    std = recent.std()
+    upper, lower = sma + k * std, sma - k * std
+    band_range = upper - lower
+    percent_b = (closes[-1] - lower) / band_range if band_range > 0 else 0.5
+    bandwidth = band_range / sma if sma > 0 else 0.0
+    return percent_b, bandwidth
+
+
+def _vwap_deviation(data: list[OHLCV]) -> float:
+    """Volume-Weighted Average Price — standart formül (typical price ×
+    hacim / toplam hacim). Gerçek bir "session" kavramı olmadığı için
+    (bu proje 7/24 kripto + hisse karışık takip ediyor) mevcut lookback
+    penceresinin tamamı "session" olarak kullanılıyor — dürüst bir
+    yaklaşıklama, gerçek borsa session VWAP'ı değil, açıkça belirtiliyor.
+    Dönen değer: fiyatın VWAP'a göre göreli sapması (%)."""
+    typical_prices = np.array([(d.high + d.low + d.close) / 3.0 for d in data], dtype=float)
+    volumes = np.array([d.volume for d in data], dtype=float)
+    total_volume = volumes.sum()
+    if total_volume <= 0:
+        return 0.0
+    vwap = float((typical_prices * volumes).sum() / total_volume)
+    if vwap <= 0:
+        return 0.0
+    return (data[-1].close - vwap) / vwap
+
+
+def _adx(data: list[OHLCV], period: int) -> tuple[float, float, float]:
+    """Average Directional Index (Wilder, standart tanım) — trend YÖNÜNÜ
+    değil trend GÜCÜNÜ ölçer (ADX>25 güçlü trend, <20 zayıf/yatay —
+    literatürdeki standart eşikler). Sistemdeki hiçbir mevcut gösterge
+    bunu ölçmüyordu: Hurst istatistiksel bir rejim ayrımı yapıyor
+    (mean-reverting vs trending), ADX ise "şu an gerçekten güçlü bir
+    trend içindeyiz" sorusuna kesin tanımlı, farklı bir cevap veriyor."""
+    if len(data) < period + 2 or period < 1:
+        return 0.0, 0.0, 0.0
+
+    highs = np.array([d.high for d in data], dtype=float)
+    lows = np.array([d.low for d in data], dtype=float)
+    closes = np.array([d.close for d in data], dtype=float)
+
+    up_move = highs[1:] - highs[:-1]
+    down_move = lows[:-1] - lows[1:]
+    plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+    minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
+
+    prev_closes = closes[:-1]
+    true_ranges = np.maximum(
+        highs[1:] - lows[1:],
+        np.maximum(np.abs(highs[1:] - prev_closes), np.abs(lows[1:] - prev_closes)),
+    )
+
+    def _wilder_smooth(values: np.ndarray, p: int) -> np.ndarray:
+        if len(values) < p:
+            return values
+        smoothed = np.empty(len(values) - p + 1)
+        smoothed[0] = values[:p].sum()
+        for i in range(1, len(smoothed)):
+            smoothed[i] = smoothed[i - 1] - (smoothed[i - 1] / p) + values[p - 1 + i]
+        return smoothed
+
+    smoothed_tr = _wilder_smooth(true_ranges, period)
+    smoothed_plus_dm = _wilder_smooth(plus_dm, period)
+    smoothed_minus_dm = _wilder_smooth(minus_dm, period)
+
+    if len(smoothed_tr) == 0 or smoothed_tr[-1] == 0:
+        return 0.0, 0.0, 0.0
+
+    di_plus = 100.0 * smoothed_plus_dm / np.where(smoothed_tr == 0, 1e-9, smoothed_tr)
+    di_minus = 100.0 * smoothed_minus_dm / np.where(smoothed_tr == 0, 1e-9, smoothed_tr)
+
+    di_sum = di_plus + di_minus
+    dx = 100.0 * np.abs(di_plus - di_minus) / np.where(di_sum == 0, 1e-9, di_sum)
+
+    adx_window = dx[-period:] if len(dx) >= period else dx
+    adx_value = float(adx_window.mean()) if len(adx_window) else 0.0
+
+    return adx_value, float(di_plus[-1]), float(di_minus[-1])
+
+
+def _obv_signal(closes: np.ndarray, volumes: np.ndarray, window: int = 20) -> tuple[str, str]:
+    """On-Balance Volume (standart, kesin tanımlı: kapanış yukarıysa hacmi
+    ekle, aşağıysa çıkar). Ham kümülatif OBV sayısının kendisi zaman
+    içinde karşılaştırılabilir değil — burada iki gerçek sinyale
+    dönüştürülüyor: (1) OBV'nin kendi son penceredeki trendi, (2) fiyatla
+    OBV arasında bir ıraksama (divergence) var mı — fiyat yükselirken
+    gerçek hacim akışı (OBV) düşüyorsa bu klasik bir "zayıf rally" uyarısı,
+    ve tersi."""
+    if len(closes) < 3:
+        return "flat", "none"
+
+    obv = np.zeros(len(closes))
+    for i in range(1, len(closes)):
+        if closes[i] > closes[i - 1]:
+            obv[i] = obv[i - 1] + volumes[i]
+        elif closes[i] < closes[i - 1]:
+            obv[i] = obv[i - 1] - volumes[i]
+        else:
+            obv[i] = obv[i - 1]
+
+    w = min(window, len(closes) - 1)
+    obv_change = obv[-1] - obv[-1 - w]
+    price_change = closes[-1] - closes[-1 - w]
+
+    obv_trend = "rising" if obv_change > 0 else "falling" if obv_change < 0 else "flat"
+
+    if price_change > 0 and obv_change < 0:
+        divergence = "bearish_divergence"  # fiyat yükseliyor, gerçek hacim akışı desteklemiyor
+    elif price_change < 0 and obv_change > 0:
+        divergence = "bullish_divergence"  # fiyat düşüyor, gerçek hacim akışı desteklemiyor
+    else:
+        divergence = "none"
+
+    return obv_trend, divergence
 
 
 def _rsi(closes: np.ndarray, period: int) -> float:
@@ -214,6 +362,7 @@ def compute_pattern_signals(data: list[OHLCV]) -> dict:
             "change_of_character": False, "fair_value_gap": "none",
             "swing_structure": "mixed", "liquidity_sweep": "none",
             "fibonacci_nearest_level": "none", "fibonacci_price_position": "none",
+            "wyckoff_event": "none",
         }
 
     closes = _closes(data)
@@ -255,6 +404,7 @@ def compute_pattern_signals(data: list[OHLCV]) -> dict:
 
     structure_phase = _approximate_wyckoff_phase(data)
     fib_level, fib_position = _fibonacci_signal(closes, highs, lows, swing_highs, swing_lows)
+    wyckoff_event = _wyckoff_event(data)
 
     return {
         "structure_phase": structure_phase,
@@ -265,6 +415,7 @@ def compute_pattern_signals(data: list[OHLCV]) -> dict:
         "liquidity_sweep": liquidity_sweep,
         "fibonacci_nearest_level": fib_level,
         "fibonacci_price_position": fib_position,
+        "wyckoff_event": wyckoff_event,
     }
 
 
@@ -349,6 +500,48 @@ def _approximate_wyckoff_phase(data: list[OHLCV]) -> str:
     if vol_percentile > 80 and closes[-1] < closes[-10:].mean():
         return "markdown"
     return "neutral"
+
+
+def _wyckoff_event(data: list[OHLCV], window: int = 20) -> str:
+    """Faz 237: kullanıcı isteği — "gerçek Wyckoff analizi yaptıralım."
+    _approximate_wyckoff_phase() (yukarıda) kasıtlı olarak kaba bir proxy
+    olarak kalıyor — genel rejim (accumulation/distribution/markup/
+    markdown) hâlâ öznel bir yorum. Ama Wyckoff metodolojisinin KESİN
+    TANIMLI, gerçekten ayrık fiyat-hacim olayları var, ve bunlar burada
+    gerçekten tespit ediliyor:
+    - Spring: fiyat menzil DESTEĞİNİN altına sarkıyor (düşük fitil) ama
+      kapanış menzil içine geri dönüyor — klasik "sahte kırılma/shakeout",
+      bullish (zayıf elleri temizleyip gerçek alıcıları içeri çekiyor).
+    - Upthrust (UT): Spring'in aynası — menzil DİRENCİNİN üstüne sarkıyor,
+      kapanış içeri dönüyor, bearish.
+    - Sign of Strength (SOS): kapanış menzil direncinin GERÇEKTEN üstünde
+      VE hacim kendi yakın geçmiş ortalamasının üstünde — hacimle
+      desteklenen gerçek bir kırılım (sadece bir fitil değil).
+    - Sign of Weakness (SOW): SOS'un aynası, menzil desteğinin altında.
+    Menzil (destek/direnç), ŞU ANKİ bar HARİÇ son `window` bar'ın en düşük
+    low'u / en yüksek high'ı — lookahead yok."""
+    if len(data) < window + 2:
+        return "none"
+
+    highs = np.array([d.high for d in data], dtype=float)
+    lows = np.array([d.low for d in data], dtype=float)
+    volumes = np.array([d.volume for d in data], dtype=float)
+
+    support = lows[-(window + 1):-1].min()
+    resistance = highs[-(window + 1):-1].max()
+    avg_volume = volumes[-(window + 1):-1].mean()
+
+    current = data[-1]
+
+    if current.low < support and current.close > support:
+        return "spring"
+    if current.high > resistance and current.close < resistance:
+        return "upthrust"
+    if current.close > resistance and current.volume > avg_volume:
+        return "sign_of_strength"
+    if current.close < support and current.volume > avg_volume:
+        return "sign_of_weakness"
+    return "none"
 
 
 def compute_quant_signals(data: list[OHLCV]) -> dict:

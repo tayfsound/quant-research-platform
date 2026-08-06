@@ -65,6 +65,52 @@ class TechnicalAgent:
         if context.volatility_regime == "high":
             caveats.append("High volatility regime — reduced position sizing recommended")
 
+        # Faz 237: Bollinger Bands — bandın DIŞINA taşmak (percent_b<0 ya da
+        # >1) genelde ya gerçek bir kırılım ya da aşırı-uzama/dönüş adayı;
+        # burada "mean-reversion" yorumuyla DEĞİL, mevcut trend'i DOĞRULAYAN
+        # yönde kullanılıyor (trend güçlüyken bandın dışına taşmak devam
+        # sinyali — trend yokken aşırı bölge yorumu QuantAgent'ın zaten
+        # kapsadığı z-score'la çakışırdı).
+        if context.bollinger_percent_b > 1.0 and context.trend == "bullish":
+            score += 0.5
+            evidence.append(f"Price above upper Bollinger Band ({context.bollinger_percent_b:.2f}) confirming bullish trend")
+        elif context.bollinger_percent_b < 0.0 and context.trend == "bearish":
+            score -= 0.5
+            evidence.append(f"Price below lower Bollinger Band ({context.bollinger_percent_b:.2f}) confirming bearish trend")
+
+        # Faz 237: VWAP sapması — fiyat "adil değerin" ne kadar üstünde/
+        # altında, mevcut trend'i doğrulayan yönde hafif bir kanıt.
+        if context.vwap_deviation_pct > 0.01 and context.trend == "bullish":
+            score += 0.3
+            evidence.append(f"Price {context.vwap_deviation_pct:.2%} above VWAP — real buying pressure")
+        elif context.vwap_deviation_pct < -0.01 and context.trend == "bearish":
+            score -= 0.3
+            evidence.append(f"Price {context.vwap_deviation_pct:.2%} below VWAP — real selling pressure")
+
+        # Faz 237: ADX — trend YÖNÜ değil GÜCÜ. Zayıf/yatay trend'te (ADX<20)
+        # bu ajanın kendi trend/momentum sinyallerine güveni azaltılıyor;
+        # güçlü trend'te (ADX>25) DI+/DI- yönü mevcut trend'i doğruluyorsa
+        # hafifçe güçlendiriliyor.
+        if context.adx < 20:
+            caveats.append(f"ADX {context.adx:.1f} — weak/ranging trend, low conviction")
+            score *= 0.7
+        elif context.adx > 25:
+            if context.di_plus > context.di_minus and context.trend == "bullish":
+                score += 0.4
+                evidence.append(f"ADX {context.adx:.1f} — strong trend, DI+ confirms bullish direction")
+            elif context.di_minus > context.di_plus and context.trend == "bearish":
+                score -= 0.4
+                evidence.append(f"ADX {context.adx:.1f} — strong trend, DI- confirms bearish direction")
+
+        # Faz 237: OBV ıraksaması — gerçek hacim akışı fiyatı desteklemiyorsa
+        # (klasik "zayıf rally/zayıf düşüş" uyarısı) güveni azaltıyor.
+        if context.price_obv_divergence == "bearish_divergence":
+            caveats.append("Price rising but OBV falling — bearish volume divergence")
+            score -= 0.3
+        elif context.price_obv_divergence == "bullish_divergence":
+            caveats.append("Price falling but OBV rising — bullish volume divergence")
+            score += 0.3
+
         # Kendi hesapladığı yön ÖNCE belirleniyor — TradingView alarmı
         # sadece bir onay/uyarı notu ekliyor, kendi başına yönü belirlemiyor
         # ya da ezmiyor (Faz 193: "ikinci görüş" isteğinin doğrudan karşılığı).

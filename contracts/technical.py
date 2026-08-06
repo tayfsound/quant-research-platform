@@ -27,3 +27,14 @@ class TechnicalContext(BaseModel):
     # ikisi anlaşmazsa ya da henüz analiz edilmemişlerse None (icat edilmiş
     # bir "hafif korelasyon" sinyali değil, ya net bir uyum ya da hiç sinyal).
     correlated_market_trend: str | None = None
+    # Faz 237: kullanıcı isteği — ek matematiksel TA yöntemleri. Dördü de
+    # kesin tanımlı, standart formüller (bkz. market_data/features/
+    # signal_engine.py).
+    bollinger_percent_b: float = 0.5   # 0=alt bant, 1=üst bant (aralık dışına çıkabilir)
+    bollinger_bandwidth: float = 0.0   # bantların SMA'ya göre göreli genişliği (düşük=sıkışma)
+    vwap_deviation_pct: float = 0.0    # fiyatın VWAP'a göre göreli sapması
+    adx: float = 0.0                   # trend GÜCÜ (>25 güçlü, <20 zayıf/yatay — standart eşikler)
+    di_plus: float = 0.0
+    di_minus: float = 0.0
+    obv_trend: str = "flat"            # "rising", "falling", "flat"
+    price_obv_divergence: str = "none"  # "bullish_divergence", "bearish_divergence", "none"

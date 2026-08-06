@@ -26,6 +26,24 @@ class PatternAgent:
             score -= 1.0
             evidence.append("Markdown phase — trend continuation likely")
 
+        # Faz 237: gerçek, kesin tanımlı Wyckoff olayları — structure_phase
+        # (yukarıda) kaba bir genel-rejim yaklaşıklaması, bunlar ise ayrık,
+        # net kurallarla tespit edilen olaylar (bkz. signal_engine.py::
+        # _wyckoff_event). Spring/SOS en güçlü, en klasik Wyckoff sinyalleri
+        # olduğu için structure_phase'ten daha yüksek ağırlıklı.
+        if context.wyckoff_event == "spring":
+            score += 2.0
+            evidence.append("Wyckoff spring — false breakdown below support, real buyers stepping in")
+        elif context.wyckoff_event == "upthrust":
+            score -= 2.0
+            evidence.append("Wyckoff upthrust — false breakout above resistance, real sellers stepping in")
+        elif context.wyckoff_event == "sign_of_strength":
+            score += 1.5
+            evidence.append("Wyckoff sign of strength — volume-confirmed breakout above resistance")
+        elif context.wyckoff_event == "sign_of_weakness":
+            score -= 1.5
+            evidence.append("Wyckoff sign of weakness — volume-confirmed breakdown below support")
+
         # Break of Structure
         if context.break_of_structure == "bullish":
             score += 1.5
