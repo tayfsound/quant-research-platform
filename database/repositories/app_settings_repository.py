@@ -116,6 +116,19 @@ TRADE_HORIZON_SECONDS: dict[str, int] = {
     "long": 86400,      # 1 gün
 }
 
+# Faz 224 review bulgusu (B): trade_horizon (pozisyonun ne kadar açık
+# kalabileceği) ile candle_timeframe (sinyalin hangi mum aralığından
+# üretildiği) birbirinden bağımsız iki ayar — kullanıcı Settings'ten
+# ikisini de istediği gibi değiştirebiliyor. Faz 215'te tam olarak bu
+# ikisinin uyuşmazlığı (trade_horizon=10dk < candle_timeframe=15dk)
+# gerçek bir bug'a yol açmıştı: pozisyon, sinyalin üretildiği mum bile
+# tamamlanmadan kapanabiliyordu. O zaman defaultlar düzeltildi ama
+# kullanıcı ayarları TEKRAR uyumsuz bir kombinasyona çekebilirdi — bu
+# yüzden artık her iki ayar da yazılırken KARŞI ayara göre doğrulanıyor.
+CANDLE_TIMEFRAME_SECONDS: dict[str, int] = {
+    "1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400,
+}
+
 
 class AppSettingModel(Base):
     __tablename__ = "app_settings"
