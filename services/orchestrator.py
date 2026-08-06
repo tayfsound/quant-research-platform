@@ -16,6 +16,69 @@ from services.decision_recorder import DecisionRecorder
 from config import get_settings
 from contracts.context import CognitiveCycleContext
 
+def build_cognitive_context(symbol: str, timeframe: str, data) -> CognitiveCycleContext:
+    """Faz 224 review bulgusu (E): bu mantık önceden HEM burada (özel
+    _build_context metodu olarak) HEM DE api/rest/cognitive.py'de
+    (run_cognitive_cycle içinde) bağımsızca tekrarlanıyordu — "gap #15 ile
+    aynı desen: iki entrypoint aynı işi bağımsız yapıyor, biri
+    düzeltilince diğeri unutulabiliyor" (Faz 214'ün kendi yorumu, gerçek
+    bir örneği: proposed_size düzeltmesi orchestrator.py'de yapılıp
+    cognitive.py'de unutulmuştu). Artık TEK gerçek kaynak — her iki
+    entrypoint de bunu çağırıyor."""
+    ctx = CognitiveCycleContext()
+    ctx.market.symbol = symbol
+    ctx.market.timeframe = timeframe
+
+    # Kritik bulgu (2026-08-05): buradan sadece ham rsi/ema/macd sayıları
+    # geçiyordu — TechnicalAgent'ın gerçekten skorladığı trend/momentum/
+    # market_structure/ema_alignment/volatility_regime alanlarını HİÇBİR
+    # kod üretmiyordu (hep varsayılan/nötr), ve Pattern/Quant ajanları da
+    # (bu oturumda eklenen) üretimde tamamen kör çalışıyordu. Artık
+    # gerçek OHLCV geçmişinden hesaplanıyor — bkz. market_data/features/
+    # signal_engine.py.
+    technical_signals = compute_technical_signals(data)
+    pattern_signals = compute_pattern_signals(data)
+    quant_signals = compute_quant_signals(data)
+
+    ctx.market.features = {**technical_signals, **quant_signals}
+    ctx.market.raw_snapshot = {
+        "close": data[-1].close,
+        "volume": data[-1].volume,
+        "high": data[-1].high,
+        "low": data[-1].low,
+        **pattern_signals,
+    }
+    # Gap #15: bu alan önceden boş bir dict'ti, bu yüzden RiskEngine her
+    # cycle'ı MISSING_LIMIT ile reddediyordu.
+    ctx.risk.limits = load_active_limits()
+
+    # Faz 188: test/live modu + gerçek açık pozisyon sayısı/sermaye
+    # yüzdesi — RiskEngine (ön) ve RiskGateStage (son) bunları kullanıyor.
+    risk_state = load_position_risk_state(symbol=symbol)
+    ctx.risk.trading_mode = risk_state["trading_mode"]
+    ctx.risk.open_position_count = risk_state["open_position_count"]
+    ctx.risk.max_concurrent_positions = risk_state["max_concurrent_positions"]
+    ctx.risk.capital_used_pct = risk_state["capital_used_pct"]
+    ctx.risk.max_capital_pct = risk_state["max_capital_pct"]
+    ctx.risk.seconds_since_last_trade = risk_state["seconds_since_last_trade"]
+    ctx.risk.min_seconds_between_trades = risk_state["min_seconds_between_trades"]
+    ctx.risk.ai_enabled = risk_state["ai_enabled"]
+
+    # Faz 211: her işlem, sermayenin (starting_capital * max_capital_pct)
+    # eşit dilimlere bölünmüş (max_concurrent_positions) GERÇEK bir $
+    # notional bütçesi hedefliyor; birim sayısı bu bütçenin güncel fiyata
+    # bölünmesiyle çıkıyor — pahalı/ucuz varlıklar artık aynı gerçek $
+    # riskini taşıyor.
+    current_price = data[-1].close
+    capital_per_trade = (
+        risk_state["starting_capital"] * risk_state["max_capital_pct"]
+        / max(risk_state["max_concurrent_positions"], 1)
+    )
+    ctx.decision.proposed_size = capital_per_trade / current_price if current_price else 0.0
+
+    return ctx
+
+
 class CognitiveOrchestrator:
     def __init__(
         self,
@@ -214,77 +277,10 @@ class CognitiveOrchestrator:
                 directional[sym]["ctx"].decision.final_size = abs(signed_size)
 
     def _build_context(self, symbol: str, timeframe: str, data) -> CognitiveCycleContext:
-        # Build cognitive context
-        ctx = CognitiveCycleContext()
-        ctx.market.symbol = symbol
-        ctx.market.timeframe = timeframe
-
-        # Kritik bulgu (2026-08-05): buradan sadece ham rsi/ema/macd sayıları
-        # geçiyordu — TechnicalAgent'ın gerçekten skorladığı trend/momentum/
-        # market_structure/ema_alignment/volatility_regime alanlarını HİÇBİR
-        # kod üretmiyordu (hep varsayılan/nötr), ve Pattern/Quant ajanları da
-        # (bu oturumda eklenen) üretimde tamamen kör çalışıyordu. Artık
-        # gerçek OHLCV geçmişinden hesaplanıyor — bkz. market_data/features/
-        # signal_engine.py.
-        technical_signals = compute_technical_signals(data)
-        pattern_signals = compute_pattern_signals(data)
-        quant_signals = compute_quant_signals(data)
-
-        ctx.market.features = {**technical_signals, **quant_signals}
-        ctx.market.raw_snapshot = {
-            "close": data[-1].close,
-            "volume": data[-1].volume,
-            "high": data[-1].high,
-            "low": data[-1].low,
-            **pattern_signals,
-        }
-        # Gap #15: same fix as api/rest/cognitive.py — this used to be an
-        # empty dict, so RiskEngine rejected every cycle with MISSING_LIMIT
-        # regardless of what self.max_position_size/max_drawdown_limit said
-        # (those constructor args were never actually wired to the risk gate).
-        ctx.risk.limits = load_active_limits()
-
-        # Faz 188: test/live modu + gerçek açık pozisyon sayısı/sermaye
-        # yüzdesi — RiskEngine (ön) ve RiskGateStage (son) bunları kullanıyor.
-        risk_state = load_position_risk_state(symbol=symbol)
-        ctx.risk.trading_mode = risk_state["trading_mode"]
-        ctx.risk.open_position_count = risk_state["open_position_count"]
-        ctx.risk.max_concurrent_positions = risk_state["max_concurrent_positions"]
-        ctx.risk.capital_used_pct = risk_state["capital_used_pct"]
-        ctx.risk.max_capital_pct = risk_state["max_capital_pct"]
-        ctx.risk.seconds_since_last_trade = risk_state["seconds_since_last_trade"]
-        ctx.risk.min_seconds_between_trades = risk_state["min_seconds_between_trades"]
-        ctx.risk.ai_enabled = risk_state["ai_enabled"]
-
-        # Faz 211: gerçek bulgu — Faz 206'da proposed_size, max_position_size
-        # limitinin (hash-imzalı, o an "1.0") ham DEĞERİNE eşitlenmişti —
-        # yani her sembolde "1.0 birim" öneriliyordu, fiyattan tamamen
-        # bağımsız. Gerçek veriyle doğrulandı: PAXGUSDT (~$4275/birim) 1.0
-        # birim = $4275 notional açarken, ADAUSDT (~$0.19/birim) 1.0 birim
-        # = $0.19 notional açıyordu — aynı "size" aynı riski hiç temsil
-        # etmiyordu. Sonuç iki ayrı gözlemlenmiş semptom: pahalı varlıklarda
-        # komisyon kâr payını yiyordu (PAXGUSDT/XAUTUSDT), ucuz varlıklarda
-        # ise gerçek pnl o kadar küçüktü ki (ör. -$0.00018) dashboard'da
-        # 2 ondalıkla "0.00" görünüyordu (ADAUSDT/XRPUSDT) — kullanıcı ikisini
-        # de fark etti.
-        #
-        # Artık her işlem, sermayenin (starting_capital * max_capital_pct)
-        # eşit dilimlere bölünmüş (max_concurrent_positions) GERÇEK bir $
-        # notional bütçesi hedefliyor; birim sayısı bu bütçenin güncel
-        # fiyata bölünmesiyle çıkıyor — pahalı/ucuz varlıklar artık aynı
-        # gerçek $ riskini taşıyor. max_position_size (ADMIN onaylı,
-        # hash-imzalı) artık BAĞIMSIZ bir $ notional tavanı olarak
-        # yorumlanıyor (RiskEngine.execute() içinde notional bazlı
-        # karşılaştırılıyor) — kullanıcının capital_pct/concurrent
-        # ayarlarını ne kadar gevşetirse gevşetsin aşamayacağı bir üst sınır.
-        current_price = data[-1].close
-        capital_per_trade = (
-            risk_state["starting_capital"] * risk_state["max_capital_pct"]
-            / max(risk_state["max_concurrent_positions"], 1)
-        )
-        ctx.decision.proposed_size = capital_per_trade / current_price if current_price else 0.0
-
-        return ctx
+        # Faz 224 review (E): gövde module-level build_cognitive_context()'e
+        # taşındı — api/rest/cognitive.py da artık AYNI fonksiyonu çağırıyor,
+        # iki bağımsız kopya kalmadı.
+        return build_cognitive_context(symbol, timeframe, data)
 
     def run_cycle(self, seed: int = 42, symbol: str | None = None) -> dict[str, Any]:
         settings = get_settings()

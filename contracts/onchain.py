@@ -21,5 +21,16 @@ class OnChainContext(BaseModel):
     solana_tps: float | None = None
     # Faz 215: blockchain.info'nun ücretsiz/kimliksiz charts API'sinden —
     # Bitcoin'e özel, gerçek ağ sağlığı trendleri (rising/falling/stable).
+    #
+    # Faz 224 review bulgusu (C): bu iki alan SADECE Bitcoin zincirinden
+    # geliyor ama TÜM kripto sembolleri (ETHUSDT, SOLUSDT dahil) için
+    # aynı değeri taşıyor — ETH/SOL işlemlerinde "zincire özel" bir sinyal
+    # değil, "genel kripto piyasası sağlığı" göstergesi olarak kullanılıyor.
+    # Bu KASITLI: eth_gas_price_gwei/solana_tps de aynı şekilde tüm
+    # sembollere uygulanıyor (bkz. ContextAdapter._real_onchain_metrics).
+    # ETH'e özgü bir eşdeğer (ör. Etherscan günlük işlem sayısı — ETH artık
+    # PoS, "hash rate" kavramı yok) veya SOL'e özgü bir eşdeğer henüz
+    # eklenmedi; eklenirse OnChainAgent'a sembol bazlı yeni kanıt satırları
+    # gerekir. Şimdilik bilinçli bir kapsam sınırı, kod hatası değil.
     network_activity_trend: str = "stable"
     hash_rate_trend: str = "stable"
