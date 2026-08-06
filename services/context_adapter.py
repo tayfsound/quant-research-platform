@@ -45,15 +45,33 @@ class ContextAdapter:
         # AAPL/altın için "kripto piyasası korkuyor mu" alakasız olurdu.
         symbol = ctx.market.symbol or ""
         real_fgi = None
+        real_positioning = None
         if symbol.upper().endswith(("USDT", "BUSD", "USDC", "FDUSD")):
             from market_data.sentiment.fear_greed_provider import fetch_fear_greed_index
             real_fgi = fetch_fear_greed_index()
 
+            # Faz 215: gerçek bulgu — "positioning" hep sabit "neutral"
+            # kullanıyordu, önceki bir not bunun "genelde ücretli/karmaşık"
+            # olduğunu varsaymıştı ama Binance Futures'ın global long/short
+            # hesap oranı gerçekten ücretsiz/kimliksiz erişilebiliyor.
+            # Sadece gerçek bir futures kontratı olan semboller için (ör.
+            # PAXGUSDT/XAUTUSDT'de futures yok) — yoksa None, dürüstçe
+            # "neutral"e düşer, uydurulmaz.
+            from market_data.sentiment.positioning_provider import fetch_positioning
+            real_positioning = fetch_positioning(symbol)
+
+        # Faz 215: gerçek bulgu — "news_tone" hep sabit "neutral" kullanıyordu.
+        # CoinDesk'in gerçek, ücretsiz RSS akışından gerçek başlıklar +
+        # şeffaf anahtar kelime eşlemesi (tüm semboller için aynı — kripto
+        # geneli haber akışı, sembole özel değil, tıpkı fear&greed gibi).
+        from market_data.sentiment.news_tone_provider import fetch_news_tone
+        real_news_tone = fetch_news_tone()
+
         return SentimentContext(
             fear_greed_index=self._get(ctx, "fear_greed_index", real_fgi if real_fgi is not None else 50.0),
             social_media_sentiment=self._get(ctx, "social_media_sentiment", 0.0),
-            news_tone=self._get(ctx, "news_tone", "neutral"),
-            positioning=self._get(ctx, "positioning", "neutral"),
+            news_tone=self._get(ctx, "news_tone", real_news_tone if real_news_tone is not None else "neutral"),
+            positioning=self._get(ctx, "positioning", real_positioning if real_positioning is not None else "neutral"),
         )
 
     def _real_onchain_metrics(self, symbol: str) -> dict:
