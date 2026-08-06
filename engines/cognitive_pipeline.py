@@ -149,12 +149,23 @@ class MetaStage:
             ctx.decision.final_size = ctx.decision.proposed_size * meta["confidence"]
 
         else:
+            # Faz 206: gerçek bulgu — ACT dalı action'ı LONG/SHORT'a
+            # çeviriyordu ama final_size'ı HİÇ set etmiyordu (WAIT ve REDUCE
+            # dalları set ediyor). PAXGUSDT confidence=0.78 (act_threshold
+            # 0.7'nin üstünde) ile gerçek bir ACT kararı üretilirken bile
+            # final_size Decision contract'ının varsayılanı olan 0.0'da
+            # kalıyordu — DecisionRecorder.opens_position final_size>0
+            # şartını hiç sağlayamıyor, "onaylanmış ACT" bile hiçbir zaman
+            # gerçek pozisyon açmıyordu.
             if belief.direction == "LONG":
                 ctx.decision.action = ActionType.ENTER_LONG
+                ctx.decision.final_size = ctx.decision.proposed_size
             elif belief.direction == "SHORT":
                 ctx.decision.action = ActionType.ENTER_SHORT
+                ctx.decision.final_size = ctx.decision.proposed_size
             else:
                 ctx.decision.action = ActionType.WAIT
+                ctx.decision.final_size = 0.0
 
         ctx.decision.proposed_direction = belief.direction
 

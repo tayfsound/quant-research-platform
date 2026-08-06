@@ -236,6 +236,21 @@ class CognitiveOrchestrator:
         # (those constructor args were never actually wired to the risk gate).
         ctx.risk.limits = load_active_limits()
 
+        # Faz 206: gerçek bulgu — ctx.decision.proposed_size hiçbir zaman
+        # set edilmiyordu (Decision contract'ının varsayılanı 0.0'da
+        # kalıyordu), sadece backtest_runner.py kendi placeholder'ını
+        # (1.0) set ediyordu. MetaStage'in REDUCE dalı (proposed_size *
+        # confidence) ve şimdi düzeltilen ACT dalı (proposed_size) bu yüzden
+        # gerçek üretimde HER ZAMAN 0 büyüklük üretiyordu — belief/confidence
+        # ne kadar güçlü olursa olsun hiçbir pozisyon gerçekten açılamıyordu.
+        # max_position_size (ADMIN onaylı, hash-imzalı risk limiti) burada
+        # hem "önerilebilecek tam büyüklük" hem de RiskEngine'in SIZE_EXCEEDED
+        # kontrolünün karşılaştırdığı üst sınır — ikisini aynı kaynaktan
+        # almak "sinyal limitleri gevşetemez, sadece küçültebilir" kuralını
+        # koruyor.
+        max_size_limit = ctx.risk.limits.get("max_position_size")
+        ctx.decision.proposed_size = max_size_limit.value if max_size_limit else 1.0
+
         # Faz 188: test/live modu + gerçek açık pozisyon sayısı/sermaye
         # yüzdesi — RiskEngine (ön) ve RiskGateStage (son) bunları kullanıyor.
         risk_state = load_position_risk_state(symbol=symbol)
