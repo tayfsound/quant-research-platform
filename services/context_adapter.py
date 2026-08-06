@@ -249,6 +249,8 @@ class ContextAdapter:
             fair_value_gap=self._get(ctx, "fair_value_gap", "none"),
             swing_structure=self._get(ctx, "swing_structure", "mixed"),
             liquidity_sweep=self._get(ctx, "liquidity_sweep", "none"),
+            fibonacci_nearest_level=self._get(ctx, "fibonacci_nearest_level", "none"),
+            fibonacci_price_position=self._get(ctx, "fibonacci_price_position", "none"),
         )
 
     def to_quant(self, ctx: CognitiveCycleContext) -> QuantContext:

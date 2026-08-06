@@ -213,6 +213,7 @@ def compute_pattern_signals(data: list[OHLCV]) -> dict:
             "structure_phase": "neutral", "break_of_structure": "none",
             "change_of_character": False, "fair_value_gap": "none",
             "swing_structure": "mixed", "liquidity_sweep": "none",
+            "fibonacci_nearest_level": "none", "fibonacci_price_position": "none",
         }
 
     closes = _closes(data)
@@ -253,6 +254,7 @@ def compute_pattern_signals(data: list[OHLCV]) -> dict:
         liquidity_sweep = "sell_side_swept"
 
     structure_phase = _approximate_wyckoff_phase(data)
+    fib_level, fib_position = _fibonacci_signal(closes, highs, lows, swing_highs, swing_lows)
 
     return {
         "structure_phase": structure_phase,
@@ -261,7 +263,59 @@ def compute_pattern_signals(data: list[OHLCV]) -> dict:
         "fair_value_gap": fair_value_gap,
         "swing_structure": swing_structure,
         "liquidity_sweep": liquidity_sweep,
+        "fibonacci_nearest_level": fib_level,
+        "fibonacci_price_position": fib_position,
     }
+
+
+def _fibonacci_signal(
+    closes: np.ndarray, highs: np.ndarray, lows: np.ndarray,
+    swing_highs: list[int], swing_lows: list[int],
+) -> tuple[str, str]:
+    """Kullanıcı sorusu: "teknik analiz yapıyor mu sistem fibonacci vs?"
+    Gerçek bulgu: yapmıyordu — bu proje şimdiye kadar ICT/smart-money
+    tarzı yapısal sinyaller (BOS/CHoCH/FVG/likidite süpürme) ve basit
+    trend/momentum göstergeleri kullanıyordu, klasik Fibonacci retracement
+    hiç yoktu. Standart, kesin tanımlı 23.6/38.2/50/61.8/78.6% seviyeleri
+    — en son swing high/low arasında, gerçek yön (tepe->dip mi dip->tepe
+    mi son oluştu) baz alınarak hesaplanıyor. Cup&handle gibi şekil-eşleme
+    gerektiren desenler kasıtlı olarak eklenmedi — Wyckoff'ta da
+    belirtildiği gibi bu projenin dürüstlük ilkesi: öznel/şekil-tanıma
+    gerektiren desenleri "hassas tespit" gibi göstermemek. Fibonacci ise
+    tam tersine kesin matematiksel bir tanıma sahip, bu yüzden eklendi."""
+    if not swing_highs or not swing_lows:
+        return "none", "none"
+
+    last_high_idx, last_low_idx = swing_highs[-1], swing_lows[-1]
+    swing_high_price, swing_low_price = highs[last_high_idx], lows[last_low_idx]
+    price_range = swing_high_price - swing_low_price
+    if price_range <= 0:
+        return "none", "none"
+
+    # Tepe, dipten SONRA oluştuysa (en son hareket YUKARI) — şimdi tepeden
+    # aşağı bir retracement bekleniyor, seviyeler tepeden ölçülür (destek
+    # adayları). Tersi durumda (en son hareket AŞAĞI) seviyeler dipten
+    # yukarı ölçülür (direnç adayları).
+    uptrend = last_high_idx > last_low_idx
+    ratios = {"23.6%": 0.236, "38.2%": 0.382, "50.0%": 0.5, "61.8%": 0.618, "78.6%": 0.786}
+    current = closes[-1]
+
+    nearest_label, nearest_dist = "none", None
+    for label, ratio in ratios.items():
+        level_price = (
+            swing_high_price - price_range * ratio if uptrend else swing_low_price + price_range * ratio
+        )
+        dist = abs(current - level_price) / price_range
+        if nearest_dist is None or dist < nearest_dist:
+            nearest_dist, nearest_label = dist, label
+
+    near_threshold = 0.03  # aralığın %3'ü içindeyse "seviyede" say
+    if nearest_dist is not None and nearest_dist < near_threshold:
+        position = "at_support" if uptrend else "at_resistance"
+    else:
+        position = "none"
+
+    return nearest_label, position
 
 
 def _approximate_wyckoff_phase(data: list[OHLCV]) -> str:

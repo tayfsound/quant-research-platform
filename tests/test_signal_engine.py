@@ -141,6 +141,59 @@ def test_long_term_trend_regime_detects_a_real_sustained_downtrend():
     assert signals["long_term_trend_regime"] == "bear_trend"
 
 
+def test_fibonacci_signal_measures_support_from_the_most_recent_swing_high_in_an_uptrend():
+    from market_data.features.signal_engine import _fibonacci_signal
+    import numpy as np
+
+    # Dip (idx 0, fiyat 100) daha önce, tepe (idx 10, fiyat 200) daha
+    # sonra oluştu -> en son hareket YUKARI -> retracement tepeden aşağı
+    # ölçülmeli, 61.8% seviyesi = 200 - 100*0.618 = 138.2.
+    closes = np.array([100.0] * 20)
+    highs = np.array([100.0] * 20)
+    lows = np.array([100.0] * 20)
+    highs[10] = 200.0
+    lows[0] = 100.0
+    closes[-1] = 138.2
+
+    label, position = _fibonacci_signal(closes, highs, lows, swing_highs=[10], swing_lows=[0])
+    assert label == "61.8%"
+    assert position == "at_support"
+
+
+def test_fibonacci_signal_measures_resistance_from_the_most_recent_swing_low_in_a_downtrend():
+    from market_data.features.signal_engine import _fibonacci_signal
+    import numpy as np
+
+    # Tepe (idx 0, fiyat 200) daha önce, dip (idx 10, fiyat 100) daha
+    # sonra oluştu -> en son hareket AŞAĞI -> retracement dipten yukarı
+    # ölçülmeli, 50% seviyesi = 100 + 100*0.5 = 150.
+    closes = np.array([100.0] * 20)
+    highs = np.array([100.0] * 20)
+    lows = np.array([100.0] * 20)
+    highs[0] = 200.0
+    lows[10] = 100.0
+    closes[-1] = 150.0
+
+    label, position = _fibonacci_signal(closes, highs, lows, swing_highs=[0], swing_lows=[10])
+    assert label == "50.0%"
+    assert position == "at_resistance"
+
+
+def test_fibonacci_signal_returns_none_when_price_is_far_from_any_level():
+    from market_data.features.signal_engine import _fibonacci_signal
+    import numpy as np
+
+    closes = np.array([100.0] * 20)
+    highs = np.array([100.0] * 20)
+    lows = np.array([100.0] * 20)
+    highs[10] = 200.0
+    lows[0] = 100.0
+    closes[-1] = 199.0  # neredeyse tepede, hiçbir retracement seviyesine yakın değil
+
+    _, position = _fibonacci_signal(closes, highs, lows, swing_highs=[10], swing_lows=[0])
+    assert position == "none"
+
+
 def test_atr_is_positive_and_scales_with_real_range():
     """Faz 191: ATR artık gerçekten hesaplanıyor — DecisionFusion'ın
     take_profit/stop_loss hedeflerini kurmak için kullandığı tek gerçek

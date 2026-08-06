@@ -12,4 +12,9 @@ class PatternContext(BaseModel):
     fair_value_gap: str = "none"           # "bullish", "bearish", "none" (FVG)
     swing_structure: str = "mixed"         # "higher_highs_higher_lows", "lower_highs_lower_lows", "mixed"
     liquidity_sweep: str = "none"          # "buy_side_swept", "sell_side_swept", "none"
+    # Faz 223: klasik Fibonacci retracement — en son swing high/low
+    # arasında en yakın seviye ("23.6%".."78.6%" veya "none") ve fiyatın o
+    # seviyeye göre konumu ("at_support"/"at_resistance"/"none").
+    fibonacci_nearest_level: str = "none"
+    fibonacci_price_position: str = "none"
     timestamp: datetime = Field(default_factory=datetime.now)

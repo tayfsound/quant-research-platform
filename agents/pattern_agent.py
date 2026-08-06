@@ -65,6 +65,24 @@ class PatternAgent:
             score += 0.5
             evidence.append("Sell-side liquidity swept — potential reversal up")
 
+        # Faz 223: klasik Fibonacci retracement — destek/dirençte olmak
+        # tek başına yön belirlemez (fiyat bir seviyeden dönebilir de
+        # kırıp geçebilir de), bu yüzden mevcut yapısal kanıtı (BOS/swing)
+        # DOĞRULAYAN yönde hafifçe güçlendiriyor, kendi başına yeni bir
+        # yön açmıyor.
+        if context.fibonacci_price_position == "at_support":
+            if score > 0:
+                score += 0.5
+                evidence.append(f"Price at Fibonacci support ({context.fibonacci_nearest_level}) — confirms bullish structure")
+            else:
+                caveats.append(f"Price at Fibonacci support ({context.fibonacci_nearest_level}) but structure is bearish — mixed signal")
+        elif context.fibonacci_price_position == "at_resistance":
+            if score < 0:
+                score -= 0.5
+                evidence.append(f"Price at Fibonacci resistance ({context.fibonacci_nearest_level}) — confirms bearish structure")
+            else:
+                caveats.append(f"Price at Fibonacci resistance ({context.fibonacci_nearest_level}) but structure is bullish — mixed signal")
+
         if score > 0.5:
             direction = "LONG"
         elif score < -0.5:
