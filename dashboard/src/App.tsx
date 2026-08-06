@@ -18,10 +18,10 @@ import BacktestRuns from './views/BacktestRuns';
 import DecisionExplain from './views/DecisionExplain';
 import ResearchWorkspace from './views/ResearchWorkspace';
 import Sidebar from './components/Sidebar';
-import { clearToken } from './api/auth';
+import { clearToken, hasToken } from './api/auth';
 
 function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(hasToken);
   const [view, setView] = useState('dashboard');
 
   if (!isLoggedIn) {
