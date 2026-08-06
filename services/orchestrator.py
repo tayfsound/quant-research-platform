@@ -236,21 +236,6 @@ class CognitiveOrchestrator:
         # (those constructor args were never actually wired to the risk gate).
         ctx.risk.limits = load_active_limits()
 
-        # Faz 206: gerçek bulgu — ctx.decision.proposed_size hiçbir zaman
-        # set edilmiyordu (Decision contract'ının varsayılanı 0.0'da
-        # kalıyordu), sadece backtest_runner.py kendi placeholder'ını
-        # (1.0) set ediyordu. MetaStage'in REDUCE dalı (proposed_size *
-        # confidence) ve şimdi düzeltilen ACT dalı (proposed_size) bu yüzden
-        # gerçek üretimde HER ZAMAN 0 büyüklük üretiyordu — belief/confidence
-        # ne kadar güçlü olursa olsun hiçbir pozisyon gerçekten açılamıyordu.
-        # max_position_size (ADMIN onaylı, hash-imzalı risk limiti) burada
-        # hem "önerilebilecek tam büyüklük" hem de RiskEngine'in SIZE_EXCEEDED
-        # kontrolünün karşılaştırdığı üst sınır — ikisini aynı kaynaktan
-        # almak "sinyal limitleri gevşetemez, sadece küçültebilir" kuralını
-        # koruyor.
-        max_size_limit = ctx.risk.limits.get("max_position_size")
-        ctx.decision.proposed_size = max_size_limit.value if max_size_limit else 1.0
-
         # Faz 188: test/live modu + gerçek açık pozisyon sayısı/sermaye
         # yüzdesi — RiskEngine (ön) ve RiskGateStage (son) bunları kullanıyor.
         risk_state = load_position_risk_state(symbol=symbol)
@@ -262,6 +247,34 @@ class CognitiveOrchestrator:
         ctx.risk.seconds_since_last_trade = risk_state["seconds_since_last_trade"]
         ctx.risk.min_seconds_between_trades = risk_state["min_seconds_between_trades"]
         ctx.risk.ai_enabled = risk_state["ai_enabled"]
+
+        # Faz 211: gerçek bulgu — Faz 206'da proposed_size, max_position_size
+        # limitinin (hash-imzalı, o an "1.0") ham DEĞERİNE eşitlenmişti —
+        # yani her sembolde "1.0 birim" öneriliyordu, fiyattan tamamen
+        # bağımsız. Gerçek veriyle doğrulandı: PAXGUSDT (~$4275/birim) 1.0
+        # birim = $4275 notional açarken, ADAUSDT (~$0.19/birim) 1.0 birim
+        # = $0.19 notional açıyordu — aynı "size" aynı riski hiç temsil
+        # etmiyordu. Sonuç iki ayrı gözlemlenmiş semptom: pahalı varlıklarda
+        # komisyon kâr payını yiyordu (PAXGUSDT/XAUTUSDT), ucuz varlıklarda
+        # ise gerçek pnl o kadar küçüktü ki (ör. -$0.00018) dashboard'da
+        # 2 ondalıkla "0.00" görünüyordu (ADAUSDT/XRPUSDT) — kullanıcı ikisini
+        # de fark etti.
+        #
+        # Artık her işlem, sermayenin (starting_capital * max_capital_pct)
+        # eşit dilimlere bölünmüş (max_concurrent_positions) GERÇEK bir $
+        # notional bütçesi hedefliyor; birim sayısı bu bütçenin güncel
+        # fiyata bölünmesiyle çıkıyor — pahalı/ucuz varlıklar artık aynı
+        # gerçek $ riskini taşıyor. max_position_size (ADMIN onaylı,
+        # hash-imzalı) artık BAĞIMSIZ bir $ notional tavanı olarak
+        # yorumlanıyor (RiskEngine.execute() içinde notional bazlı
+        # karşılaştırılıyor) — kullanıcının capital_pct/concurrent
+        # ayarlarını ne kadar gevşetirse gevşetsin aşamayacağı bir üst sınır.
+        current_price = data[-1].close
+        capital_per_trade = (
+            risk_state["starting_capital"] * risk_state["max_capital_pct"]
+            / max(risk_state["max_concurrent_positions"], 1)
+        )
+        ctx.decision.proposed_size = capital_per_trade / current_price if current_price else 0.0
 
         return ctx
 

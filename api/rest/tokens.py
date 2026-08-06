@@ -15,7 +15,25 @@ from services.auth_service import AuthContext, get_current_user
 router = APIRouter(prefix="/tokens", tags=["tokens"])
 
 
-def _latest_price(session, symbol: str) -> float | None:
+def _price_from_decision(decision: dict | None) -> float | None:
+    """Faz 211: gerçek bulgu — kripto olmayan semboller (NVDA/AAPL/^IXIC/
+    GC=F/SI=F gibi) için Tokens sayfasında fiyat hiç görünmüyordu, çünkü
+    market_snapshots tablosu (Faz 207) sadece Binance'a özel. Her gerçek
+    council cycle'ı zaten kendi anlık fiyatını (agent_contributions'taki
+    market_snapshot girdisi) taşıyor — asset sınıfından bağımsız, ekstra
+    bir API çağrısı gerektirmeden buradan okunabilir."""
+    if not decision:
+        return None
+    for item in decision.get("agent_contributions") or []:
+        if item.get("type") == "market_snapshot":
+            return (item.get("data") or {}).get("raw_snapshot", {}).get("close")
+    return None
+
+
+def _latest_price(session, symbol: str, latest_decision: dict | None) -> float | None:
+    price = _price_from_decision(latest_decision)
+    if price is not None:
+        return price
     if not looks_like_binance_pair(symbol):
         return None
     snapshots = MarketDataRepository(session).get_latest_snapshots(
@@ -39,7 +57,7 @@ async def list_tokens(user: AuthContext = Depends(get_current_user)):
             tokens.append({
                 "symbol": symbol,
                 "is_crypto": looks_like_binance_pair(symbol),
-                "price": _latest_price(session, symbol),
+                "price": _latest_price(session, symbol, latest),
                 "direction": latest["direction"] if latest else None,
                 "confidence": float(latest["confidence"]) if latest and latest["confidence"] is not None else None,
                 "size": float(latest["size"]) if latest and latest["size"] is not None else None,
@@ -77,7 +95,7 @@ async def token_detail(symbol: str, user: AuthContext = Depends(get_current_user
         return {
             "symbol": symbol,
             "is_crypto": looks_like_binance_pair(symbol),
-            "price": _latest_price(session, symbol),
+            "price": _latest_price(session, symbol, decisions[0] if decisions else None),
             "order_book": order_book,
             "decisions": [
                 {

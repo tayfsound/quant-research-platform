@@ -77,8 +77,22 @@ class RiskEngine:
             reasons.append(RiskReason(code="HASH_MISMATCH", message="Risk limit hash verification failed", severity="critical"))
 
         # 3. Pozisyon limiti aşıldı mı?
-        if proposed > max_size_limit.value:
-            reasons.append(RiskReason(code="SIZE_EXCEEDED", message=f"Size {proposed} > limit {max_size_limit.value}", severity="warning"))
+        # Faz 211: proposed artık ham "birim sayısı" değil, sermaye
+        # bütçesinin güncel fiyata bölünmesiyle çıkan gerçek birim sayısı
+        # (bkz. services/orchestrator.py::_build_context) — fiyata göre
+        # kıyaslamak için max_position_size'ı ($ notional tavanı olarak)
+        # proposed*price ile karşılaştırıyoruz. current_price yoksa (bazı
+        # testler market verisi kurmuyor) eski ham karşılaştırmaya düşüyor
+        # — geriye dönük uyumluluk için.
+        current_price = (ctx.market.raw_snapshot or {}).get("close")
+        proposed_notional = proposed * current_price if current_price else proposed
+        limit_check_value = max_size_limit.value
+        if proposed_notional > limit_check_value:
+            reasons.append(RiskReason(
+                code="SIZE_EXCEEDED",
+                message=f"Size {proposed_notional} > limit {limit_check_value}",
+                severity="warning",
+            ))
 
         # 4. Drawdown limiti aşıldı mı?
         max_drawdown_limit = limits.get("max_drawdown")

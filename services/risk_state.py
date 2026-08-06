@@ -45,6 +45,7 @@ def load_position_risk_state(symbol: str | None = None) -> dict:
         "max_concurrent_positions": max_concurrent,
         "capital_used_pct": capital_used_pct,
         "max_capital_pct": max_capital_pct,
+        "starting_capital": starting_capital,
         "seconds_since_last_trade": seconds_since_last_trade,
         "min_seconds_between_trades": min_seconds_between_trades,
         "ai_enabled": ai_enabled,
