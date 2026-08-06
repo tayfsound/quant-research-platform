@@ -14,7 +14,19 @@ async def list_pending(limit: int = 10):
     with SessionFactory.get_session() as session:
         repo = WeightApprovalRepository(session)
         rows = repo.get_pending(limit=limit)
-        return {"pending": [{"id": str(r.id), "proposed": r.proposed_weights, "previous": r.previous_weights, "status": r.status} for r in rows]}
+        return {
+            "pending": [
+                {
+                    "id": str(r.id),
+                    "timestamp": r.timestamp.isoformat() if r.timestamp else None,
+                    "proposed": r.proposed_weights,
+                    "previous": r.previous_weights,
+                    "max_delta": r.max_delta,
+                    "status": r.status,
+                }
+                for r in rows
+            ]
+        }
 
 @router.post("/{approval_id}/approve")
 async def approve(approval_id: str, user: AuthContext = Depends(require_role(Role.OPERATOR))):

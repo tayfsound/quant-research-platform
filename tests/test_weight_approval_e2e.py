@@ -42,3 +42,33 @@ def test_approve_endpoint_applies_weights():
     latest_snapshot = WeightRepository().get_latest()
     assert latest_snapshot is not None
     assert latest_snapshot.weights == proposed
+
+
+def test_pending_endpoint_returns_timestamp_and_max_delta_for_readable_ui():
+    """Faz 224: kullanıcı bulgusu — "Approval a gelen onay sorularının
+    formatı çok dağınık kod gibi görünüyor... yatay scrolling felan
+    yapmadan onaylayamıyorum." Dashboard'un önceki/yeni/değişim tablosunu
+    ve zaman damgasını gösterebilmesi için /pending artık previous/
+    proposed'ın yanında timestamp ve max_delta'yı da döndürüyor."""
+    from fastapi.testclient import TestClient
+    from api.main import app
+
+    approval = WeightApproval(
+        id=uuid4(),
+        proposed_weights={"technical": 1.3},
+        previous_weights={"technical": 1.0},
+        max_delta=0.2,
+        status="pending",
+    )
+    with SessionFactory.get_session() as session:
+        WeightApprovalRepository(session).save(approval)
+
+    client = TestClient(app)
+    response = client.get("/api/v1/weights/pending?limit=50")
+    assert response.status_code == 200
+    rows = {r["id"]: r for r in response.json()["pending"]}
+    row = rows[str(approval.id)]
+    assert row["timestamp"] is not None
+    assert row["max_delta"] == 0.2
+    assert row["previous"] == {"technical": 1.0}
+    assert row["proposed"] == {"technical": 1.3}
