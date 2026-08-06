@@ -90,6 +90,13 @@ async def token_detail(symbol: str, user: AuthContext = Depends(get_current_user
                     "pnl": float(d["pnl"]) if d.get("pnl") is not None else None,
                     "entry_price": d.get("entry_price"),
                     "exit_price": d.get("exit_price"),
+                    "opened_at": d["opened_at"].isoformat() if d.get("opened_at") else None,
+                    "closed_at": d["closed_at"].isoformat() if d.get("closed_at") else None,
+                    # Faz 210: giriş/çıkış saatleri ve kapanış sebebi
+                    # (take_profit/stop_loss/time_expired) dashboard'da hiç
+                    # görünmüyordu — kullanıcı "hedef vurdu ama net zarar"
+                    # gibi durumları backend'e sormadan anlayamıyordu.
+                    "exit_reason": (d.get("outcome") or {}).get("exit_reason"),
                 }
                 for d in decisions
             ],

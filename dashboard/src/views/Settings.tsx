@@ -96,6 +96,28 @@ export default function Settings() {
         </Card>
 
         <Card>
+          <h3 className="text-sm font-semibold text-ink mb-1">Minimum kâr hedefi (%)</h3>
+          <p className="text-xs text-ink-soft mb-3">
+            0.005 = hedefin fiyatın en az %0.5'i olması şart, yoksa işlem açılmaz. Komisyonu
+            karşılamayan çok küçük hedefleri eler (gerçek olay: hedefe ulaştı ama komisyon kârı
+            yedi). 0 = kapalı.
+          </p>
+          <div className="flex gap-2">
+            <Input
+              type="number"
+              value={draft.min_profit_target_pct ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, min_profit_target_pct: v }))}
+            />
+            <Button
+              disabled={saving === "min_profit_target_pct"}
+              onClick={() => save("min_profit_target_pct", draft.min_profit_target_pct)}
+            >
+              {saved === "min_profit_target_pct" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+        </Card>
+
+        <Card>
           <h3 className="text-sm font-semibold text-ink mb-1">Kasa büyüklüğü (sanal, paper trading)</h3>
           <p className="text-xs text-ink-soft mb-3">Sermaye yüzdesi hesaplaması bu değere göre yapılır.</p>
           <div className="flex gap-2">

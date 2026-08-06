@@ -47,6 +47,17 @@ DEFAULTS: dict[str, str] = {
     # varsayılanlar kullanılıyor.
     "act_threshold": "0.7",
     "reduce_threshold": "0.4",
+    # Faz 210: kullanıcı bulgusu — ilk gerçek kapanan iki işlem (PAXGUSDT,
+    # XAUTUSDT) gerçekten take_profit hedefine ulaştı ama net PnL yine de
+    # eksiye düştü, çünkü RiskTargetStage'in ATR-tabanlı hedefi (2x ATR)
+    # bu fiyat seviyesinde (~4270) round-trip komisyona (~%0.1) kıyasla
+    # çok küçüktü (%0.07). Bu, hedefin fiyatın en az bu yüzdesi kadar
+    # olmasını zorunlu kılan bir alt sınır — komisyonu (%0.1) rahat
+    # karşılayacak ama Faz 208'in "test modunda deneyim kazansın" amacını
+    # (5% gibi çok yüksek bir eşik neredeyse hiçbir ATR-tabanlı işlemi
+    # geçiremez) boğmayacak şekilde %0.5 varsayılan — kullanıcı Settings'ten
+    # istediği gibi yükseltebilir/düşürebilir.
+    "min_profit_target_pct": "0.005",
 }
 
 # Faz 187'nin PositionCloser.hold_seconds'ına karşılık gelen ön tanımlı

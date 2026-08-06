@@ -23,6 +23,9 @@ type Decision = {
   pnl: number | null;
   entry_price: number | null;
   exit_price: number | null;
+  opened_at: string | null;
+  closed_at: string | null;
+  exit_reason: string | null;
 };
 
 type TokenDetail = {
@@ -167,18 +170,19 @@ function TokenDetailView({ symbol, onBack }: { symbol: string; onBack: () => voi
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs text-ink-faint uppercase tracking-wide border-b border-line-soft">
-                      <th className="px-5 py-2 font-medium">Zaman</th>
                       <th className="px-5 py-2 font-medium">Yön</th>
                       <th className="px-5 py-2 font-medium">Confidence</th>
                       <th className="px-5 py-2 font-medium">Büyüklük</th>
                       <th className="px-5 py-2 font-medium">Durum</th>
+                      <th className="px-5 py-2 font-medium">Giriş</th>
+                      <th className="px-5 py-2 font-medium">Çıkış</th>
+                      <th className="px-5 py-2 font-medium">Sebep</th>
                       <th className="px-5 py-2 font-medium">PnL</th>
                     </tr>
                   </thead>
                   <tbody>
                     {detail.decisions.map((d) => (
                       <tr key={d.id} className="border-b border-line-soft last:border-0">
-                        <td className="px-5 py-2.5 text-ink-soft text-xs">{new Date(d.timestamp).toLocaleString()}</td>
                         <td className="px-5 py-2.5">
                           <Badge tone={directionTone(d.direction)}>{d.direction}</Badge>
                         </td>
@@ -191,6 +195,27 @@ function TokenDetailView({ symbol, onBack }: { symbol: string; onBack: () => voi
                             {d.status}
                           </Badge>
                         </td>
+                        <td className="px-5 py-2.5 text-ink-soft text-xs">
+                          {d.opened_at ? (
+                            <>
+                              <div>{new Date(d.opened_at).toLocaleString()}</div>
+                              {d.entry_price != null && <div className="font-mono">{d.entry_price.toFixed(4)}</div>}
+                            </>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        <td className="px-5 py-2.5 text-ink-soft text-xs">
+                          {d.closed_at ? (
+                            <>
+                              <div>{new Date(d.closed_at).toLocaleString()}</div>
+                              {d.exit_price != null && <div className="font-mono">{d.exit_price.toFixed(4)}</div>}
+                            </>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        <td className="px-5 py-2.5 text-ink-soft text-xs">{d.exit_reason ?? "—"}</td>
                         <td className={`px-5 py-2.5 font-medium ${d.pnl != null && d.pnl >= 0 ? "text-rise" : d.pnl != null ? "text-fall" : "text-ink-faint"}`}>
                           {d.pnl != null ? d.pnl.toFixed(2) : "—"}
                         </td>
