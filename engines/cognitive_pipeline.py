@@ -111,6 +111,26 @@ class MetaStage:
             self.metacognition.act_threshold = float(settings_repo.get("act_threshold"))
             self.metacognition.reduce_threshold = float(settings_repo.get("reduce_threshold"))
 
+        # Faz 207: kullanıcı isteği — "test modundayken güven olmasa da bir
+        # şeyler yapsın, deneyim kazansın; hataları gerçek kayıp
+        # yaratmıyorken onu neden kısıtlıyoruz?" Gerçek bir nokta: services/
+        # threshold_optimizer.py ve weight_optimizer gibi öğrenme
+        # mekanizmalarının hepsi gerçek kapanmış işlem geçmişine ihtiyaç
+        # duyuyor, ama reduce_threshold (0.4) test modunda bile aynı sıkılıkta
+        # uygulandığı için belief.direction gerçekten LONG/SHORT olsa bile
+        # (WAIT değil — o zaten aşağıda RiskTargetStage/DecisionFusion'da
+        # ayrıca elenir) zayıf ama gerçek bir yönlü sinyal hiç açılmadan
+        # WAIT'e düşüyordu, sistem hiç gerçek sonuç biriktiremiyordu. Test
+        # modunda tabanı neredeyse sıfıra indiriyoruz — REDUCE zaten
+        # büyüklüğü confidence ile orantılı küçültüyor (final_size =
+        # proposed_size * confidence), yani zayıf sinyal otomatik olarak
+        # küçük pozisyon açıyor, büyük risk almıyor. act_threshold (tam
+        # büyüklük için gereken gerçek konviksiyon çıtası) test modunda da
+        # aynı kalıyor — "her sinyal tam büyüklük" değil, "her yönlü sinyal
+        # bir şans" istiyoruz.
+        if ctx.risk.trading_mode == "test":
+            self.metacognition.reduce_threshold = 0.05
+
         conflict_level = max(
             belief.cluster_disagreement,
             belief.crowding_penalty,
