@@ -42,6 +42,24 @@ class WeightApprovalRepository:
     def get_pending(self, limit: int = 10):
         return self.session.query(WeightApprovalModel).filter_by(status="pending").order_by(WeightApprovalModel.timestamp.desc()).limit(limit).all()
 
+    def has_pending(self) -> bool:
+        """Faz 229: kritik bulgu — WeightOptimizer.optimize()/propose_weights()
+        her büyük ağırlık değişikliğinde KOŞULSUZCA yeni bir onay satırı
+        oluşturuyordu, mevcut bekleyen bir onay olup olmadığını hiç kontrol
+        etmeden. Gerçek üretimde bu, her gerçek trading cycle'da (optimize())
+        ve her gerçek pozisyon kapanışında (propose_weights()) tetiklenip
+        canlı DB'de 7000'den fazla neredeyse aynı satır biriktirdi — insan
+        gözden geçiremeyeceği bir kuyruk, ve gerçek ağırlıklar saatlerce
+        güncellenmeden donuk kaldı (her iki metod da onaylanana kadar ESKİ
+        ağırlığı döndürüyor). Artık yeni bir onay oluşturmadan önce burası
+        kontrol ediliyor — zaten bekleyen bir onay varsa yenisi eklenmiyor."""
+        return (
+            self.session.query(WeightApprovalModel)
+            .filter_by(status="pending")
+            .first()
+            is not None
+        )
+
     def approve(self, approval_id: str, approved_by: str = "human"):
         self.session.query(WeightApprovalModel).filter_by(id=approval_id).update(
             {"status": "approved", "approved_by": approved_by, "decided_at": datetime.now()}

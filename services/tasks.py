@@ -85,6 +85,26 @@ def optimize_thresholds_task() -> dict:
     return suggestion
 
 
+@celery_app.task(name="auto_reject_stale_weight_approvals_task")
+def auto_reject_stale_weight_approvals_task(max_age_hours: float = 24) -> dict:
+    """Faz 229: kritik bulgu — canlı üretimde WeightOptimizer.optimize()/
+    propose_weights() dedup kontrolü olmadan her büyük ağırlık
+    değişikliğinde koşulsuzca yeni bir WeightApproval satırı oluşturuyordu
+    (7000'den fazla bekleyen onay birikti, gerçek ağırlıklar saatlerce
+    donuk kaldı). Dedup kontrolü eklendi (bkz. WeightApprovalRepository.
+    has_pending()) ama bu, süresi dolmuş (`expires_at` geçmiş, insan hiç
+    karar vermemiş) onayları otomatik reddeden POST /weights/auto-reject
+    hiçbir zaman zamanlanmamıştı — sadece elle çağrılabiliyordu. Artık
+    günlük bir güvenlik ağı olarak çalışıyor."""
+    from database.session_factory import SessionFactory
+    from database.repositories.weight_approval_repository import WeightApprovalRepository
+
+    with SessionFactory.get_session() as session:
+        repo = WeightApprovalRepository(session)
+        rejected_count = repo.auto_reject_stale(max_age_seconds=max_age_hours * 3600)
+    return {"rejected_count": rejected_count, "max_age_hours": max_age_hours}
+
+
 @celery_app.task(name="ingest_order_book_task")
 def ingest_order_book_task() -> dict:
     """Faz 201: gerçek bulgu — market_data/ingestion/pipeline.py::

@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 
 from enum import Enum
 
+from contracts.agent import VOTING_AGENT_DOMAINS
 from contracts.agent_weight_snapshot import AgentWeightSnapshot
 from services.agent_memory import AgentMemory
 from services.weight_repository import WeightRepository
@@ -37,7 +38,10 @@ class WeightOptimizer:
         evaluation_window: int = 100,
     ) -> AgentWeightSnapshot:
 
-        domains = self.agent_memory.domains()
+        # Faz 229: savunma katmanı — agent_memory_history/agent_memory.json
+        # dosyasında (bu düzeltmeden ÖNCE yazılmış) hâlâ geçersiz domain'ler
+        # kalmış olabilir; burada da filtreleniyor.
+        domains = [d for d in self.agent_memory.domains() if d in VOTING_AGENT_DOMAINS]
 
         if not domains:
             return AgentWeightSnapshot(
@@ -104,15 +108,24 @@ class WeightOptimizer:
             )
             if max_change > MAX_WEIGHT_DELTA:
                 try:
-                    approval = WeightApproval(
-                        expires_at=datetime.now() + timedelta(hours=24),
-                        proposed_weights=proposed,
-                        previous_weights=previous_weights,
-                        max_delta=MAX_WEIGHT_DELTA,
-                        status="pending",
-                    )
                     with SessionFactory.get_session() as session:
-                        WeightApprovalRepository(session).save(approval)
+                        repo = WeightApprovalRepository(session)
+                        # Faz 229: kritik bulgu — bekleyen bir onay ZATEN
+                        # varsa yenisini eklemiyoruz. Bu kontrol yoksa her
+                        # çağrıda (gerçek her pozisyon kapanışında) aynı
+                        # büyük fark yeniden hesaplanıp KOŞULSUZCA yeni bir
+                        # satır ekleniyordu — üretimde 7000'den fazla
+                        # neredeyse aynı bekleyen onay birikti.
+                        if repo.has_pending():
+                            return previous
+                        approval = WeightApproval(
+                            expires_at=datetime.now() + timedelta(hours=24),
+                            proposed_weights=proposed,
+                            previous_weights=previous_weights,
+                            max_delta=MAX_WEIGHT_DELTA,
+                            status="pending",
+                        )
+                        repo.save(approval)
                     return previous  # onaylanana kadar mevcut snapshot geçerli
                 except Exception as e:
                     import structlog
@@ -169,15 +182,22 @@ class WeightOptimizer:
             )
             if require_approval and max_change > 0.05:
                 try:
-                    approval = WeightApproval(
-                        expires_at=datetime.now() + timedelta(hours=24),
-                        proposed_weights=new_weights,
-                        previous_weights=current_weights,
-                        max_delta=MAX_WEIGHT_DELTA,
-                        status="pending",
-                    )
                     with SessionFactory.get_session() as session:
-                        WeightApprovalRepository(session).save(approval)
+                        repo = WeightApprovalRepository(session)
+                        # Faz 229: aynı dedup kontrolü — bu metod her gerçek
+                        # trading cycle'da çağrıldığı için (optimize(),
+                        # propose_weights()'ten çok daha sık) dedup kontrolü
+                        # burada daha da kritik.
+                        if repo.has_pending():
+                            return current_weights
+                        approval = WeightApproval(
+                            expires_at=datetime.now() + timedelta(hours=24),
+                            proposed_weights=new_weights,
+                            previous_weights=current_weights,
+                            max_delta=MAX_WEIGHT_DELTA,
+                            status="pending",
+                        )
+                        repo.save(approval)
                     return current_weights  # Return old weights until approved
                 except Exception as e:
                     import structlog
@@ -194,7 +214,7 @@ class WeightOptimizer:
         return new_weight
 
     @staticmethod
-    def _normalize_domain(agent) -> str:
+    def _normalize_domain(agent) -> str | None:
         # Pydantic model veya dict olabilir
         if hasattr(agent, "model_dump"):
             data = agent.model_dump()
@@ -205,9 +225,20 @@ class WeightOptimizer:
         else:
             data = {}
 
-        domain = data.get("domain") or data.get("agent_id") or "unknown"
+        domain = data.get("domain") or data.get("agent_id")
         if isinstance(domain, Enum):
             domain = domain.value
         if isinstance(domain, dict):
-            domain = domain.get("value", "unknown")
-        return str(domain).lower()
+            domain = domain.get("value")
+        domain = str(domain).lower() if domain is not None else None
+
+        # Faz 229: kritik bulgu — burası önceden domain eksikse ya da
+        # (agent_id gibi) gerçek bir domain adı olmayan bir şeye düşerse
+        # sessizce "unknown" döndürüyordu — WeightOptimizer bu sahte domain
+        # için de bir ağırlık önerip insan onay ekranını kirletiyordu
+        # (canlı üretimde doğrulandı: "unknown" diye bir satır gerçekten
+        # oluşmuştu). Artık gerçek 9 oy-veren ajandan biri değilse None
+        # dönüyor, çağıran zaten `if not domain: continue` ile atlıyor.
+        if domain not in VOTING_AGENT_DOMAINS:
+            return None
+        return domain

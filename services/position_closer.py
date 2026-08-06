@@ -9,6 +9,7 @@ en az `hold_seconds` kadar gerçek zaman geçmiş olmalı.
 """
 from datetime import UTC, datetime
 
+from contracts.agent import VOTING_AGENT_DOMAINS
 from contracts.agent_performance import AgentPerformanceRecord
 from database.repositories.decision_persistor import DecisionPersistor
 from market_data.ingestion.data_provider import OHLCVProvider
@@ -17,10 +18,10 @@ from services.weight_optimizer import WeightOptimizer
 from services.weight_repository import WeightRepository
 from simulator.fee_engine import FeeEngine
 
-_VALID_AGENT_DOMAINS = {
-    "technical", "macro", "onchain", "sentiment",
-    "pattern", "quant", "order_flow", "time", "epistemology",
-}
+# Faz 229: artık contracts/agent.py::VOTING_AGENT_DOMAINS — tek gerçek
+# kaynak, services/learning_loop.py ve services/weight_optimizer.py da
+# aynısını kullanıyor (bkz. o dosyalardaki "unknown" domain sızıntısı bulgusu).
+_VALID_AGENT_DOMAINS = VOTING_AGENT_DOMAINS
 
 
 class PositionCloser:

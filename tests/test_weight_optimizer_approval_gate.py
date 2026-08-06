@@ -26,6 +26,15 @@ def _cleanup():
 
 def test_large_weight_jump_is_queued_for_approval_not_applied_directly():
     try:
+        # Faz 229: dedup düzeltmesi eklendi — zaten bekleyen bir onay VARSA
+        # propose_weights() yeni bir tane eklemiyor (bkz. test_weight_
+        # approval_dedup.py). Bu test kendi senaryosunun gerçekten yeni bir
+        # onay oluşturduğunu doğrulayabilmek için önce temiz bir tahtayla
+        # başlamalı — yoksa paylaşılan quantdb_test'teki başka bir testten
+        # kalan pending satır bu çağrıyı sessizce no-op yapabilir.
+        with SessionFactory.get_session() as session:
+            WeightApprovalRepository(session).auto_reject_stale(max_age_seconds=0)
+
         repo = _isolated_repo()
         repo.save(AgentWeightSnapshot(weights={"technical": 1.0, "macro": 1.0}).finalize())
 

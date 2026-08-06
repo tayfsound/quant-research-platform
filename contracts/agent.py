@@ -26,6 +26,22 @@ class AgentDomain(StrEnum):
     TIME = "time"
     PATTERN = "pattern"
 
+# Faz 229: kritik bulgu — 9 oy-veren ajanın gerçek listesi (bkz. "Agent
+# kalitesi turu 2", CURRENT_STATE.md). AgentDomain enum'daki diğer roller
+# (news/psychology/behavioral/risk/portfolio/source_reliability/executive/
+# alter_ego) kritik/annotator, WeightOptimizer'ın ağırlıklandırdığı oy-veren
+# ajanlar değil. Bu liste önceden sadece services/position_closer.py'de
+# yerel bir sabitti (`_VALID_AGENT_DOMAINS`) — services/learning_loop.py ve
+# services/weight_optimizer.py aynı doğrulamayı hiç yapmıyordu, `opinion.
+# get("domain", "unknown")` gibi sessiz fallback'lerle AgentMemory'ye/
+# WeightOptimizer'a sahte bir "unknown" ajan domain'i sızdırıyordu — gerçek
+# ağırlık önerilerini ve insan onayına giden diff tablosunu kirletiyordu.
+VOTING_AGENT_DOMAINS = frozenset({
+    AgentDomain.TECHNICAL, AgentDomain.MACRO, AgentDomain.ONCHAIN,
+    AgentDomain.SENTIMENT, AgentDomain.PATTERN, AgentDomain.QUANT,
+    AgentDomain.ORDER_FLOW, AgentDomain.TIME, AgentDomain.EPISTEMOLOGY,
+})
+
 class AgentOpinion(BaseModel):
     """6 boyutlu uzman görüşü + epistemik katmanlar."""
     agent_id: str = ""

@@ -2,6 +2,7 @@
 
 from enum import Enum
 
+from contracts.agent import VOTING_AGENT_DOMAINS
 from contracts.agent_performance import AgentPerformanceRecord
 from contracts.decision_event import DecisionEvent
 from contracts.outcome import DecisionEvaluation
@@ -30,11 +31,19 @@ class LearningLoop:
         raw = event.market_snapshot.get("raw_snapshot", {})
         regime = raw.get("trend", "unknown")
         for opinion in event.agent_opinions:
-            domain = opinion.get("domain", "unknown")
+            domain = opinion.get("domain")
             if isinstance(domain, Enum):
                 domain = domain.value
             if isinstance(domain, dict):
-                domain = domain.get("value", "unknown")
+                domain = domain.get("value")
+            # Faz 229: kritik bulgu — burası önceden domain eksik/bozuksa
+            # sessizce "unknown" ajanına düşüyordu, AgentMemory'ye sahte bir
+            # domain sızdırıyordu (WeightOptimizer.propose_weights() sonra
+            # bu sahte domain için de anlamsız bir ağırlık öneriyordu, insan
+            # onay ekranını kirletiyordu). Artık gerçek 9 oy-veren ajandan
+            # biri değilse kayıt tamamen atlanıyor.
+            if str(domain) not in VOTING_AGENT_DOMAINS:
+                continue
             self.agent_memory.record(
                 AgentPerformanceRecord(
                     agent_domain=str(domain),

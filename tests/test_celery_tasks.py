@@ -32,6 +32,48 @@ def test_backtest_task_runs_synchronously_in_eager_mode_and_persists():
                 celery_app.conf.task_always_eager = False
 
 
+def test_auto_reject_stale_weight_approvals_task_rejects_only_old_pending_rows():
+    """Faz 229: kritik bulgu — canlı üretimde WeightApproval kuyruğu
+    (dedup kontrolü olmadan) 7000'den fazla bekleyen satır biriktirmişti,
+    ve süresi dolmuş onayları temizleyen POST /weights/auto-reject hiçbir
+    zaman zamanlanmamıştı. Bu görev artık günlük bir güvenlik ağı olarak
+    çalışıyor — burada gerçek bir DB satırı üzerinde uçtan uca doğrulanıyor."""
+    from datetime import datetime, timedelta
+    from uuid import uuid4
+
+    from contracts.weight_approval import WeightApproval
+    from database.repositories.weight_approval_repository import WeightApprovalRepository
+    from database.session_factory import SessionFactory
+    from services.celery_app import celery_app
+    from services.tasks import auto_reject_stale_weight_approvals_task
+
+    old_id = uuid4()
+    with SessionFactory.get_session() as session:
+        WeightApprovalRepository(session).save(
+            WeightApproval(
+                id=old_id,
+                timestamp=datetime.now() - timedelta(hours=48),
+                proposed_weights={"technical": 1.5},
+                previous_weights={"technical": 1.0},
+                status="pending",
+            )
+        )
+
+    celery_app.conf.task_always_eager = True
+    celery_app.conf.task_eager_propagates = True
+    try:
+        result = auto_reject_stale_weight_approvals_task.delay(max_age_hours=24)
+        assert result.successful()
+        assert result.result["rejected_count"] >= 1
+    finally:
+        celery_app.conf.task_always_eager = False
+
+    with SessionFactory.get_session() as session:
+        from database.repositories.weight_approval_repository import WeightApprovalModel
+        row = session.query(WeightApprovalModel).filter_by(id=old_id).first()
+        assert row.status == "rejected"
+
+
 def test_run_async_endpoint_dispatches_and_task_status_endpoint_reports_it():
     with patch("transformers.AutoModel.from_pretrained"):
         with patch("transformers.AutoTokenizer.from_pretrained"):
