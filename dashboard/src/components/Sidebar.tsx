@@ -6,6 +6,7 @@ const GROUPS: { label: string; items: { key: string; label: string }[] }[] = [
       { key: "live", label: "Live Predictions" },
       { key: "transactions", label: "Transactions" },
       { key: "cycle", label: "Latest Cycle" },
+      { key: "tokens", label: "Tokens" },
       { key: "market", label: "Market" },
       { key: "predictions", label: "Predictions" },
     ],

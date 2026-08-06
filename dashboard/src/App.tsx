@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Login from './views/Login';
 import Dashboard from './views/Dashboard';
 import MarketOverview from './views/MarketOverview';
+import Tokens from './views/Tokens';
 import Predictions from './views/Predictions';
 import LivePredictions from './views/LivePredictions';
 import Strategies from './views/Strategies';
@@ -40,6 +41,7 @@ function App() {
           {view === 'live' && <LivePredictions />}
           {view === 'transactions' && <Transactions />}
           {view === 'market' && <MarketOverview />}
+          {view === 'tokens' && <Tokens />}
           {view === 'predictions' && <Predictions />}
           {view === 'strategies' && <Strategies />}
           {view === 'risk' && <RiskDashboard />}
