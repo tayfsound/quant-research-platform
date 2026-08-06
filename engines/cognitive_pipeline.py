@@ -321,20 +321,6 @@ class RecordingStage:
             from services.memory_service import MemoryService
             MemoryService().store_belief(belief)
 
-        # ExperimentRegistry log (Faz 159)
-        try:
-            from contracts.experiment_registry import ExperimentRegistry
-            from database.session_factory import SessionFactory
-            from database.repositories.experiment_registry_repository import ExperimentRegistryRepository
-            exp = ExperimentRegistry(
-                git_sha=ExperimentRegistry.get_git_sha(),
-                decision_ids=[str(event.id)] if event.id else [],
-            )
-            with SessionFactory.get_session() as session:
-                ExperimentRegistryRepository(session).save(exp)
-        except Exception:
-            pass
-
         return event
 
 

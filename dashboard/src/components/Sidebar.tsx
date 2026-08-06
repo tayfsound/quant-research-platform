@@ -18,7 +18,6 @@ const GROUPS: { label: string; items: { key: string; label: string }[] }[] = [
       { key: "strategies", label: "Agents" },
       { key: "backtest", label: "Backtests" },
       { key: "replay", label: "Replay" },
-      { key: "experiments", label: "Experiments" },
       { key: "explain", label: "Explain" },
     ],
   },

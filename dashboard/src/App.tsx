@@ -12,7 +12,6 @@ import Transactions from './views/Transactions';
 import Performance from './views/Performance';
 import LatestCycle from './views/LatestCycle';
 import PendingApprovals from './views/PendingApprovals';
-import ExperimentList from './views/ExperimentList';
 import ReplayView from './views/ReplayView';
 import BacktestRuns from './views/BacktestRuns';
 import DecisionExplain from './views/DecisionExplain';
@@ -50,7 +49,6 @@ function App() {
           {view === 'settings' && <Settings />}
           {view === 'cycle' && <LatestCycle />}
           {view === 'approvals' && <PendingApprovals />}
-          {view === 'experiments' && <ExperimentList />}
           {view === 'replay' && <ReplayView />}
           {view === 'backtest' && <BacktestRuns />}
           {view === 'explain' && <DecisionExplain />}

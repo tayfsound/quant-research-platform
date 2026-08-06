@@ -101,7 +101,7 @@ export default function Settings() {
         description="Bunlar AI'ın değil, senin belirlediğin kurallar — kaç işlem aynı anda açık olabilir, kasanın max yüzde kaçı kullanılabilir, işlemler ne kadar vadeli olsun. Start/Stop ve Test/Live düğmeleri Dashboard sayfasına taşındı."
         action={
           <Button variant="secondary" onClick={resetToDefaults} disabled={resetting}>
-            {resetting ? "Sıfırlanıyor…" : resetDone ? "Sıfırlandı ✓" : "Varsayılanlara dön"}
+            {resetting ? "Sıfırlanıyor…" : resetDone ? "Sıfırlandı ✓" : "Varsayılan"}
           </Button>
         }
       />

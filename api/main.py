@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
-from api.rest import agents, audit, auth, backtest, cognitive, dashboard, experiments, explainability, market_data, memory, models, orchestrator, positions, replay, risk_limits, settings, strategies, tokens, weights, webhooks, workspace
+from api.rest import agents, audit, auth, backtest, cognitive, dashboard, explainability, market_data, memory, models, orchestrator, positions, replay, risk_limits, settings, strategies, tokens, weights, webhooks, workspace
 from api.websocket import live_predictions
 from api.websocket.cycle_feed import websocket_endpoint
 from observability.health import router as health_router
@@ -48,7 +48,6 @@ async def metrics():
 
 app.include_router(replay.router, prefix="/api/v1")
 app.include_router(weights.router, prefix="/api/v1")
-app.include_router(experiments.router, prefix="/api/v1")
 app.include_router(strategies.router, prefix="/api/v1")
 app.include_router(models.router, prefix="/api/v1")
 app.include_router(live_predictions.router, prefix="/api/v1")

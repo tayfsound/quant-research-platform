@@ -25,9 +25,12 @@ def test_hypertables_exist():
     with SessionFactory.get_session() as session:
         result = session.execute(text(
             "SELECT hypertable_name FROM timescaledb_information.hypertables "
-            "WHERE hypertable_name IN ('decisions', 'experiment_registry', 'weight_approvals')"
+            "WHERE hypertable_name IN ('decisions', 'weight_approvals')"
         ))
         names = {row[0] for row in result}
         assert "decisions" in names, "decisions hypertable eksik"
-        assert "experiment_registry" in names, "experiment_registry hypertable eksik"
         assert "weight_approvals" in names, "weight_approvals hypertable eksik"
+        # Faz 233: experiment_registry kasıtlı olarak kaldırıldı — kullanıcı
+        # bulgusu: hiçbir ajan/karar mekanizması okumuyordu, sadece her
+        # kararda (WAIT dahil) 1 satır yazan gereksiz bir denetim kaydıydı,
+        # gerçek depolama büyümesine sebep oluyordu.
