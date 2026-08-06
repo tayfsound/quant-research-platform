@@ -1,9 +1,63 @@
-# Mevcut Durum -- v1.24.0 (Faz 187-200: gerçek pozisyon yaşam döngüsü + çoklu varlık + gerçek dış veri + portfolio/pairs trading)
+# Mevcut Durum -- v1.30.0 (Faz 203-212: "hiç işlem açmıyor" zincirinin tamamı)
 
 **Tarih:** 2026-08-06
 **Branch:** main
 **Son commit (HEAD):** bkz. git log
-**Test:** 526 passed, 1 xpassed. `npm run build` temiz.
+**Test:** 532+ passed (ilgisiz, yerel Ollama'ya bağlı 1 test hariç). `npm run build` temiz.
+
+## Faz 203-212 — "AI hiç işlem açmıyor" zincirinin tamamı (7 katmanlı, birbirine bağlı bug)
+
+Kullanıcının "dünden beri hiç işlem almamış" şikayetiyle başlayan derin
+inceleme, tek bir sebep değil, art arda dizilmiş 7 bağımsız sessiz-hata
+katmanı buldu (hiçbiri exception atmıyordu, hepsi "boş/nötr" sonuç
+üretiyordu — test coverage bunları yakalamamıştı çünkü hepsi gerçek uçtan
+uca veri akışı gerektiriyordu):
+
+1. **Faz 203** — `Metacognition.evaluate_confidence()`, Council'in gerçek
+   ağırlıklı konsensüs gücünü (`belief.strength`) hiç kullanmıyordu, sadece
+   hafızaya bakıyordu (hafıza yoksa sabit 0.5). *(Not: bu bulgunun "entropy
+   kullanılıyordu" şeklinde bir dış özeti dolaştı — bu YANLIŞ, kodda entropy
+   hiç geçmiyor; gerçek sorun confidence'ın hafıza-dışı hiçbir sinyal
+   kullanmamasıydı.)*
+2. **Faz 205** — `BeliefEngine.apply_weights()`, güvenilirliği düşük
+   ajanları "bench" eden (`performance_weight=0`) mekanizmayı eski bir
+   weight snapshot'ıyla sessizce eziyordu (overwrite yerine çarpım
+   gerekiyordu) — WAIT %100 baskın çıkıyordu.
+3. **Faz 206** — `proposed_size` üretim yolunda hiç set edilmiyordu (hep
+   0), MetaStage'in ACT dalı `final_size`'ı hiç yazmıyordu — onaylanan bir
+   ACT kararı bile hiçbir zaman pozisyon açamıyordu.
+4. **Faz 207** — Mum verisi ingestion'ı (`ingest_candles_task`) hiç
+   zamanlanmıyordu, Market sayfası BTC dışında hep boştu.
+5. **Faz 208** — Test modunda `reduce_threshold` neredeyse sıfıra
+   indirildi (0.05) — zayıf ama gerçek sinyaller artık denenebiliyor.
+6. **Faz 210a** — `contracts/context.py` naive `datetime.now()` (yerel
+   CEST) kullanıyordu, `position_closer.py` `datetime.now(UTC)` — aynı
+   satırda ~2 saatlik fark, kapanış açılıştan önce görünüyordu.
+7. **Faz 210b/211b** — Gerçek kapanan pozisyonların sonucu hiçbir zaman
+   `AgentMemory`/`WeightOptimizer`'a geri beslenmiyordu (tetikleyici
+   scheduler hiç başlatılmıyordu, ayrıca `agent_opinions=[]` ile kırıktı).
+   Artık her kapanışta ajanların KENDİ yönüne göre (işlemin genel
+   kârlılığına göre değil) doğruluk kaydediliyor.
+8. **Faz 210c** — İlk gerçek kapanan işlemler hedefe ulaştı ama komisyon
+   kârı yedi (`min_profit_target_pct` eklendi, varsayılan %0.5).
+9. **Faz 211a** — Pozisyon büyüklüğü fiyattan bağımsız "1.0 birim"
+   öneriyordu (PAXGUSDT $4275 notional vs ADAUSDT $0.19 notional aynı
+   "size"). Artık sermaye bütçesi/fiyat = birim sayısı.
+10. **Faz 211c** — Ölü kod temizliği: `MetaLearner` (fiilen işlevsizdi,
+    `threshold_optimizer.py` gerçek yerini aldı), `PendingOutcomeTracker`
+    (hiç başlatılmıyordu), `OutcomeTracker.attach_outcome()` silindi.
+11. **Faz 212** — `DecisionFusion`'ın ret gerekçesi (Negative EV /
+    min_profit_target_pct) `decisions.agent_contributions`'a hiç
+    yazılmıyordu — artık kalıcı, "neden reddedildi?" sorusu DB'den
+    cevaplanabiliyor.
+
+**Bilinen, henüz çözülmemiş gerilim:** Faz 208 (reduce_threshold≈0) daha
+çok zayıf sinyalin denenmesine izin veriyor, Faz 210c (min_profit_target_pct
+%0.5) bunların çoğunu ATR-tabanlı hedef fiyatın %0.5'ini geçmediği için
+eliyor — gerçek veride 30 yönlü sinyalden sadece 3'ü açılabildi. Bu iki
+ayarın birlikte kalibrasyonu kullanıcıyla henüz netleşmedi.
+
+**Önceki durum (v1.24.0, Faz 187-200) aşağıda korunuyor.**
 
 ## Faz 200 — bilinçli olarak yapılmayan trading teknikleri (dürüst sınır)
 

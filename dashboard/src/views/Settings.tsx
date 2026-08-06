@@ -4,10 +4,14 @@ import { Card, PageHeader, Button, ErrorNote, Input } from "../components/ui";
 
 type SettingsMap = Record<string, string>;
 
+// Trader jargonunda üçü de "kısa vadeli" sayılır (haftalar/aylar sürmüyor)
+// — "kısa/orta/uzun vadeli" etiketi yanıltıcıydı. Sistem zaten gün-içi
+// işlem için tasarlı (ATR-tabanlı hedefler, saniyeler içinde kapanış
+// kontrolü); gerçek çok haftalık/aylık swing/pozisyon trading ayrı bir iş.
 const HORIZON_LABELS: Record<string, string> = {
-  short: "Kısa vadeli (~10 dk)",
-  medium: "Orta vadeli (~4 saat)",
-  long: "Uzun vadeli (~1 gün)",
+  short: "Scalp (~10 dk)",
+  medium: "Gün içi (~4 saat)",
+  long: "1 günlük swing (~1 gün)",
 };
 
 export default function Settings() {

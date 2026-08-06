@@ -22,6 +22,7 @@ class DecisionRecorder:
         belief=None,
         debate_result=None,
         weight_snapshot_id=None,
+        decision_fusion_entries=None,
     ) -> DecisionEvent:
 
         direction = (
@@ -51,6 +52,15 @@ class DecisionRecorder:
                     if hasattr(debate_result, "model_dump")
                     else debate_result
                 ),
+            })
+
+        # Faz 212: DecisionFusion'ın "neden reddetti/ayarladı" gerekçesi
+        # (Negative EV / min_profit_target_pct) artık gerçekten kalıcı —
+        # bkz. engines/cognitive_pipeline.py::RecordingStage.
+        for entry in (decision_fusion_entries or []):
+            agent_opinions_data.append({
+                "type": "decision_fusion",
+                "data": entry,
             })
 
         # filled_price varsa (orchestrator.py fill_engine.simulate ile

@@ -272,8 +272,20 @@ class RecordingStage:
 
         debate_result = None
         weight_snapshot_id = None
+        # Faz 212: gerçek bulgu — DecisionFusion.evaluate()'in ret nedeni
+        # (Negative EV, ya da Faz 210c'nin min_profit_target_pct reddi)
+        # ctx.cognition.relevant_knowledge'a yazılıyordu ama bu liste
+        # decisions.agent_contributions'a HİÇ aktarılmıyordu (debate_result/
+        # weight_snapshot gibi elle çekilmiyordu) — "neden reddedildi?"
+        # sorusunun cevabı DB'de hiç yoktu, her seferinde canlı kod
+        # çalıştırıp yeniden üretmek gerekiyordu.
+        decision_fusion_entries = []
 
         if hasattr(ctx, "cognition"):
+            for item in ctx.cognition.relevant_knowledge:
+                if item.get("type") == "decision_fusion":
+                    decision_fusion_entries.append(item.get("data"))
+
             for item in reversed(ctx.cognition.relevant_knowledge):
                 if item.get("type") == "debate_result":
                     debate_result = item.get("data")
@@ -290,6 +302,7 @@ class RecordingStage:
             belief,
             debate_result,
             weight_snapshot_id,
+            decision_fusion_entries,
         )
 
         from observability.metrics import decisions_total
