@@ -334,21 +334,33 @@ def _autocorrelation(returns: np.ndarray, lag: int = 1) -> float:
 
 
 def _hurst_exponent(closes: np.ndarray) -> float:
-    """Rescaled range (R/S) analizi ile basit Hurst tahmini. Standart,
-    literatürde tanımlı bir yöntem — ama küçük örneklemlerde gürültülü
-    olduğu bilinen, kabaca bir tahmin (gerçek zaman serisi analizi bu
-    konuda çok daha büyük örneklemler ister)."""
+    """Varyans-ölçekleme (generalized Hurst) yöntemiyle basit Hurst
+    tahmini. Standart, literatürde tanımlı bir yöntem — ama küçük
+    örneklemlerde gürültülü olduğu bilinen, kabaca bir tahmin (gerçek
+    zaman serisi analizi bu konuda çok daha büyük örneklemler ister).
+
+    Faz 214: gerçek bulgu — burası log(closes) yerine log_returns'ün
+    kendisini (yani fiyatın değil, GETİRİNİN) lag'lenmiş farkını
+    kullanıyordu. Getiriler zaten ~durağan/beyaz gürültüye yakın
+    olduğundan, bu fark hemen her lag'de neredeyse sabit çıkıyor —
+    regresyon eğimi (ve dolayısıyla Hurst) piyasa rejiminden bağımsız
+    olarak sürekli ~0'a çöküyordu (canlı BTCUSDT verisiyle doğrulandı:
+    hurst=0.0, düzeltmeden sonra aynı veriyle hurst=0.31). Bu da
+    QuantAgent'ın neredeyse her zaman "mean_reverting_regime" (hurst<0.45
+    her zaman trivially doğru) sanıp aşırı z-score beklemesine, yani
+    fiilen hep WAIT/0 confidence üretmesine sebep oluyordu. Doğru yöntem
+    fiyatın (log) kendisinin lag'lenmiş farkının varyansını ölçeklemek."""
     n = len(closes)
     if n < 20:
         return 0.5
-    log_returns = np.diff(np.log(closes))
-    lags = [l for l in (5, 10, 20, 40) if l < len(log_returns)]
+    log_prices = np.log(closes)
+    lags = [l for l in (5, 10, 20, 40) if l < len(log_prices)]
     if len(lags) < 2:
         return 0.5
 
     tau = []
     for lag in lags:
-        diffs = log_returns[lag:] - log_returns[:-lag]
+        diffs = log_prices[lag:] - log_prices[:-lag]
         tau.append(np.sqrt(np.std(diffs)) if np.std(diffs) > 0 else 1e-9)
 
     try:
