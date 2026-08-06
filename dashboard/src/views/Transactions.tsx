@@ -106,7 +106,13 @@ export default function Transactions() {
         </div>
       )}
 
-      <h2 className="text-sm font-semibold text-ink-soft uppercase tracking-wide mb-3">Kapanmış İşlemler</h2>
+      <h2 className="text-sm font-semibold text-ink-soft uppercase tracking-wide mb-1">Kapanmış İşlemler</h2>
+      {summary && summary.count > trades.length && (
+        <p className="text-xs text-ink-faint mb-3">
+          En son {trades.length} işlem gösteriliyor (toplam {summary.count} — üstteki özet kutuları
+          her zaman gerçek toplamı yansıtır).
+        </p>
+      )}
       {trades.length === 0 ? (
         <EmptyState label="Henüz kapanmış işlem yok." />
       ) : (

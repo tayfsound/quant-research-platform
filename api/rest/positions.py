@@ -48,16 +48,23 @@ async def list_open_positions(limit: int = 100, user: AuthContext = Depends(get_
 
 @router.get("/trades")
 async def list_closed_trades(limit: int = 100, user: AuthContext = Depends(get_current_user)):
+    """Faz 224: kritik bulgu — "summary" artık `limit`'e (tablo için kaç
+    satır gösterileceği) bağlı DEĞİL, gerçek toplam üzerinden hesaplanıyor
+    (closed_trades_summary — /performance'ın all_time'ıyla AYNI sorgu).
+    `trades` listesi hâlâ `limit` ile sınırlı (tabloyu 10 binlerce satır
+    render etmemek için) ama bu artık sadece görüntüleme sınırı, istatistik
+    kaynağı değil."""
     with SessionFactory.get_session() as session:
-        rows = DecisionPersistor(session).list_closed_trades(limit=limit)
+        persistor = DecisionPersistor(session)
+        rows = persistor.list_closed_trades(limit=limit)
         trades = [_serialize(r) for r in rows]
-        wins = [t for t in trades if (t.get("pnl") or 0) > 0]
+        summary = persistor.closed_trades_summary()
         return {
             "trades": trades,
             "summary": {
-                "count": len(trades),
-                "win_rate": (len(wins) / len(trades)) if trades else 0.0,
-                "total_pnl": sum(t.get("pnl") or 0 for t in trades),
+                "count": summary["trade_count"],
+                "win_rate": summary["win_rate"],
+                "total_pnl": summary["total_pnl"],
             },
         }
 
@@ -100,17 +107,22 @@ async def performance_summary(user: AuthContext = Depends(get_current_user)):
         monthly = _bucket(persistor.performance_by_period("month"))
         yearly = _bucket(persistor.performance_by_period("year"))
 
-        all_closed = persistor.list_closed_trades(limit=10000)
-        total_pnl = sum(t.get("pnl") or 0.0 for t in all_closed)
-        wins = sum(1 for t in all_closed if (t.get("pnl") or 0) > 0)
-        deployed_notional = sum((t.get("entry_price") or 0.0) * (t.get("quantity") or 0.0) for t in all_closed)
+        # Faz 224: kritik bulgu — burası önceden list_closed_trades(limit=
+        # 10000) ile Python'da topluyordu, GET /trades ise limit=100 ile
+        # ayrı bir hesap yapıyordu — kullanıcının "işlem sayısı 100
+        # görünüyor, Performance'da farklıydı" şikayetinin kök nedeni.
+        # Artık ikisi de AYNI, limitsiz SQL agregasyonunu (closed_trades_
+        # summary) kullanıyor — tek gerçek kaynak.
+        summary = persistor.closed_trades_summary()
+        total_pnl = summary["total_pnl"]
+        deployed_notional = summary["deployed_notional"]
 
         return {
             "starting_capital": starting_capital,
             "all_time": {
-                "trade_count": len(all_closed),
+                "trade_count": summary["trade_count"],
                 "total_pnl": total_pnl,
-                "win_rate": (wins / len(all_closed)) if all_closed else 0.0,
+                "win_rate": summary["win_rate"],
                 "roi_pct": (total_pnl / starting_capital) if starting_capital else 0.0,
                 "roi_pct_on_deployed": (total_pnl / deployed_notional) if deployed_notional else 0.0,
                 "deployed_notional": deployed_notional,

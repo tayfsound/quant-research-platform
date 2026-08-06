@@ -191,6 +191,36 @@ class DecisionPersistor:
 
         return [dict(r) for r in rows]
 
+    def closed_trades_summary(self) -> dict:
+        """Faz 224: kritik bulgu — kullanıcı: "sürekli işlem alıyor kapatıyor
+        ama kapanmış işlem sayısı 100 görünüyor, bir ara 400 küsürdü... bu
+        dashboarda güvenemiyorum." Kök neden: GET /trades'in summary'si
+        (count/win_rate/total_pnl) list_closed_trades(limit=100)'ün
+        DÖNDÜRDÜĞÜ dilimden hesaplanıyordu — yani toplam kapanmış işlem
+        sayısı 100'ü geçtiği anda "count" hep tam 100'de donuyor, gerçek
+        toplamı hiç yansıtmıyordu. Performance sayfası ise limit=10000 ile
+        (gerçeğe daha yakın ama o da bir tavan) ayrı bir hesap yapıyordu —
+        aynı isimli iki sayı farklı gerçek kümelerden geliyordu. Bu metod
+        TABLOYU limitlemeden, gerçek toplam üzerinden tek bir SQL
+        agregasyonuyla hesaplıyor — hem /trades hem /performance artık
+        AYNI, gerçek toplamı kullanabilir."""
+        row = self.session.execute(
+            text(
+                "SELECT count(*) AS trade_count, "
+                "sum(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS wins, "
+                "sum(pnl) AS total_pnl, "
+                "sum(entry_price * quantity) AS deployed_notional "
+                "FROM decisions WHERE status = 'closed'"
+            )
+        ).mappings().one()
+        trade_count = row["trade_count"] or 0
+        return {
+            "trade_count": trade_count,
+            "win_rate": (row["wins"] / trade_count) if trade_count else 0.0,
+            "total_pnl": float(row["total_pnl"] or 0.0),
+            "deployed_notional": float(row["deployed_notional"] or 0.0),
+        }
+
     def performance_by_period(self, period: str, limit: int = 200) -> list[dict]:
         """Faz 215: kullanıcı isteği — "dün ne kadar ROI yapmış, haftalık/
         aylık/yıllık ne olmuş" dashboard'da hiç görünmüyordu. period:

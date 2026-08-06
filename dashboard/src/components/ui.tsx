@@ -11,7 +11,7 @@ export function Card({
 }) {
   return (
     <div
-      className={`bg-surface border border-line rounded-xl shadow-layer-1 hover:shadow-layer-2 ${
+      className={`bg-surface border border-line rounded-xl shadow-layer-1 hover:shadow-layer-2 min-w-0 overflow-hidden ${
         padded ? "p-5" : ""
       } ${className}`}
     >
@@ -114,11 +114,14 @@ export function StatCard({
 }) {
   return (
     <Card>
-      <p className="text-xs uppercase tracking-wide text-ink-faint font-medium">{label}</p>
-      <p className={`text-2xl font-semibold mt-2 ${tone === "rise" ? "text-rise" : tone === "fall" ? "text-fall" : "text-ink"}`}>
+      <p className="text-xs uppercase tracking-wide text-ink-faint font-medium break-words">{label}</p>
+      <p
+        className={`text-2xl font-semibold mt-2 break-words leading-tight ${tone === "rise" ? "text-rise" : tone === "fall" ? "text-fall" : "text-ink"}`}
+        title={typeof value === "string" || typeof value === "number" ? String(value) : undefined}
+      >
         {value}
       </p>
-      {sub && <p className="text-xs text-ink-soft mt-1">{sub}</p>}
+      {sub && <p className="text-xs text-ink-soft mt-1 break-words">{sub}</p>}
     </Card>
   );
 }
