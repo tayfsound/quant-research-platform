@@ -128,7 +128,22 @@ class BeliefEngine:
             domain = opinion.domain.value
             weight = snapshot.weights.get(domain, 1.0)
             adjusted = opinion.model_copy(deep=True)
-            adjusted.performance_weight = weight
+            # Gerçek bulgu: burası opinion.performance_weight'i doğrudan
+            # snapshot değeriyle EZİYORDU. CouncilOrchestrator.deliberate()
+            # birkaç satır önce ReliabilityAnnotator ile düşük güvenilirlikli
+            # ajanları "bench" edip performance_weight=0 yapıyor (gerçek oy
+            # ağırlığını sıfırlıyor) — ama apply_weights() bu sıfırı, hiç
+            # ilgisi olmayan eski bir weight snapshot'ındaki (~0.99 gibi)
+            # değerle anında geri getiriyordu, bench'i sessizce iptal
+            # ediyordu. Sonuç: her cycle'da hep-WAIT oy veren time/
+            # epistemology ajanları (bilinçli olarak yön tahmini yapmıyorlar,
+            # sadece güven düşürücü WAIT oyu veriyorlar) tam ağırlığa geri
+            # dönüyor ve WAIT'i kazandırıyordu — gerçek 190 karar örneğinde
+            # %100 WAIT'in doğrudan sebebi buydu (doğrulandı: aynı opinion'lar
+            # ağırlıksız çalıştırılınca LONG çıkıyor, snapshot uygulanınca
+            # WAIT'e dönüyor). Çarpım, iki bağımsız güven sinyalini (anlık
+            # bench + geçmiş performans snapshot'ı) doğru şekilde birleştirir.
+            adjusted.performance_weight = round(weight * opinion.performance_weight, 4)
             adjusted.recalculate()
             weighted_opinions.append(adjusted)
 
