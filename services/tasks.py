@@ -63,6 +63,28 @@ def run_trading_cycle_task(symbol: str | None = None) -> dict:
     ]}
 
 
+@celery_app.task(name="optimize_thresholds_task")
+def optimize_thresholds_task() -> dict:
+    """Faz 204: MetaStage'in act_threshold/reduce_threshold'ını gerçek
+    kapalı işlem geçmişinden kendi kendine kalibre eder (bkz. services/
+    threshold_optimizer.py). Yeterli veri (min. 20 kapalı işlem) yoksa
+    hiçbir şey değiştirmez — icat edilmiş bir sayı yazılmaz."""
+    from database.repositories.app_settings_repository import AppSettingsRepository
+    from database.session_factory import SessionFactory
+    from services.threshold_optimizer import compute_suggested_thresholds
+
+    suggestion = compute_suggested_thresholds()
+    if suggestion is None:
+        return {"skipped": "insufficient_closed_trades"}
+
+    with SessionFactory.get_session() as session:
+        repo = AppSettingsRepository(session)
+        repo.set("act_threshold", str(suggestion["act_threshold"]), updated_by="threshold_optimizer")
+        repo.set("reduce_threshold", str(suggestion["reduce_threshold"]), updated_by="threshold_optimizer")
+
+    return suggestion
+
+
 @celery_app.task(name="ingest_order_book_task")
 def ingest_order_book_task() -> dict:
     """Faz 201: gerçek bulgu — market_data/ingestion/pipeline.py::

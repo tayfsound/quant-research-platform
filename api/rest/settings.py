@@ -60,6 +60,13 @@ def _validate(key: str, value: str) -> None:
                 raise ValueError
         except ValueError:
             raise HTTPException(400, "max_portfolio_var_pct must be a number in (0, 1]")
+    elif key in ("act_threshold", "reduce_threshold"):
+        try:
+            v = float(value)
+            if not (0 < v <= 1):
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, f"{key} must be a number in (0, 1]")
     else:
         raise HTTPException(400, f"unknown setting key: {key}")
 

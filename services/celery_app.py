@@ -70,4 +70,12 @@ celery_app.conf.beat_schedule = {
         "task": "ingest_order_book_task",
         "schedule": 20.0,
     },
+    # Faz 204: ACT/REDUCE eşiklerinin kendi kendine kalibrasyonu — gerçek
+    # kapalı işlem geçmişi gerektirdiği için (min. 20) yeterli veri
+    # birikmeden hiçbir şey yapmıyor; ucuz bir sorgu olduğu için sık
+    # (saatte bir) kontrol etmenin zararı yok.
+    "optimize-thresholds-hourly": {
+        "task": "optimize_thresholds_task",
+        "schedule": 3600.0,
+    },
 }

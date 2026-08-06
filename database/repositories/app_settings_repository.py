@@ -39,6 +39,14 @@ DEFAULTS: dict[str, str] = {
     # matrisiyle hesaplanan portföy VaR'ı bu yüzdeyi (sermayenin) aşarsa
     # önerilen büyüklükler orantılı olarak küçültülür.
     "max_portfolio_var_pct": "0.1",
+    # Faz 204: MetaStage'in ACT/REDUCE/WAIT eşikleri — projenin ilk
+    # commit'inden beri hiç değişmemiş, hiç gerekçelendirilmemiş
+    # varsayılanlar (%70/%40). services/threshold_optimizer.py yeterli
+    # gerçek kapalı işlem birikince (min. 20) bunları GERÇEK kâr/zarar
+    # geçmişine göre kendi kendine güncelliyor; o zamana kadar bu
+    # varsayılanlar kullanılıyor.
+    "act_threshold": "0.7",
+    "reduce_threshold": "0.4",
 }
 
 # Faz 187'nin PositionCloser.hold_seconds'ına karşılık gelen ön tanımlı

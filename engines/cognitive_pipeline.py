@@ -98,6 +98,19 @@ class MetaStage:
         self.metacognition = Metacognition()
 
     def execute(self, ctx: CognitiveCycleContext, belief: Belief) -> CognitiveCycleContext:
+        # Faz 204: eşikler artık app_settings'ten okunuyor — başlangıçta
+        # dürüst varsayılan (%70/%40, hiç kalibre edilmemiş) ama
+        # services/threshold_optimizer.py yeterli gerçek kapalı işlem
+        # birikince (min. 20) bunları GERÇEK kâr/zarar geçmişine göre
+        # güncelleyebiliyor (bkz. optimize_thresholds_task).
+        from database.repositories.app_settings_repository import AppSettingsRepository
+        from database.session_factory import SessionFactory
+
+        with SessionFactory.get_session() as session:
+            settings_repo = AppSettingsRepository(session)
+            self.metacognition.act_threshold = float(settings_repo.get("act_threshold"))
+            self.metacognition.reduce_threshold = float(settings_repo.get("reduce_threshold"))
+
         conflict_level = max(
             belief.cluster_disagreement,
             belief.crowding_penalty,
