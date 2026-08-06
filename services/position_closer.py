@@ -110,9 +110,22 @@ class PositionCloser:
 
     def close_due_positions(self, decision_repo: DecisionPersistor, timeframe: str = "1m") -> list[dict]:
         """Açık pozisyonları gerçek güncel fiyatla kontrol eder: fiyat gerçek
-        stop-loss/take-profit seviyesine ulaştıysa hemen kapatır (vade
-        beklemeden); ulaşmadıysa ve hold_seconds dolduysa vadeden kapatır.
-        Kapatılanların özetini döndürür."""
+        stop-loss/take-profit seviyesine ulaştıysa kapatır. Başka HİÇBİR
+        sebeple kapatmaz.
+
+        Faz 215: kritik bulgu — vade dolunca kapatma (time_expired)
+        kaldırıldı. Kullanıcının kendi sözleriyle: "bile bile zarar etmek
+        demek bu." Gerçek veriyle doğrulandı: trade_horizon (10 dk) <
+        candle_timeframe (15 dk) olduğunda kapanan işlemlerin %64'ü
+        stop/target'a hiç ulaşmadan, sadece vade dolduğu için (küçük
+        komisyon kaybıyla) kapanıyordu — sinyal kalitesinden tamamen
+        bağımsız, yapay/kaçınılmaz bir kayıp mekanizmasıydı. Artık bir
+        pozisyon SADECE gerçekten TP ya da SL'e ulaştığında kapanır —
+        ne kadar sürerse sürsün. (hold_seconds/trade_horizon artık burada
+        kullanılmıyor; DecisionFusion'ın Negative EV kapısı zaten
+        stop_loss_price/take_profit_price'ı hiç set edilmemiş bir
+        pozisyonun asla "open" statüsüne ulaşmasına izin vermiyor, yani
+        sonsuza kadar açık kalacak bir pozisyon riski yok.)"""
         now = datetime.now(UTC)
         closed = []
         learned_any = False
@@ -137,9 +150,7 @@ class PositionCloser:
                 direction, current_price, pos.get("stop_loss_price"), pos.get("take_profit_price")
             )
             if exit_reason is None:
-                if age < self.hold_seconds:
-                    continue
-                exit_reason = "time_expired"
+                continue
 
             exit_price = current_price
 

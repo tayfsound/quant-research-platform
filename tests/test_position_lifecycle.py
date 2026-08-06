@@ -5,7 +5,6 @@ from uuid import uuid4
 
 from database.repositories.decision_persistor import DecisionPersistor
 from database.session_factory import SessionFactory
-from market_data.ingestion.data_provider import MockProvider
 from services.position_closer import PositionCloser
 
 
@@ -92,16 +91,24 @@ def test_risk_rejected_directional_decision_never_opens_a_position():
     assert row["entry_price"] is None
 
 
-def test_position_closer_closes_only_positions_past_hold_duration_with_real_exit_price():
-    symbol = f"POSCLOSE{uuid4().hex[:8]}"
+def test_position_closer_never_closes_on_age_alone_regardless_of_how_old():
+    """Faz 215: kritik bulgu — vade dolunca kapatma (time_expired)
+    kaldırıldı. Kullanıcının kendi sözleriyle: "bile bile zarar etmek
+    demek bu." Gerçek veriyle doğrulandı: trade_horizon (10 dk) <
+    candle_timeframe (15 dk) olduğunda kapanan işlemlerin %64'ü stop/
+    target'a hiç ulaşmadan, sadece vade dolduğu için kapanıyordu — sinyal
+    kalitesinden bağımsız, yapay bir kayıp mekanizmasıydı. Bu test, çok
+    eski (1 hafta önce açılmış) ama fiyatı hâlâ stop/target arasında olan
+    bir pozisyonun HÂLÂ açık kalması gerektiğini kanıtlıyor."""
+    from contracts.decision_event import DecisionEvent
+
+    symbol = f"POSNOEXP{uuid4().hex[:8]}"
     now = datetime.now(UTC)
 
     with SessionFactory.get_session() as session:
-        from contracts.decision_event import DecisionEvent
-
-        old_event = DecisionEvent(
+        very_old_event = DecisionEvent(
             id=uuid4(),
-            timestamp=now - timedelta(minutes=20),
+            timestamp=now - timedelta(days=7),
             symbol=symbol,
             proposed_direction="LONG",
             final_action="LONG",
@@ -109,44 +116,24 @@ def test_position_closer_closes_only_positions_past_hold_duration_with_real_exit
             confidence=0.7,
             status="open",
             entry_price=100.0,
-            quantity=2.0,
-            opened_at=now - timedelta(minutes=20),
+            quantity=1.0,
+            opened_at=now - timedelta(days=7),
+            stop_loss_price=90.0,
+            take_profit_price=110.0,
         )
-        fresh_event = DecisionEvent(
-            id=uuid4(),
-            timestamp=now,
-            symbol=symbol,
-            proposed_direction="LONG",
-            final_action="LONG",
-            final_size=1.0,
-            confidence=0.7,
-            status="open",
-            entry_price=100.0,
-            quantity=2.0,
-            opened_at=now,
-        )
-        repo = DecisionPersistor(session)
-        repo.persist(old_event)
-        repo.persist(fresh_event)
+        DecisionPersistor(session).persist(very_old_event)
 
-    closer = PositionCloser(MockProvider(seed=1), hold_seconds=600)
+    # Fiyat stop (90) ile target (110) arasında — ne kadar eski olursa
+    # olsun kapanmamalı.
+    closer = PositionCloser(_FixedPriceProvider(103.0))
     with SessionFactory.get_session() as session:
         closed = closer.close_due_positions(DecisionPersistor(session))
 
-    closed_ids = {c["decision_id"] for c in closed}
-    assert str(old_event.id) in closed_ids
-    assert str(fresh_event.id) not in closed_ids
+    assert str(very_old_event.id) not in {c["decision_id"] for c in closed}
 
     with SessionFactory.get_session() as session:
-        row = DecisionPersistor(session).get_by_id(str(old_event.id))
-    assert row["status"] == "closed"
-    assert row["exit_price"] is not None
-    assert row["pnl"] is not None
-    assert row["closed_at"] is not None
-
-    with SessionFactory.get_session() as session:
-        still_open = DecisionPersistor(session).get_by_id(str(fresh_event.id))
-    assert still_open["status"] == "open"
+        row = DecisionPersistor(session).get_by_id(str(very_old_event.id))
+    assert row["status"] == "open"
 
 
 class _FixedPriceProvider:

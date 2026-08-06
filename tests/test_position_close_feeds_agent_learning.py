@@ -41,6 +41,12 @@ def test_closing_a_real_position_records_each_real_agent_opinion_into_agent_memo
         entry_price=100.0,
         quantity=1.0,
         opened_at=now - timedelta(minutes=20),
+        # Faz 215: vade dolunca kapatma kaldırıldı — bir pozisyon SADECE
+        # gerçekten stop/target'a ulaşınca kapanır, bu yüzden test artık
+        # gerçek bir take_profit hedefi tanımlamak zorunda (fiyat 110'a
+        # çekilecek, hedef 105 -> tetiklenir).
+        stop_loss_price=90.0,
+        take_profit_price=105.0,
         agent_opinions=[
             {"domain": "technical", "direction": "LONG", "confidence": 0.8},
             {"domain": "macro", "direction": "SHORT", "confidence": 0.3},
