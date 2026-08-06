@@ -94,6 +94,26 @@ async def get_settings_(user: AuthContext = Depends(get_current_user)):
         return {"settings": AppSettingsRepository(session).get_all()}
 
 
+@router.get("/defaults")
+async def get_defaults(user: AuthContext = Depends(get_current_user)):
+    return {"defaults": DEFAULTS, "trade_horizon_seconds": TRADE_HORIZON_SECONDS}
+
+
+@router.post("/reset-defaults")
+async def reset_to_defaults(user: AuthContext = Depends(require_role(Role.OPERATOR))):
+    """Faz 215: kullanıcı isteği — tek tuşla, komisyona ezilmeden $1-5
+    net kâr hedefleyecek şekilde matematiksel olarak hesaplanmış
+    varsayılanlara dönüş (bkz. DEFAULTS'taki gerekçe).
+
+    Gerçek bulgu: bu route /{key} route'undan SONRA tanımlıysa, FastAPI
+    kayıt sırasına göre eşleştirdiği için POST /settings/reset-defaults
+    isteği set_setting(key="reset-defaults")'a düşüyordu (422 — value
+    query param eksik). Route /{key}'den ÖNCE tanımlanmalı."""
+    with SessionFactory.get_session() as session:
+        reset = AppSettingsRepository(session).reset_to_defaults(updated_by=user.username)
+        return {"reset": reset}
+
+
 @router.post("/{key}")
 async def set_setting(key: str, value: str, user: AuthContext = Depends(require_role(Role.OPERATOR))):
     # Faz 192 düzeltmesi: bunlar risk_limits.py'deki hash-imzalı, çok
@@ -105,8 +125,3 @@ async def set_setting(key: str, value: str, user: AuthContext = Depends(require_
     with SessionFactory.get_session() as session:
         AppSettingsRepository(session).set(key, value, updated_by=user.username)
         return {"key": key, "value": value, "updated_by": user.username}
-
-
-@router.get("/defaults")
-async def get_defaults(user: AuthContext = Depends(get_current_user)):
-    return {"defaults": DEFAULTS, "trade_horizon_seconds": TRADE_HORIZON_SECONDS}

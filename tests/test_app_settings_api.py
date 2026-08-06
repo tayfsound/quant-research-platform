@@ -3,7 +3,7 @@ gerçekten değiştirebildiğini doğrular (ADMIN-yazma, herkes-okuma)."""
 from unittest.mock import patch
 
 from contracts.auth import Role
-from database.repositories.app_settings_repository import AppSettingsRepository
+from database.repositories.app_settings_repository import DEFAULTS, AppSettingsRepository
 from database.session_factory import SessionFactory
 from tests.auth_helpers import make_authed_headers
 
@@ -60,6 +60,34 @@ def test_invalid_trading_mode_value_rejected():
             headers=make_authed_headers(Role.ADMIN),
         )
         assert response.status_code == 400
+
+
+def test_reset_defaults_restores_the_reasoned_trading_economics_values():
+    """Faz 215: kullanıcı isteği — tek tuşla, komisyona ezilmeden $1-5
+    net kâr hedefleyecek matematiksel varsayılanlara dönüş."""
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        client = _client()
+        try:
+            client.post(
+                "/api/v1/settings/starting_capital",
+                params={"value": "999999999999"},
+                headers=make_authed_headers(Role.ADMIN),
+            )
+            response = client.post(
+                "/api/v1/settings/reset-defaults",
+                headers=make_authed_headers(Role.ADMIN),
+            )
+            assert response.status_code == 200
+            with SessionFactory.get_session() as session:
+                repo = AppSettingsRepository(session)
+                assert repo.get("starting_capital") == DEFAULTS["starting_capital"]
+                assert repo.get("candle_timeframe") == DEFAULTS["candle_timeframe"]
+                assert repo.get("min_profit_target_pct") == DEFAULTS["min_profit_target_pct"]
+        finally:
+            with SessionFactory.get_session() as session:
+                AppSettingsRepository(session).set(
+                    "starting_capital", DEFAULTS["starting_capital"], updated_by="test",
+                )
 
 
 def test_invalid_max_capital_pct_out_of_range_rejected():

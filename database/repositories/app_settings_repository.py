@@ -12,10 +12,32 @@ from database.base import Base
 
 DEFAULTS: dict[str, str] = {
     "trading_mode": "test",
-    "max_concurrent_positions": "3",
-    "max_capital_pct": "0.5",
-    "starting_capital": "10000",
-    "trade_horizon": "short",
+    # Faz 215: kullanıcı isteği — "default ayarda sistem minik limitlerle
+    # minik getiriler getirecek şekilde matematiksel olarak mantıklı bir
+    # ayar, komisyonlara ezilmeden $1-5 arası net kâr." Gerçek ölçülen
+    # verilerle geriye doğru hesaplandı:
+    #   capital_per_trade = starting_capital * max_capital_pct / max_concurrent_positions
+    #   50000 * 0.4 / 15 = $1333/işlem
+    #   15m BTCUSDT medyan 2xATR hedefi (gerçek ölçüm): %0.3485
+    #   round-trip komisyon (gerçek taker_rate*2): %0.1
+    #   net kâr (medyan durumda) = 1333 * (0.003485 - 0.001) ≈ $3.31
+    # Değişken piyasa koşullarında kesin $1-5 garantisi yok (gerçek
+    # piyasa, uydurma bir sayı değil) ama temsili durumda aralığın
+    # ortasına düşecek şekilde hesaplandı.
+    "max_concurrent_positions": "15",
+    "max_capital_pct": "0.4",
+    "starting_capital": "50000",
+    # Faz 215: kritik bulgu — gerçek canlı veride (289 kapanan işlem)
+    # %64'ü "time_expired" (stop/target'a hiç ulaşmadan sadece vade
+    # dolduğu için, küçük komisyon kaybıyla kapanmış) çıktı. Sebep:
+    # trade_horizon="short" (10 dk) < candle_timeframe="15m" (15 dk) —
+    # pozisyon, sinyalin üretildiği mum bile TAMAMLANMADAN kapanıyordu,
+    # ATR-tabanlı stop/target'ın (15m verisinden hesaplanan, gerçekçi
+    # fiyat hareketi ölçeği) tetiklenmesine hiç fırsat kalmıyordu — bu
+    # da kazanma oranını yapay olarak (sinyal kalitesinden bağımsız)
+    # düşürüyordu. "medium" (4 saat = 16x 15dk mum), stop/target'a
+    # gerçekten ulaşma şansı bırakıyor.
+    "trade_horizon": "medium",
     # Faz 189: "stopsuz işlem yapmasın test modunda bile olsa" — aynı sembol
     # için art arda iki işlem açılışı arasında zorunlu minimum bekleme.
     "min_seconds_between_trades": "60",
@@ -63,15 +85,15 @@ DEFAULTS: dict[str, str] = {
     # çekildi (aşağıda) hem de bu eşik gerçek round-trip komisyonun
     # hemen üstüne (%0.1) indirildi — "hedefi tutturmak zaten net kâr
     # demek" ilkesini koruyor ama artık gerçek sinyalleri boğmuyor.
-    "min_profit_target_pct": "0.001",
-    # Faz 214: kullanıcı isteği — "4 saatlik verileri kullanmak daha isabetli
-    # olmaz mı, geçmiş pencere çok kısa." Gerçek geçmiş veriyle ölçüldü:
-    # 1m'de ATR-tabanlı hedef komisyonun çok altında kalıyor (yukarıdaki
-    # not), 5m'de gerçek bir kâr marjı bırakıyor — varsayılan 5m'e
-    # çekildi (kullanıcı Settings'ten istediği gibi değiştirebilir,
-    # 4h dahil — candle_timeframe işlem vadesinden ayrı, "4h analiz" ≠
-    # "4h pozisyon tutma").
-    "candle_timeframe": "5m",
+    # Faz 215: gerçek round-trip komisyonun (%0.1) hemen üstüne, 15m'nin
+    # gerçek medyan hedefinin (%0.3485) rahatça altında — hedefi
+    # tutturan işlemlerin çoğu gerçekten net kâr etsin diye.
+    "min_profit_target_pct": "0.0015",
+    # Faz 215: 5m'de fiyat hareketi komisyonu zar zor karşılıyordu (net
+    # kâr çok küçük kalıyordu); 1d çok yavaş (günde ~1 sinyal). 15m gerçek
+    # ölçümde ikisi arasında iyi bir denge — hem makul sıklıkta sinyal
+    # hem komisyonu rahat aşan hedef büyüklüğü.
+    "candle_timeframe": "15m",
     "candle_lookback": "100",
 }
 
@@ -120,3 +142,20 @@ class AppSettingsRepository:
             row.updated_by = updated_by
             row.updated_at = now
         self.session.commit()
+
+    def reset_to_defaults(self, updated_by: str, keys: list[str] | None = None) -> dict[str, str]:
+        """Faz 215: kullanıcı isteği — Settings'e tek tuşla "matematiksel
+        olarak mantıklı, komisyona ezilmeyen" varsayılanlara dönüş.
+        watchlist/trading_mode/ai_enabled gibi kullanıcı tercihi olan
+        (trading ekonomisiyle ilgisiz) ayarları KASITLI OLARAK atlıyor —
+        sadece DEFAULTS'ta gerçekten mantıklı gerekçeli değeri olan
+        anahtarlar sıfırlanıyor."""
+        reset_keys = keys or [
+            "max_concurrent_positions", "max_capital_pct", "starting_capital",
+            "trade_horizon", "act_threshold", "reduce_threshold",
+            "min_profit_target_pct", "candle_timeframe", "candle_lookback",
+        ]
+        for key in reset_keys:
+            if key in DEFAULTS:
+                self.set(key, DEFAULTS[key], updated_by=updated_by)
+        return {k: DEFAULTS[k] for k in reset_keys if k in DEFAULTS}

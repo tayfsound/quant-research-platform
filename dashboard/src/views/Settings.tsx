@@ -33,6 +33,9 @@ export default function Settings() {
   const [saving, setSaving] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
 
+  const [resetting, setResetting] = useState(false);
+  const [resetDone, setResetDone] = useState(false);
+
   const load = () => {
     fetch("/api/v1/settings/", { headers: authHeaders() })
       .then((r) => r.json())
@@ -44,6 +47,23 @@ export default function Settings() {
   };
 
   useEffect(load, []);
+
+  const resetToDefaults = () => {
+    setResetting(true);
+    setError(null);
+    fetch("/api/v1/settings/reset-defaults", { method: "POST", headers: authHeaders() })
+      .then(async (r) => {
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          throw new Error(body.detail || `${r.status}`);
+        }
+        load();
+        setResetDone(true);
+        setTimeout(() => setResetDone(false), 2000);
+      })
+      .catch((e) => setError(`reset-defaults: ${e.message || e}`))
+      .finally(() => setResetting(false));
+  };
 
   const save = (key: string, value: string) => {
     setSaving(key);
@@ -70,7 +90,18 @@ export default function Settings() {
       <PageHeader
         title="Settings"
         description="Bunlar AI'ın değil, senin belirlediğin kurallar — kaç işlem aynı anda açık olabilir, kasanın max yüzde kaçı kullanılabilir, işlemler ne kadar vadeli olsun. Start/Stop ve Test/Live düğmeleri Dashboard sayfasına taşındı."
+        action={
+          <Button variant="secondary" onClick={resetToDefaults} disabled={resetting}>
+            {resetting ? "Sıfırlanıyor…" : resetDone ? "Sıfırlandı ✓" : "Varsayılanlara dön"}
+          </Button>
+        }
       />
+
+      <p className="text-xs text-ink-soft -mt-4 mb-6">
+        "Varsayılanlara dön": kasa/limit/vade/mum aralığı ayarlarını, komisyona ezilmeden gerçekçi
+        (~$1-5) net kâr hedefleyecek şekilde matematiksel olarak hesaplanmış değerlere sıfırlar
+        (watchlist, Test/Live modu gibi tercihlerinize dokunmaz).
+      </p>
 
       {error && <ErrorNote>{error}</ErrorNote>}
 
