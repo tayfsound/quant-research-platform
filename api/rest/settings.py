@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from contracts.auth import Role
 from database.repositories.app_settings_repository import (
+    CANDLE_TIMEFRAMES,
     DEFAULTS,
     TRADE_HORIZON_SECONDS,
     AppSettingsRepository,
@@ -74,6 +75,15 @@ def _validate(key: str, value: str) -> None:
                 raise ValueError
         except ValueError:
             raise HTTPException(400, "min_profit_target_pct must be a number in [0, 1)")
+    elif key == "candle_timeframe":
+        if value not in CANDLE_TIMEFRAMES:
+            raise HTTPException(400, f"candle_timeframe must be one of {list(CANDLE_TIMEFRAMES)}")
+    elif key == "candle_lookback":
+        try:
+            if not (20 <= int(value) <= 1000):
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "candle_lookback must be an integer in [20, 1000]")
     else:
         raise HTTPException(400, f"unknown setting key: {key}")
 

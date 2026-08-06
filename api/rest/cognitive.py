@@ -31,10 +31,26 @@ async def run_cognitive_cycle(
     # oluşturuyordu — hiçbir market verisi yok, hiçbir agent gerçek bir şey
     # göremiyordu. CognitiveOrchestrator.run_cycle()'ın zaten yaptığı gibi
     # gerçek OHLCV geçmişi çekilip gerçek sinyaller hesaplanıyor.
+    #
+    # Faz 214: burası services/orchestrator.py::_build_context()'ten TAMAMEN
+    # ayrı, kendi context'ini kuran ikinci bir giriş noktası (gap #15 ile
+    # aynı desen: iki entrypoint bağımsızca aynı işi yapıyor, biri
+    # düzeltilince diğeri unutulabiliyor). Bu yüzden Faz 206'nın "proposed_
+    # size hiç set edilmiyordu" bug'ı BURADA hâlâ vardı — orchestrator.py'de
+    # düzeltilirken bu endpoint'e hiç dokunulmamış. mum aralığı/pencere de
+    # artık sabit değil, app_settings'ten (candle_timeframe/candle_lookback).
+    from database.repositories.app_settings_repository import AppSettingsRepository
+    from database.session_factory import SessionFactory
+
+    with SessionFactory.get_session() as session:
+        settings_repo = AppSettingsRepository(session)
+        timeframe = settings_repo.get("candle_timeframe")
+        lookback = int(settings_repo.get("candle_lookback"))
+
     ctx = CognitiveCycleContext()
     ctx.market.symbol = symbol
-    ctx.market.timeframe = settings.DEFAULT_TIMEFRAME
-    data = get_ohlcv_provider().get_ohlcv(symbol, settings.DEFAULT_TIMEFRAME, limit=100)
+    ctx.market.timeframe = timeframe
+    data = get_ohlcv_provider().get_ohlcv(symbol, timeframe, limit=lookback)
     if data:
         ctx.market.features = {**compute_technical_signals(data), **compute_quant_signals(data)}
         ctx.market.raw_snapshot = {
@@ -62,6 +78,16 @@ async def run_cognitive_cycle(
     ctx.risk.seconds_since_last_trade = risk_state["seconds_since_last_trade"]
     ctx.risk.min_seconds_between_trades = risk_state["min_seconds_between_trades"]
     ctx.risk.ai_enabled = risk_state["ai_enabled"]
+
+    # Faz 214: aynı Faz 206 düzeltmesi (proposed_size = sermaye bütçesi /
+    # güncel fiyat) — bu ikinci giriş noktasında hiç uygulanmamıştı.
+    current_price = (ctx.market.raw_snapshot or {}).get("close")
+    if current_price:
+        capital_per_trade = (
+            risk_state["starting_capital"] * risk_state["max_capital_pct"]
+            / max(risk_state["max_concurrent_positions"], 1)
+        )
+        ctx.decision.proposed_size = capital_per_trade / current_price
 
     result = engine.run(ctx)
 

@@ -41,10 +41,18 @@ class CognitiveOrchestrator:
         VaR'a göre ölçeklendirebilmek gerekiyor (bkz. run_portfolio_aware_
         cycle) — run_cycle() hâlâ tek-sembol, anında-finalize eski
         davranışını koruyor, regresyon yok."""
-        settings = get_settings()
-        timeframe = settings.DEFAULT_TIMEFRAME
+        # Faz 214: kullanıcı isteği — mum aralığı/geçmiş pencere artık
+        # sabit değil, app_settings'ten okunuyor (varsayılan öncekiyle
+        # birebir aynı: 1m, 100 bar — regresyon yok).
+        from database.repositories.app_settings_repository import AppSettingsRepository
+        from database.session_factory import SessionFactory
 
-        data = self.data_provider.get_ohlcv(symbol, timeframe, limit=100)
+        with SessionFactory.get_session() as session:
+            settings_repo = AppSettingsRepository(session)
+            timeframe = settings_repo.get("candle_timeframe")
+            lookback = int(settings_repo.get("candle_lookback"))
+
+        data = self.data_provider.get_ohlcv(symbol, timeframe, limit=lookback)
         if not data:
             return None
 

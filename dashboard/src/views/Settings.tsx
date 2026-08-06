@@ -14,6 +14,18 @@ const HORIZON_LABELS: Record<string, string> = {
   long: "1 günlük swing (~1 gün)",
 };
 
+// Faz 214: ajanların sinyal ürettiği mum aralığı — işlem vadesinden
+// (trade_horizon, yukarıda) kasıtlı olarak ayrı. "4h analiz" ≠ "4h
+// pozisyon tutma"; biri sinyal kalitesi, diğeri kasa/likidite kararı.
+const CANDLE_TIMEFRAME_LABELS: Record<string, string> = {
+  "1m": "1 dakika",
+  "5m": "5 dakika",
+  "15m": "15 dakika",
+  "1h": "1 saat",
+  "4h": "4 saat",
+  "1d": "1 gün",
+};
+
 export default function Settings() {
   const [settings, setSettings] = useState<SettingsMap>({});
   const [draft, setDraft] = useState<SettingsMap>({});
@@ -176,6 +188,44 @@ export default function Settings() {
                 {label}
               </button>
             ))}
+          </div>
+        </Card>
+
+        <Card>
+          <h3 className="text-sm font-semibold text-ink mb-1">Analiz mum aralığı</h3>
+          <p className="text-xs text-ink-soft mb-3">
+            Ajanların (RSI/EMA/ATR/Hurst vb.) sinyal ürettiği mum aralığı — işlem vadesinden ayrı, "4 saat"
+            seçmek pozisyonun 4 saat açık kalacağı anlamına gelmez, sadece daha geniş bir bağlamdan sinyal
+            üretilir.
+          </p>
+          <div className="flex flex-wrap gap-2 mb-4">
+            {Object.entries(CANDLE_TIMEFRAME_LABELS).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => save("candle_timeframe", key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  settings.candle_timeframe === key
+                    ? "bg-accent text-white border-accent"
+                    : "bg-canvas-soft text-ink-soft border-line hover:bg-surface-soft"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-ink-soft mb-2">Geçmiş pencere (kaç bar): 20-1000 arası.</p>
+          <div className="flex gap-2">
+            <Input
+              type="number"
+              value={draft.candle_lookback ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, candle_lookback: v }))}
+            />
+            <Button
+              disabled={saving === "candle_lookback"}
+              onClick={() => save("candle_lookback", draft.candle_lookback)}
+            >
+              {saved === "candle_lookback" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
           </div>
         </Card>
       </div>

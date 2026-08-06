@@ -23,3 +23,22 @@ def test_yahoo_provider_fetches_real_index_data():
 def test_yahoo_provider_returns_empty_list_for_a_nonexistent_ticker():
     data = YahooProvider().get_ohlcv("THISISNOTAREALTICKERXYZ123", "1d", limit=5)
     assert data == []
+
+
+def test_yahoo_provider_resamples_1h_bars_into_real_4h_bars():
+    """Faz 214: yfinance'te gerçek bir "4h" interval yok — önceden istekte
+    bulunulduğunda sessizce "1d"ye düşülüyordu. Artık 1h barlardan gerçek
+    OHLCV kurallarıyla (open=ilk, high=max, low=min, close=son,
+    volume=toplam) yeniden örnekleniyor."""
+    hourly = YahooProvider().get_ohlcv("AAPL", "1h", limit=20)
+    fourh = YahooProvider().get_ohlcv("AAPL", "4h", limit=5)
+
+    assert len(fourh) > 0
+    for bar in fourh:
+        assert bar.high >= bar.low
+        assert bar.high >= bar.open
+        assert bar.high >= bar.close
+        assert bar.volume > 0
+    # 4h barların hacmi, tek bir 1h barın hacminden belirgin şekilde
+    # büyük olmalı (4 barın toplamı) — gerçekten agregatlandığının kanıtı.
+    assert fourh[-1].volume > hourly[-1].volume

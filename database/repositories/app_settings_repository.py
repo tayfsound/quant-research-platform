@@ -58,7 +58,19 @@ DEFAULTS: dict[str, str] = {
     # geçiremez) boğmayacak şekilde %0.5 varsayılan — kullanıcı Settings'ten
     # istediği gibi yükseltebilir/düşürebilir.
     "min_profit_target_pct": "0.005",
+    # Faz 214: kullanıcı isteği — "4 saatlik verileri kullanmak daha isabetli
+    # olmaz mı, geçmiş pencere çok kısa" (bu turdan önce ele alınmamıştı).
+    # Varsayılan öncekiyle birebir aynı (1m, 100 bar) — regresyon yok,
+    # kullanıcı Settings'ten değiştirebiliyor. candle_timeframe, işlem
+    # vadesinden (trade_horizon) ayrı: bu, ajanların hangi mum aralığından
+    # sinyal ürettiği (RSI/ATR/Hurst vb.), pozisyonun ne kadar açık
+    # kalacağı değil — ikisini karıştırmak "4h analiz = 4h pozisyon"
+    # yanılgısına düşürür, kasıtlı olarak ayrı tutuldu.
+    "candle_timeframe": "1m",
+    "candle_lookback": "100",
 }
+
+CANDLE_TIMEFRAMES = ("1m", "5m", "15m", "1h", "4h", "1d")
 
 # Faz 187'nin PositionCloser.hold_seconds'ına karşılık gelen ön tanımlı
 # vadeler — "kısa vadeli işlemler alsın, bakiyeyi kilitlemesin" isteğinin
