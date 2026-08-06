@@ -62,4 +62,6 @@ def test_closing_a_real_position_records_each_real_agent_opinion_into_agent_memo
     reloaded = AgentMemory()
     after = len(reloaded._records.get("technical", []))
     assert after == before + 1
-    assert reloaded._records["technical"][-1].was_correct is True  # LONG, price went up -> profitable
+    # Faz 211: doğruluk artık ajanın KENDİ yönüne göre — genel kârlılığa değil.
+    assert reloaded._records["technical"][-1].was_correct is True  # LONG dedi, işlem LONG ve kârlı -> doğru
+    assert reloaded._records["macro"][-1].was_correct is False  # SHORT dedi, işlem LONG ve kârlı -> yanlış

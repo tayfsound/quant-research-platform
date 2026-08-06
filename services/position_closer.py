@@ -69,26 +69,33 @@ class PositionCloser:
         bu sonucu hiçbir kod AgentMemory/WeightOptimizer'a geri
         beslemiyordu. services/learning_loop.py::process_outcome() bunun
         için yazılmıştı ama onu tetikleyecek tek mekanizma (Pending
-        OutcomeTracker.run_scheduler) api/main.py'de kasıtlı olarak
-        yorum satırı halinde bırakılmıştı ("TODO: real data_provider
-        config"). Üstelik o yol tetiklenmiş olsaydı bile OutcomeTracker.
-        attach_outcome() DecisionEvent'i agent_opinions=[] ile kuruyordu —
-        gerçek 9 ajan görüşü hiç okunmuyordu. İki katmanlı, tamamen
-        kör bir öğrenme yolu. Burada gerçek kapanışın kendi anında,
-        decisions.agent_contributions'taki (zaten SELECT * ile elimizde)
-        gerçek görüşleri doğrudan AgentMemory'ye yazıyoruz — mevcut
-        LearningLoop._apply_feedback ile aynı semantik: işlemin genel
-        kârlılığı (pnl>0) her ajanın kaydına uygulanıyor (per-ajan yön
-        doğruluğu ayrı bir konu, burada değiştirilmedi)."""
+        OutcomeTracker.run_scheduler) hiç başlatılmıyordu ve zaten kırıktı
+        (bkz. services/pending_outcome_tracker.py, artık kaldırıldı).
+        Burada gerçek kapanışın kendi anında, decisions.agent_contributions'
+        taki (zaten SELECT * ile elimizde) gerçek görüşleri doğrudan
+        AgentMemory'ye yazıyoruz.
+
+        Faz 211: kritik düzeltme — önceki hali işlemin genel kârlılığını
+        (pnl>0) FARKINDA OLMADAN her ajana (yön ne olursa olsun, WAIT dahil)
+        uyguluyordu; ters yön öneren ya da WAIT diyen bir ajan bile işlem
+        kârlıysa "doğru" işaretleniyordu. Artık her ajanın KENDİ önerdiği
+        yön ile gerçekten alınan işlemin yönü karşılaştırılıyor: aynı
+        yöndeyse doğruluğu işlemin kârlılığıyla; farklıysa (ters yön ya da
+        WAIT — ikisi de o işleme "hayır" demek) doğruluğu işlemin ZARARIYLA
+        (yani o işleme girmemiş/karşı çıkmış olmanın haklı çıkmasıyla)
+        ölçülüyor."""
         contributions = pos.get("agent_contributions") or []
-        was_correct = pnl > 0
         symbol = pos["symbol"]
+        executed_direction = (pos.get("direction") or "").upper()
+        profitable = pnl > 0
 
         recorded = False
         for item in contributions:
             domain = item.get("domain")
             if domain not in _VALID_AGENT_DOMAINS:
                 continue
+            agent_direction = (item.get("direction") or "").upper()
+            was_correct = profitable if agent_direction == executed_direction else not profitable
             self.agent_memory.record(AgentPerformanceRecord(
                 agent_domain=domain,
                 direction=item.get("direction", ""),
