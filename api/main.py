@@ -6,7 +6,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
 from api.rest import agents, audit, auth, backtest, cognitive, dashboard, explainability, market_data, memory, models, orchestrator, positions, replay, risk_limits, settings, strategies, tokens, weights, webhooks, workspace
-from api.websocket import live_predictions
 from api.websocket.cycle_feed import websocket_endpoint
 from observability.health import router as health_router
 from observability.metrics import api_request_latency_seconds, api_requests_total, get_metrics
@@ -50,7 +49,6 @@ app.include_router(replay.router, prefix="/api/v1")
 app.include_router(weights.router, prefix="/api/v1")
 app.include_router(strategies.router, prefix="/api/v1")
 app.include_router(models.router, prefix="/api/v1")
-app.include_router(live_predictions.router, prefix="/api/v1")
 app.include_router(audit.router, prefix="/api/v1")
 app.include_router(memory.router, prefix="/api/v1")
 app.include_router(cognitive.router, prefix="/api/v1")

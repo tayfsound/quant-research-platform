@@ -4,7 +4,6 @@ import Dashboard from './views/Dashboard';
 import MarketOverview from './views/MarketOverview';
 import Tokens from './views/Tokens';
 import Predictions from './views/Predictions';
-import LivePredictions from './views/LivePredictions';
 import Strategies from './views/Strategies';
 import RiskDashboard from './views/RiskDashboard';
 import Settings from './views/Settings';
@@ -38,7 +37,6 @@ function App() {
       <main className="flex-1 min-w-0 overflow-x-auto">
         <div className="max-w-6xl mx-auto px-8 py-8">
           {view === 'dashboard' && <Dashboard />}
-          {view === 'live' && <LivePredictions />}
           {view === 'transactions' && <Transactions />}
           {view === 'performance' && <Performance />}
           {view === 'market' && <MarketOverview />}
