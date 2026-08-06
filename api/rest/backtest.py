@@ -57,6 +57,32 @@ async def run_backtest_async(
     return {"task_id": task.id, "status": "queued"}
 
 
+@router.post("/run-real-async")
+async def run_real_backtest_async(
+    symbols: str = "BTCUSDT",
+    timeframe: str = "15m",
+    bars_count: int = 1000,
+    lookback: int = 100,
+    max_forward_bars: int = 200,
+    capital_per_trade: float = 1000.0,
+    user: AuthContext = Depends(require_role(Role.OPERATOR)),
+):
+    """Faz 236: kullanıcı isteği — "Backtests'i gerçek veri ile çalışır hale
+    getirelim." /run'ın aksine (deterministik, sahte MockOHLCVAdapter
+    fiyatları) burası GERÇEK Binance geçmiş verisiyle, gerçek 9-ajan
+    council'i kullanarak walk-forward çalışıyor — bkz. backtest/
+    real_historical_backtest.py. Her adım gerçek bir CognitiveEngine.run()
+    çalıştırdığı için dakikalar sürebilir, bu yüzden her zaman async
+    (celery) — senkron bir "/run-real" kasıtlı olarak yok."""
+    from services.tasks import run_real_backtest_task
+
+    symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
+    task = run_real_backtest_task.delay(
+        symbol_list, timeframe, bars_count, lookback, max_forward_bars, capital_per_trade
+    )
+    return {"task_id": task.id, "status": "queued"}
+
+
 @router.get("/tasks/{task_id}")
 async def get_backtest_task(task_id: str, user: AuthContext = Depends(get_current_user)):
     from services.celery_app import celery_app

@@ -250,3 +250,38 @@ def run_backtest_task(self, symbols: list[str], bars: int = 200, seed: int = 42,
         "total_pnl": run.total_pnl,
         "metrics": run.metrics,
     }
+
+
+@celery_app.task(name="run_real_backtest_task", bind=True)
+def run_real_backtest_task(
+    self,
+    symbols: list[str],
+    timeframe: str = "15m",
+    bars_count: int = 1000,
+    lookback: int = 100,
+    max_forward_bars: int = 200,
+    capital_per_trade: float = 1000.0,
+) -> dict:
+    """Faz 236: kullanıcı isteği — "Backtests'i gerçek veri ile çalışır
+    hale getirelim." Her walk-forward adımı gerçek bir CognitiveEngine.run()
+    (embedding hesaplaması dahil) çalıştırdığı için 1000 bar'lık bir run
+    dakikalar sürebilir — bu yüzden run_backtest_task'ın (mock veri) aynı
+    async-dispatch deseni burada da kritik, senkron bir HTTP isteği bunu
+    asla karşılayamaz."""
+    from database.session_factory import SessionFactory
+    from backtest.real_historical_backtest import persist_real_backtest_run, run_real_backtest_multi
+
+    result = run_real_backtest_multi(
+        symbols, timeframe=timeframe, bars_count=bars_count, lookback=lookback,
+        max_forward_bars=max_forward_bars, capital_per_trade=capital_per_trade,
+    )
+
+    with SessionFactory.get_session() as session:
+        run = persist_real_backtest_run(result, session, lookback=lookback)
+
+    return {
+        "id": str(run.id),
+        "symbols": run.symbols,
+        "total_pnl": run.total_pnl,
+        "metrics": run.metrics,
+    }
