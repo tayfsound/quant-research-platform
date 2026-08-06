@@ -44,3 +44,8 @@ def test_ingest_order_book_task_writes_real_snapshots_for_crypto_watchlist_symbo
         row = MarketDataRepository(session).get_latest_order_book_snapshot(DataSource.BINANCE, "BTCUSDT")
     assert row is not None
     assert row["best_bid"] > 0
+    # Faz 214: gerçek bulgu — aggressive_buy_ratio hep sabit 0.5 (tam
+    # nötr) kullanılıyordu, hiçbir gerçek veri kaynağı yoktu. Artık
+    # Binance'in gerçek son işlemlerinden (isBuyerMaker) hesaplanıyor.
+    assert row["aggressive_buy_ratio"] is not None
+    assert 0.0 <= row["aggressive_buy_ratio"] <= 1.0

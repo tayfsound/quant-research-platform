@@ -91,6 +91,15 @@ class BinanceAdapter(BaseExchangeAdapter):
             for d in data
         ]
 
+    async def fetch_recent_trades(self, symbol: str, limit: int = 200) -> list[dict[str, Any]]:
+        """Faz 214: kimliksiz/genel erişilebilen son-işlemler uç noktası —
+        isBuyerMaker alanı gerçek taker yönünü verir (False = agresif alış,
+        alıcı taker; True = agresif satış, satıcı taker). OrderFlowAgent'ın
+        aggressive_buy_ratio girdisi buradan geliyor — önceden hep sabit
+        0.5 (tam nötr) idi, gerçek veri kaynağı hiç yoktu."""
+        data = await self._get("/api/v3/trades", {"symbol": symbol, "limit": limit})
+        return [{"is_buyer_maker": bool(t["isBuyerMaker"])} for t in data]
+
     async def fetch_funding_rate(self, symbol: str) -> float:
         data = await self._get("/fapi/v1/fundingRate", {"symbol": symbol, "limit": 1})
         return float(data[0]["fundingRate"])

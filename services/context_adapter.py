@@ -231,18 +231,26 @@ class ContextAdapter:
         from database.session_factory import SessionFactory
 
         symbol = ctx.market.symbol or ""
-        imbalance, spread_bps = 0.0, 0.0
+        imbalance, spread_bps, aggressive_buy_ratio = 0.0, 0.0, 0.5
         if symbol:
             with SessionFactory.get_session() as session:
                 snapshot = MarketDataRepository(session).get_latest_order_book_snapshot(DataSource.BINANCE, symbol)
                 if snapshot:
                     imbalance = snapshot["imbalance"]
                     spread_bps = snapshot["spread_bps"]
+                    # Faz 214: gerçek bulgu — burası hep sabit 0.5 (tam
+                    # nötr) kullanıyordu, hiçbir gerçek veri kaynağı yoktu.
+                    # Artık ingest_order_book_task'ın Binance'in gerçek son
+                    # işlemlerinden (isBuyerMaker) hesapladığı gerçek oranı
+                    # okuyor — henüz hiç ingest edilmemişse (None) dürüstçe
+                    # nötr varsayılana düşüyor.
+                    if snapshot.get("aggressive_buy_ratio") is not None:
+                        aggressive_buy_ratio = snapshot["aggressive_buy_ratio"]
 
         return OrderFlowContext(
             bid_ask_imbalance=self._get(ctx, "bid_ask_imbalance", imbalance),
             spread_bps=self._get(ctx, "spread_bps", spread_bps),
-            aggressive_buy_ratio=self._get(ctx, "aggressive_buy_ratio", 0.5),
+            aggressive_buy_ratio=self._get(ctx, "aggressive_buy_ratio", aggressive_buy_ratio),
         )
 
     def to_time(self, ctx: CognitiveCycleContext) -> TimeContext:

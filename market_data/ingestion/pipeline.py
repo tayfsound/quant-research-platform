@@ -64,6 +64,19 @@ class IngestionPipeline:
         await self.adapter.connect()
         try:
             book = await self.adapter.get_order_book(symbol, depth=depth)
+            # Faz 214: gerçek bulgu — OrderFlowAgent'ın aggressive_buy_ratio
+            # girdisi hiçbir gerçek veri kaynağına bağlı değildi, hep sabit
+            # 0.5 (tam nötr) kullanıyordu. Order book derinliği (yukarıdaki
+            # bid/ask) TAKER akışını yansıtmaz — bunun için gerçek son
+            # işlemlerin (trades) isBuyerMaker alanı gerekiyor.
+            aggressive_buy_ratio = None
+            try:
+                trades = await self.adapter.fetch_recent_trades(symbol, limit=200)
+                if trades:
+                    taker_buys = sum(1 for t in trades if not t["is_buyer_maker"])
+                    aggressive_buy_ratio = taker_buys / len(trades)
+            except Exception:
+                pass  # gerçek veri yoksa uydurma bir sayı yazmıyoruz, None kalıyor
         finally:
             await self.adapter.disconnect()
 
@@ -86,6 +99,7 @@ class IngestionPipeline:
                 ask_volume=ask_volume,
                 imbalance=imbalance,
                 spread_bps=spread_bps,
+                aggressive_buy_ratio=aggressive_buy_ratio,
             )
 
         return {
@@ -95,6 +109,7 @@ class IngestionPipeline:
             "ask_volume": ask_volume,
             "imbalance": imbalance,
             "spread_bps": spread_bps,
+            "aggressive_buy_ratio": aggressive_buy_ratio,
         }
 
     def _to_snapshot(self, symbol: str, timeframe: str, candle: dict) -> MarketSnapshot:
