@@ -9,9 +9,18 @@ en az `hold_seconds` kadar gerçek zaman geçmiş olmalı.
 """
 from datetime import UTC, datetime
 
+from contracts.agent_performance import AgentPerformanceRecord
 from database.repositories.decision_persistor import DecisionPersistor
 from market_data.ingestion.data_provider import OHLCVProvider
+from services.agent_memory import AgentMemory
+from services.weight_optimizer import WeightOptimizer
+from services.weight_repository import WeightRepository
 from simulator.fee_engine import FeeEngine
+
+_VALID_AGENT_DOMAINS = {
+    "technical", "macro", "onchain", "sentiment",
+    "pattern", "quant", "order_flow", "time", "epistemology",
+}
 
 
 class PositionCloser:
@@ -24,6 +33,11 @@ class PositionCloser:
         self.data_provider = data_provider
         self.hold_seconds = hold_seconds
         self.fee_engine = fee_engine or FeeEngine()
+        self.agent_memory = AgentMemory()
+        self.weight_optimizer = WeightOptimizer(
+            agent_memory=self.agent_memory,
+            weight_repository=WeightRepository(),
+        )
 
     def _age_seconds(self, opened_at: datetime, now: datetime) -> float:
         # Bilinen borç (CURRENT_STATE.md'de dokümante): DB'de naive/aware
@@ -49,6 +63,44 @@ class PositionCloser:
                 return "take_profit"
         return None
 
+    def _record_agent_learning(self, pos: dict, pnl: float) -> bool:
+        """Faz 210: gerçek bulgu — PositionCloser gerçekten açılıp gerçekten
+        kapanan pozisyonların pnl'ini decisions tablosuna yazıyordu, ama
+        bu sonucu hiçbir kod AgentMemory/WeightOptimizer'a geri
+        beslemiyordu. services/learning_loop.py::process_outcome() bunun
+        için yazılmıştı ama onu tetikleyecek tek mekanizma (Pending
+        OutcomeTracker.run_scheduler) api/main.py'de kasıtlı olarak
+        yorum satırı halinde bırakılmıştı ("TODO: real data_provider
+        config"). Üstelik o yol tetiklenmiş olsaydı bile OutcomeTracker.
+        attach_outcome() DecisionEvent'i agent_opinions=[] ile kuruyordu —
+        gerçek 9 ajan görüşü hiç okunmuyordu. İki katmanlı, tamamen
+        kör bir öğrenme yolu. Burada gerçek kapanışın kendi anında,
+        decisions.agent_contributions'taki (zaten SELECT * ile elimizde)
+        gerçek görüşleri doğrudan AgentMemory'ye yazıyoruz — mevcut
+        LearningLoop._apply_feedback ile aynı semantik: işlemin genel
+        kârlılığı (pnl>0) her ajanın kaydına uygulanıyor (per-ajan yön
+        doğruluğu ayrı bir konu, burada değiştirilmedi)."""
+        contributions = pos.get("agent_contributions") or []
+        was_correct = pnl > 0
+        symbol = pos["symbol"]
+
+        recorded = False
+        for item in contributions:
+            domain = item.get("domain")
+            if domain not in _VALID_AGENT_DOMAINS:
+                continue
+            self.agent_memory.record(AgentPerformanceRecord(
+                agent_domain=domain,
+                direction=item.get("direction", ""),
+                confidence=item.get("confidence", 0.0) or 0.0,
+                was_correct=was_correct,
+                pnl=pnl,
+                symbol=symbol,
+            ))
+            recorded = True
+
+        return recorded
+
     def close_due_positions(self, decision_repo: DecisionPersistor, timeframe: str = "1m") -> list[dict]:
         """Açık pozisyonları gerçek güncel fiyatla kontrol eder: fiyat gerçek
         stop-loss/take-profit seviyesine ulaştıysa hemen kapatır (vade
@@ -56,6 +108,7 @@ class PositionCloser:
         Kapatılanların özetini döndürür."""
         now = datetime.now(UTC)
         closed = []
+        learned_any = False
 
         for pos in decision_repo.list_open_positions():
             opened_at = pos.get("opened_at")
@@ -114,5 +167,11 @@ class PositionCloser:
                 "decision_id": str(pos["id"]), "symbol": symbol, "pnl": pnl, "win": pnl > 0,
                 "exit_reason": exit_reason,
             })
+
+            if self._record_agent_learning(pos, pnl):
+                learned_any = True
+
+        if learned_any and len(self.agent_memory.domains()) > 0:
+            self.weight_optimizer.propose_weights(evaluation_window=100)
 
         return closed
