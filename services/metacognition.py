@@ -21,19 +21,30 @@ class Metacognition:
         ctx: CognitiveCycleContext,
         criticism: dict,
         contradiction: dict,
+        belief_strength: float = 0.5,
     ) -> dict:
+        # Gerçek bulgu: model_confidence şu ana kadar SADECE hafızadan
+        # geliyordu — hafıza yoksa (ki bu genç bir sistemde hemen her
+        # zaman böyle) sabit 0.5'e düşüp sadece risk_penalty ile aşağı
+        # iniyordu. Council'in bu cycle'da GERÇEKTEN ne kadar güçlü/
+        # tutarlı bir konsensüse vardığı (belief.strength — services/
+        # belief_engine.py'de gerçek, ağırlıklı oy gücünden hesaplanıyor)
+        # hiç kullanılmıyordu. Yani 9 ajan bile birleşse confidence hâlâ
+        # ~0.5'ten başlayıp ACT eşiğine (0.7) asla ulaşamıyordu — sistemin
+        # neredeyse hep WAIT üretmesinin asıl kök nedeni buydu.
         memory_insights = [
             item for item in ctx.cognition.relevant_knowledge
             if item.get("type") == "memory_insight"
         ]
 
+        model_confidence = belief_strength
         if memory_insights:
             memory_confidence = memory_insights[-1]["data"].get("confidence", 0.5)
-        else:
-            memory_confidence = 0.5
-
-        # Model güveni: memory varsa ve destekliyorsa yüksek
-        model_confidence = memory_confidence
+            # İkisinden güçlü olanı esas alınır — ne çok güçlü bir hafıza
+            # desteği (geçmişte benzer durumda haklı çıkmış), ne de bu
+            # cycle'ın çok güçlü/tutarlı bir Council konsensüsü, diğeriyle
+            # seyreltilerek zayıflatılmamalı.
+            model_confidence = max(model_confidence, memory_confidence)
 
         risk_flags = criticism.get("risk_flags", [])
         risk_penalty = sum(RISK_WEIGHTS.get(flag, 0.1) for flag in risk_flags)
@@ -43,7 +54,10 @@ class Metacognition:
         confidence = model_confidence - risk_penalty - (conflict_level * 0.2)
         confidence = max(0.0, min(1.0, confidence))
 
-        uncertainty = max(conflict_level, 1 - memory_confidence)
+        # Eskiden 1 - memory_confidence idi (hafıza yoksa UnboundLocalError
+        # riskiyle) — artık 1 - model_confidence: hafıza YA DA gerçek
+        # belief_strength, hangisi kullanıldıysa onu yansıtıyor.
+        uncertainty = max(conflict_level, 1 - model_confidence)
 
         if confidence >= self.act_threshold:
             decision = "ACT"

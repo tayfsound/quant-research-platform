@@ -112,10 +112,17 @@ class MetaStage:
         if belief.crowding_penalty > 0.5:
             criticism["risk_flags"].append("high_crowding")
 
+        # Faz 203: kritik bulgu — belief.strength (Council'in bu cycle'da
+        # GERÇEKTEN ne kadar güçlü/tutarlı bir konsensüse vardığı, services/
+        # belief_engine.py'de gerçek ağırlıklı oylardan hesaplanıyor) buraya
+        # hiç iletilmiyordu. evaluate_confidence sadece hafızaya bakıp
+        # (hafıza yoksa sabit 0.5) confidence üretiyordu — 9 ajan bile
+        # birleşse ACT eşiğine (0.7) asla ulaşamıyordu.
         meta = self.metacognition.evaluate_confidence(
             ctx,
             criticism,
             {"conflict_level": conflict_level},
+            belief_strength=belief.strength,
         )
 
         ctx.decision.confidence = meta["confidence"]
