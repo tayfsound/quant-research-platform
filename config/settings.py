@@ -61,6 +61,14 @@ class Settings(BaseSettings):
     HELIUS_API_KEY: str = ""
     # Faz 197: MacroAgent'a gerçek FRED verisi.
     FRED_API_KEY: str = ""
+    # Faz 230: kullanıcı isteği — sosyal medya sentiment. Reddit'in genel
+    # kimliksiz JSON API'si artık 403 döndürüyor (doğrulandı) — gerçek
+    # veri için ücretsiz bir "script" tipi Reddit uygulaması kaydı
+    # gerekiyor (reddit.com/prefs/apps, key gerektirmez, tamamen ücretsiz).
+    # Boşsa (kayıt yapılmadıysa) sentiment sağlayıcı None döner — fail-closed,
+    # fail-fake değil, aynı FRED_API_KEY/HELIUS_API_KEY konvansiyonu.
+    REDDIT_CLIENT_ID: str = ""
+    REDDIT_CLIENT_SECRET: str = ""
 
     # TradingView webhook'ları custom auth header göndermiyor (Pine Script
     # alert mekanizması bunu desteklemiyor) — paylaşılan bir secret'ı alert

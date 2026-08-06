@@ -67,9 +67,19 @@ class ContextAdapter:
         from market_data.sentiment.news_tone_provider import fetch_news_tone
         real_news_tone = fetch_news_tone()
 
+        # Faz 230: kullanıcı isteği — sosyal medya sentiment hâlâ dürüstçe
+        # yapılmamıştı (Reddit'in kimliksiz API'si 403 veriyor). Kullanıcı
+        # kendi ücretsiz Reddit "script" uygulama kaydını yaptıysa
+        # (REDDIT_CLIENT_ID/SECRET) gerçek veri; yapmadıysa None -> 0.0
+        # (nötr) varsayılana düşer, uydurulmaz.
+        from market_data.sentiment.reddit_provider import fetch_social_sentiment
+        real_social_sentiment = fetch_social_sentiment()
+
         return SentimentContext(
             fear_greed_index=self._get(ctx, "fear_greed_index", real_fgi if real_fgi is not None else 50.0),
-            social_media_sentiment=self._get(ctx, "social_media_sentiment", 0.0),
+            social_media_sentiment=self._get(
+                ctx, "social_media_sentiment", real_social_sentiment if real_social_sentiment is not None else 0.0
+            ),
             news_tone=self._get(ctx, "news_tone", real_news_tone if real_news_tone is not None else "neutral"),
             positioning=self._get(ctx, "positioning", real_positioning if real_positioning is not None else "neutral"),
         )

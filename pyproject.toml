@@ -57,6 +57,7 @@ dependencies = [
 dev = [
     "pytest>=8.3.0",
     "pytest-asyncio>=0.24.0",
+    "pytest-rerunfailures>=14.0",
     "ruff>=0.7.0",
     "mypy>=1.13.0",
     "pre-commit>=3.8.0",
@@ -78,10 +79,26 @@ allow_redefinition = true
 disallow_any_generics = false
 
 [tool.hatch.build.targets.wheel]
-packages = ["contracts", "exchange_gateway", "market_data", "ml", "rl", "strategies", "simulator", "risk", "analytics", "api", "database", "events", "config", "observability"]
+# Faz 230: kritik bulgu — agents/backtest/engines/services/meta_optimizer
+# bu listede hiç yoktu. Dockerfile `pip install .` (editable DEĞİL)
+# kullandığı için, bu paketler wheel'e hiç dahil edilmiyordu — şu an
+# `COPY . .` + WORKDIR /app + CWD-bazlı import sayesinde sessizce
+# çalışıyor (repo'nun ham kaynak dizinleri zaten /app'te duruyor), ama bu
+# gerçek `pip install .` semantiğine güvenmiyor, sadece şans eseri
+# çalışıyor — farklı bir WORKDIR/entrypoint ile veya bu paketi gerçek bir
+# bağımlılık olarak başka bir yerden kurunca patlardı.
+packages = ["contracts", "exchange_gateway", "market_data", "ml", "rl", "strategies", "simulator", "risk", "analytics", "api", "database", "events", "config", "observability", "agents", "backtest", "engines", "services", "meta_optimizer"]
 
 
 [tool.pytest.ini_options]
 filterwarnings = [
     "ignore:Using `httpx` with `starlette.testclient` is deprecated.*:starlette.exceptions.StarletteDeprecationWarning",
 ]
+# Faz 230: kullanıcı bulgusu — "flaky test için retry mekanizması eklenmeli."
+# Bu oturum boyunca tekrar tekrar doğrulanan, tek ve bilinen non-regression
+# flakiness kaynağı: full-suite'te (izole çalışınca geçen) embedding-mock
+# TypeError'ı ve agent_memory.json'a eşzamanlı yazımdan doğan
+# JSONDecodeError. --only-rerun bilerek DAR tutuldu — SADECE bu iki bilinen
+# hata imzasına uyan testler yeniden denenir, farklı bir hatayla başarısız
+# olan (gerçek bir regresyon olabilecek) bir test asla sessizce maskelenmez.
+addopts = "--reruns 2 --only-rerun \"(received an invalid combination of arguments|JSONDecodeError: Expecting value)\""
