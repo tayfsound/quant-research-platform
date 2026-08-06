@@ -62,3 +62,18 @@ def _check_database() -> bool:
         return True
     except Exception:
         return False
+
+
+@router.get("/health/signals")
+async def signal_health(response: Response):
+    """Faz 230: kullanıcı isteği — Faz 203-211'deki 7 katmanlı sessiz-hata
+    zinciri ("AI hiç işlem açmıyor", hiçbir katman exception fırlatmıyordu)
+    bir daha sessizce yaşanmasın. /ready'nin aksine "süreç ayakta mı"
+    sorusuna değil, "her periyodik modül GERÇEKTEN güncel veri üretiyor mu,
+    sistem çalışıyor görünüp fiilen kör mü (hep WAIT)" sorusuna cevap
+    veriyor — bkz. observability/signal_health.py."""
+    from observability.signal_health import check_signal_health
+
+    result = check_signal_health()
+    response.status_code = 200 if result["healthy"] else 503
+    return result

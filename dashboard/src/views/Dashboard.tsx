@@ -68,12 +68,25 @@ function StatusCard({
   );
 }
 
+type SignalHealth = {
+  healthy: boolean;
+  checks: Record<string, { healthy?: boolean; age_seconds?: number; ai_enabled?: boolean; reason?: string }>;
+};
+
+const HEALTH_CHECK_LABELS: Record<string, string> = {
+  candle_ingestion: "Mum verisi",
+  order_book_ingestion: "Order book verisi",
+  trading_cycle: "Trading cycle",
+  zombie_wait: "Yönlü karar üretimi",
+};
+
 export default function Dashboard() {
   const [settings, setSettings] = useState<SettingsMap>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openCount, setOpenCount] = useState(0);
   const [summary, setSummary] = useState<{ count: number; win_rate: number; total_pnl: number } | null>(null);
+  const [signalHealth, setSignalHealth] = useState<SignalHealth | null>(null);
   const { format, currency } = useCurrency();
 
   const load = () => {
@@ -87,6 +100,14 @@ export default function Dashboard() {
     fetch("/api/v1/trades", { headers: authHeaders() })
       .then((r) => r.json())
       .then((data) => setSummary(data.summary || null));
+    // Faz 230: kullanıcı isteği — "sistem sessiz kalırsa alarma geçecek mi?"
+    // Faz 203-211'deki 7 katmanlı sessiz-hata zincirinin (sistem çalışıyor
+    // görünüp hiç gerçek işlem açmıyordu) bir daha fark edilmeden
+    // yaşanmaması için — bkz. observability/signal_health.py.
+    fetch("/health/signals")
+      .then((r) => r.json())
+      .then(setSignalHealth)
+      .catch(() => {});
   };
 
   useEffect(() => {
@@ -121,6 +142,25 @@ export default function Dashboard() {
       <PageHeader title="Dashboard" description="AI'ın şu anki durumu ve gerçek zamanlı özet." />
 
       {error && <ErrorNote>{error}</ErrorNote>}
+
+      {signalHealth && !signalHealth.healthy && (
+        <div className="mb-6 rounded-xl border border-fall/20 bg-fall-soft p-4">
+          <p className="text-sm font-semibold text-fall mb-2">
+            ⚠ Sistem sessiz kalmış olabilir — bazı modüller beklenenden uzun süredir güncel veri üretmiyor.
+          </p>
+          <ul className="text-xs text-ink-soft space-y-1">
+            {Object.entries(signalHealth.checks)
+              .filter(([, v]) => v.healthy === false)
+              .map(([key, v]) => (
+                <li key={key}>
+                  <span className="font-medium text-ink">{HEALTH_CHECK_LABELS[key] || key}</span>
+                  {v.age_seconds != null && ` — son güncelleme ${Math.round(v.age_seconds / 60)} dakika önce`}
+                  {key === "zombie_wait" && " — son 30 karar hiç yönlü (LONG/SHORT) değil, sadece WAIT"}
+                </li>
+              ))}
+          </ul>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         <StatusCard
