@@ -87,6 +87,8 @@ class ContextAdapter:
         from database.session_factory import SessionFactory
         from market_data.onchain.onchain_provider import (
             fetch_eth_gas_price_gwei,
+            fetch_hash_rate_trend,
+            fetch_network_activity_trend,
             fetch_solana_tps,
             fetch_usdt_total_supply,
         )
@@ -110,6 +112,18 @@ class ContextAdapter:
             if delta is not None:
                 result["stablecoin_mint_24h"] = delta
 
+        # Faz 215: eth_gas_price/solana_tps zaten TÜM kripto sembolleri
+        # için "genel piyasa koşulu" olarak kullanılıyordu (chain-özel
+        # değil) — aynı desenle, Bitcoin ağ sağlığı trendleri de genel
+        # bir kripto piyasası göstergesi olarak ekleniyor.
+        activity = fetch_network_activity_trend()
+        if activity is not None:
+            result["network_activity_trend"] = activity
+
+        hash_rate = fetch_hash_rate_trend()
+        if hash_rate is not None:
+            result["hash_rate_trend"] = hash_rate
+
         return result
 
     def to_onchain(self, ctx: CognitiveCycleContext) -> OnChainContext:
@@ -125,6 +139,12 @@ class ContextAdapter:
             mvrv_zscore=self._get(ctx, "mvrv_zscore", 0.0),
             eth_gas_price_gwei=real_metrics.get("eth_gas_price_gwei"),
             solana_tps=real_metrics.get("solana_tps"),
+            network_activity_trend=self._get(
+                ctx, "network_activity_trend", real_metrics.get("network_activity_trend", "stable")
+            ),
+            hash_rate_trend=self._get(
+                ctx, "hash_rate_trend", real_metrics.get("hash_rate_trend", "stable")
+            ),
         )
 
     def _latest_external_signal(self, symbol: str, max_age_seconds: float = 1800.0):

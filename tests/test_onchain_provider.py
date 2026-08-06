@@ -2,6 +2,8 @@
 Yahoo testlerinde kurulmuş konvansiyonla tutarlı)."""
 from market_data.onchain.onchain_provider import (
     fetch_eth_gas_price_gwei,
+    fetch_hash_rate_trend,
+    fetch_network_activity_trend,
     fetch_solana_tps,
     fetch_usdt_total_supply,
 )
@@ -34,6 +36,16 @@ def test_fetch_eth_gas_price_returns_none_without_infura_url(monkeypatch):
         assert fetch_eth_gas_price_gwei() is None
     finally:
         get_settings.cache_clear()
+
+
+def test_fetch_network_activity_trend_returns_a_real_bucket():
+    result = fetch_network_activity_trend()
+    assert result in ("rising", "falling", "stable")
+
+
+def test_fetch_hash_rate_trend_returns_a_real_bucket():
+    result = fetch_hash_rate_trend()
+    assert result in ("rising", "falling", "stable")
 
 
 def test_fetch_solana_tps_returns_none_without_helius_key(monkeypatch):

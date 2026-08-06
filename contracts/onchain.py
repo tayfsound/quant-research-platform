@@ -19,3 +19,7 @@ class OnChainContext(BaseModel):
     # gerektirmeyen, tek RPC çağrısıyla alınan gerçek değerler.
     eth_gas_price_gwei: float | None = None
     solana_tps: float | None = None
+    # Faz 215: blockchain.info'nun ücretsiz/kimliksiz charts API'sinden —
+    # Bitcoin'e özel, gerçek ağ sağlığı trendleri (rising/falling/stable).
+    network_activity_trend: str = "stable"
+    hash_rate_trend: str = "stable"

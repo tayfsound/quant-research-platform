@@ -48,6 +48,25 @@ class OnChainAgent:
         if context.solana_tps is not None:
             evidence.append(f"Solana network activity: {context.solana_tps:.0f} tx/s")
 
+        # Faz 215: gerçek ağ kullanım/madenci trendleri (blockchain.info,
+        # Bitcoin'e özel). Aktif adres artışı = gerçek kullanım büyüyor
+        # (hafif bullish). Hash rate düşüşü tarihsel olarak madenci
+        # kapitülasyonuyla ilişkilendirilir (hafif bearish); artışı
+        # madenci güveni/ağ güvenliği artıyor demek (hafif bullish).
+        if context.network_activity_trend == "rising":
+            score += 0.5
+            evidence.append("Active address count rising — real network usage growing")
+        elif context.network_activity_trend == "falling":
+            score -= 0.5
+            evidence.append("Active address count falling — network usage declining")
+
+        if context.hash_rate_trend == "falling":
+            score -= 0.5
+            evidence.append("Hash rate declining — possible miner capitulation")
+        elif context.hash_rate_trend == "rising":
+            score += 0.5
+            evidence.append("Hash rate rising — miner conviction/network security increasing")
+
         # MVRV Z-Score
         if context.mvrv_zscore > 3.0:
             score -= 2.0
