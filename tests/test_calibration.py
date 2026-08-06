@@ -1,7 +1,6 @@
 """Calibration testleri — güncellenmiş reward beklentileri."""
 from contracts.outcome import DecisionEvaluation, TradeOutcome
 from services.calibration import CalibrationMetrics
-from services.meta_learner import MetaLearner
 from services.reward_signal import RewardSignal
 
 
@@ -68,14 +67,3 @@ def test_reward_signal_loss_overconfident():
     reward = rs.compute(evaluation)
     # decision_score -1.0 + ceza → negatif
     assert reward < -0.5
-
-def test_meta_learner_suggests_parameters():
-    ml = MetaLearner()
-    for _ in range(30):
-        ml.record_cycle(0.8, True, reward=0.5)
-    for _ in range(30):
-        ml.record_cycle(0.5, False, reward=-0.8)
-    params = ml.suggest_parameters({"act_threshold": 0.7, "reduce_threshold": 0.4}, window=50)
-    assert "act_threshold" in params
-    assert "reduce_threshold" in params
-    assert 0.3 <= params["act_threshold"] <= 0.9

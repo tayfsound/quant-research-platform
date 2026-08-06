@@ -2,7 +2,6 @@
 import time
 
 from fastapi import FastAPI, Request, WebSocket
-from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
@@ -12,17 +11,7 @@ from api.websocket.cycle_feed import websocket_endpoint
 from observability.health import router as health_router
 from observability.metrics import api_request_latency_seconds, api_requests_total, get_metrics
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup: pending outcome scheduler
-    from services.pending_outcome_tracker import PendingOutcomeTracker
-    tracker = PendingOutcomeTracker()
-    # TODO: real data_provider + symbol/timeframe config
-    # asyncio.create_task(tracker.run_scheduler(...))
-    yield
-    # Shutdown
-
-app = FastAPI(title="AI Quant Research Platform", version="1.2.5", lifespan=lifespan)
+app = FastAPI(title="AI Quant Research Platform", version="1.2.5")
 
 app.add_middleware(
     CORSMiddleware,
