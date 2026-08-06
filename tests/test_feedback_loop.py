@@ -39,7 +39,10 @@ def test_weight_update_is_gradual():
     repo.save(current)
 
     optimizer = WeightOptimizer(memory, weight_repository=repo)
-    agents = [{"domain": "technical", "confidence": 0.8}]
+    # Faz 234: agent'ın kendi yönü artık nihai yönle karşılaştırılıyor
+    # (bkz. weight_optimizer.py'deki kritik bulgu) — bu ajan nihai yönle
+    # AYNI (LONG) dedi, bu yüzden kârlı sonuçtan ödüllenmeli.
+    agents = [{"domain": "technical", "confidence": 0.8, "direction": "LONG"}]
     evaluation = DecisionEvaluation(
         original_confidence=0.7,
         outcome=TradeOutcome(pnl=200.0, win=True),
@@ -47,7 +50,9 @@ def test_weight_update_is_gradual():
         was_prediction_correct=True,
     )
 
-    new_weights = optimizer.optimize(agents=agents, outcome=evaluation, require_approval=False)
+    new_weights = optimizer.optimize(
+        agents=agents, outcome=evaluation, executed_direction="LONG", require_approval=False
+    )
 
     # 0.5 -> istenen ~0.7, ancak delta 0.10 ile kırpılır
     assert new_weights["technical"] == 0.6

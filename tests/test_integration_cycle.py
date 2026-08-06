@@ -45,3 +45,41 @@ def test_weight_optimizer_handles_pydantic_agents():
     assert "technical" in weights
     assert "macro" in weights
     assert all(0.0 <= w <= 2.0 for w in weights.values())
+
+
+def test_optimize_rewards_agreeing_agents_and_penalizes_disagreeing_ones():
+    """Faz 234: kritik bulgu — canlı üretimde doğrulandı: 9 ajanın HEPSİNE
+    tıpatıp aynı +0.100 verilmişti (decision_score her ajana farklılaştırma
+    olmadan bloke uygulanıyordu). Nihai yönle AYNI yöndeki bir ajan
+    ödüllendirilmeli, TERS yöndeki bir ajan (aynı cycle'da, aynı
+    decision_score ile) CEZALANDIRILMALI — position_closer.py::
+    _record_agent_learning()'in (Faz 211b) zaten uyguladığı desenin aynısı."""
+    from services.weight_optimizer import WeightOptimizer
+    from services.agent_memory import AgentMemory
+    from services.weight_repository import WeightRepository
+    from contracts.agent import AgentOpinion, AgentDomain
+    from contracts.agent_weight_snapshot import AgentWeightSnapshot
+
+    memory = AgentMemory()
+    repo = WeightRepository(storage_path="test_weights_optimize_diff")
+    repo.save(AgentWeightSnapshot(weights={"technical": 1.0, "macro": 1.0}).finalize())
+    opt = WeightOptimizer(agent_memory=memory, weight_repository=repo)
+
+    agents = [
+        AgentOpinion(domain=AgentDomain.TECHNICAL, direction="LONG", confidence=0.8),
+        AgentOpinion(domain=AgentDomain.MACRO, direction="SHORT", confidence=0.6),
+    ]
+
+    class FakeOutcome:
+        decision_score = 0.5  # gerçekten kârlı bir LONG işlemi
+
+    try:
+        weights = opt.optimize(agents, FakeOutcome(), executed_direction="LONG", require_approval=False)
+        # technical LONG dedi, işlem LONG ve kârlı -> ödüllendirilmeli.
+        assert weights["technical"] > 1.0
+        # macro SHORT dedi, işlem LONG ve kârlı -> cezalandırılmalı.
+        assert weights["macro"] < 1.0
+        assert weights["technical"] != weights["macro"]
+    finally:
+        import shutil
+        shutil.rmtree("test_weights_optimize_diff", ignore_errors=True)

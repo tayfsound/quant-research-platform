@@ -115,6 +115,7 @@ class CognitiveEngine:
         new_weights = self.weight_optimizer.optimize(
             agents=event.agent_opinions,
             outcome=evaluation,
+            executed_direction=event.final_action,
         )
 
         previous = self.weight_repository.get_latest()

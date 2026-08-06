@@ -143,16 +143,32 @@ class WeightOptimizer:
         self,
         agents: list[dict],
         outcome,
+        executed_direction: str = "",
         require_approval: bool = True,
     ) -> dict[str, float]:
         """
         Feedback-loop weight update with a gradual delta cap.
         Large changes (>5%) require human approval.
+
+        Faz 234: kritik bulgu — canlıda doğrulandı: bir pending approval'da
+        9 ajanın HEPSİNE tıpatıp aynı +0.100 (MAX_WEIGHT_DELTA'nın tavanı)
+        verilmişti. Kök neden: `decision_score` (tüm cycle'ın TEK, genel
+        sonucu — Faz 211b'de position_closer.py'de aynı hatanın kardeşi)
+        her katılan ajana FARKLILAŞTIRILMADAN bloke uygulanıyordu — ajanın
+        kendi yönü nihai kararla aynı mıydı, ters miydi hiç bakılmıyordu.
+        Sonuç: gerçek "hangi ajan iyi/kötü" öğrenmesi değil, sadece son
+        cycle kârlıysa TÜM ağırlıkları birlikte şişiriyordu (kayıpta da
+        birlikte söndürüyordu). position_closer.py::_record_agent_learning()
+        (Faz 211b) zaten doğru deseni kullanıyor — aynısı burada uygulandı:
+        ajan nihai yönle AYNI yöndeyse decision_score'un kendisi, TERS
+        yöndeyse (ya da nihai bir yön varken WAIT dediyse) decision_score'un
+        TERSİ kullanılıyor.
         """
         current_snapshot = self.weight_repository.get_latest()
         current_weights = dict(current_snapshot.weights) if current_snapshot else {}
 
         decision_score = getattr(outcome, "decision_score", 0.0)
+        executed = (executed_direction or "").upper()
 
         new_weights = {}
         adjusted_domains = set()
@@ -165,7 +181,12 @@ class WeightOptimizer:
             adjusted_domains.add(domain)
             old_weight = current_weights.get(domain, 1.0)
 
-            desired = old_weight + (decision_score * 0.2)
+            agent_direction = str(
+                agent.get("direction") if isinstance(agent, dict) else getattr(agent, "direction", "")
+            ).upper()
+            agent_score = decision_score if agent_direction == executed else -decision_score
+
+            desired = old_weight + (agent_score * 0.2)
             desired = max(0.0, min(2.0, desired))
 
             new_weights[domain] = self._clip_delta(old_weight, desired)
