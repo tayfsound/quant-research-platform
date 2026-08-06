@@ -99,3 +99,43 @@ def test_invalid_max_capital_pct_out_of_range_rejected():
             headers=make_authed_headers(Role.ADMIN),
         )
         assert response.status_code == 400
+
+
+def test_display_currency_accepts_try_and_rejects_unknown_value():
+    """Faz 224: kullanıcı isteği — PnL/fiyatları USD dışında (BTC/TRY)
+    görebilme."""
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        client = _client()
+        try:
+            ok = client.post(
+                "/api/v1/settings/display_currency",
+                params={"value": "TRY"},
+                headers=make_authed_headers(Role.ADMIN),
+            )
+            assert ok.status_code == 200
+            with SessionFactory.get_session() as session:
+                assert AppSettingsRepository(session).get("display_currency") == "TRY"
+
+            bad = client.post(
+                "/api/v1/settings/display_currency",
+                params={"value": "EUR"},
+                headers=make_authed_headers(Role.ADMIN),
+            )
+            assert bad.status_code == 400
+        finally:
+            with SessionFactory.get_session() as session:
+                AppSettingsRepository(session).set(
+                    "display_currency", DEFAULTS["display_currency"], updated_by="test",
+                )
+
+
+def test_currency_rates_endpoint_returns_real_live_rates():
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        client = _client()
+        response = client.get(
+            "/api/v1/settings/currency-rates", headers=make_authed_headers(Role.VIEWER)
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["usd_btc"] > 0
+        assert body["usd_try"] > 0

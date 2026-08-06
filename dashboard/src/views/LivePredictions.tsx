@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Card, PageHeader, Badge, EmptyState } from '../components/ui';
+import { useCurrency } from '../lib/currency';
 
 type Token = {
   symbol: string;
@@ -19,6 +20,7 @@ function directionTone(direction: string | null) {
 
 function LivePredictions() {
   const [tokens, setTokens] = useState<Token[] | null>(null);
+  const { format } = useCurrency();
 
   useEffect(() => {
     const ws = new WebSocket('ws://localhost:8000/api/v1/stream/live');
@@ -45,9 +47,7 @@ function LivePredictions() {
                 <span className="font-semibold text-ink tracking-tight">{t.symbol}</span>
                 <Badge tone={t.is_crypto ? 'accent' : 'neutral'}>{t.is_crypto ? 'crypto' : 'other'}</Badge>
               </div>
-              <p className="text-lg font-semibold text-ink mt-3">
-                {t.price != null ? t.price.toLocaleString(undefined, { maximumFractionDigits: 4 }) : '—'}
-              </p>
+              <p className="text-lg font-semibold text-ink mt-3">{format(t.price, 4)}</p>
               <div className="flex items-center justify-between mt-3">
                 {t.market_open ? (
                   <Badge tone={directionTone(t.direction)}>{t.direction ?? 'no data'}</Badge>

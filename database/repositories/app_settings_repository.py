@@ -95,9 +95,17 @@ DEFAULTS: dict[str, str] = {
     # hem komisyonu rahat aşan hedef büyüklüğü.
     "candle_timeframe": "15m",
     "candle_lookback": "100",
+    # Faz 224: kullanıcı bulgusu — "PNL de para birimi görünmüyor bu hangi
+    # birimle kayıp belli değil dolar mı btc mi vs... her yerde aynı
+    # problem var." Sistemdeki tüm fiyat/PnL alanları zaten USD cinsinden
+    # hesaplanıyor (kripto çiftleri USDT'ye endeksli, USDT~USD; hisse/
+    # endeks zaten USD) — bu sadece GÖRÜNTÜLEME tercihi, hesaplamalar
+    # değişmiyor.
+    "display_currency": "USD",
 }
 
 CANDLE_TIMEFRAMES = ("1m", "5m", "15m", "1h", "4h", "1d")
+DISPLAY_CURRENCIES = ("USD", "BTC", "TRY")
 
 # Faz 187'nin PositionCloser.hold_seconds'ına karşılık gelen ön tanımlı
 # vadeler — "kısa vadeli işlemler alsın, bakiyeyi kilitlemesin" isteğinin

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { authHeaders } from "../api/auth";
 import { PageHeader, Badge, EmptyState, StatCard } from "../components/ui";
+import { useCurrency } from "../lib/currency";
 
 type Position = {
   id: string;
@@ -32,6 +33,7 @@ export default function Transactions() {
   const [open, setOpen] = useState<Position[]>([]);
   const [trades, setTrades] = useState<Position[]>([]);
   const [summary, setSummary] = useState<{ count: number; win_rate: number; total_pnl: number } | null>(null);
+  const { format, currency } = useCurrency();
 
   const load = () => {
     fetch("/api/v1/positions", { headers: authHeaders() })
@@ -62,8 +64,8 @@ export default function Transactions() {
         <StatCard label="Açık pozisyon" value={open.length} />
         <StatCard label="Kapanmış işlem" value={summary?.count ?? 0} sub={summary ? `%${(summary.win_rate * 100).toFixed(0)} kazanma oranı` : undefined} />
         <StatCard
-          label="Toplam PnL (kapanmış)"
-          value={summary ? fmt(summary.total_pnl) : "—"}
+          label={`Toplam PnL (kapanmış, ${currency})`}
+          value={summary ? format(summary.total_pnl) : "—"}
           tone={summary && summary.total_pnl > 0 ? "rise" : summary && summary.total_pnl < 0 ? "fall" : "neutral"}
         />
       </div>
@@ -91,12 +93,12 @@ export default function Transactions() {
                   <td className="py-2 pr-4">
                     <Badge tone={p.direction === "LONG" ? "rise" : "fall"}>{p.direction}</Badge>
                   </td>
-                  <td className="py-2 pr-4 font-mono text-ink-soft">{fmt(p.entry_price)}</td>
+                  <td className="py-2 pr-4 font-mono text-ink-soft">{format(p.entry_price)}</td>
                   <td className="py-2 pr-4 font-mono text-ink-soft">{fmt(p.quantity, 4)}</td>
                   <td className="py-2 pr-4 font-mono text-xs">
-                    <span className="text-fall">{fmt(p.stop_loss_price)}</span>
+                    <span className="text-fall">{format(p.stop_loss_price)}</span>
                     {" / "}
-                    <span className="text-rise">{fmt(p.take_profit_price)}</span>
+                    <span className="text-rise">{format(p.take_profit_price)}</span>
                   </td>
                   <td className="py-2 pr-4 text-ink-faint">{p.opened_at ? new Date(p.opened_at).toLocaleString() : "—"}</td>
                 </tr>
@@ -136,10 +138,10 @@ export default function Transactions() {
                   <td className="py-2 pr-4">
                     <Badge tone={t.direction === "LONG" ? "rise" : "fall"}>{t.direction}</Badge>
                   </td>
-                  <td className="py-2 pr-4 font-mono text-ink-soft">{fmt(t.entry_price)}</td>
-                  <td className="py-2 pr-4 font-mono text-ink-soft">{fmt(t.exit_price)}</td>
+                  <td className="py-2 pr-4 font-mono text-ink-soft">{format(t.entry_price)}</td>
+                  <td className="py-2 pr-4 font-mono text-ink-soft">{format(t.exit_price)}</td>
                   <td className={`py-2 pr-4 font-mono ${t.pnl && t.pnl > 0 ? "text-rise" : t.pnl && t.pnl < 0 ? "text-fall" : "text-ink-soft"}`}>
-                    {fmt(t.pnl)}
+                    {format(t.pnl)}
                   </td>
                   <td className="py-2 pr-4">
                     {t.exit_reason && (

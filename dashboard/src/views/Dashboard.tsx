@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { authHeaders } from "../api/auth";
 import { PageHeader, Button, Badge, StatCard, ErrorNote } from "../components/ui";
+import { useCurrency } from "../lib/currency";
 
 type SettingsMap = Record<string, string>;
 
@@ -73,6 +74,7 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [openCount, setOpenCount] = useState(0);
   const [summary, setSummary] = useState<{ count: number; win_rate: number; total_pnl: number } | null>(null);
+  const { format, currency } = useCurrency();
 
   const load = () => {
     fetch("/api/v1/settings/", { headers: authHeaders() })
@@ -165,8 +167,8 @@ export default function Dashboard() {
           sub={summary ? `%${(summary.win_rate * 100).toFixed(0)} kazanma oranı` : undefined}
         />
         <StatCard
-          label="Toplam PnL"
-          value={summary ? summary.total_pnl.toFixed(2) : "—"}
+          label={`Toplam PnL (${currency})`}
+          value={summary ? format(summary.total_pnl) : "—"}
           tone={summary && summary.total_pnl > 0 ? "rise" : summary && summary.total_pnl < 0 ? "fall" : "neutral"}
         />
       </div>

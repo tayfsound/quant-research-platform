@@ -26,6 +26,15 @@ const CANDLE_TIMEFRAME_LABELS: Record<string, string> = {
   "1d": "1 gün",
 };
 
+// Faz 224: kullanıcı bulgusu — "PNL de para birimi görünmüyor... her
+// yerde aynı problem var." bkz. src/lib/currency.ts (paylaşılan format
+// hook'u — hesaplama hep USD'de kalır, bu sadece görüntüleme tercihi).
+const DISPLAY_CURRENCY_LABELS: Record<string, string> = {
+  USD: "USD ($)",
+  BTC: "BTC (₿)",
+  TRY: "TRY (₺)",
+};
+
 export default function Settings() {
   const [settings, setSettings] = useState<SettingsMap>({});
   const [draft, setDraft] = useState<SettingsMap>({});
@@ -260,6 +269,30 @@ export default function Settings() {
             >
               {saved === "candle_lookback" ? "Kaydedildi ✓" : "Kaydet"}
             </Button>
+          </div>
+        </Card>
+
+        <Card>
+          <h3 className="text-sm font-semibold text-ink mb-1">Görüntüleme para birimi</h3>
+          <p className="text-xs text-ink-soft mb-3">
+            Sistemdeki tüm fiyat/PnL hesaplamaları her zaman USD cinsinden yapılır (kripto çiftleri
+            USDT'ye, hisse/endeks zaten USD'ye endeksli) — bu sadece dashboard'da nasıl GÖRÜNTÜLENECEĞİni
+            değiştirir, gerçek, canlı kurlarla (Binance BTCUSDT / USDTTRY) anlık dönüştürülür.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(DISPLAY_CURRENCY_LABELS).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => save("display_currency", key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  settings.display_currency === key
+                    ? "bg-accent text-white border-accent"
+                    : "bg-canvas-soft text-ink-soft border-line hover:bg-surface-soft"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
         </Card>
       </div>

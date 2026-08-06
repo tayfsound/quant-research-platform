@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { authHeaders } from "../api/auth";
 import { Card, PageHeader, Badge, StatCard, ErrorNote, EmptyState, Spinner } from "../components/ui";
+import { useCurrency } from "../lib/currency";
 
 type Bucket = {
   period_start: string;
@@ -40,6 +41,7 @@ export default function Performance() {
   const [data, setData] = useState<PerformanceData | null>(null);
   const [tab, setTab] = useState<"daily" | "weekly" | "monthly" | "yearly">("daily");
   const [error, setError] = useState<string | null>(null);
+  const { format, currency } = useCurrency();
 
   const load = () => {
     fetch("/api/v1/performance", { headers: authHeaders() })
@@ -81,15 +83,15 @@ export default function Performance() {
               value={`%${(data.all_time.win_rate * 100).toFixed(0)}`}
             />
             <StatCard
-              label="Toplam PnL"
-              value={data.all_time.total_pnl.toFixed(2)}
+              label={`Toplam PnL (${currency})`}
+              value={format(data.all_time.total_pnl)}
               tone={data.all_time.total_pnl > 0 ? "rise" : data.all_time.total_pnl < 0 ? "fall" : "neutral"}
             />
             <StatCard
               label="Strateji getirisi (kullanılan sermayeye göre)"
               value={`%${(data.all_time.roi_pct_on_deployed * 100).toFixed(3)}`}
               tone={data.all_time.roi_pct_on_deployed > 0 ? "rise" : data.all_time.roi_pct_on_deployed < 0 ? "fall" : "neutral"}
-              sub={`kullanılan: ${data.all_time.deployed_notional.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}
+              sub={`kullanılan: ${format(data.all_time.deployed_notional)}`}
             />
           </div>
 
@@ -142,7 +144,7 @@ export default function Performance() {
                           <Badge tone={b.win_rate >= 0.5 ? "rise" : "fall"}>{(b.win_rate * 100).toFixed(0)}%</Badge>
                         </td>
                         <td className={`px-5 py-2.5 font-medium ${b.total_pnl >= 0 ? "text-rise" : "text-fall"}`}>
-                          {b.total_pnl.toFixed(2)}
+                          {format(b.total_pnl)}
                         </td>
                         <td className={`px-5 py-2.5 font-medium ${b.roi_pct_on_deployed >= 0 ? "text-rise" : "text-fall"}`}>
                           {(b.roi_pct_on_deployed * 100).toFixed(3)}%

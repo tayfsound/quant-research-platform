@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { authHeaders } from "../api/auth";
 import { Card, PageHeader, Badge, Button, ErrorNote, EmptyState, Spinner } from "../components/ui";
+import { useCurrency } from "../lib/currency";
 
 type Token = {
   symbol: string;
@@ -50,6 +51,7 @@ function directionTone(direction: string | null) {
 }
 
 function TokenList({ tokens, onSelect }: { tokens: Token[]; onSelect: (symbol: string) => void }) {
+  const { format } = useCurrency();
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {tokens.map((t) => (
@@ -59,9 +61,7 @@ function TokenList({ tokens, onSelect }: { tokens: Token[]; onSelect: (symbol: s
               <span className="font-semibold text-ink tracking-tight">{t.symbol}</span>
               <Badge tone={t.is_crypto ? "accent" : "neutral"}>{t.is_crypto ? "crypto" : "other"}</Badge>
             </div>
-            <p className="text-lg font-semibold text-ink mt-3">
-              {t.price != null ? t.price.toLocaleString(undefined, { maximumFractionDigits: 4 }) : "—"}
-            </p>
+            <p className="text-lg font-semibold text-ink mt-3">{format(t.price, 4)}</p>
             <div className="flex items-center justify-between mt-3">
               {t.market_open ? (
                 <Badge tone={directionTone(t.direction)}>{t.direction ?? "no data"}</Badge>
@@ -85,6 +85,7 @@ function TokenList({ tokens, onSelect }: { tokens: Token[]; onSelect: (symbol: s
 function TokenDetailView({ symbol, onBack }: { symbol: string; onBack: () => void }) {
   const [detail, setDetail] = useState<TokenDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { format } = useCurrency();
 
   const load = () => {
     setError(null);
@@ -129,18 +130,16 @@ function TokenDetailView({ symbol, onBack }: { symbol: string; onBack: () => voi
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <Card>
               <p className="text-xs text-ink-faint uppercase tracking-wide">Fiyat</p>
-              <p className="text-xl font-semibold mt-2">
-                {detail.price != null ? detail.price.toLocaleString(undefined, { maximumFractionDigits: 4 }) : "—"}
-              </p>
+              <p className="text-xl font-semibold mt-2">{format(detail.price, 4)}</p>
             </Card>
             {detail.order_book ? (
               <>
                 <Card>
                   <p className="text-xs text-ink-faint uppercase tracking-wide">Best Bid / Ask</p>
                   <p className="text-sm font-semibold mt-2">
-                    <span className="text-rise">{detail.order_book.best_bid.toFixed(2)}</span>
+                    <span className="text-rise">{format(detail.order_book.best_bid)}</span>
                     {" / "}
-                    <span className="text-fall">{detail.order_book.best_ask.toFixed(2)}</span>
+                    <span className="text-fall">{format(detail.order_book.best_ask)}</span>
                   </p>
                 </Card>
                 <Card>
@@ -204,7 +203,7 @@ function TokenDetailView({ symbol, onBack }: { symbol: string; onBack: () => voi
                           {d.opened_at ? (
                             <>
                               <div>{new Date(d.opened_at).toLocaleString()}</div>
-                              {d.entry_price != null && <div className="font-mono">{d.entry_price.toFixed(4)}</div>}
+                              {d.entry_price != null && <div className="font-mono">{format(d.entry_price, 4)}</div>}
                             </>
                           ) : (
                             "—"
@@ -214,7 +213,7 @@ function TokenDetailView({ symbol, onBack }: { symbol: string; onBack: () => voi
                           {d.closed_at ? (
                             <>
                               <div>{new Date(d.closed_at).toLocaleString()}</div>
-                              {d.exit_price != null && <div className="font-mono">{d.exit_price.toFixed(4)}</div>}
+                              {d.exit_price != null && <div className="font-mono">{format(d.exit_price, 4)}</div>}
                             </>
                           ) : (
                             "—"
@@ -222,7 +221,7 @@ function TokenDetailView({ symbol, onBack }: { symbol: string; onBack: () => voi
                         </td>
                         <td className="px-5 py-2.5 text-ink-soft text-xs">{d.exit_reason ?? "—"}</td>
                         <td className={`px-5 py-2.5 font-medium ${d.pnl != null && d.pnl >= 0 ? "text-rise" : d.pnl != null ? "text-fall" : "text-ink-faint"}`}>
-                          {d.pnl != null ? d.pnl.toFixed(2) : "—"}
+                          {d.pnl != null ? format(d.pnl) : "—"}
                         </td>
                       </tr>
                     ))}
