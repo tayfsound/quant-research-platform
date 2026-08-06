@@ -191,6 +191,33 @@ class DecisionPersistor:
 
         return [dict(r) for r in rows]
 
+    def performance_by_period(self, period: str, limit: int = 200) -> list[dict]:
+        """Faz 215: kullanıcı isteği — "dün ne kadar ROI yapmış, haftalık/
+        aylık/yıllık ne olmuş" dashboard'da hiç görünmüyordu. period:
+        Postgres date_trunc'ın kabul ettiği bir değer (day/week/month/year).
+        Her kova için gerçek kapanmış işlemlerden pnl toplamı/işlem
+        sayısı/win rate — icat edilmiş bir sayı değil."""
+        if period not in ("day", "week", "month", "year"):
+            raise ValueError(f"invalid period: {period}")
+
+        rows = self.session.execute(
+            text(f"""
+                SELECT
+                    date_trunc('{period}', closed_at) AS bucket,
+                    count(*) AS trade_count,
+                    sum(pnl) AS total_pnl,
+                    sum(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS wins
+                FROM decisions
+                WHERE status = 'closed' AND closed_at IS NOT NULL
+                GROUP BY bucket
+                ORDER BY bucket DESC
+                LIMIT :limit
+            """),
+            {"limit": limit},
+        ).mappings().all()
+
+        return [dict(r) for r in rows]
+
     def close_position(
         self,
         decision_id: str,

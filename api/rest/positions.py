@@ -62,6 +62,52 @@ async def list_closed_trades(limit: int = 100, user: AuthContext = Depends(get_c
         }
 
 
+@router.get("/performance")
+async def performance_summary(user: AuthContext = Depends(get_current_user)):
+    """Faz 215: kullanıcı isteği — "dün ne kadar ROI yapmış, haftalık/
+    aylık/yıllık ne olmuş" görebilmek. ROI, kullanıcının Settings'te
+    belirlediği starting_capital'a göre (gerçek referans sermaye,
+    icat edilmiş bir sayı değil)."""
+    with SessionFactory.get_session() as session:
+        starting_capital = float(AppSettingsRepository(session).get("starting_capital"))
+        persistor = DecisionPersistor(session)
+
+        def _bucket(rows):
+            return [
+                {
+                    "period_start": r["bucket"].isoformat(),
+                    "trade_count": r["trade_count"],
+                    "total_pnl": float(r["total_pnl"] or 0.0),
+                    "win_rate": (r["wins"] / r["trade_count"]) if r["trade_count"] else 0.0,
+                    "roi_pct": (float(r["total_pnl"] or 0.0) / starting_capital) if starting_capital else 0.0,
+                }
+                for r in rows
+            ]
+
+        daily = _bucket(persistor.performance_by_period("day"))
+        weekly = _bucket(persistor.performance_by_period("week"))
+        monthly = _bucket(persistor.performance_by_period("month"))
+        yearly = _bucket(persistor.performance_by_period("year"))
+
+        all_closed = persistor.list_closed_trades(limit=10000)
+        total_pnl = sum(t.get("pnl") or 0.0 for t in all_closed)
+        wins = sum(1 for t in all_closed if (t.get("pnl") or 0) > 0)
+
+        return {
+            "starting_capital": starting_capital,
+            "all_time": {
+                "trade_count": len(all_closed),
+                "total_pnl": total_pnl,
+                "win_rate": (wins / len(all_closed)) if all_closed else 0.0,
+                "roi_pct": (total_pnl / starting_capital) if starting_capital else 0.0,
+            },
+            "daily": daily,
+            "weekly": weekly,
+            "monthly": monthly,
+            "yearly": yearly,
+        }
+
+
 @router.post("/positions/close-due")
 async def close_due_positions(
     hold_seconds: int | None = None,

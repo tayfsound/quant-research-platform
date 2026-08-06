@@ -36,6 +36,23 @@ def test_ohlcv_endpoint_returns_real_persisted_bars():
     assert bars[0]["close"] == 10.5
 
 
+def test_ohlcv_endpoint_falls_back_to_real_yahoo_data_for_non_crypto_symbols_with_no_db_rows():
+    """Faz 215: kullanıcı bulgusu — Market sayfasında Nasdaq/hisse/emtia
+    sembolleri için grafik hiç açılmıyordu. Kök neden: market_snapshots
+    tablosu sadece Binance sembolleri için besleniyor. AAPL gibi bir
+    sembol için DB'de hiç satır yok — artık gerçek Yahoo Finance
+    çağrısına düşüyor (RoutingProvider'ın trading pipeline'ında zaten
+    yaptığı gibi)."""
+    resp = _client().get(
+        "/api/v1/market-data/ohlcv?symbol=AAPL&resolution=1d&limit=5",
+        headers=make_authed_headers(Role.VIEWER),
+    )
+    assert resp.status_code == 200
+    bars = resp.json()["bars"]
+    assert len(bars) > 0
+    assert bars[-1]["close"] > 0
+
+
 def test_ohlcv_endpoint_requires_auth():
     resp = _client().get("/api/v1/market-data/ohlcv?symbol=BTCUSDT")
     assert resp.status_code in (401, 403)

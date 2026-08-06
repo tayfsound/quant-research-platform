@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends
 from contracts.market_data import DataSource, Resolution
 from database.repositories.market_data_repository import MarketDataRepository
 from database.session_factory import SessionFactory
+from market_data.ingestion.data_provider import looks_like_binance_pair
 from services.auth_service import AuthContext, get_current_user
 
 router = APIRouter(prefix="/market-data", tags=["market-data"])
@@ -23,21 +24,50 @@ async def get_ohlcv(
         rows = MarketDataRepository(session).get_latest_snapshots(
             DataSource.BINANCE, symbol, Resolution(resolution), limit=limit
         )
+
+    # Faz 215: gerçek bulgu — market_snapshots tablosu SADECE Binance
+    # sembolleri için besleniyor (ingest_candles_task kripto-filtreli).
+    # Hisse/endeks/emtia (AAPL/NVDA/^IXIC/GC=F) için bu tabloda hiçbir
+    # zaman satır olmuyordu — Market sayfasında grafik hep boş kalıyordu.
+    # Gerçek trading pipeline'ının zaten yaptığı gibi (RoutingProvider),
+    # kripto olmayan ve DB'de hiç verisi olmayan semboller için canlı
+    # Yahoo Finance çağrısına düşülüyor — ayrı bir ingestion/depolama
+    # hattı kurmaya gerek yok, Yahoo verisi zaten anlık ve hızlı.
+    if not rows and not looks_like_binance_pair(symbol):
+        from market_data.ingestion.yahoo_provider import YahooProvider
+
+        bars = YahooProvider().get_ohlcv(symbol, resolution, limit=limit)
         return {
             "symbol": symbol,
             "resolution": resolution,
             "bars": [
                 {
-                    "time": int(r.time.timestamp()),
-                    "open": r.open,
-                    "high": r.high,
-                    "low": r.low,
-                    "close": r.close,
-                    "volume": r.volume,
+                    "time": int(b.timestamp.timestamp()),
+                    "open": b.open,
+                    "high": b.high,
+                    "low": b.low,
+                    "close": b.close,
+                    "volume": b.volume,
                 }
-                for r in rows
+                for b in bars
             ],
         }
+
+    return {
+        "symbol": symbol,
+        "resolution": resolution,
+        "bars": [
+            {
+                "time": int(r.time.timestamp()),
+                "open": r.open,
+                "high": r.high,
+                "low": r.low,
+                "close": r.close,
+                "volume": r.volume,
+            }
+            for r in rows
+        ],
+    }
 
 
 @router.get("/order-book")

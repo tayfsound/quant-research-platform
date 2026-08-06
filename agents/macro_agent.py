@@ -20,10 +20,16 @@ class MacroAgent:
             score += 1.0
             evidence.append("Inflation cooling")
 
-        # Likidite
+        # Likidite — Faz 215: gerçek bulgu — sadece "tight" cezalandırılıyordu,
+        # "loose" (genişleyen M2 para arzı — tarihsel olarak risk
+        # varlıkları için destekleyici) hiç ödüllendirilmiyordu. Asimetrik:
+        # ajan likiditenin sadece kötü tarafını görebiliyordu.
         if context.liquidity_condition == "tight":
             score -= 1.0
             evidence.append("Liquidity conditions restrictive")
+        elif context.liquidity_condition == "loose":
+            score += 1.0
+            evidence.append("Liquidity conditions expansionary")
 
         # Merkez bankası
         if context.central_bank_bias == "hawkish":

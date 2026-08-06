@@ -114,15 +114,15 @@ export default function Settings() {
         <Card>
           <h3 className="text-sm font-semibold text-ink mb-1">Minimum kâr hedefi (%)</h3>
           <p className="text-xs text-ink-soft mb-3">
-            0.005 = hedefin fiyatın en az %0.5'i olması şart, yoksa işlem açılmaz. Komisyonu
-            karşılamayan çok küçük hedefleri eler (gerçek olay: hedefe ulaştı ama komisyon kârı
-            yedi). 0 = kapalı.
+            Yüzde olarak gir (ör. 2 = %2). Hedefin fiyatın en az bu yüzdesi kadar olması şart,
+            yoksa işlem açılmaz — komisyonu karşılamayan çok küçük hedefleri eler (gerçek olay:
+            hedefe ulaştı ama komisyon kârı yedi). 0 = kapalı.
           </p>
           <div className="flex gap-2">
             <Input
               type="number"
-              value={draft.min_profit_target_pct ?? ""}
-              onChange={(v) => setDraft((d) => ({ ...d, min_profit_target_pct: v }))}
+              value={draft.min_profit_target_pct != null && draft.min_profit_target_pct !== "" ? String(Number(draft.min_profit_target_pct) * 100) : ""}
+              onChange={(v) => setDraft((d) => ({ ...d, min_profit_target_pct: v === "" ? "" : String(Number(v) / 100) }))}
             />
             <Button
               disabled={saving === "min_profit_target_pct"}

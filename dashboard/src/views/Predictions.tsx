@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { authHeaders } from "../api/auth";
 import { Card, PageHeader, Badge, Button, ErrorNote, EmptyState } from "../components/ui";
 
@@ -12,6 +12,23 @@ export default function Predictions() {
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [watchlist, setWatchlist] = useState<string[]>([]);
+  const [symbol, setSymbol] = useState("");
+
+  useEffect(() => {
+    // Faz 215: kullanıcı "Predictions sadece BTC ile çalışıyor" dedi —
+    // gerçek sebep, /orchestrator/cycle'a hiç symbol gönderilmiyordu,
+    // her zaman backend'in varsayılan sembolüne düşüyordu.
+    fetch("/api/v1/settings/", { headers: authHeaders() })
+      .then((r) => r.json())
+      .then((data) => {
+        const raw = data.settings?.watchlist || "";
+        const list = raw.split(",").map((s: string) => s.trim()).filter(Boolean);
+        setWatchlist(list);
+        if (list.length > 0) setSymbol(list[0]);
+      })
+      .catch(() => setWatchlist([]));
+  }, []);
 
   const runCycle = () => {
     setLoading(true);
@@ -19,7 +36,7 @@ export default function Predictions() {
     fetch("/api/v1/orchestrator/cycle", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({ seed: Math.floor(Math.random() * 100000) }),
+      body: JSON.stringify({ seed: Math.floor(Math.random() * 100000), symbol: symbol || undefined }),
     })
       .then(async (r) => {
         const data = await r.json();
@@ -36,9 +53,22 @@ export default function Predictions() {
         title="Predictions"
         description="9 ajanlı council'i gerçek bir cycle ile tetikleyip nihai kararı gösterir (CognitiveOrchestrator.run_cycle)."
         action={
-          <Button onClick={runCycle} disabled={loading}>
-            {loading ? "Running…" : "Run Cycle"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <select
+              value={symbol}
+              onChange={(e) => setSymbol(e.target.value)}
+              className="px-3 py-2 rounded-lg bg-canvas-soft border border-line text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent"
+            >
+              {watchlist.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+            <Button onClick={runCycle} disabled={loading}>
+              {loading ? "Running…" : "Run Cycle"}
+            </Button>
+          </div>
         }
       />
 
@@ -51,7 +81,7 @@ export default function Predictions() {
       {result && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card>
-            <p className="text-xs text-ink-faint uppercase tracking-wide">Direction</p>
+            <p className="text-xs text-ink-faint uppercase tracking-wide">Direction — {result.symbol}</p>
             <div className="mt-2">
               <Badge tone={directionTone(result.direction)}>{result.direction}</Badge>
             </div>

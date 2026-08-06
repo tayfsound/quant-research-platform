@@ -9,6 +9,7 @@ import Strategies from './views/Strategies';
 import RiskDashboard from './views/RiskDashboard';
 import Settings from './views/Settings';
 import Transactions from './views/Transactions';
+import Performance from './views/Performance';
 import LatestCycle from './views/LatestCycle';
 import PendingApprovals from './views/PendingApprovals';
 import ExperimentList from './views/ExperimentList';
@@ -40,6 +41,7 @@ function App() {
           {view === 'dashboard' && <Dashboard />}
           {view === 'live' && <LivePredictions />}
           {view === 'transactions' && <Transactions />}
+          {view === 'performance' && <Performance />}
           {view === 'market' && <MarketOverview />}
           {view === 'tokens' && <Tokens />}
           {view === 'predictions' && <Predictions />}

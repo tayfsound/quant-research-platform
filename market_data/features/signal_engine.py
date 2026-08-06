@@ -267,23 +267,32 @@ def compute_pattern_signals(data: list[OHLCV]) -> dict:
 def _approximate_wyckoff_phase(data: list[OHLCV]) -> str:
     """Kaba yaklaşım: düşük volatilite + artan hacim + yatay fiyat =
     accumulation-vari; yüksek volatilite + düşen hacim tepe civarında =
-    distribution-vari. Gerçek Wyckoff analizi değil, dürüst bir proxy."""
+    distribution-vari. Gerçek Wyckoff analizi değil, dürüst bir proxy.
+
+    Faz 215: gerçek bulgu — "düşük/yüksek volatilite" sabit bir oranla
+    (vol_ratio < 0.8 / > 1.3, son-10-bar / tüm-100-bar) tanımlanıyordu.
+    Son 10 bar zaten tüm 100 barın İÇİNDE olduğu için oran neredeyse hep
+    1.0 civarında kalıyor, gerçek verilerde (BTC/ETH/SOL) neredeyse hiç
+    bu aralığın dışına çıkmıyordu — structure_phase sürekli "neutral"
+    çıkıyordu. Codebase'in zaten kullandığı desenle (realized_vol_
+    percentile, quant_signals'ta) tutarlı şekilde: mutlak bir oran yerine
+    volatilitenin KENDİ yakın geçmişine göre yüzdelik dilimi kullanılıyor
+    — kendi kendini normalize ediyor, hangi sembol/zaman dilimi olursa
+    olsun anlamlı şekilde tetiklenebiliyor."""
     closes = _closes(data)
     volumes = np.array([d.volume for d in data], dtype=float)
-    if len(closes) < 10:
+    if len(closes) < 20:
         return "neutral"
     returns = _returns(closes)
-    recent_vol = returns[-10:].std()
-    overall_vol = returns.std() if returns.std() > 0 else 1e-9
-    vol_ratio = recent_vol / overall_vol
+    vol_percentile = _realized_vol_percentile(returns)
     volume_trend = volumes[-5:].mean() - volumes[-15:-5].mean() if len(volumes) >= 15 else 0.0
     price_range_pct = (closes[-10:].max() - closes[-10:].min()) / closes[-10:].mean()
 
-    if vol_ratio < 0.8 and price_range_pct < 0.03 and volume_trend > 0:
+    if vol_percentile < 20 and price_range_pct < 0.03 and volume_trend > 0:
         return "accumulation" if closes[-1] < closes[-10:].mean() else "distribution"
-    if vol_ratio > 1.3 and closes[-1] > closes[-10:].mean():
+    if vol_percentile > 80 and closes[-1] > closes[-10:].mean():
         return "markup"
-    if vol_ratio > 1.3 and closes[-1] < closes[-10:].mean():
+    if vol_percentile > 80 and closes[-1] < closes[-10:].mean():
         return "markdown"
     return "neutral"
 
