@@ -161,7 +161,20 @@ class PositionCloser:
             else:
                 gross_pnl = 0.0
 
-            fee = self.fee_engine.calculate(entry_price * quantity) + self.fee_engine.calculate(exit_price * quantity)
+            # Faz 223: kullanıcı isteği — "işlem ücretlerinden kurtulmanın
+            # ya da minimize etmenin yolları var mı." Gerçek bulgu: çıkış
+            # her zaman taker oranıyla (%0.05) ücretlendiriliyordu, giriş
+            # gibi. Ama take_profit çıkışı gerçekte hedef fiyata önceden
+            # oturmuş bir LIMIT emrinin dolmasıdır — gerçek borsalarda bu
+            # "maker" sayılır (%0.02, 2.5x daha ucuz). stop_loss ise gerçek
+            # borsalarda tetiklenince MARKET emrine dönüşür — taker kalmalı
+            # (%0.05). Giriş her zaman anlık/reaktif karar olduğu için
+            # (bekleyen bir limit emri modellenmiyor, slippage zaten taker
+            # maliyetini temsil ediyor) taker kalıyor.
+            exit_is_maker = exit_reason == "take_profit"
+            fee = self.fee_engine.calculate(entry_price * quantity) + self.fee_engine.calculate(
+                exit_price * quantity, is_maker=exit_is_maker
+            )
             pnl = gross_pnl - fee
 
             decision_repo.close_position(
