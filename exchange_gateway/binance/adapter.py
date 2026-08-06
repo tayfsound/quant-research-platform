@@ -1,7 +1,7 @@
 """
 Binance REST adapter — salt okunur piyasa verisi.
 """
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -61,7 +61,15 @@ class BinanceAdapter(BaseExchangeAdapter):
     async def get_order_book(self, symbol: str, depth: int = 10) -> OrderBookSnapshot:
         data = await self._get("/api/v3/depth", {"symbol": symbol, "limit": depth})
         return OrderBookSnapshot(
-            time=datetime.now(),
+            # Faz 231: kritik bulgu — yeni GET /health/signals'ı doğrularken
+            # bulundu. order_book_snapshots.time naive datetime.now() (yerel
+            # CEST, UTC+2) ile yazılıyordu ama kolon TIMESTAMP WITHOUT TIME
+            # ZONE — Postgres bunu olduğu gibi saklıyor, geri okununca UTC
+            # sanılıyor. Sonuç: her satır gerçekte ~2 saat "gelecekte"
+            # görünüyordu (health check -7146s / negatif yaş ile yakaladı —
+            # aynı Faz 210a bug'ının, o zaman decisions/context.py'de
+            # düzeltilen, farklı bir dosyadaki tekrarı).
+            time=datetime.now(UTC),
             exchange=DataSource.BINANCE,
             symbol=symbol,
             bids=[(float(b[0]), float(b[1])) for b in data["bids"]],
