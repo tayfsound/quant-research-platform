@@ -1,9 +1,139 @@
-# Mevcut Durum -- v1.30.0 (Faz 203-212: "hiç işlem açmıyor" zincirinin tamamı)
+# Mevcut Durum -- v1.31.0 (Faz 213-227: zayıf ajanlar + ekonomi kalibrasyonu + dashboard okunabilirlik turu)
 
 **Tarih:** 2026-08-06
 **Branch:** main
 **Son commit (HEAD):** bkz. git log
-**Test:** 532+ passed (ilgisiz, yerel Ollama'ya bağlı 1 test hariç). `npm run build` temiz.
+**Test:** 549+ passed, 1 xpassed (bilinen, non-regression flakiness: embedding-mock `TypeError`/`agent_memory.json` yarış durumu — full-suite'te izole halde geçiyor, git-stash ile doğrulandı, bu turun değişikliklerinden bağımsız). `npx tsc -b` temiz.
+
+## Faz 213-227 — zayıf ajanlar + ekonomi kalibrasyonu + dashboard okunabilirlik turu (2026-08-06)
+
+Kullanıcı: "Zayıf ajanları güçlendirelim... En önemli bulgu üzerinde
+çalışalım" (negatif beklenen değer / düşük kazanma oranı) ile başlayan,
+sonra gerçek kullanıcı gözlemleriyle (dashboard tutarsızlıkları, ücret
+şikayeti, UI özensizliği) genişleyen çok fazlı bir tur. Kullanıcıya
+yönelik en kritik kararlar:
+
+**Faz 216 — vade dolunca pozisyon kapatma TAMAMEN kaldırıldı.** Kullanıcı:
+"Kazanma oranı %8... Bile bile zarar etmek demek bu. Belirli bir süre
+sonunda pozisyon kapanması olayını kaldıralım hatta yasaklayalım.
+Pozisyona girdiyse ya tp olacak ya da sl, başka türlü kapatılmasın."
+Gerçek veriyle doğrulandı: `trade_horizon` (10dk) < `candle_timeframe`
+(15dk) olduğunda kapanan işlemlerin **%64'ü** "time_expired" (stop/target'a
+hiç ulaşmadan, sadece vade dolduğu için, küçük komisyon kaybıyla)
+kapanıyordu — sinyal kalitesinden tamamen bağımsız, yapay bir kayıp
+mekanizmasıydı. `services/position_closer.py::close_due_positions()`
+artık SADECE gerçek stop_loss/take_profit fiyatına ulaşıldığında kapatıyor
+(`hold_seconds`/time-expiry fallback kodu tamamen silindi). Güvenli:
+`DecisionFusion`'ın Negative EV kapısı zaten stop/target'ı set edilmemiş
+bir pozisyonun "open" statüsüne ulaşmasına izin vermiyor.
+
+**Faz 221 — "Varsayılanlara dön" butonu, matematiksel olarak hesaplanmış
+defaultlar.** Kullanıcı: "Komisyonlara ezilmeden 1-5 dolar arası minik
+karlar getirecek bir ayar optimizasyonu yapalım, default'a basınca bunu
+çağırsın otomatik." Gerçek ölçümlerle geriye doğru hesaplandı:
+`capital_per_trade = starting_capital × max_capital_pct / max_concurrent_positions`
+→ `50000×0.4/15 = $1333/işlem`; 15m BTCUSDT medyan 2×ATR hedefi (gerçek
+ölçüm) `%0.3485`; round-trip komisyon (gerçek taker×2) `%0.1`; net kâr
+(medyan durumda) `≈$3.31`. Yeni defaultlar: `max_concurrent_positions=15`,
+`max_capital_pct=0.4`, `starting_capital=50000`, `trade_horizon=medium`
+(4 saat — Faz 216 ile birlikte, sinyalin üretildiği mum tamamlanmadan
+kapanmaması için), `min_profit_target_pct=0.0015`, `candle_timeframe=15m`.
+`AppSettingsRepository.reset_to_defaults()` + `POST /settings/reset-defaults`
+(watchlist/trading_mode gibi kullanıcı tercihlerine dokunmaz).
+
+**Faz 226 — trade_horizon/candle_timeframe artık birbirine göre çapraz
+doğrulanıyor.** Faz 221'in defaultları kullanıcı tarafından tekrar
+uyumsuz bir kombinasyona çekilebilirdi (aynı Faz 216 bug'ına dönüş
+riski) — `POST /settings/trade_horizon` ve `POST /settings/candle_timeframe`
+artık `trade_horizon_seconds ≥ candle_timeframe_seconds × 2` kuralını
+karşı ayara göre doğruluyor.
+
+**Faz 214a-b — zayıf ajanlar güçlendirildi (gerçek root-cause'lar):**
+- `WeightOptimizer.propose_weights()` insan-onay kapısını atlıyordu
+  (`optimize()`'ın aksine) — artık ikisi de aynı `MAX_WEIGHT_DELTA`
+  kontrolünü paylaşıyor.
+- Hurst exponent hesaplaması `log_returns`'ün (zaten durağan) farkını
+  ölçüyordu, `log(closes)`'un değil — QuantAgent bu yüzden neredeyse hep
+  0 confidence veriyordu (canlı BTCUSDT: 0.0 → düzeltmeden sonra 0.345).
+- `OrderFlowContext.aggressive_buy_ratio` hep sabit 0.5'ti — artık
+  Binance'in gerçek son işlemlerinden (`fetch_recent_trades`,
+  `isBuyerMaker`) hesaplanıyor.
+- Wyckoff `structure_phase`, mutlak bir vol_ratio eşiği yerine (neredeyse
+  hiç tetiklenmiyordu) kendi geçmişine göre yüzdelik dilim kullanıyor —
+  gerçek veride 4/5 sembolde artık "neutral" dışı fazlar üretiyor.
+- `MacroAgent`: sadece "tight" likidite cezalandırılıyordu, "loose"
+  (gerçek mevcut koşul) hiç ödüllendirilmiyordu — simetri eklendi.
+
+**Faz 219/224/227 — kullanıcı sorularına yanıt olarak yapılan denetimler:**
+- **Onchain veri** ("gerçek veri geliyor mu, kaynağı nasıl artırırız?"):
+  `eth_gas_price_gwei` (Infura, gerçek — canlı doğrulandı: ~0.21 gwei),
+  `solana_tps` (Helius), `stablecoin_mint_24h` (USDT total supply delta),
+  `network_activity_trend`/`hash_rate_trend` (blockchain.info, BTC'ye özel
+  ama TÜM kripto sembollerine "genel piyasa sağlığı" göstergesi olarak
+  uygulanıyor — bilinçli, `contracts/onchain.py`'de belgelendi, bkz. C).
+  exchange_inflow/outflow, whale accumulation, MVRV Z-Score hâlâ icat
+  edilmedi (gerçek ücretli indexer gerektiriyor). Sosyal medya sentiment
+  de yapılmadı — Reddit'in genel JSON API'si artık kimliksiz erişimi 403
+  ile engelliyor, kullanıcının kendi client_id/secret kaydı gerekiyor.
+- **Teknik analiz** ("Fibonacci, fincan-kulp var mı?"): Fibonacci
+  retracement (23.6/38.2/50/61.8/78.6%, en son swing high/low'a göre,
+  gerçek yön ayrımıyla) eklendi. Cup&handle bilinçli olarak eklenmedi —
+  Wyckoff'takiyle aynı dürüstlük ilkesi: kesin matematiksel tanımı yok,
+  şekil-eşleme gerektiriyor.
+- **İşlem ücretleri** ("kurtulma/minimize etme yolları var mı?"):
+  take_profit çıkışı artık ucuz "maker" oranıyla (%0.02, gerçek borsa
+  mantığı: hedefe oturmuş limit emri) ücretlendiriliyor — önceden her
+  çıkış taker (%0.05) idi. stop_loss taker kalıyor (gerçek borsalarda
+  tetiklenince market emrine dönüşüyor).
+- **Candle lookback 1000 tavanı** ("çok yetersiz görünüyor"): gerçek
+  Binance API tavanı olduğu doğrulandı (limit=1001 istense bile 1000
+  döner) — `BinanceAdapter.fetch_ohlcv` artık limit>1000 için pagination
+  yapıyor, tavan 5000'e çekildi. Yeni `long_term_trend_regime` göstergesi
+  (gerçek 200-EMA, en az 220 bar) bu derin geçmişi gerçekten kullanan ilk
+  sinyal — eski göstergelerin hiçbiri 50 bardan fazlasını kullanmıyordu.
+- **İki bağımsız context kurucusu** (review bulgusu E): `services/
+  orchestrator.py::_build_context()` ile `api/rest/cognitive.py::
+  run_cognitive_cycle()` aynı ~70 satırı bağımsızca tekrarlıyordu (Faz
+  206'nın proposed_size düzeltmesi birinde yapılıp diğerinde unutulmuştu).
+  Module-level `build_cognitive_context()`'e indirildi, tek gerçek kaynak.
+
+**Dashboard veri tutarlılığı/okunabilirlik (kullanıcı: "Transaction
+dashboarduna gelen veriye güvenemiyorum", "Approvals'ın formatı çok
+dağınık"):**
+- `GET /trades`'in summary'si (count/win_rate/total_pnl) `limit`
+  parametresine (varsayılan 100) bağlıydı — toplam kapanmış işlem 100'ü
+  geçince sonsuza dek 100'de donuyordu, `GET /performance`'ın ayrı
+  (limit=10000) hesabıyla tutarsızdı. Yeni `DecisionPersistor.
+  closed_trades_summary()` — limitsiz tek SQL agregasyonu, ikisi de
+  bunu kullanıyor.
+- `Card`/`StatCard`'a `min-w-0`/`overflow-hidden`/`break-words` — uzun
+  sayılar artık kutunun dışına taşmıyor.
+- `PendingApprovals.tsx`: `JSON.stringify(a.proposed)` tek satırlık ham
+  JSON yerine, her ajan domain'i için önceki/yeni/değişim gösteren
+  gerçek bir tablo (en büyük |değişim| en üstte) + daha önce hiç
+  bağlanmamış "Reddet" butonu.
+- Para birimi tercihi (USD/BTC/TRY): kullanıcı "PNL hangi birimde belli
+  değil... her yerde aynı problem var" dedi. `market_data/fx/
+  currency_provider.py` — Binance'in kendi piyasalarından (BTCUSDT,
+  USDTTRY) gerçek, canlı oranlar. `dashboard/src/lib/currency.ts::
+  useCurrency()` — Performance/Transactions/Dashboard/Tokens/
+  LivePredictions'daki TÜM fiyat/PnL alanlarına uygulandı.
+- `LivePredictions`/`Tokens.tsx::build_tokens_list()` paylaşımı (Faz
+  217) zaten var — watchlist'e yeni sembol eklenince otomatik görünüyor.
+- Login kalıcılığı (Faz 218): local-only kullanım için, JWT zaten
+  localStorage'da kalıcıydı ama `App.tsx` her yenilemede sıfırdan
+  `isLoggedIn=false` başlatıyordu.
+
+**Not — bu ekonomi/UI turunun ortasında biriken canlı veri:** kullanıcının
+kendi deneyleri sırasında (`starting_capital` 500 milyar gibi aşırı test
+değerlerine çekildi) `decisions` tablosunda gerçek ama ölçek dışı bir
+dönem birikti (`deployed_notional`/`total_pnl` şu an yüz milyonlarca $
+mertebesinde) — bu veri SİLİNMEDİ (gerçek geçmiş, kullanıcının onayı
+olmadan silinmez), ama "all_time" agregatları bu dönemi de kapsıyor, bu
+yüzden şu anki gerçek (sane defaults sonrası) performansı temsil etmiyor
+olabilir.
+
+**Önceki durum (v1.30.0, Faz 203-212) aşağıda korunuyor.**
 
 ## Faz 203-212 — "AI hiç işlem açmıyor" zincirinin tamamı (7 katmanlı, birbirine bağlı bug)
 
