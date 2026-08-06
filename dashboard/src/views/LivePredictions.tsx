@@ -1,49 +1,67 @@
 import { useEffect, useState } from 'react';
 import { Card, PageHeader, Badge, EmptyState } from '../components/ui';
 
+type Token = {
+  symbol: string;
+  is_crypto: boolean;
+  price: number | null;
+  direction: string | null;
+  confidence: number | null;
+  status: string | null;
+  market_open: boolean;
+};
+
+function directionTone(direction: string | null) {
+  if (direction === 'LONG') return 'rise' as const;
+  if (direction === 'SHORT') return 'fall' as const;
+  return 'neutral' as const;
+}
+
 function LivePredictions() {
-  const [prediction, setPrediction] = useState<any>(null);
+  const [tokens, setTokens] = useState<Token[] | null>(null);
 
   useEffect(() => {
     const ws = new WebSocket('ws://localhost:8000/api/v1/stream/live');
     ws.onmessage = (event) => {
-      setPrediction(JSON.parse(event.data));
+      const data = JSON.parse(event.data);
+      setTokens(data.tokens || []);
     };
     return () => ws.close();
   }, []);
-
-  const direction = prediction?.direction === 1 ? 'LONG' : prediction?.direction === -1 ? 'SHORT' : 'NEUTRAL';
-  const tone = prediction?.direction === 1 ? 'rise' : prediction?.direction === -1 ? 'fall' : 'neutral';
 
   return (
     <div>
       <PageHeader
         title="Live Predictions"
-        description="Her 2 saniyede bir gerçek bir CognitiveOrchestrator cycle'ı çalıştırılır."
+        description="Watchlist'teki tüm sembollerin en son gerçek council kararı — 3sn'de bir yenilenir (Faz 215: önceden sadece varsayılan sembolü gösteriyordu, watchlist'e yeni bir sembol eklendiğinde otomatik olarak burada da görünür)."
       />
-      {!prediction ? (
+      {!tokens ? (
         <EmptyState label="Canlı akışa bağlanılıyor…" />
       ) : (
-        <Card>
-          <div className="flex flex-wrap gap-8 items-center">
-            <div>
-              <p className="text-xs text-ink-faint uppercase tracking-wide">Symbol</p>
-              <p className="text-lg font-semibold text-ink mt-1">{prediction.symbol}</p>
-            </div>
-            <div>
-              <p className="text-xs text-ink-faint uppercase tracking-wide">Direction</p>
-              <div className="mt-1"><Badge tone={tone as any}>{direction}</Badge></div>
-            </div>
-            <div>
-              <p className="text-xs text-ink-faint uppercase tracking-wide">Confidence</p>
-              <p className="text-lg font-semibold text-ink mt-1">{(prediction.confidence * 100).toFixed(0)}%</p>
-            </div>
-          </div>
-          <div className="mt-5 pt-4 border-t border-line-soft flex gap-6 text-sm text-ink-soft">
-            <span>RSI: <span className="font-mono text-ink">{prediction.features?.rsi}</span></span>
-            <span>MACD: <span className="font-mono text-ink">{prediction.features?.macd}</span></span>
-          </div>
-        </Card>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {tokens.map((t) => (
+            <Card key={t.symbol}>
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-ink tracking-tight">{t.symbol}</span>
+                <Badge tone={t.is_crypto ? 'accent' : 'neutral'}>{t.is_crypto ? 'crypto' : 'other'}</Badge>
+              </div>
+              <p className="text-lg font-semibold text-ink mt-3">
+                {t.price != null ? t.price.toLocaleString(undefined, { maximumFractionDigits: 4 }) : '—'}
+              </p>
+              <div className="flex items-center justify-between mt-3">
+                {t.market_open ? (
+                  <Badge tone={directionTone(t.direction)}>{t.direction ?? 'no data'}</Badge>
+                ) : (
+                  <Badge tone="neutral">Piyasa kapalı</Badge>
+                )}
+                {t.confidence != null && (
+                  <span className="text-xs text-ink-soft">{(t.confidence * 100).toFixed(0)}% confidence</span>
+                )}
+              </div>
+              {t.status === 'open' && <p className="text-xs text-rise mt-2">açık pozisyon</p>}
+            </Card>
+          ))}
+        </div>
       )}
     </div>
   );

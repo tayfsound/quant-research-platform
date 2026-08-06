@@ -43,36 +43,43 @@ def _latest_price(session, symbol: str, latest_decision: dict | None) -> float |
     return snapshots[-1].close if snapshots else None
 
 
+def build_tokens_list(session) -> list[dict]:
+    """Faz 215: LivePredictions websocket'inin de (api/websocket/
+    live_predictions.py) kullanabilmesi için REST handler'dan ayrıldı —
+    aynı gerçek veriyi iki ayrı yerde iki kere yazmamak için."""
+    watchlist = [
+        s.strip() for s in AppSettingsRepository(session).get("watchlist").split(",") if s.strip()
+    ]
+    persistor = DecisionPersistor(session)
+
+    tokens = []
+    for symbol in watchlist:
+        recent = persistor.get_by_symbol(symbol, limit=1)
+        latest = recent[0] if recent else None
+        tokens.append({
+            "symbol": symbol,
+            "is_crypto": looks_like_binance_pair(symbol),
+            "price": _latest_price(session, symbol, latest),
+            "direction": latest["direction"] if latest else None,
+            "confidence": float(latest["confidence"]) if latest and latest["confidence"] is not None else None,
+            "size": float(latest["size"]) if latest and latest["size"] is not None else None,
+            "status": latest["status"] if latest else None,
+            "updated_at": latest["timestamp"].isoformat() if latest else None,
+            # Faz 212: kullanıcı NVDA/AAPL/^IXIC gibi hisse/endeks
+            # sembollerinde hiç veri görmeyince bunu bug sandı — gerçek
+            # sebep piyasa saatleri dışında bu sembollerin cycle'a hiç
+            # girmemesi (run_trading_cycle_task açıkça atlıyor). Şimdi
+            # bu ayrım UI'da da görünür.
+            "market_open": is_market_open(symbol),
+        })
+
+    return tokens
+
+
 @router.get("/")
 async def list_tokens(user: AuthContext = Depends(get_current_user)):
     with SessionFactory.get_session() as session:
-        watchlist = [
-            s.strip() for s in AppSettingsRepository(session).get("watchlist").split(",") if s.strip()
-        ]
-        persistor = DecisionPersistor(session)
-
-        tokens = []
-        for symbol in watchlist:
-            recent = persistor.get_by_symbol(symbol, limit=1)
-            latest = recent[0] if recent else None
-            tokens.append({
-                "symbol": symbol,
-                "is_crypto": looks_like_binance_pair(symbol),
-                "price": _latest_price(session, symbol, latest),
-                "direction": latest["direction"] if latest else None,
-                "confidence": float(latest["confidence"]) if latest and latest["confidence"] is not None else None,
-                "size": float(latest["size"]) if latest and latest["size"] is not None else None,
-                "status": latest["status"] if latest else None,
-                "updated_at": latest["timestamp"].isoformat() if latest else None,
-                # Faz 212: kullanıcı NVDA/AAPL/^IXIC gibi hisse/endeks
-                # sembollerinde hiç veri görmeyince bunu bug sandı — gerçek
-                # sebep piyasa saatleri dışında bu sembollerin cycle'a hiç
-                # girmemesi (run_trading_cycle_task açıkça atlıyor). Şimdi
-                # bu ayrım UI'da da görünür.
-                "market_open": is_market_open(symbol),
-            })
-
-        return {"tokens": tokens}
+        return {"tokens": build_tokens_list(session)}
 
 
 @router.get("/{symbol}")
