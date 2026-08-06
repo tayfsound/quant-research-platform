@@ -73,16 +73,27 @@ async def performance_summary(user: AuthContext = Depends(get_current_user)):
         persistor = DecisionPersistor(session)
 
         def _bucket(rows):
-            return [
-                {
+            result = []
+            for r in rows:
+                deployed = float(r["deployed_notional"] or 0.0)
+                total_pnl = float(r["total_pnl"] or 0.0)
+                result.append({
                     "period_start": r["bucket"].isoformat(),
                     "trade_count": r["trade_count"],
-                    "total_pnl": float(r["total_pnl"] or 0.0),
+                    "total_pnl": total_pnl,
                     "win_rate": (r["wins"] / r["trade_count"]) if r["trade_count"] else 0.0,
-                    "roi_pct": (float(r["total_pnl"] or 0.0) / starting_capital) if starting_capital else 0.0,
-                }
-                for r in rows
-            ]
+                    "roi_pct": (total_pnl / starting_capital) if starting_capital else 0.0,
+                    # Faz 215: kullanıcı bulgusu — starting_capital test
+                    # amaçlı çok büyük bir sayıya çekilince (ör. 10 milyar),
+                    # roi_pct her zaman ~0'a yuvarlanıyor, kazanma oranı ve
+                    # PnL negatifken bile — kafa karıştırıcı görünüyordu.
+                    # Bu, GERÇEKTEN kullanılan sermayeye (bu dönemde açılan
+                    # işlemlerin toplam notional'ı) göre getiri — kasa
+                    # büyüklüğünden bağımsız, stratejinin kendi
+                    # performansını yansıtıyor.
+                    "roi_pct_on_deployed": (total_pnl / deployed) if deployed else 0.0,
+                })
+            return result
 
         daily = _bucket(persistor.performance_by_period("day"))
         weekly = _bucket(persistor.performance_by_period("week"))
@@ -92,6 +103,7 @@ async def performance_summary(user: AuthContext = Depends(get_current_user)):
         all_closed = persistor.list_closed_trades(limit=10000)
         total_pnl = sum(t.get("pnl") or 0.0 for t in all_closed)
         wins = sum(1 for t in all_closed if (t.get("pnl") or 0) > 0)
+        deployed_notional = sum((t.get("entry_price") or 0.0) * (t.get("quantity") or 0.0) for t in all_closed)
 
         return {
             "starting_capital": starting_capital,
@@ -100,6 +112,8 @@ async def performance_summary(user: AuthContext = Depends(get_current_user)):
                 "total_pnl": total_pnl,
                 "win_rate": (wins / len(all_closed)) if all_closed else 0.0,
                 "roi_pct": (total_pnl / starting_capital) if starting_capital else 0.0,
+                "roi_pct_on_deployed": (total_pnl / deployed_notional) if deployed_notional else 0.0,
+                "deployed_notional": deployed_notional,
             },
             "daily": daily,
             "weekly": weekly,

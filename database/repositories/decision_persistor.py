@@ -206,7 +206,8 @@ class DecisionPersistor:
                     date_trunc('{period}', closed_at) AS bucket,
                     count(*) AS trade_count,
                     sum(pnl) AS total_pnl,
-                    sum(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS wins
+                    sum(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS wins,
+                    sum(entry_price * quantity) AS deployed_notional
                 FROM decisions
                 WHERE status = 'closed' AND closed_at IS NOT NULL
                 GROUP BY bucket

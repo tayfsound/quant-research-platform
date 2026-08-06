@@ -8,11 +8,21 @@ type Bucket = {
   total_pnl: number;
   win_rate: number;
   roi_pct: number;
+  roi_pct_on_deployed: number;
+};
+
+type AllTime = {
+  trade_count: number;
+  total_pnl: number;
+  win_rate: number;
+  roi_pct: number;
+  roi_pct_on_deployed: number;
+  deployed_notional: number;
 };
 
 type PerformanceData = {
   starting_capital: number;
-  all_time: { trade_count: number; total_pnl: number; win_rate: number; roi_pct: number };
+  all_time: AllTime;
   daily: Bucket[];
   weekly: Bucket[];
   monthly: Bucket[];
@@ -76,12 +86,19 @@ export default function Performance() {
               tone={data.all_time.total_pnl > 0 ? "rise" : data.all_time.total_pnl < 0 ? "fall" : "neutral"}
             />
             <StatCard
-              label="ROI (başlangıç sermayesine göre)"
-              value={`%${(data.all_time.roi_pct * 100).toFixed(2)}`}
-              tone={data.all_time.roi_pct > 0 ? "rise" : data.all_time.roi_pct < 0 ? "fall" : "neutral"}
-              sub={`sermaye: ${data.starting_capital.toLocaleString()}`}
+              label="Strateji getirisi (kullanılan sermayeye göre)"
+              value={`%${(data.all_time.roi_pct_on_deployed * 100).toFixed(3)}`}
+              tone={data.all_time.roi_pct_on_deployed > 0 ? "rise" : data.all_time.roi_pct_on_deployed < 0 ? "fall" : "neutral"}
+              sub={`kullanılan: ${data.all_time.deployed_notional.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}
             />
           </div>
+
+          <p className="text-xs text-ink-soft mb-4">
+            Kasa büyüklüğüne göre ROI: %{(data.all_time.roi_pct * 100).toFixed(6)} (sermaye:{" "}
+            {data.starting_capital.toLocaleString()} — test için çok büyük bir değere ayarlıysa bu oran
+            her zaman ~0 görünür, stratejinin gerçek performansı yukarıdaki "kullanılan sermayeye göre"
+            değeridir).
+          </p>
 
           <div className="flex gap-1 mb-4">
             {TABS.map((t) => (
@@ -111,7 +128,7 @@ export default function Performance() {
                       <th className="px-5 py-2 font-medium">İşlem</th>
                       <th className="px-5 py-2 font-medium">Kazanma oranı</th>
                       <th className="px-5 py-2 font-medium">PnL</th>
-                      <th className="px-5 py-2 font-medium">ROI</th>
+                      <th className="px-5 py-2 font-medium">Strateji getirisi</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -127,8 +144,8 @@ export default function Performance() {
                         <td className={`px-5 py-2.5 font-medium ${b.total_pnl >= 0 ? "text-rise" : "text-fall"}`}>
                           {b.total_pnl.toFixed(2)}
                         </td>
-                        <td className={`px-5 py-2.5 font-medium ${b.roi_pct >= 0 ? "text-rise" : "text-fall"}`}>
-                          {(b.roi_pct * 100).toFixed(2)}%
+                        <td className={`px-5 py-2.5 font-medium ${b.roi_pct_on_deployed >= 0 ? "text-rise" : "text-fall"}`}>
+                          {(b.roi_pct_on_deployed * 100).toFixed(3)}%
                         </td>
                       </tr>
                     ))}
