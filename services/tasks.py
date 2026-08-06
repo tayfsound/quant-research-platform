@@ -122,6 +122,48 @@ def ingest_order_book_task() -> dict:
     return {"ingested": results}
 
 
+@celery_app.task(name="ingest_candles_task")
+def ingest_candles_task() -> dict:
+    """Faz 207: gerçek bulgu — ingest_order_book_task ile birebir aynı
+    "ada" deseni. IngestionPipeline.ingest_candles() (market_snapshots
+    tablosuna gerçek Binance mumu yazan, tam çalışan bir metod — Market
+    Overview dashboard sayfasının /market-data/ohlcv endpoint'i SADECE bu
+    tabloyu okuyor) hiçbir zaman periyodik çağrılmıyordu. Tabloda BTCUSDT
+    için 300'er barlık gerçek veri vardı (Faz 184'te elle bir kez
+    çalıştırılmış) ama watchlist 15 kaleme çıktığında geri kalan 14 sembol
+    hiç eklenmedi — kullanıcı Market sayfasında BTC dışında hiçbir grafik
+    göremiyordu, boş değil, hiç veri yoktu. Trading cycle'ın kendi OHLCV
+    çekişi (RoutingProvider) tamamen ayrı bir yol — bu tabloya hiç
+    yazmıyor, o yüzden council'in gerçekten trade alması bu tabloyu
+    beslemiyordu. Sadece Binance sembolleri (yfinance'te candle var ama bu
+    pipeline binance-specific; kripto olmayanlar için Market sayfası hâlâ
+    boş kalır — ayrı bir iş)."""
+    import asyncio
+
+    from database.repositories.app_settings_repository import AppSettingsRepository
+    from database.session_factory import SessionFactory
+    from exchange_gateway.binance.adapter import BinanceAdapter
+    from market_data.ingestion.data_provider import looks_like_binance_pair
+    from market_data.ingestion.pipeline import IngestionPipeline
+
+    with SessionFactory.get_session() as session:
+        watchlist = [
+            s.strip() for s in AppSettingsRepository(session).get("watchlist").split(",") if s.strip()
+        ]
+
+    crypto_symbols = [s for s in watchlist if looks_like_binance_pair(s)]
+    pipeline = IngestionPipeline(BinanceAdapter())
+
+    results = {}
+    for sym in crypto_symbols:
+        try:
+            results[sym] = asyncio.run(pipeline.ingest_candles(sym, timeframe="1m", limit=100))
+        except Exception as exc:
+            results[sym] = {"error": str(exc)}
+
+    return {"ingested": results}
+
+
 @celery_app.task(name="run_pairs_trading_task")
 def run_pairs_trading_task() -> dict:
     """Faz 200: pairs trading / istatistiksel arbitraj — gerçek Engle-

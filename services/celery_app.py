@@ -70,6 +70,15 @@ celery_app.conf.beat_schedule = {
         "task": "ingest_order_book_task",
         "schedule": 20.0,
     },
+    # Faz 207: aynı "ada" bulgusu — IngestionPipeline.ingest_candles()
+    # (Market Overview dashboard sayfasının okuduğu tek kaynak,
+    # market_snapshots tablosu) hiç periyodik çağrılmıyordu, sadece BTCUSDT
+    # Faz 184'te elle bir kez dolduruldu. 1m çözünürlük dashboard'un
+    # varsayılanı — 60sn'de bir yeterli, trading cycle kadar sık gerekmiyor.
+    "ingest-candles-every-60s": {
+        "task": "ingest_candles_task",
+        "schedule": 60.0,
+    },
     # Faz 204: ACT/REDUCE eşiklerinin kendi kendine kalibrasyonu — gerçek
     # kapalı işlem geçmişi gerektirdiği için (min. 20) yeterli veri
     # birikmeden hiçbir şey yapmıyor; ucuz bir sorgu olduğu için sık
