@@ -123,7 +123,7 @@ export default function BacktestRuns() {
           stop/target'a göre çıkış simüle ediliyor. Her bar gerçek bir karar hesapladığı için (embedding
           dahil) dakikalar sürebilir — arka planda çalışır, sayfadan ayrılabilirsin.
         </p>
-        <div className="flex flex-wrap gap-2 mb-3">
+        <div className="flex flex-wrap items-center gap-2 mb-3">
           {watchlist.map((sym) => (
             <button
               key={sym}
@@ -137,6 +137,22 @@ export default function BacktestRuns() {
               {sym}
             </button>
           ))}
+          {watchlist.length > 0 && (
+            <span className="flex gap-1 ml-1 pl-2 border-l border-line">
+              <button
+                onClick={() => setSelectedSymbols(watchlist)}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium border border-line text-ink-soft hover:bg-surface-soft transition-colors"
+              >
+                Tümünü Seç
+              </button>
+              <button
+                onClick={() => setSelectedSymbols([])}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium border border-line text-ink-soft hover:bg-surface-soft transition-colors"
+              >
+                Temizle
+              </button>
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-3 mb-4">
           <div className="flex gap-1">
