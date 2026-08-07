@@ -31,3 +31,18 @@ def test_delta_24h_ignores_a_snapshot_that_is_too_recent():
         delta = repo.get_delta_24h(metric, current_value=1150.0)
 
     assert delta is None
+
+
+def test_saving_the_same_metric_and_timestamp_twice_does_not_raise():
+    """Gerçek bulgu: iki bağımsız worker/script aynı (metric, time)
+    çiftini neredeyse aynı anda yazmaya çalışabiliyor — düz INSERT
+    "duplicate key" hatasıyla task'ı çökertiyordu. Son değer kazanır."""
+    metric = f"test_metric_{uuid4().hex[:8]}"
+    fixed_time = datetime.now(UTC) - timedelta(hours=25)
+    with SessionFactory.get_session() as session:
+        repo = OnChainSnapshotRepository(session)
+        repo.save(metric, 1000.0, time=fixed_time)
+        repo.save(metric, 2000.0, time=fixed_time)
+        delta = repo.get_delta_24h(metric, current_value=2500.0)
+
+    assert delta == 500.0

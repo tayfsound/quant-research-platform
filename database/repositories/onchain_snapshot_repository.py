@@ -10,8 +10,19 @@ class OnChainSnapshotRepository:
         self.session = session
 
     def save(self, metric: str, value: float, time: datetime | None = None) -> None:
+        # Gerçek bulgu: iki bağımsız celery worker süreci (aynı watchlist'i
+        # işleyen, concurrency=1 her biri) aynı metrik için aynı ana
+        # yuvarlanmış zaman damgasını neredeyse aynı anda yazmaya
+        # çalışabiliyor — düz INSERT bu durumda "duplicate key value
+        # violates unique constraint" ile task'ı tamamen çökertiyordu
+        # (ATR taraması scriptiyle bir kez, canlı iki worker'la da
+        # tekrarlanabilir). Aynı (metric, time) için son değer geçerli
+        # olsun yeter — kaybedilen bir yazma finansal açıdan önemli değil.
         self.session.execute(
-            text("INSERT INTO onchain_snapshots (metric, time, value) VALUES (:metric, :time, :value)"),
+            text(
+                "INSERT INTO onchain_snapshots (metric, time, value) VALUES (:metric, :time, :value) "
+                "ON CONFLICT (metric, time) DO UPDATE SET value = EXCLUDED.value"
+            ),
             {"metric": metric, "time": time or datetime.now(UTC), "value": value},
         )
         self.session.commit()
