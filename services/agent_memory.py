@@ -1,7 +1,9 @@
 """Agent Memory — persistent storage backed by JSON."""
 
+import fcntl
 import json
 import os
+import tempfile
 from pathlib import Path
 
 from contracts.agent_performance import (
@@ -30,6 +32,7 @@ class AgentMemory:
         self.storage_path.mkdir(exist_ok=True)
 
         self.memory_file = self.storage_path / "agent_memory.json"
+        self.lock_file = self.storage_path / "agent_memory.lock"
 
         self._records: dict[str, list[AgentPerformanceRecord]] = {}
 
@@ -50,8 +53,16 @@ class AgentMemory:
             ]
 
 
-    def _save(self):
+    def _load_from_raw(self, raw: dict):
+        self._records = {}
+        for domain, records in raw.items():
+            self._records[domain] = [
+                AgentPerformanceRecord.model_validate(r)
+                for r in records
+            ]
 
+    def _write_locked(self):
+        """Çağıranın zaten kilidi tuttuğu varsayılır — diske atomik yazar."""
         payload = {
             domain: [
                 r.model_dump(mode="json")
@@ -59,29 +70,62 @@ class AgentMemory:
             ]
             for domain, records in self._records.items()
         }
-
-        self.memory_file.write_text(
-            json.dumps(
-                payload,
-                indent=2,
-                default=str,
-            )
+        fd, tmp_path = tempfile.mkstemp(
+            dir=self.storage_path, prefix=".agent_memory_", suffix=".tmp"
         )
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(payload, f, indent=2, default=str)
+            os.replace(tmp_path, self.memory_file)
+        except BaseException:
+            os.unlink(tmp_path)
+            raise
+
+    def _save(self):
+        # Faz 246: kritik bulgu — bu proje bir süredir aralıklı
+        # "JSONDecodeError: Expecting value" flakiness'ı yaşıyordu
+        # (pyproject.toml'daki bilinen-flaky rerun listesinde). Kök neden:
+        # birden fazla celery worker/process aynı anda AgentMemory().record()
+        # çağırdığında, write_text() dosyayı YERİNDE (in-place) baştan
+        # yazıyordu — iki yazma iç içe geçerse dosya YARIM (bozuk JSON)
+        # kalabiliyordu. Artık: (1) tüm süreçlerin sırayla yazmasını
+        # zorlayan bir exclusive dosya kilidi (fcntl.flock), (2) önce ayrı
+        # bir geçici dosyaya yazıp SONRA os.replace() ile atomik olarak
+        # yerine koyma — bir okuyucu asla yarım yazılmış bir dosya görmez,
+        # ya tamamen eski ya tamamen yeni içeriği görür.
+        with open(self.lock_file, "w") as lockf:
+            fcntl.flock(lockf, fcntl.LOCK_EX)
+            try:
+                self._write_locked()
+            finally:
+                fcntl.flock(lockf, fcntl.LOCK_UN)
 
 
     def record(
         self,
         record: AgentPerformanceRecord,
     ):
-
+        # Faz 246 (tam doğruluk): sadece dosya bozulmasını önlemek yetmiyordu
+        # — canlıda GERÇEKTEN yaşandı: bir AgentMemory örneği (ör. saatlerce
+        # çalışan bir celery worker) başlangıçta yüklediği ESKİ kopyayı
+        # hafızasında tutuyor, her record() çağrısında o eski kopyayı
+        # (üzerine kendi yeni kaydını ekleyip) yazıp başka bir sürecin
+        # arada yaptığı gerçek değişiklikleri (ör. bu oturumdaki temizlik)
+        # sessizce siliyordu. Artık kilit altında DİSKTEKİ GÜNCEL hali
+        # yeniden okunuyor, yeni kayıt ONA ekleniyor, öyle yazılıyor —
+        # başka bir sürecin yazdığı hiçbir şey kaybolmuyor.
         domain = record.agent_domain
 
-        self._records.setdefault(
-            domain,
-            [],
-        ).append(record)
-
-        self._save()
+        with open(self.lock_file, "w") as lockf:
+            fcntl.flock(lockf, fcntl.LOCK_EX)
+            try:
+                if self.memory_file.exists():
+                    raw = json.loads(self.memory_file.read_text())
+                    self._load_from_raw(raw)
+                self._records.setdefault(domain, []).append(record)
+                self._write_locked()
+            finally:
+                fcntl.flock(lockf, fcntl.LOCK_UN)
 
 
     def domains(self) -> list[str]:
