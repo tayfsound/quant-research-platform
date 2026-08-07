@@ -346,6 +346,84 @@ export default function Settings() {
               })}
           </div>
         </Card>
+
+        <Card>
+          <h3 className="text-sm font-semibold text-ink mb-1">Orta vadeli pozisyon katmanı</h3>
+          <p className="text-xs text-ink-soft mb-3">
+            Kısa vadeli katmandan tamamen ayrı çalışır: kendi günlük/4 saatlik sinyaliyle, kendi ayrı
+            sermaye havuzuyla (kısa vadelinin kasasını tüketmez). Kapalıyken hiçbir etkisi yok.
+          </p>
+          <div className="flex gap-2 mb-4">
+            {[
+              { key: "true", label: "Açık" },
+              { key: "false", label: "Kapalı" },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => save("medium_term_enabled", key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  (settings.medium_term_enabled ?? "false") === key
+                    ? "bg-accent text-white border-accent"
+                    : "bg-canvas-soft text-ink-soft border-line hover:bg-surface-soft"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <p className="text-xs text-ink-soft mb-2">Sinyal zaman dilimi</p>
+          <div className="flex gap-2 mb-4">
+            {[
+              { key: "4h", label: "4 saat" },
+              { key: "1d", label: "1 gün" },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => save("medium_term_timeframe", key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  settings.medium_term_timeframe === key
+                    ? "bg-accent text-white border-accent"
+                    : "bg-canvas-soft text-ink-soft border-line hover:bg-surface-soft"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <p className="text-xs text-ink-soft mb-2">
+            Sermaye payı (0-1 arası, ör. 0.1 = kasanın %10'u)
+          </p>
+          <div className="flex gap-2 mb-4">
+            <Input
+              type="number"
+              value={draft.medium_term_capital_pct ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, medium_term_capital_pct: v }))}
+            />
+            <Button
+              disabled={saving === "medium_term_capital_pct"}
+              onClick={() => save("medium_term_capital_pct", draft.medium_term_capital_pct)}
+            >
+              {saved === "medium_term_capital_pct" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+
+          <p className="text-xs text-ink-soft mb-2">Aynı anda en fazla kaç orta-vadeli pozisyon</p>
+          <div className="flex gap-2">
+            <Input
+              type="number"
+              value={draft.medium_term_max_concurrent ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, medium_term_max_concurrent: v }))}
+            />
+            <Button
+              disabled={saving === "medium_term_max_concurrent"}
+              onClick={() => save("medium_term_max_concurrent", draft.medium_term_max_concurrent)}
+            >
+              {saved === "medium_term_max_concurrent" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+        </Card>
       </div>
     </div>
   );

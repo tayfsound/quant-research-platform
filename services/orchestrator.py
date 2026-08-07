@@ -41,7 +41,16 @@ def _get_daily_bars_cached(data_provider, symbol: str) -> list:
     return bars
 
 
-def build_cognitive_context(symbol: str, timeframe: str, data, daily_data=None) -> CognitiveCycleContext:
+def build_cognitive_context(
+    symbol: str,
+    timeframe: str,
+    data,
+    daily_data=None,
+    timeframe_filter: str | None = None,
+    exclude_timeframe: str | None = None,
+    capital_pct_override: float | None = None,
+    max_concurrent_override: int | None = None,
+) -> CognitiveCycleContext:
     """Faz 224 review bulgusu (E): bu mantık önceden HEM burada (özel
     _build_context metodu olarak) HEM DE api/rest/cognitive.py'de
     (run_cognitive_cycle içinde) bağımsızca tekrarlanıyordu — "gap #15 ile
@@ -88,7 +97,15 @@ def build_cognitive_context(symbol: str, timeframe: str, data, daily_data=None) 
 
     # Faz 188: test/live modu + gerçek açık pozisyon sayısı/sermaye
     # yüzdesi — RiskEngine (ön) ve RiskGateStage (son) bunları kullanıyor.
-    risk_state = load_position_risk_state(symbol=symbol)
+    # Faz 259: orta-vadeli katman kısa-vadeliyle aynı sermaye/pozisyon
+    # sayacını paylaşmasın diye (bkz. services/risk_state.py docstring).
+    risk_state = load_position_risk_state(
+        symbol=symbol,
+        timeframe_filter=timeframe_filter,
+        exclude_timeframe=exclude_timeframe,
+        capital_pct_override=capital_pct_override,
+        max_concurrent_override=max_concurrent_override,
+    )
     ctx.risk.trading_mode = risk_state["trading_mode"]
     ctx.risk.open_position_count = risk_state["open_position_count"]
     ctx.risk.max_concurrent_positions = risk_state["max_concurrent_positions"]
@@ -148,6 +165,12 @@ class CognitiveOrchestrator:
             settings_repo = AppSettingsRepository(session)
             timeframe = settings_repo.get("candle_timeframe")
             lookback = int(settings_repo.get("candle_lookback"))
+            # Faz 259: orta-vadeli katman devredeyse, kısa-vadeli katman
+            # kendi sermaye/pozisyon sayacından o katmanın pozisyonlarını
+            # hariç tutmalı — ikisi aynı kapasiteyi paylaşmasın diye
+            # (bkz. services/risk_state.py).
+            medium_term_enabled = settings_repo.get("medium_term_enabled") == "true"
+            medium_term_timeframe = settings_repo.get("medium_term_timeframe")
 
         data = self.data_provider.get_ohlcv(symbol, timeframe, limit=lookback)
         if not data:
@@ -158,7 +181,13 @@ class CognitiveOrchestrator:
         # ağ hatası) None kalır, fail-closed.
         daily_data = _get_daily_bars_cached(self.data_provider, symbol)
 
-        ctx = self._build_context(symbol, timeframe, data, daily_data=daily_data)
+        ctx = self._build_context(
+            symbol,
+            timeframe,
+            data,
+            daily_data=daily_data,
+            exclude_timeframe=medium_term_timeframe if medium_term_enabled else None,
+        )
         ctx = self.engine.run(ctx, persist=False)
 
         market_price = data[-1].close
@@ -176,6 +205,82 @@ class CognitiveOrchestrator:
         ctx.decision.filled_price = filled_price
 
         return {"ctx": ctx, "data": data, "fee": fee, "direction": direction}
+
+    def propose_medium_term(self, symbol: str) -> dict | None:
+        """Faz 259: kullanıcı isteği — "predictions WAIT döndüğünde uygun
+        zamanda ai büyük pozisyonlara girsin, orta vadeli, günler/haftalar
+        sürecek işlemlere... daha temkinli daha sakin yaklaşan fakat
+        harekete geçtiğinde büyük oynayan bir yapı." Kısa-vadeli propose()
+        ile AYNI CognitiveEngine/9-ajan konseyini kullanır — sadece sinyal
+        verisi kısa-vadelinin candle_timeframe'i (genelde dakikalar)
+        yerine kullanıcının seçtiği günlük/4 saatlik bardan geliyor, ve
+        sermaye/pozisyon sayacı kısa-vadeliden tamamen ayrı (timeframe_
+        filter/capital_pct_override/max_concurrent_override — bkz.
+        services/risk_state.py). "WAIT döndüğünde" kısıtı burada
+        UYGULANMIYOR — bu katman kendi bağımsız sinyaliyle çalışıyor,
+        kısa-vadeli katmanın o an ne dediğine bakmıyor (ikisi zaten farklı
+        zaman dilimlerinden farklı sinyaller üretiyor, birbirini
+        bilerek/isteyerek bloke etmesi gerekmiyor)."""
+        from database.repositories.app_settings_repository import AppSettingsRepository
+        from database.session_factory import SessionFactory
+
+        with SessionFactory.get_session() as session:
+            settings_repo = AppSettingsRepository(session)
+            if settings_repo.get("medium_term_enabled") != "true":
+                return None
+            timeframe = settings_repo.get("medium_term_timeframe")
+            capital_pct = float(settings_repo.get("medium_term_capital_pct"))
+            max_concurrent = int(settings_repo.get("medium_term_max_concurrent"))
+            lookback = int(settings_repo.get("candle_lookback"))
+
+        data = self.data_provider.get_ohlcv(symbol, timeframe, limit=lookback)
+        if not data:
+            return None
+
+        # Sinyal zaten günlük/4h'den geliyor ama RiskTargetStage risk
+        # ölçeklendirmesini HER ZAMAN gerçek günlük ATR'den yapıyor (bkz.
+        # build_cognitive_context üstündeki not) — timeframe zaten "1d"
+        # ise aynı barları tekrar çekmeye gerek yok.
+        daily_data = data if timeframe == "1d" else _get_daily_bars_cached(self.data_provider, symbol)
+
+        ctx = self._build_context(
+            symbol,
+            timeframe,
+            data,
+            daily_data=daily_data,
+            timeframe_filter=timeframe,
+            capital_pct_override=capital_pct,
+            max_concurrent_override=max_concurrent,
+        )
+        ctx = self.engine.run(ctx, persist=False)
+
+        market_price = data[-1].close
+        direction = ctx.decision.proposed_direction if ctx.decision.proposed_direction else "NEUTRAL"
+        size = ctx.decision.final_size if ctx.decision.final_size else 0.0
+
+        if direction != "NEUTRAL" and size > 0:
+            result = self.fill_engine.simulate({"direction": direction, "size": size}, market_price)
+            filled_price, fee = result.filled_price, result.fee
+        else:
+            filled_price, fee = market_price, 0.0
+
+        ctx.decision.filled_price = filled_price
+
+        return {"ctx": ctx, "data": data, "fee": fee, "direction": direction}
+
+    def run_medium_term_cycle(self, symbols: list[str], seed: int = 42) -> list[dict[str, Any]]:
+        """Faz 259: portföy VaR füzyonu (run_portfolio_aware_cycle) kasıtlı
+        olarak burada YOK — orta-vadeli katman zaten ayrı bir sermaye
+        havuzunda, kısa-vadelinin korelasyon/VaR hesabına karışması ekstra
+        bir karmaşıklık, ilk sürümde gerekli değil."""
+        results = []
+        for sym in symbols:
+            p = self.propose_medium_term(sym)
+            if p is None:
+                results.append({"symbol": sym, "direction": "NEUTRAL", "error": "no_data_or_disabled"})
+                continue
+            results.append(self.finalize_proposal(p, seed=seed))
+        return results
 
     def finalize_proposal(self, proposal: dict, seed: int = 42) -> dict[str, Any]:
         """propose()'un çıktısını (portföy fusion varsa ctx.decision.
@@ -315,11 +420,30 @@ class CognitiveOrchestrator:
             for sym, signed_size in result.final_sizes.items():
                 directional[sym]["ctx"].decision.final_size = abs(signed_size)
 
-    def _build_context(self, symbol: str, timeframe: str, data, daily_data=None) -> CognitiveCycleContext:
+    def _build_context(
+        self,
+        symbol: str,
+        timeframe: str,
+        data,
+        daily_data=None,
+        timeframe_filter: str | None = None,
+        exclude_timeframe: str | None = None,
+        capital_pct_override: float | None = None,
+        max_concurrent_override: int | None = None,
+    ) -> CognitiveCycleContext:
         # Faz 224 review (E): gövde module-level build_cognitive_context()'e
         # taşındı — api/rest/cognitive.py da artık AYNI fonksiyonu çağırıyor,
         # iki bağımsız kopya kalmadı.
-        return build_cognitive_context(symbol, timeframe, data, daily_data=daily_data)
+        return build_cognitive_context(
+            symbol,
+            timeframe,
+            data,
+            daily_data=daily_data,
+            timeframe_filter=timeframe_filter,
+            exclude_timeframe=exclude_timeframe,
+            capital_pct_override=capital_pct_override,
+            max_concurrent_override=max_concurrent_override,
+        )
 
     def run_cycle(self, seed: int = 42, symbol: str | None = None) -> dict[str, Any]:
         settings = get_settings()

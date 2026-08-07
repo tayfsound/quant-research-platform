@@ -49,3 +49,8 @@ class DecisionEvent(BaseModel):
     # compute_liquidation_price).
     leverage: float = 1.0
     liquidation_price: float | None = None
+    # Faz 259: kullanıcı isteği — orta-vadeli pozisyon katmanı. Hangi
+    # sinyal zaman diliminden açıldığını (ör. "15m" kısa-vade scalp,
+    # "1d" orta-vade swing) SQL ile sorgulanabilir kılıyor — önceden
+    # sadece market_snapshot JSON'ı içinde gömülüydü.
+    timeframe: str | None = None

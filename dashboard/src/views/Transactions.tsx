@@ -16,6 +16,7 @@ type Position = {
   take_profit_price: number | null;
   leverage: number | null;
   liquidation_price: number | null;
+  timeframe: string | null;
   exit_reason: string | null;
   opened_at: string | null;
   closed_at: string | null;
@@ -27,6 +28,11 @@ const EXIT_REASON_LABELS: Record<string, string> = {
   time_expired: "Vadesi doldu",
   liquidation: "Likidasyon",
 };
+
+// Faz 259: orta-vadeli katman kısa-vadeliden ayrı bir sinyal zaman dilimi
+// kullanıyor (4h/1d) — dashboard'da hangi pozisyonun hangi katmandan
+// geldiğini ayırt edebilmek için.
+const MEDIUM_TERM_TIMEFRAMES = new Set(["4h", "1d"]);
 
 function fmt(n: number | null | undefined, digits = 2) {
   return n === null || n === undefined ? "—" : n.toFixed(digits);
@@ -94,7 +100,12 @@ export default function Transactions() {
             <tbody>
               {open.map((p) => (
                 <tr key={p.id} className="border-t border-line-soft">
-                  <td className="py-2 pr-4 font-mono text-ink">{p.symbol}</td>
+                  <td className="py-2 pr-4 font-mono text-ink">
+                    {p.symbol}
+                    {p.timeframe && MEDIUM_TERM_TIMEFRAMES.has(p.timeframe) && (
+                      <span className="ml-1"><Badge tone="accent">orta vadeli</Badge></span>
+                    )}
+                  </td>
                   <td className="py-2 pr-4">
                     <Badge tone={p.direction === "LONG" ? "rise" : "fall"}>{p.direction}</Badge>
                   </td>
@@ -144,6 +155,7 @@ export default function Transactions() {
                 <th className="py-2 pr-4">Yön</th>
                 <th className="py-2 pr-4">Giriş</th>
                 <th className="py-2 pr-4">Çıkış</th>
+                <th className="py-2 pr-4">Stop / Hedef</th>
                 <th className="py-2 pr-4">Pozisyon Büyüklüğü</th>
                 <th className="py-2 pr-4">PnL</th>
                 <th className="py-2 pr-4">Nasıl Kapandı</th>
@@ -153,7 +165,12 @@ export default function Transactions() {
             <tbody>
               {trades.map((t) => (
                 <tr key={t.id} className="border-t border-line-soft">
-                  <td className="py-2 pr-4 font-mono text-ink">{t.symbol}</td>
+                  <td className="py-2 pr-4 font-mono text-ink">
+                    {t.symbol}
+                    {t.timeframe && MEDIUM_TERM_TIMEFRAMES.has(t.timeframe) && (
+                      <span className="ml-1"><Badge tone="accent">orta vadeli</Badge></span>
+                    )}
+                  </td>
                   <td className="py-2 pr-4">
                     <Badge tone={t.direction === "LONG" ? "rise" : "fall"}>{t.direction}</Badge>
                     {t.leverage && t.leverage > 1 && (
@@ -162,6 +179,14 @@ export default function Transactions() {
                   </td>
                   <td className="py-2 pr-4 font-mono text-ink-soft">{format(t.entry_price)}</td>
                   <td className="py-2 pr-4 font-mono text-ink-soft">{format(t.exit_price)}</td>
+                  <td className="py-2 pr-4 font-mono text-xs">
+                    <span className="text-fall">{format(t.stop_loss_price)}</span>
+                    {" / "}
+                    <span className="text-rise">{format(t.take_profit_price)}</span>
+                    {t.liquidation_price != null && (
+                      <div className="text-fall/70 mt-0.5">likidasyon: {format(t.liquidation_price)}</div>
+                    )}
+                  </td>
                   <td className="py-2 pr-4 font-mono text-ink-soft">
                     {t.entry_price != null && t.quantity != null ? format(t.entry_price * t.quantity) : "—"}
                   </td>

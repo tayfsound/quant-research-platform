@@ -63,6 +63,47 @@ def run_trading_cycle_task(symbol: str | None = None) -> dict:
     ]}
 
 
+@celery_app.task(name="run_medium_term_cycle_task")
+def run_medium_term_cycle_task() -> dict:
+    """Faz 259: kullanıcı isteği — orta-vadeli pozisyon katmanı, kısa-
+    vadeli run_trading_cycle_task'tan (120sn) bağımsız, çok daha seyrek
+    çalışan ayrı bir döngü (bkz. celery_app.py:beat_schedule — günlük/4h
+    sinyal zaten bu kadar sık değişmiyor, her 120sn'de kontrol etmenin
+    anlamı yok). medium_term_enabled=false ise (varsayılan) erken çıkar —
+    kısa-vadeli sistemi hiç etkilemez, tamamen opt-in."""
+    from database.repositories.app_settings_repository import AppSettingsRepository
+    from database.session_factory import SessionFactory
+    from market_data.ingestion.data_provider import RoutingProvider
+    from market_data.market_hours import is_market_open
+    from services.orchestrator import CognitiveOrchestrator
+
+    with SessionFactory.get_session() as session:
+        settings_repo = AppSettingsRepository(session)
+        if settings_repo.get("medium_term_enabled") != "true":
+            return {"skipped": "medium_term_disabled"}
+        ai_enabled = settings_repo.get("ai_enabled") == "true"
+        watchlist = [s.strip() for s in settings_repo.get("watchlist").split(",") if s.strip()]
+
+    if not ai_enabled:
+        return {"skipped": "ai_disabled"}
+
+    open_symbols = [s for s in watchlist if is_market_open(s)]
+
+    orch = CognitiveOrchestrator(data_provider=RoutingProvider())
+    cycles = orch.run_medium_term_cycle(open_symbols) if open_symbols else []
+
+    return {"cycles": [
+        {
+            "symbol": c.get("symbol"),
+            "direction": c.get("direction"),
+            "risk_verdict": c.get("risk_verdict"),
+            "risk_reasons": c.get("risk_reasons"),
+            "error": c.get("error"),
+        }
+        for c in cycles
+    ]}
+
+
 @celery_app.task(name="optimize_thresholds_task")
 def optimize_thresholds_task() -> dict:
     """Faz 204: MetaStage'in act_threshold/reduce_threshold'ını gerçek

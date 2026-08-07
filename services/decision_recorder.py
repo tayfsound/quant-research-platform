@@ -140,6 +140,7 @@ class DecisionRecorder:
             take_profit_price=take_profit_price,
             leverage=leverage,
             liquidation_price=liquidation_price,
+            timeframe=ctx.market.timeframe,
         )
 
         self.persistor.persist(event)

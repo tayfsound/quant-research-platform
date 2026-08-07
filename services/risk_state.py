@@ -10,18 +10,43 @@ from database.repositories.decision_persistor import DecisionPersistor
 from database.session_factory import SessionFactory
 
 
-def load_position_risk_state(symbol: str | None = None) -> dict:
+def load_position_risk_state(
+    symbol: str | None = None,
+    timeframe_filter: str | None = None,
+    exclude_timeframe: str | None = None,
+    capital_pct_override: float | None = None,
+    max_concurrent_override: int | None = None,
+) -> dict:
+    """Faz 259: kullanıcı isteği — orta-vadeli pozisyon katmanı, kısa-vadeli
+    ile AYNI sermaye/concurrent-position sayacını paylaşmamalı (biri
+    diğerinin kapasitesini tüketmesin).
+
+    timeframe_filter: SADECE bu zaman diliminden açılmış pozisyonlar
+    sayılır (orta-vadeli katman kendi payını görsün diye — kesin eşleşme,
+    orta-vade henüz yeni olduğu için eski/NULL kayıtlarla karışma riski yok).
+    exclude_timeframe: bu zaman diliminden açılmışlar HARİÇ hepsi sayılır
+    (kısa-vadeli katman kendi payını görsün diye — bu migration'dan ÖNCE
+    açılmış eski pozisyonların timeframe'i NULL'dur, bunlar hâlâ gerçek ve
+    hâlâ sermaye tüketiyor, "include" değil "exclude" mantığı kullanmak
+    onları yanlışlıkla dışarıda bırakmayı önlüyor).
+    capital_pct_override/max_concurrent_override: orta-vadeli katmanın
+    kendi (Settings'teki kısa-vadeliden ayrı) ayarlarını kullanabilmesi
+    için."""
     with SessionFactory.get_session() as session:
         settings_repo = AppSettingsRepository(session)
         trading_mode = settings_repo.get("trading_mode")
-        max_concurrent = int(settings_repo.get("max_concurrent_positions"))
-        max_capital_pct = float(settings_repo.get("max_capital_pct"))
+        max_concurrent = max_concurrent_override if max_concurrent_override is not None else int(settings_repo.get("max_concurrent_positions"))
+        max_capital_pct = capital_pct_override if capital_pct_override is not None else float(settings_repo.get("max_capital_pct"))
         starting_capital = float(settings_repo.get("starting_capital"))
         min_seconds_between_trades = int(settings_repo.get("min_seconds_between_trades"))
         ai_enabled = settings_repo.get("ai_enabled") == "true"
 
         decision_repo = DecisionPersistor(session)
         open_positions = decision_repo.list_open_positions(limit=1000)
+        if timeframe_filter is not None:
+            open_positions = [p for p in open_positions if p.get("timeframe") == timeframe_filter]
+        elif exclude_timeframe is not None:
+            open_positions = [p for p in open_positions if p.get("timeframe") != exclude_timeframe]
 
         seconds_since_last_trade = None
         if symbol:

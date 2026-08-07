@@ -96,4 +96,12 @@ celery_app.conf.beat_schedule = {
         "task": "auto_reject_stale_weight_approvals_task",
         "schedule": 86400.0,
     },
+    # Faz 259: kullanıcı isteği — orta-vadeli pozisyon katmanı. Günlük/4h
+    # sinyal kısa-vadeli katmandan (120sn) çok daha yavaş değişiyor —
+    # 4 saatte bir kontrol yeterli (medium_term_enabled=false iken görev
+    # anında çıkıyor, gereksiz yük yok).
+    "run-medium-term-cycle-every-4h": {
+        "task": "run_medium_term_cycle_task",
+        "schedule": 14400.0,
+    },
 }

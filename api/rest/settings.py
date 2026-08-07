@@ -115,6 +115,29 @@ def _validate(key: str, value: str) -> None:
                     raise ValueError
         except (ValueError, TypeError):
             raise HTTPException(400, "symbol_leverage must be a JSON object of {symbol: leverage in [1, 125]}")
+    elif key == "medium_term_enabled":
+        if value not in ("true", "false"):
+            raise HTTPException(400, "medium_term_enabled must be 'true' or 'false'")
+    elif key == "medium_term_capital_pct":
+        try:
+            v = float(value)
+            if not (0 < v <= 1):
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "medium_term_capital_pct must be a number in (0, 1]")
+    elif key == "medium_term_timeframe":
+        # Faz 259: kullanıcı isteği "günlük/4 saatlik" — kısa-vadeli
+        # candle_timeframe'in aksine (1m/5m gibi gürültülü değerler dahil
+        # olabilir) burası kasıtlı olarak sadece "sakin" iki seçenekle
+        # sınırlı.
+        if value not in ("4h", "1d"):
+            raise HTTPException(400, "medium_term_timeframe must be '4h' or '1d'")
+    elif key == "medium_term_max_concurrent":
+        try:
+            if int(value) < 1:
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "medium_term_max_concurrent must be a positive integer")
     else:
         raise HTTPException(400, f"unknown setting key: {key}")
 

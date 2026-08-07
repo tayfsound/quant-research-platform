@@ -35,6 +35,7 @@ def _serialize(row: dict) -> dict:
         "take_profit_price": row.get("take_profit_price"),
         "leverage": row.get("leverage"),
         "liquidation_price": row.get("liquidation_price"),
+        "timeframe": row.get("timeframe"),
         "exit_reason": outcome.get("exit_reason"),
         "opened_at": row["opened_at"].isoformat() if row.get("opened_at") else None,
         "closed_at": row["closed_at"].isoformat() if row.get("closed_at") else None,

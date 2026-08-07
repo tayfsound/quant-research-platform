@@ -109,6 +109,19 @@ class PositionCloser:
         executed_direction = (pos.get("direction") or "").upper()
         profitable = pnl > 0
 
+        # Faz 258 (mimari inceleme bulgusu, doğrulandı): market_regime hiç
+        # set edilmiyordu — AgentPerformanceSummary.by_regime, GERÇEK
+        # (canlı) kapanışlar için her zaman boş kalıyordu, "hangi ajan
+        # hangi rejimde iyi" sorusu hiç cevaplanamıyordu. market_snapshot
+        # zaten agent_contributions içinde duruyor (decision_persistor.py),
+        # sadece hiç okunmuyordu.
+        market_regime = "unknown"
+        for item in contributions:
+            if isinstance(item, dict) and item.get("type") == "market_snapshot":
+                features = ((item.get("data") or {}).get("features")) or {}
+                market_regime = features.get("trend", "unknown")
+                break
+
         recorded = False
         for item in contributions:
             domain = item.get("domain")
@@ -125,6 +138,7 @@ class PositionCloser:
                 was_correct=was_correct,
                 pnl=pnl,
                 symbol=symbol,
+                market_regime=market_regime,
             ))
             recorded = True
 

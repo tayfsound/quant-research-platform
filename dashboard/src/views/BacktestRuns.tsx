@@ -19,7 +19,6 @@ export default function BacktestRuns() {
   const [selectedSymbols, setSelectedSymbols] = useState<string[]>([]);
   const [timeframe, setTimeframe] = useState("15m");
   const [barsCount, setBarsCount] = useState("1000");
-  const [runningMock, setRunningMock] = useState(false);
   const [runningReal, setRunningReal] = useState(false);
   const [realStatus, setRealStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -44,15 +43,6 @@ export default function BacktestRuns() {
 
   const toggleSymbol = (sym: string) => {
     setSelectedSymbols((prev) => (prev.includes(sym) ? prev.filter((s) => s !== sym) : [...prev, sym]));
-  };
-
-  const handleRunMock = () => {
-    setRunningMock(true);
-    setError(null);
-    fetch("/api/v1/backtest/run?symbols=BTCUSDT&bars=200", { method: "POST", headers: authHeaders() })
-      .then(() => load())
-      .catch((e) => setError(String(e.message || e)))
-      .finally(() => setRunningMock(false));
   };
 
   const pollTask = (taskId: string) => {
@@ -182,17 +172,6 @@ export default function BacktestRuns() {
         </div>
         <Button onClick={handleRunReal} disabled={runningReal}>
           {runningReal ? `Çalışıyor… (${realStatus})` : "Gerçek Veriyle Çalıştır"}
-        </Button>
-      </Card>
-
-      <Card className="mb-6">
-        <h3 className="text-sm font-semibold text-ink mb-1">Hızlı boru hattı testi (sahte veri)</h3>
-        <p className="text-xs text-ink-soft mb-3">
-          Deterministik, sahte fiyat verisiyle — sadece motorun (council → risk → fusion → persist) uçtan
-          uca çalıştığını doğrular. Strateji kalitesi hakkında hiçbir şey söylemez.
-        </p>
-        <Button variant="secondary" onClick={handleRunMock} disabled={runningMock}>
-          {runningMock ? "Çalışıyor…" : "Hızlı Test Çalıştır"}
         </Button>
       </Card>
 

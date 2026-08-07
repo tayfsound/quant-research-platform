@@ -129,6 +129,53 @@ def test_display_currency_accepts_try_and_rejects_unknown_value():
                 )
 
 
+def test_medium_term_settings_accept_valid_and_reject_invalid_values():
+    """Faz 259: orta-vadeli pozisyon katmanının ayarları — kısa-vadeliden
+    ayrı sermaye yüzdesi/zaman dilimi/eşzamanlı pozisyon sayısı."""
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        client = _client()
+        try:
+            ok = client.post(
+                "/api/v1/settings/medium_term_enabled",
+                params={"value": "true"},
+                headers=make_authed_headers(Role.ADMIN),
+            )
+            assert ok.status_code == 200
+
+            ok2 = client.post(
+                "/api/v1/settings/medium_term_timeframe",
+                params={"value": "4h"},
+                headers=make_authed_headers(Role.ADMIN),
+            )
+            assert ok2.status_code == 200
+
+            bad_tf = client.post(
+                "/api/v1/settings/medium_term_timeframe",
+                params={"value": "1m"},
+                headers=make_authed_headers(Role.ADMIN),
+            )
+            assert bad_tf.status_code == 400
+
+            bad_pct = client.post(
+                "/api/v1/settings/medium_term_capital_pct",
+                params={"value": "1.5"},
+                headers=make_authed_headers(Role.ADMIN),
+            )
+            assert bad_pct.status_code == 400
+
+            bad_concurrent = client.post(
+                "/api/v1/settings/medium_term_max_concurrent",
+                params={"value": "0"},
+                headers=make_authed_headers(Role.ADMIN),
+            )
+            assert bad_concurrent.status_code == 400
+        finally:
+            with SessionFactory.get_session() as session:
+                repo = AppSettingsRepository(session)
+                for key in ("medium_term_enabled", "medium_term_timeframe"):
+                    repo.set(key, DEFAULTS[key], updated_by="test")
+
+
 def test_currency_rates_endpoint_returns_real_live_rates():
     with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
         client = _client()

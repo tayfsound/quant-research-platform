@@ -39,3 +39,60 @@ def test_trading_mode_defaults_to_test_when_never_set():
         # zaten "live" set edilmiş olabilir (paylaşılan dev DB) — her iki
         # durumda da geçerli bir mod dönmeli.
         assert row in ("test", "live")
+
+
+def test_timeframe_filter_only_counts_matching_timeframe_positions():
+    """Faz 259: orta-vadeli katman sadece KENDİ timeframe'inden açılmış
+    pozisyonları saymalı."""
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        symbol = f"RISKSTATE{uuid4().hex[:8]}"
+        with SessionFactory.get_session() as session:
+            repo = DecisionPersistor(session)
+            before = len([
+                p for p in repo.list_open_positions(limit=5000) if p.get("timeframe") == "1d"
+            ])
+            repo.persist(DecisionEvent(
+                id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+                final_size=1.0, status="open", entry_price=100.0, quantity=2.0, timeframe="1d",
+            ))
+            repo.persist(DecisionEvent(
+                id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+                final_size=1.0, status="open", entry_price=100.0, quantity=2.0, timeframe="15m",
+            ))
+
+        state = load_position_risk_state(timeframe_filter="1d")
+
+        assert state["open_position_count"] == before + 1
+
+
+def test_exclude_timeframe_counts_everything_except_that_timeframe():
+    """Faz 259: kısa-vadeli katman, orta-vadeli katmanın pozisyonlarını
+    HARİÇ tutup geri kalan HER ŞEYİ (NULL timeframe dahil — migration
+    öncesi eski pozisyonlar) saymalı."""
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        symbol = f"RISKSTATE{uuid4().hex[:8]}"
+        with SessionFactory.get_session() as session:
+            repo = DecisionPersistor(session)
+            before = len([
+                p for p in repo.list_open_positions(limit=5000) if p.get("timeframe") != "1d"
+            ])
+            repo.persist(DecisionEvent(
+                id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+                final_size=1.0, status="open", entry_price=100.0, quantity=2.0, timeframe="1d",
+            ))
+            repo.persist(DecisionEvent(
+                id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+                final_size=1.0, status="open", entry_price=100.0, quantity=2.0, timeframe=None,
+            ))
+
+        state = load_position_risk_state(exclude_timeframe="1d")
+
+        assert state["open_position_count"] == before + 1
+
+
+def test_capital_pct_and_max_concurrent_overrides_replace_settings_values():
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        state = load_position_risk_state(capital_pct_override=0.1, max_concurrent_override=5)
+
+        assert state["max_capital_pct"] == 0.1
+        assert state["max_concurrent_positions"] == 5

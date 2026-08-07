@@ -108,6 +108,20 @@ DEFAULTS: dict[str, str] = {
     # (spot, kaldıraçsız) sayılır — fail-closed varsayılan, kaldıraç
     # sadece kullanıcı AÇIKÇA bir sembol için ayarlarsa devreye girer.
     "symbol_leverage": "{}",
+    # Faz 259: kullanıcı isteği — "predictions WAIT döndüğünde uygun
+    # zamanda ai büyük pozisyonlara girsin, orta vadeli, günler/haftalar
+    # sürecek." Kısa-vadeli katmandan (candle_timeframe/max_capital_pct)
+    # TAMAMEN AYRI bir sermaye havuzu ve kendi sinyal zaman dilimi —
+    # ikisi aynı kapasiteyi paylaşmasın diye (bkz. services/risk_state.py).
+    "medium_term_enabled": "false",
+    # Kullanıcı: "böyle bir fırsat yakaladığında kasanın %10'unu
+    # kullanabilsin" — kısa-vadelinin max_capital_pct'inden (0.4) bağımsız.
+    "medium_term_capital_pct": "0.10",
+    # Kullanıcı kararı: "ayrı günlük/4 saatlik analiz katmanı kur" —
+    # kısa-vadelinin candle_timeframe'inden bağımsız, kendi sinyal
+    # zaman dilimi. Günlük varsayılan: en sakin/en az gürültülü sinyal.
+    "medium_term_timeframe": "1d",
+    "medium_term_max_concurrent": "5",
 }
 
 CANDLE_TIMEFRAMES = ("1m", "5m", "15m", "1h", "4h", "1d")
