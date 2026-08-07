@@ -49,7 +49,10 @@ def test_risk_target_stage_sets_take_profit_and_stop_loss_from_daily_atr_pct():
     ctx = RiskTargetStage().execute(ctx)
 
     assert abs(ctx.decision.stop_loss - 5.0) < 1e-9  # 100 * 2.5 * 0.02
-    assert abs(ctx.decision.take_profit - 10.0) < 1e-9  # 100 * 5.0 * 0.02
+    # Faz 261: 1:4 oran (2.5x/10.0x) — confidence_calibration'ın gerçek
+    # ölçtüğü %21-29 kalibre güvenin, 1:2 oranın gerektirdiği %33.3
+    # breakeven'i aşamaması nedeniyle genişletildi.
+    assert abs(ctx.decision.take_profit - 20.0) < 1e-9  # 100 * 10.0 * 0.02
 
 
 def test_risk_target_stage_leaves_targets_unset_for_wait():

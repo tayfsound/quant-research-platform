@@ -215,9 +215,25 @@ class RiskTargetStage:
     türetiliyor — 2.5x günlük ATR (şu an BTCUSDT için ~%5.3 stop mesafesi,
     literatürdeki standart 2-3x ATR-stop aralığında). Günlük ATR yoksa
     (yetersiz veri) hedef set edilmez — DecisionFusion hâlâ (doğru
-    şekilde) reddeder."""
+    şekilde) reddeder.
+
+    Faz 261 — kritik bulgu: 1:2 hedef/stop oranı (yukarıdaki 2.5x/5.0x)
+    services/confidence_calibration.py'nin GERÇEK verilerle ölçtüğü
+    kalibrasyon eğrisiyle çelişiyordu — %40-60 aralığındaki ham güven
+    kalibre edildiğinde %21-29'a düşüyor (bkz. confidence_calibration.py
+    üstündeki not), ama 1:2 oranında kâra geçmek için %33.3 gerekiyordu.
+    Sonuç: konseyin ürettiği kararların neredeyse tamamı (canlıda
+    doğrulandı: 30 dakikada watchlist genelinde 30/30 yönlü karar)
+    DecisionFusion'ın "Negative EV" kapısında reddediliyordu — sistem
+    fiilen işlem açmayı durdurmuştu. Oran 1:4'e genişletildi: %21-29
+    aralığındaki kalibre güven artık (%20 breakeven'in üzerinde) kâra
+    geçiyor. Bilinen çekince (kullanıcıyla paylaşıldı): kalibrasyon
+    eğrisi şu an ağırlıklı olarak ESKİ (Faz 251 öncesi, gürültü
+    seviyesinde stop'larla açılmış) kapanmış işlemlerden hesaplanıyor —
+    yeni rejim altında yeterli (~30-50) gerçek kapanış birikince bu oran
+    gerçek, temiz veriyle yeniden değerlendirilecek."""
     STOP_ATR_MULT = 2.5
-    TARGET_ATR_MULT = 5.0
+    TARGET_ATR_MULT = 10.0
 
     def execute(self, ctx: CognitiveCycleContext) -> CognitiveCycleContext:
         direction = (ctx.decision.proposed_direction or "").upper()
