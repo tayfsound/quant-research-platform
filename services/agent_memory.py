@@ -136,8 +136,20 @@ class AgentMemory:
         self,
         domain: str,
     ) -> AgentPerformanceSummary:
-
-        records = self._records.get(domain, [])
+        # Faz 253: kritik bulgu — canlıda doğrulandı. Faz 245, WAIT diyen
+        # bir ajanın kaydedilmesini (record() çağrısını) durdurmuştu ama
+        # get_summary() hâlâ dosyada zaten duran ESKİ WAIT kayıtlarını da
+        # doğruluk hesabına katıyordu. time/epistemology ajanlarının
+        # TAMAMI (3517/3516 kayıt) WAIT — bu ajanlar hiç yönlü tahmin
+        # yapmadı, yine de WeightOptimizer onları gerçek beceriymiş gibi
+        # "%82.5 doğru" görüp bir onay üretti, kullanıcı bunu fark etmeden
+        # onayladı. Artık burada da SADECE gerçekten yönlü (LONG/SHORT)
+        # kayıtlar sayılıyor — WAIT bir tahmin değil, doğru/yanlış
+        # ölçülemez.
+        records = [
+            r for r in self._records.get(domain, [])
+            if (r.direction or "").upper() in ("LONG", "SHORT")
+        ]
 
         if not records:
             return AgentPerformanceSummary(

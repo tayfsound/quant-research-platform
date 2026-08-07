@@ -11,9 +11,7 @@ import Transactions from './views/Transactions';
 import Performance from './views/Performance';
 import LatestCycle from './views/LatestCycle';
 import PendingApprovals from './views/PendingApprovals';
-import ReplayView from './views/ReplayView';
 import BacktestRuns from './views/BacktestRuns';
-import DecisionExplain from './views/DecisionExplain';
 import ResearchWorkspace from './views/ResearchWorkspace';
 import Sidebar from './components/Sidebar';
 import { clearToken, hasToken } from './api/auth';
@@ -21,12 +19,6 @@ import { clearToken, hasToken } from './api/auth';
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(hasToken);
   const [view, setView] = useState('dashboard');
-  const [replayDecisionId, setReplayDecisionId] = useState<string | null>(null);
-
-  const navigateToReplay = (decisionId: string) => {
-    setReplayDecisionId(decisionId);
-    setView('replay');
-  };
 
   if (!isLoggedIn) {
     return <Login onLogin={() => setIsLoggedIn(true)} />;
@@ -43,7 +35,7 @@ function App() {
       <main className="flex-1 min-w-0 overflow-x-auto">
         <div className="max-w-6xl mx-auto px-8 py-8">
           {view === 'dashboard' && <Dashboard />}
-          {view === 'transactions' && <Transactions onReplay={navigateToReplay} />}
+          {view === 'transactions' && <Transactions />}
           {view === 'performance' && <Performance />}
           {view === 'market' && <MarketOverview />}
           {view === 'tokens' && <Tokens />}
@@ -53,9 +45,7 @@ function App() {
           {view === 'settings' && <Settings />}
           {view === 'cycle' && <LatestCycle />}
           {view === 'approvals' && <PendingApprovals />}
-          {view === 'replay' && <ReplayView initialId={replayDecisionId} />}
           {view === 'backtest' && <BacktestRuns />}
-          {view === 'explain' && <DecisionExplain />}
           {view === 'workspace' && <ResearchWorkspace />}
         </div>
       </main>

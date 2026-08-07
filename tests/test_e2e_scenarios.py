@@ -79,8 +79,12 @@ def test_outcome_none_learning_is_noop_real_db():
             assert row is not None  # decision itself IS recorded
 
 
-def test_outcome_var_triggers_agent_memory_update_real_db():
-    """run(persist=False) -> attach outcome -> finalize(): one real DB row + real learning side effect."""
+def test_outcome_var_no_longer_triggers_agent_memory_update_but_db_row_still_persists():
+    """run(persist=False) -> attach outcome -> finalize(): one real DB row, ama
+    Faz 250'den beri AgentMemory güncellemesi YOK — bkz. services/cognitive_engine.py
+    ::_persist_and_learn üstündeki not (ctx.outcome burada ForwardOutcome'ın aynı
+    cycle'da geriye dönük hesapladığı düşük kaliteli bir "tahmin", gerçek bir
+    pozisyon kapanışı değil; kullanıcı kararıyla öğrenme döngüsünden çıkarıldı)."""
     with patch("transformers.AutoModel.from_pretrained"):
         with patch("transformers.AutoTokenizer.from_pretrained"):
             from contracts.outcome import TradeOutcome
@@ -103,7 +107,7 @@ def test_outcome_var_triggers_agent_memory_update_real_db():
                 engine.learning_loop.agent_memory, "record", wraps=real_record
             ) as spy_record:
                 engine.finalize(ctx)
-                spy_record.assert_called()
+                spy_record.assert_not_called()
 
             row = _fetch_decision(ctx.cycle_id)
             assert row is not None
