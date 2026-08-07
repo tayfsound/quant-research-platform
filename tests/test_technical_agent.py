@@ -39,6 +39,33 @@ def test_ranging_market_waits():
     opinion = agent.analyze(ctx)
     assert opinion.direction == "WAIT"
 
+def test_volume_confirmation_no_longer_rewarded_as_bullish():
+    """Faz 258: kritik bulgu — feature importance analizi (561 gerçek
+    kapanmış işlem) volume_confirmation=True'nun aslında DAHA KÖTÜ
+    sonuçla ilişkili olduğunu gösterdi (%15.4 vs %28.5 kazanma oranı).
+    Bu test, volume_confirmation=True'nun artık bullish bir teyit olarak
+    puanlanmadığını (aksine hafif negatif) kanıtlıyor."""
+    agent = TechnicalAgent()
+
+    ctx_with_spike = TechnicalContext(
+        trend="bullish", momentum="strengthening", market_structure="higher_highs",
+        volume_confirmation=True,
+    )
+    ctx_without_spike = TechnicalContext(
+        trend="bullish", momentum="strengthening", market_structure="higher_highs",
+        volume_confirmation=False,
+    )
+
+    opinion_with_spike = agent.analyze(ctx_with_spike)
+    opinion_without_spike = agent.analyze(ctx_without_spike)
+
+    assert not any("confirms trend" in e for e in opinion_with_spike.evidence)
+    assert any("volume spike" in c.lower() for c in opinion_with_spike.caveats)
+    # Aynı diğer koşullarda, hacim sıçraması OLAN senaryo artık OLMAYANDAN
+    # daha düşük konviksiyonlu olmalı (önceden tam tersiydi).
+    assert opinion_with_spike.confidence < opinion_without_spike.confidence
+
+
 def test_volume_divergence_warning():
     agent = TechnicalAgent()
     ctx = TechnicalContext(
