@@ -339,6 +339,42 @@ def test_position_closer_skips_close_when_current_price_is_implausibly_far_from_
     assert row["pnl"] is None
 
 
+def test_position_closer_skips_close_when_market_is_closed(monkeypatch):
+    """Faz 244: kritik bulgu — MSFT/NVDA/AAPL gibi hisse pozisyonları piyasa
+    kapalıyken (gece/hafta sonu) bile her dakika kontrol ediliyordu;
+    YahooProvider bu durumda hata vermek yerine GERÇEK ama SAATLERCE BAYAT
+    (dünün kapanışı) bir fiyat döndürüyor, bu "şu anki fiyat" gibi
+    kullanılıyordu. Bu test, piyasa kapalıyken (is_market_open=False) fiyat
+    stop/target'ı tetiklese bile pozisyonun KAPANMADIĞINI kanıtlıyor."""
+    import services.position_closer as position_closer_module
+    from contracts.decision_event import DecisionEvent
+
+    monkeypatch.setattr(position_closer_module, "is_market_open", lambda symbol, now=None: False)
+
+    symbol = f"MSFT{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+
+    with SessionFactory.get_session() as session:
+        event = DecisionEvent(
+            id=uuid4(), timestamp=now, symbol=symbol,
+            proposed_direction="LONG", final_action="LONG", final_size=1.0, confidence=0.7,
+            status="open", entry_price=100.0, quantity=1.0, opened_at=now,
+            stop_loss_price=90.0, take_profit_price=110.0,
+        )
+        DecisionPersistor(session).persist(event)
+
+    # 111.0, take_profit'in (110.0) üzerinde — piyasa açık olsaydı kapanırdı.
+    closer = PositionCloser(_FixedPriceProvider(111.0), hold_seconds=3600)
+    with SessionFactory.get_session() as session:
+        closed = closer.close_due_positions(DecisionPersistor(session))
+
+    assert str(event.id) not in {c["decision_id"] for c in closed}
+
+    with SessionFactory.get_session() as session:
+        row = DecisionPersistor(session).get_by_id(str(event.id))
+    assert row["status"] == "open"
+
+
 def test_position_closer_still_closes_on_legitimate_large_but_plausible_move():
     """Güvenlik kontrolü meşru büyük hareketleri (ör. gerçek bir küçük-cap
     coin'in %50 pump/dump yapması) yanlışlıkla reddetmemeli — sadece

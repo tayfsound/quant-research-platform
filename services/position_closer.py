@@ -15,6 +15,7 @@ from contracts.agent import VOTING_AGENT_DOMAINS
 from contracts.agent_performance import AgentPerformanceRecord
 from database.repositories.decision_persistor import DecisionPersistor
 from market_data.ingestion.data_provider import OHLCVProvider
+from market_data.market_hours import is_market_open
 from services.agent_memory import AgentMemory
 from services.weight_optimizer import WeightOptimizer
 from services.weight_repository import WeightRepository
@@ -88,7 +89,21 @@ class PositionCloser:
         yöndeyse doğruluğu işlemin kârlılığıyla; farklıysa (ters yön ya da
         WAIT — ikisi de o işleme "hayır" demek) doğruluğu işlemin ZARARIYLA
         (yani o işleme girmemiş/karşı çıkmış olmanın haklı çıkmasıyla)
-        ölçülüyor."""
+        ölçülüyor.
+
+        Faz 245: kritik bulgu — Faz 211'in "WAIT = zararlıysa doğru"
+        kuralı, sistemin genel kazanma oranı düşükken (şu an %23.6) HER
+        ZAMAN WAIT diyen bir ajanı gerçek yön tahmini becerisi olmadan
+        (sadece taban oranı sayesinde) yapay olarak yüksek doğrulukla
+        ödüllendiriyordu — gerçek veride onchain/time/epistemology
+        domain'leri TEK BİR KEZ bile yönlü oy vermemiş, yine de WeightOptimizer
+        'ları %83-89 "doğru" görüyordu. WAIT bir yön tahmini değil, bir
+        çekimser kalma — kâr/zararla "doğru/yanlış" ölçülemez. Artık SADECE
+        gerçekten yönlü (LONG/SHORT) oy veren ajanlar kaydediliyor; WAIT
+        diyen bir ajan ne ödüllendiriliyor ne cezalandırılıyor, sadece o
+        işlem için ölçülmüyor — WeightOptimizer'ın gördüğü doğruluk artık
+        SADECE gerçekten yön tahmini yapıldığında ölçülen gerçek beceriyi
+        yansıtıyor."""
         contributions = pos.get("agent_contributions") or []
         symbol = pos["symbol"]
         executed_direction = (pos.get("direction") or "").upper()
@@ -100,6 +115,8 @@ class PositionCloser:
             if domain not in _VALID_AGENT_DOMAINS:
                 continue
             agent_direction = (item.get("direction") or "").upper()
+            if agent_direction not in ("LONG", "SHORT"):
+                continue
             was_correct = profitable if agent_direction == executed_direction else not profitable
             self.agent_memory.record(AgentPerformanceRecord(
                 agent_domain=domain,
@@ -145,6 +162,19 @@ class PositionCloser:
             quantity = pos.get("quantity") or 0.0
             direction = (pos.get("direction") or "").upper()
             age = self._age_seconds(opened_at, now)
+
+            # Faz 244: kritik bulgu — hisse/endeks/emtia pozisyonları (MSFT,
+            # NVDA, AAPL, ^GSPC, ^IXIC) piyasa kapalıyken (gece, hafta sonu)
+            # bile her dakika kontrol ediliyordu; YahooProvider bu durumda
+            # hata vermek yerine GERÇEK ama ESKİ (dünün kapanışı, saatlerce
+            # bayat) bir fiyat döndürüyor — bu "şu anki fiyat" gibi
+            # kullanılıp pozisyon kapatma/stop-target kararına giriyordu.
+            # run_trading_cycle_task zaten aynı market_hours kontrolünü
+            # YENİ pozisyon açarken uyguluyordu (Faz 195); burada da aynısı
+            # gerekiyor — piyasa kapalıyken kapanış denemesini tamamen atla,
+            # bayat fiyatla karar verme.
+            if not is_market_open(symbol, now):
+                continue
 
             data = self.data_provider.get_ohlcv(symbol, timeframe, limit=1)
             if not data:
