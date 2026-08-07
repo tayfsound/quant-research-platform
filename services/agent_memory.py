@@ -1,6 +1,7 @@
 """Agent Memory — persistent storage backed by JSON."""
 
 import json
+import os
 from pathlib import Path
 
 from contracts.agent_performance import (
@@ -8,10 +9,23 @@ from contracts.agent_performance import (
     AgentPerformanceSummary,
 )
 
+# Faz 243: kritik bulgu — testler (çoğu AgentMemory() varsayılanıyla, path
+# belirtmeden) gerçek "agent_memory_history/agent_memory.json"a yazıyordu.
+# Bu, WeightOptimizer'ın gerçek ağırlık önerilerini hesapladığı DOSYAYA
+# doğrudan test çöpü karıştırıyordu — 60.519 kayıttan 21.649'u ("(boş)"
+# sembol ya da MEMWIRE/LEARN/POS... test fixture sembolleri) gerçek işlem
+# değildi. Projede AYNI sınıf sorun veritabanı için zaten yaşanmış ve
+# çözülmüştü (bkz. conftest.py, quantdb_test yönlendirmesi) — buradaki
+# .gitignore'daki "tmp_test_memory/" satırı da bu niyetin izi ama hiç
+# hayata geçirilmemişti. Artık conftest.py bu env var'ı test'lere özel bir
+# dizine ayarlıyor, testler AgentMemory()'yi path belirtmeden çağırsa bile
+# gerçek dosyaya asla dokunmuyor.
+_DEFAULT_STORAGE_PATH = os.environ.get("AGENT_MEMORY_STORAGE_PATH", "agent_memory_history")
+
 
 class AgentMemory:
 
-    def __init__(self, storage_path: str = "agent_memory_history"):
+    def __init__(self, storage_path: str = _DEFAULT_STORAGE_PATH):
         self.storage_path = Path(storage_path)
         self.storage_path.mkdir(exist_ok=True)
 

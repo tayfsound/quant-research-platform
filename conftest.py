@@ -5,6 +5,13 @@ dashboard'da (Experiments listesi, Transactions sayfası, app_settings) rastgele
 test sembolleri ve "%100 kazanma oranı" gibi anlamsız veri olarak görünüyordu
 — aynı sorun üç ayrı yerde tekrar tekrar yaşandı.
 
+Faz 243: aynı sınıf sorun AgentMemory (services/agent_memory.py) için de
+çıktı — testler AgentMemory()'yi varsayılan path'le çağırdığında gerçek
+agent_memory_history/agent_memory.json'a (WeightOptimizer'ın ağırlık
+önerilerini hesapladığı gerçek dosya) yazıyordu. 60.519 kayıttan 21.649'u
+test çöpü çıktı. .gitignore'daki "tmp_test_memory/" satırı bu niyetin
+izi ama hiç bağlanmamıştı — şimdi bağlanıyor.
+
 Bu dosya en üstte, `config`/`database` hiçbir yerden import edilmeden ÖNCE
 ortam değişkenlerini test DB'sine çeviriyor — `config.get_settings()`
 `@lru_cache`'li olduğu için ilk çağrıldığı andaki ortam değişkenleri kalıcı
@@ -20,3 +27,4 @@ import os
 os.environ["DATABASE_URL_SYNC"] = "postgresql+psycopg2://quant:quantpass@localhost:5432/quantdb_test"
 os.environ["DATABASE_URL"] = "postgresql+asyncpg://quant:quantpass@localhost:5432/quantdb_test"
 os.environ["TIMESCALE_URL"] = "postgresql+asyncpg://quant:quantpass@localhost:5432/quantdb_test"
+os.environ["AGENT_MEMORY_STORAGE_PATH"] = "tmp_test_memory/agent_memory_history"
