@@ -75,9 +75,24 @@ class OnChainAgent:
             score += 2.0
             evidence.append(f"MVRV Z-Score extremely low ({context.mvrv_zscore}) — market undervalued")
 
-        if score > 0.5:
+        # Faz 247: kritik bulgu — exchange_inflow/outflow, whale_accumulation/
+        # distribution, mvrv_zscore hâlâ hiç uygulanmadı (Faz 196/215'in
+        # kasıtlı kararı: dürüstçe ölçülemeyen bir şeyi icat etmemek —
+        # contracts/onchain.py'de hep varsayılan/nötr kalıyorlar). Gerçek
+        # veride bu ajan 4.678 kayıtta TEK BİR KEZ bile yönlü oy vermemiş,
+        # çünkü eşik (>0.5) SADECE bu hiç-tetiklenmeyen sinyaller devredeyken
+        # anlamlıydı — GERÇEKTEN çalışan iki sinyal (network_activity_trend,
+        # hash_rate_trend) tek başına ±0.5 veriyor, ki >0.5 eşiğini asla
+        # AŞAMIYOR (eşit, büyük değil). Sonuç: onchain ajanı elindeki gerçek
+        # bilgiyi (Bitcoin ağ sağlığı trendleri) hiçbir zaman ifade
+        # edemiyordu. Eşik 0.4'e çekildi — tek bir gerçek trend sinyali
+        # artık (düşük konviksiyonla, confidence=0.1) bir görüş
+        # bildirebiliyor; iki trend aynı yönde ya da mint/mvrv gibi daha
+        # güçlü sinyallerle birleştiğinde konviksiyon zaten doğal olarak
+        # artıyor (confidence = |score|/5).
+        if score > 0.4:
             direction = "LONG"
-        elif score < -0.5:
+        elif score < -0.4:
             direction = "SHORT"
         else:
             direction = "WAIT"

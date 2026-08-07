@@ -82,3 +82,23 @@ def test_no_onchain_network_signals_means_no_extra_evidence_or_caveat():
     opinion = agent.analyze(ctx)
     assert not any("Solana" in e for e in opinion.evidence)
     assert not any("congestion" in c for c in opinion.caveats)
+
+
+def test_single_real_network_trend_signal_alone_produces_a_direction():
+    """Faz 247: kritik bulgu — exchange_inflow/outflow, whale_accumulation/
+    distribution, mvrv_zscore hâlâ hiç uygulanmadı (Faz 196/215'in kasıtlı
+    kararı, gerçek veride hep varsayılan/nötr). Gerçekten çalışan tek
+    sinyallerden biri (network_activity_trend) TEK BAŞINA (±0.5) eski
+    eşiği (>0.5) hiçbir zaman aşamıyordu — ajan elindeki gerçek bilgiyi
+    hiç ifade edemiyordu. Bu test, eşik düzeltmesinden sonra tek bir
+    gerçek trend sinyalinin artık (düşük konviksiyonla da olsa) bir görüş
+    üretebildiğini kanıtlıyor."""
+    agent = OnChainAgent()
+    ctx = OnChainContext(network_activity_trend="rising")
+    opinion = agent.analyze(ctx)
+    assert opinion.direction == "LONG"
+    assert 0 < opinion.confidence < 0.2
+
+    ctx_falling = OnChainContext(hash_rate_trend="falling")
+    opinion_falling = agent.analyze(ctx_falling)
+    assert opinion_falling.direction == "SHORT"
