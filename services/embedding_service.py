@@ -11,7 +11,21 @@ def get_embedding_model():
     if _model is None:
         with _model_lock:
             if _model is None:
-                _model = SentenceTransformer("all-MiniLM-L6-v2")
+                # Faz 241: kritik bulgu — macOS'ta MPS (Metal GPU) cihazı
+                # otomatik seçiliyordu; bu makinenin Metal compiler servisi
+                # (MTLCompilerService) arka planda çöktüğünde (uyku/uyanma
+                # döngüsü, ya da başka bir işlemin GPU'yu paylaşması gibi
+                # sebeplerle) HER TEK trading cycle çağrısı bu embed adımında
+                # exception fırlatıp cognitive_engine'i çökertiyordu — sistem
+                # saatlerce hiç karar üretemedi ama hiçbir hata görünür
+                # şekilde loglanmadı (celery worker log'una gömülü kaldı,
+                # /health/signals doğru "unhealthy" diyordu ama kimse
+                # bakmadıkça fark edilmiyordu). Model çok küçük (384-dim,
+                # tek string) — CPU'da da milisaniyeler içinde çalışıyor,
+                # 120s'lik cycle döngüsü için performans farkı önemsiz.
+                # MPS'e güvenmek yerine sabit CPU kullanmak bu çökme
+                # sınıfını tamamen ortadan kaldırıyor.
+                _model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
     return _model
 
 class EmbeddingService:
