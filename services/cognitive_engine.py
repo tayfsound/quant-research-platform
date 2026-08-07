@@ -1,7 +1,6 @@
 """Cognitive Engine — opinions akışı + RecordingStage + feedback loop."""
 from agents.registry import AgentRegistry
 from config import get_settings
-from contracts.agent_weight_snapshot import AgentWeightSnapshot
 from contracts.context import CognitiveCycleContext
 from database.connection import get_session
 from database.repositories.decision_persistor import DecisionPersistor
@@ -105,24 +104,18 @@ class CognitiveEngine:
         event,
         ctx: CognitiveCycleContext,
     ) -> None:
-        """Feedback loop only — RecordingStage already persisted."""
-        if ctx.outcome is None:
-            return
-
-        evaluation = self.outcome_evaluator.evaluate(event, ctx.outcome)
-        self.learning_loop.record(event, evaluation)
-
-        new_weights = self.weight_optimizer.optimize(
-            agents=event.agent_opinions,
-            outcome=evaluation,
-            executed_direction=event.final_action,
-        )
-
-        previous = self.weight_repository.get_latest()
-        snapshot = AgentWeightSnapshot(
-            weights=new_weights,
-            previous_snapshot_id=previous.id if previous else None,
-            reason="feedback_loop_update",
-        ).finalize()
-
-        self.weight_repository.save(snapshot)
+        """Faz 250: kritik bulgu — bu metodun TEK çağıranı (services/
+        orchestrator.py::finalize_proposal) ctx.outcome'ı gerçek bir
+        pozisyon kapanışından değil, ForwardOutcome ile AYNI cycle'da
+        geriye dönük hesaplanan bir n-bar pencereden dolduruyor — gerçek
+        zaman hiç geçmiyor, gerçek stop/target mantığı hiç uygulanmıyor.
+        Kullanıcı kararı: bu düşük kaliteli sinyal ne AgentMemory'yi
+        (learning_loop.record) ne de ağırlıkları DOĞRUDAN (weight_optimizer.
+        optimize + kaydetme) beslemeli — "kalitesiz hiçbir veri ile
+        sistemi kirletmeyelim." Gerçek öğrenme artık SADECE
+        services/position_closer.py (gerçek kapanışlar) ve
+        backtest/real_historical_backtest.py (gerçek geçmiş veri,
+        source="backtest") üzerinden gerçekleşiyor. RecordingStage zaten
+        DecisionEvent'i ayrıca (bu metodun dışında) kalıcı hale getiriyor
+        — bu metod artık kasıtlı olarak no-op."""
+        return

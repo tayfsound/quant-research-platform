@@ -4,11 +4,22 @@ Faz 211 temizliği: test_process_outcome kaldırıldı — LearningLoop.
 process_outcome()/OutcomeTracker.attach_outcome() silindi (hiç
 başlatılmayan PendingOutcomeTracker'ın tek tüketicisiydi, ve zaten
 agent_opinions=[] ile kırıktı). Gerçek pozisyon kapanışlarının öğrenme
-döngüsüne geri beslenmesi artık services/position_closer.py'de."""
+döngüsüne geri beslenmesi artık services/position_closer.py'de.
+
+Faz 250: CognitiveEngine._persist_and_learn artık kasıtlı bir no-op —
+tek çağıranı (orchestrator.py::finalize_proposal) ctx.outcome'ı gerçek
+bir kapanıştan değil, ForwardOutcome'ın aynı cycle'da geriye dönük n-bar
+hesabından dolduruyordu. Kullanıcı kararı: bu düşük kaliteli sinyal ne
+AgentMemory'yi ne de ağırlıkları doğrudan beslemeli."""
 
 
-def test_engine_persist_and_learn_with_outcome():
-    """CognitiveEngine._persist_and_learn ctx.outcome varsa learning calistirmali (P1-12)."""
+def test_engine_persist_and_learn_is_a_deliberate_noop():
+    """Faz 250: kritik bulgu — _persist_and_learn'ün TEK çağıranı gerçek
+    bir pozisyon kapanışını değil, ForwardOutcome'ın aynı cycle'da geriye
+    dönük hesapladığı düşük kaliteli bir "tahmini" besliyordu. Artık ne
+    AgentMemory'ye (learning_loop.record) ne de ağırlıklara (weight_
+    optimizer.optimize + kaydetme) hiçbir şey yazmıyor — bu test bunu
+    kanıtlıyor."""
     from unittest.mock import patch, MagicMock
     from contracts.outcome import TradeOutcome
     from services.cognitive_engine import CognitiveEngine
@@ -23,12 +34,12 @@ def test_engine_persist_and_learn_with_outcome():
     event.market_snapshot = {}
 
     with patch.object(engine.learning_loop, "record") as mock_record:
-        with patch.object(engine.weight_optimizer, "optimize", return_value={}):
-            with patch.object(engine.weight_repository, "get_latest", return_value=None):
-                with patch.object(engine.weight_repository, "save"):
-                    with patch("database.repositories.decision_persistor.DecisionPersistor.persist"):
-                        engine._persist_and_learn(event, ctx)
-                        mock_record.assert_called_once()
+        with patch.object(engine.weight_optimizer, "optimize") as mock_optimize:
+            with patch.object(engine.weight_repository, "save") as mock_save:
+                engine._persist_and_learn(event, ctx)
+                mock_record.assert_not_called()
+                mock_optimize.assert_not_called()
+                mock_save.assert_not_called()
 
 
 def test_apply_feedback_scores_each_agent_by_own_direction_and_tags_source(tmp_path):
