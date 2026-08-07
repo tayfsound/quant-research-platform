@@ -82,6 +82,38 @@ async def list_tokens(user: AuthContext = Depends(get_current_user)):
         return {"tokens": build_tokens_list(session)}
 
 
+@router.get("/{symbol}/risk-profile")
+async def token_risk_profile(symbol: str, user: AuthContext = Depends(get_current_user)):
+    """Faz 260: kullanıcı bulgusu — yüksek kaldıraç + geniş ATR
+    kombinasyonunda likidasyon, planlanan stop-loss'tan ÖNCE
+    tetiklenebiliyor (pozisyon %5 kayıp görmeden tüm teminatı
+    kaybediyor). Tokens sayfasındaki kaldıraç diyaloğu, kullanıcı bir
+    değer seçmeden önce GÜNCEL günlük ATR'ye göre "bu kaldıraç güvenli
+    mi" göstergesini burada hesaplıyor — icat edilmiş bir sınır değil,
+    gerçek RiskTargetStage formülünün (STOP_ATR_MULT) ve gerçek
+    likidasyon formülünün (simulator/margin.py) birleşimi."""
+    from engines.cognitive_pipeline import RiskTargetStage
+    from market_data.features.signal_engine import compute_daily_atr_pct
+    from market_data.ingestion.data_provider import RoutingProvider
+    from simulator.margin import DEFAULT_MAINTENANCE_MARGIN_RATE, max_safe_leverage
+
+    daily_bars = RoutingProvider().get_ohlcv(symbol, "1d", limit=30)
+    daily_atr_pct = compute_daily_atr_pct(daily_bars) if daily_bars else None
+    stop_distance_pct = (
+        RiskTargetStage.STOP_ATR_MULT * daily_atr_pct if daily_atr_pct else None
+    )
+
+    return {
+        "symbol": symbol,
+        "daily_atr_pct": daily_atr_pct,
+        "stop_distance_pct": stop_distance_pct,
+        "maintenance_margin_rate": DEFAULT_MAINTENANCE_MARGIN_RATE,
+        "max_safe_leverage": (
+            max_safe_leverage(stop_distance_pct) if stop_distance_pct else None
+        ),
+    }
+
+
 @router.get("/{symbol}")
 async def token_detail(symbol: str, user: AuthContext = Depends(get_current_user)):
     with SessionFactory.get_session() as session:

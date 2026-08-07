@@ -28,6 +28,35 @@ def compute_liquidation_price(
     return None
 
 
+# Faz 260: kullanıcı bulgusu — "artık sabit ATR çalışmaz, kaldıraç var,
+# daha da hızlı stop olurlar." Doğrulandı ama mekanizma farklı: stop_loss
+# mesafesi kaldıraçtan bağımsız (hep günlük ATR'den), ama YÜKSEK kaldıraç
+# + GENİŞ ATR kombinasyonunda likidasyon fiyatı stop'tan ÖNCE
+# tetiklenebiliyor — pozisyon planlanan ~%5 kaybı hiç görmeden tüm
+# teminatı kaybediyor. SAFETY_MULT=1.5: likidasyon mesafesi, stop
+# mesafesinin en az 1.5 katı olsun isteniyor — ATR günden güne
+# oynayabildiği için sıfır pay bırakmıyor.
+SAFETY_MULT = 1.5
+
+
+def max_safe_leverage(
+    stop_distance_pct: float,
+    safety_multiplier: float = SAFETY_MULT,
+    maintenance_margin_rate: float = DEFAULT_MAINTENANCE_MARGIN_RATE,
+    exchange_max_leverage: float = 125.0,
+) -> float | None:
+    """stop_distance_pct (ör. 0.0536 = %5.36) verilen bir stop mesafesi
+    için, likidasyonun bu mesafenin en az safety_multiplier katı kadar
+    uzakta kalmasını sağlayan en yüksek kaldıraç. stop_distance_pct
+    None/<=0 ise (ATR hesaplanamadı, fail-closed) None döner."""
+    if stop_distance_pct is None or stop_distance_pct <= 0:
+        return None
+    required_liq_distance = stop_distance_pct * safety_multiplier + maintenance_margin_rate
+    if required_liq_distance <= 0:
+        return None
+    return min(exchange_max_leverage, 1.0 / required_liq_distance)
+
+
 @dataclass
 class MarginAccount:
     balance: float = 100_000.0

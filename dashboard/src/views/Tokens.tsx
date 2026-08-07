@@ -101,8 +101,26 @@ function LeverageDialog({
   const [value, setValue] = useState(String(currentLeverage));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [riskProfile, setRiskProfile] = useState<{
+    stop_distance_pct: number | null;
+    max_safe_leverage: number | null;
+  } | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/v1/tokens/${symbol}/risk-profile`, { headers: authHeaders() })
+      .then((r) => r.json())
+      .then(setRiskProfile)
+      .catch(() => setRiskProfile(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol]);
 
   const numeric = Math.min(125, Math.max(1, parseFloat(value.replace(",", ".")) || 1));
+  // Faz 260: kullanıcı bulgusu — yüksek kaldıraç + geniş ATR'de
+  // likidasyon, stop-loss'tan önce tetiklenebiliyor. max_safe_leverage,
+  // likidasyonun güncel stop mesafesinin en az 1.5 katı uzakta kalmasını
+  // garanti eden üst sınır (bkz. simulator/margin.py::max_safe_leverage).
+  const exceedsSafeLeverage =
+    riskProfile?.max_safe_leverage != null && numeric > riskProfile.max_safe_leverage;
 
   const save = () => {
     setSaving(true);
@@ -146,6 +164,16 @@ function LeverageDialog({
 
           {error && <ErrorNote>{error}</ErrorNote>}
 
+          {riskProfile?.stop_distance_pct != null && riskProfile.max_safe_leverage != null && (
+            <p className={`text-xs mb-3 ${exceedsSafeLeverage ? "text-fall" : "text-ink-soft"}`}>
+              Güncel günlük ATR'ye göre stop mesafesi: %{(riskProfile.stop_distance_pct * 100).toFixed(2)}.
+              Likidasyonun stop'tan önce gelmemesi için güvenli üst sınır: {riskProfile.max_safe_leverage.toFixed(1)}x.
+              {exceedsSafeLeverage && (
+                <> Seçtiğin {numeric}x bu sınırın üzerinde — pozisyon planlanan stop'a hiç ulaşmadan likide olabilir.</>
+              )}
+            </p>
+          )}
+
           <div className="flex items-center gap-3 mb-3">
             <input
               type="range"
@@ -156,7 +184,9 @@ function LeverageDialog({
               onChange={(e) => setValue(e.target.value)}
               className="flex-1 accent-accent"
             />
-            <span className="w-14 text-right font-mono text-sm text-ink font-semibold">{numeric}x</span>
+            <span className={`w-14 text-right font-mono text-sm font-semibold ${exceedsSafeLeverage ? "text-fall" : "text-ink"}`}>
+              {numeric}x
+            </span>
           </div>
 
           <div className="flex gap-2 mb-5">
