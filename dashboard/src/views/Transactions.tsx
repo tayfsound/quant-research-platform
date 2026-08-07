@@ -29,7 +29,7 @@ function fmt(n: number | null | undefined, digits = 2) {
   return n === null || n === undefined ? "—" : n.toFixed(digits);
 }
 
-export default function Transactions() {
+export default function Transactions({ onReplay }: { onReplay?: (decisionId: string) => void }) {
   const [open, setOpen] = useState<Position[]>([]);
   const [trades, setTrades] = useState<Position[]>([]);
   const [summary, setSummary] = useState<{ count: number; win_rate: number; total_pnl: number } | null>(null);
@@ -129,6 +129,7 @@ export default function Transactions() {
                 <th className="py-2 pr-4">PnL</th>
                 <th className="py-2 pr-4">Nasıl Kapandı</th>
                 <th className="py-2 pr-4">Kapandı</th>
+                {onReplay && <th className="py-2 pr-4"></th>}
               </tr>
             </thead>
             <tbody>
@@ -151,6 +152,16 @@ export default function Transactions() {
                     )}
                   </td>
                   <td className="py-2 pr-4 text-ink-faint">{t.closed_at ? new Date(t.closed_at).toLocaleString() : "—"}</td>
+                  {onReplay && (
+                    <td className="py-2 pr-4">
+                      <button
+                        onClick={() => onReplay(t.id)}
+                        className="px-2 py-1 rounded-md text-xs font-medium border border-line text-ink-soft hover:bg-surface-soft transition-colors"
+                      >
+                        Replay
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

@@ -1,18 +1,19 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { authHeaders } from "../api/auth";
 import { Card, PageHeader, Input, Button, ErrorNote, Badge } from "../components/ui";
 
-export default function ReplayView() {
-  const [decisionId, setDecisionId] = useState("");
+export default function ReplayView({ initialId }: { initialId?: string | null }) {
+  const [decisionId, setDecisionId] = useState(initialId || "");
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const handleReplay = () => {
-    if (!decisionId.trim()) return;
+  const handleReplay = (idOverride?: string) => {
+    const id = (idOverride ?? decisionId).trim();
+    if (!id) return;
     setLoading(true);
     setError(null);
-    fetch(`/api/v1/replay/decision/${decisionId.trim()}`, { method: "POST", headers: authHeaders() })
+    fetch(`/api/v1/replay/decision/${id}`, { method: "POST", headers: authHeaders() })
       .then((r) => r.json())
       .then((data) => {
         if (data.error) setError(data.error);
@@ -22,13 +23,25 @@ export default function ReplayView() {
       .finally(() => setLoading(false));
   };
 
+  // Faz 252: kullanıcı bulgusu — Replay sayfası bir decision ID istiyordu
+  // ama panelde hiçbir yerde ID gösterilmiyordu, kopyalanacak bir kaynak
+  // yoktu. Artık Transactions sayfasındaki her kapanmış işlemin "Replay"
+  // butonu buraya doğrudan ID ile yönlendirip otomatik çalıştırıyor.
+  useEffect(() => {
+    if (initialId) {
+      setDecisionId(initialId);
+      handleReplay(initialId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialId]);
+
   return (
     <div>
       <PageHeader title="Replay" description="Bir kararı deterministik olarak yeniden çalıştırıp aynı sonucu doğrular." />
       <Card className="mb-4">
         <div className="flex gap-2">
           <Input value={decisionId} onChange={setDecisionId} placeholder="decision id" />
-          <Button onClick={handleReplay} disabled={loading}>
+          <Button onClick={() => handleReplay()} disabled={loading}>
             {loading ? "Replaying…" : "Run Replay"}
           </Button>
         </div>
