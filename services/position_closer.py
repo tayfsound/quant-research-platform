@@ -9,6 +9,8 @@ en az `hold_seconds` kadar gerçek zaman geçmiş olmalı.
 """
 from datetime import UTC, datetime
 
+import structlog
+
 from contracts.agent import VOTING_AGENT_DOMAINS
 from contracts.agent_performance import AgentPerformanceRecord
 from database.repositories.decision_persistor import DecisionPersistor
@@ -22,6 +24,8 @@ from simulator.fee_engine import FeeEngine
 # kaynak, services/learning_loop.py ve services/weight_optimizer.py da
 # aynısını kullanıyor (bkz. o dosyalardaki "unknown" domain sızıntısı bulgusu).
 _VALID_AGENT_DOMAINS = VOTING_AGENT_DOMAINS
+
+logger = structlog.get_logger()
 
 
 class PositionCloser:
@@ -146,6 +150,24 @@ class PositionCloser:
             if not data:
                 continue
             current_price = data[-1].close
+
+            # Faz 239: kritik bulgu — MARKET_DATA_FALLBACK_TO_MOCK=True
+            # iken gerçek Binance isteği başarısız olduğunda sessizce
+            # sembolden bağımsız ~$50,000 mock fiyata düşülüyordu (artık
+            # varsayılan olarak kapalı, bkz. config/settings.py). İkinci,
+            # bağımsız bir güvenlik katmanı: entry_price'a göre 20 kattan
+            # fazla sapan bir "güncel fiyat" gerçek bir piyasa hareketi
+            # olamaz (bu sistemin işlem yaptığı hiçbir varlık — major
+            # kripto, hisse, endeks, altın-destekli token — bir pozisyonun
+            # ömrü içinde böyle bir hareket yapmaz) — başka bir yoldan
+            # benzer bir bug sızarsa bile gerçek olmayan bir fiyatla
+            # pozisyon kapatılmasını engeller.
+            if current_price <= 0 or current_price > entry_price * 20 or current_price < entry_price / 20:
+                logger.warning(
+                    "position_closer_suspicious_price_skipped",
+                    symbol=symbol, entry_price=entry_price, current_price=current_price,
+                )
+                continue
 
             exit_reason = self._exit_reason(
                 direction, current_price, pos.get("stop_loss_price"), pos.get("take_profit_price")

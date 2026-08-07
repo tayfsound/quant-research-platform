@@ -297,3 +297,70 @@ def test_position_closer_does_not_close_when_price_between_stop_and_target_and_h
     with SessionFactory.get_session() as session:
         row = DecisionPersistor(session).get_by_id(str(event.id))
     assert row["status"] == "open"
+
+
+def test_position_closer_skips_close_when_current_price_is_implausibly_far_from_entry():
+    """Faz 239: kritik bulgu — MARKET_DATA_FALLBACK_TO_MOCK=True iken gerçek
+    Binance isteği başarısız olunca BinanceProvider sessizce sembolden
+    bağımsız ~$50,000 mock fiyata düşüyordu. Gerçek örnek: ADAUSDT pozisyonu
+    (entry_price=$0.202) bu sahte fiyatla "take_profit"a ulaştı sanılıp
+    $9.9 milyon hayali kâr kaydetti — hem PnL gösterimini hem
+    _record_agent_learning() üzerinden ajan öğrenme sinyalini kirletti.
+    Bu test, entry_price'a göre 20 kattan fazla sapan bir "güncel fiyat"ın
+    (bu senaryodaki gibi bir BTC-ölçekli mock fiyatın gerçek bir ADAUSDT
+    pozisyonuna sızması) pozisyonu KAPATMADIĞINI kanıtlıyor — ne stop ne de
+    target tetiklenmiş gibi davranılmamalı, pozisyon açık kalmalı."""
+    from contracts.decision_event import DecisionEvent
+
+    symbol = f"POSFAKEPRICE{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+
+    with SessionFactory.get_session() as session:
+        event = DecisionEvent(
+            id=uuid4(), timestamp=now, symbol=symbol,
+            proposed_direction="LONG", final_action="LONG", final_size=1.0, confidence=0.7,
+            status="open", entry_price=0.202, quantity=198.91, opened_at=now,
+            stop_loss_price=0.19, take_profit_price=0.22,
+        )
+        DecisionPersistor(session).persist(event)
+
+    # Gerçek bug'daki tam senaryo: entry $0.202 iken sağlayıcı BTC-ölçekli
+    # $49,855.91 döndürüyor (>100,000x sapma) — take_profit'in çok üzerinde,
+    # ama gerçek bir ADAUSDT fiyat hareketi olamaz.
+    closer = PositionCloser(_FixedPriceProvider(49855.91), hold_seconds=3600)
+    with SessionFactory.get_session() as session:
+        closed = closer.close_due_positions(DecisionPersistor(session))
+
+    assert str(event.id) not in {c["decision_id"] for c in closed}
+
+    with SessionFactory.get_session() as session:
+        row = DecisionPersistor(session).get_by_id(str(event.id))
+    assert row["status"] == "open"
+    assert row["pnl"] is None
+
+
+def test_position_closer_still_closes_on_legitimate_large_but_plausible_move():
+    """Güvenlik kontrolü meşru büyük hareketleri (ör. gerçek bir küçük-cap
+    coin'in %50 pump/dump yapması) yanlışlıkla reddetmemeli — sadece
+    20 kat ve üstü ölçek sıçramalarını (mock-fiyat sızıntısının imzası)
+    reddetmeli."""
+    from contracts.decision_event import DecisionEvent
+
+    symbol = f"POSREALMOVE{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+
+    with SessionFactory.get_session() as session:
+        event = DecisionEvent(
+            id=uuid4(), timestamp=now, symbol=symbol,
+            proposed_direction="LONG", final_action="LONG", final_size=1.0, confidence=0.7,
+            status="open", entry_price=100.0, quantity=1.0, opened_at=now,
+            stop_loss_price=90.0, take_profit_price=110.0,
+        )
+        DecisionPersistor(session).persist(event)
+
+    # %11 gerçek bir hareket — reddedilmemeli, normal şekilde take_profit'e ulaşmalı.
+    closer = PositionCloser(_FixedPriceProvider(111.0), hold_seconds=3600)
+    with SessionFactory.get_session() as session:
+        closed = closer.close_due_positions(DecisionPersistor(session))
+
+    assert str(event.id) in {c["decision_id"] for c in closed}

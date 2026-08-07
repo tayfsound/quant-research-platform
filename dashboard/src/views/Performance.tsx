@@ -105,9 +105,10 @@ export default function Performance() {
 
           {data.all_time.excluded_dirty_trades_count > 0 && (
             <p className="text-xs text-ink-faint mb-4">
-              Not: {data.all_time.excluded_dirty_trades_count} adet, aşırı test ayarlarından (ör. milyarlarca
-              dolarlık kasa denemeleri) kalan gerçek olmayan büyüklükteki işlem yukarıdaki istatistiklerden
-              hariç tutuldu (silinmedi, sadece istatistiklere dahil edilmedi).
+              Not: {data.all_time.excluded_dirty_trades_count} adet kirli işlem (aşırı test ayarlarından kalan
+              gerçek olmayan büyüklükteki işlemler ve geçmişte bir veri sağlayıcı hatası yüzünden gerçek dışı
+              fiyatla kapanmış işlemler) yukarıdaki istatistiklerden hariç tutuldu (silinmedi, sadece
+              istatistiklere dahil edilmedi).
             </p>
           )}
 
