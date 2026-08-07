@@ -207,6 +207,27 @@ def test_atr_is_positive_and_scales_with_real_range():
     assert wide > tight
 
 
+def test_compute_daily_atr_pct_returns_none_with_insufficient_bars():
+    """Faz 251: yetersiz günlük veri varsa (period+1'den az) icat edilmiş
+    bir sayı üretilmiyor — fail-closed."""
+    from market_data.features.signal_engine import compute_daily_atr_pct
+
+    assert compute_daily_atr_pct(_bars([100.0] * 5), period=14) is None
+
+
+def test_compute_daily_atr_pct_returns_positive_ratio_with_enough_bars():
+    """Faz 251: RiskTargetStage'in artık kullandığı, sinyal zaman
+    diliminden bağımsız günlük ATR yüzdesi — fiyata göre ölçeklenmiş,
+    pozitif bir oran olmalı."""
+    from market_data.features.signal_engine import compute_daily_atr_pct
+
+    base = 100.0
+    wide_closes = [base + (5 if i % 2 == 0 else -5) for i in range(20)]
+    pct = compute_daily_atr_pct(_bars(wide_closes), period=14)
+    assert pct is not None
+    assert 0 < pct < 1.0
+
+
 # Faz 237: kullanıcı isteği — "eklenebilecek bütün teknik analiz
 # yöntemlerini ekleyelim eğer matematiksel bir yöntemse." Bollinger/VWAP/
 # ADX/OBV — dördü de kesin tanımlı, standart formüller.

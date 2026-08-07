@@ -302,6 +302,35 @@ def _atr(data: list[OHLCV], period: int) -> float:
     return float(window.mean()) if len(window) else 0.0
 
 
+def compute_daily_atr_pct(daily_bars: list[OHLCV], period: int = 14) -> float | None:
+    """Faz 251: kritik bulgu — RiskTargetStage stop/target mesafesini
+    sinyal zaman diliminin (candle_timeframe, genelde 1m) ATR'sinden
+    kuruyordu. 1 dakikalık ATR, kripto gibi yüksek volatiliteli bir
+    piyasada bile gürültü seviyesinde kalıyor (gerçek ölçüm: BTCUSDT 1m
+    ATR fiyatın sadece ~%0.05'i) — stop, normal bir mumun sıradan
+    dalgalanmasından bile küçük kalıp anında tetikleniyordu, yöne hiç
+    şans tanımıyordu (kullanıcı bulgusu).
+
+    Kullanıcıyla üzerinde anlaşılan çerçeve: risk ölçeklendirmesi sinyal
+    zaman diliminden BAĞIMSIZ, günlük ATR'den (literatürde standart —
+    Wilder'ın orijinal ATR tanımı zaten günlük veri için) türetilmeli.
+    Bu, hızlı sinyal üretimini (1m) korurken riski gerçekçi, günün gerçek
+    volatilitesine göre ölçeklendiriyor — sabit bir yüzde değil, piyasa
+    volatilite arttıkça stop de otomatik genişliyor.
+
+    Yüzde olarak dönüyor (mutlak $ değil) — entry_price'a göre ölçek
+    bağımsız kalması için (RiskTargetStage bunu güncel fiyatla çarpıyor).
+    Yeterli günlük bar yoksa None (fail-closed, icat edilmiş bir sayı
+    değil)."""
+    if len(daily_bars) < period + 1:
+        return None
+    atr = _atr(daily_bars, period)
+    price = daily_bars[-1].close
+    if price <= 0:
+        return None
+    return atr / price
+
+
 def _find_swings(closes: np.ndarray, window: int = 3) -> tuple[list[int], list[int]]:
     """Yerel tepe/dip indekslerini bulur (basit ama gerçek: window genişliğinde
     komşularından yüksek/düşük olan noktalar)."""

@@ -36,6 +36,7 @@ from exchange_gateway.binance.adapter import BinanceAdapter
 # Aynı paylaşılan çözüm burada da kullanılıyor.
 from market_data.ingestion.data_provider import _run_coroutine_sync
 from market_data.features.signal_engine import (
+    compute_daily_atr_pct,
     compute_pattern_signals,
     compute_quant_signals,
     compute_technical_signals,
@@ -67,8 +68,24 @@ async def fetch_real_history(symbol: str, timeframe: str, limit: int) -> list[OH
     return from_binance_klines(raw)
 
 
+def _daily_atr_pct_asof(daily_bars: list[OHLCV], as_of, period: int = 14) -> float | None:
+    """Faz 251: no-lookahead günlük ATR — services/orchestrator.py::
+    build_cognitive_context ile aynı risk çerçevesi, ama backtest walk-
+    forward'ında gerçek zamanın simülasyonu bozulmasın diye SADECE as_of
+    anından önce tamamen kapanmış günlük barlar kullanılıyor (bugünün
+    hâlâ oluşmakta olan mumu asla dahil edilmiyor)."""
+    if not daily_bars:
+        return None
+    day_start = as_of.replace(hour=0, minute=0, second=0, microsecond=0)
+    visible = [b for b in daily_bars if b.timestamp < day_start]
+    if len(visible) < period + 1:
+        return None
+    return compute_daily_atr_pct(visible, period=period)
+
+
 def _build_backtest_context(
-    symbol: str, timeframe: str, window: list[OHLCV], capital_per_trade: float
+    symbol: str, timeframe: str, window: list[OHLCV], capital_per_trade: float,
+    daily_atr_pct: float | None = None,
 ) -> CognitiveCycleContext:
     """services/orchestrator.py::build_cognitive_context()'in sinyal-
     hesaplama kısmıyla (gerçek technical/quant/pattern) AYNI, ama risk
@@ -83,6 +100,8 @@ def _build_backtest_context(
     quant = compute_quant_signals(window)
     pattern = compute_pattern_signals(window)
     ctx.market.features = {**technical, **quant}
+    if daily_atr_pct is not None:
+        ctx.market.features["daily_atr_pct"] = daily_atr_pct
     ctx.market.raw_snapshot = {
         "close": window[-1].close,
         "volume": window[-1].volume,
@@ -192,12 +211,21 @@ def run_real_backtest(
     bars = _run_coroutine_sync(fetch_real_history(symbol, timeframe, bars_count))
     fee_engine = FeeEngine()
 
+    # Faz 251: risk ölçeklendirmesi için günlük bar geçmişi — TEK seferde
+    # çekilip (API çağrısı israfı yok), her walk-forward adımında sadece
+    # o ana kadar GERÇEKTEN kapanmış günleri kullanan _daily_atr_pct_asof
+    # ile no-lookahead şekilde dilimleniyor. 400 gün (~13 ay) 1000 bar'lık
+    # herhangi bir timeframe'in (1m'den 1d'ye) kapsayacağı süreyi rahatça
+    # aşıyor.
+    daily_bars = _run_coroutine_sync(fetch_real_history(symbol, "1d", 400))
+
     trades = []
     open_positions_never_closed = 0
 
     for t in range(lookback, len(bars) - 1):
         window = bars[max(0, t - lookback): t + 1]
-        ctx = _build_backtest_context(symbol, timeframe, window, capital_per_trade)
+        daily_atr_pct = _daily_atr_pct_asof(daily_bars, bars[t].timestamp)
+        ctx = _build_backtest_context(symbol, timeframe, window, capital_per_trade, daily_atr_pct=daily_atr_pct)
         result_ctx = engine.run(ctx, persist=False)
 
         direction = result_ctx.decision.proposed_direction or "WAIT"

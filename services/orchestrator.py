@@ -4,6 +4,7 @@ from database.repositories.risk_limit_repository import load_active_limits
 from services.risk_state import load_position_risk_state
 from market_data.ingestion.data_provider import get_ohlcv_provider, OHLCVProvider
 from market_data.features.signal_engine import (
+    compute_daily_atr_pct,
     compute_pattern_signals,
     compute_quant_signals,
     compute_technical_signals,
@@ -16,7 +17,7 @@ from services.decision_recorder import DecisionRecorder
 from config import get_settings
 from contracts.context import CognitiveCycleContext
 
-def build_cognitive_context(symbol: str, timeframe: str, data) -> CognitiveCycleContext:
+def build_cognitive_context(symbol: str, timeframe: str, data, daily_data=None) -> CognitiveCycleContext:
     """Faz 224 review bulgusu (E): bu mantık önceden HEM burada (özel
     _build_context metodu olarak) HEM DE api/rest/cognitive.py'de
     (run_cognitive_cycle içinde) bağımsızca tekrarlanıyordu — "gap #15 ile
@@ -41,6 +42,15 @@ def build_cognitive_context(symbol: str, timeframe: str, data) -> CognitiveCycle
     quant_signals = compute_quant_signals(data)
 
     ctx.market.features = {**technical_signals, **quant_signals}
+    # Faz 251: kullanıcı kararı — risk (stop/target) ölçeklendirmesi sinyal
+    # zaman diliminden (genelde 1m, gürültü seviyesinde ATR) bağımsız,
+    # günlük ATR'den türetiliyor (bkz. signal_engine.compute_daily_atr_pct
+    # üstündeki not). daily_data verilmezse ya da yetersizse None kalır —
+    # RiskTargetStage bu durumda fail-closed davranır (stop/target set
+    # etmez, DecisionFusion zaten yönlü olmayan/eksik bir kararı WAIT'e
+    # çevirir).
+    if daily_data:
+        ctx.market.features["daily_atr_pct"] = compute_daily_atr_pct(daily_data)
     ctx.market.raw_snapshot = {
         "close": data[-1].close,
         "volume": data[-1].volume,
@@ -119,7 +129,12 @@ class CognitiveOrchestrator:
         if not data:
             return None
 
-        ctx = self._build_context(symbol, timeframe, data)
+        # Faz 251: risk ölçeklendirmesi için ayrıca günlük bar — bkz.
+        # build_cognitive_context üstündeki not. Çekilemezse (ör. geçici
+        # ağ hatası) None kalır, fail-closed.
+        daily_data = self.data_provider.get_ohlcv(symbol, "1d", limit=30)
+
+        ctx = self._build_context(symbol, timeframe, data, daily_data=daily_data)
         ctx = self.engine.run(ctx, persist=False)
 
         market_price = data[-1].close
@@ -276,11 +291,11 @@ class CognitiveOrchestrator:
             for sym, signed_size in result.final_sizes.items():
                 directional[sym]["ctx"].decision.final_size = abs(signed_size)
 
-    def _build_context(self, symbol: str, timeframe: str, data) -> CognitiveCycleContext:
+    def _build_context(self, symbol: str, timeframe: str, data, daily_data=None) -> CognitiveCycleContext:
         # Faz 224 review (E): gövde module-level build_cognitive_context()'e
         # taşındı — api/rest/cognitive.py da artık AYNI fonksiyonu çağırıyor,
         # iki bağımsız kopya kalmadı.
-        return build_cognitive_context(symbol, timeframe, data)
+        return build_cognitive_context(symbol, timeframe, data, daily_data=daily_data)
 
     def run_cycle(self, seed: int = 42, symbol: str | None = None) -> dict[str, Any]:
         settings = get_settings()

@@ -198,25 +198,39 @@ class RiskTargetStage:
     hiçbir kod bu iki alanı hiçbir zaman set etmiyordu (hep None) — yani
     win=0, loss=0, ev her zaman <=0, Council ne önerirse önersin HER
     işlem WAIT'e zorlanıyordu. Bu aşama, MetaStage'in belirlediği yön için
-    gerçek ATR'den (signal_engine.py) standart bir 1:2 risk/ödül hedefi
-    kuruyor — icat edilmiş bir "hedef fiyat" değil, ATR-tabanlı stop
-    literatürde yaygın, kesin tanımlı bir yöntem. ATR yoksa (yetersiz
-    veri) hedef set edilmez — DecisionFusion böyle bir durumda hâlâ
-    (doğru şekilde) reddeder, çünkü gerçek volatilite bilgisi yok."""
-    STOP_ATR_MULT = 1.0
-    TARGET_ATR_MULT = 2.0
+    standart bir 1:2.5 risk/ödül hedefi kuruyor — icat edilmiş bir
+    "hedef fiyat" değil, ATR-tabanlı stop literatürde yaygın, kesin
+    tanımlı bir yöntem.
+
+    Faz 251: kritik bulgu — önceden sinyal zaman diliminin (candle_
+    timeframe, genelde 1m) ATR'sini kullanıyordu. 1 dakikalık ATR kripto
+    gibi yüksek volatiliteli bir piyasada bile gürültü seviyesinde kalıyor
+    (gerçek ölçüm: BTCUSDT 1m ATR fiyatın ~%0.05'i) — stop, bir mumun
+    sıradan dalgalanmasından bile küçük kalıp anında tetikleniyordu,
+    kazanma oranı düşük kalıyordu çünkü yöne hiç şans tanınmıyordu
+    (kullanıcı bulgusu, gerçek kapanmış işlemlerle doğrulandı: $1900'lük
+    pozisyonlarda $0.07 stop, $0.15 hedef gibi anlamsız değerler).
+    Kullanıcıyla üzerinde anlaşılan çerçeve: risk sinyal zaman diliminden
+    BAĞIMSIZ, günlük ATR'den (signal_engine.compute_daily_atr_pct)
+    türetiliyor — 2.5x günlük ATR (şu an BTCUSDT için ~%5.3 stop mesafesi,
+    literatürdeki standart 2-3x ATR-stop aralığında). Günlük ATR yoksa
+    (yetersiz veri) hedef set edilmez — DecisionFusion hâlâ (doğru
+    şekilde) reddeder."""
+    STOP_ATR_MULT = 2.5
+    TARGET_ATR_MULT = 5.0
 
     def execute(self, ctx: CognitiveCycleContext) -> CognitiveCycleContext:
         direction = (ctx.decision.proposed_direction or "").upper()
         if direction not in ("LONG", "SHORT"):
             return ctx
 
-        atr = (ctx.market.features or {}).get("atr", 0.0) or 0.0
-        if atr <= 0:
+        daily_atr_pct = (ctx.market.features or {}).get("daily_atr_pct")
+        current_price = (ctx.market.raw_snapshot or {}).get("close")
+        if not daily_atr_pct or daily_atr_pct <= 0 or not current_price or current_price <= 0:
             return ctx
 
-        ctx.decision.stop_loss = atr * self.STOP_ATR_MULT
-        ctx.decision.take_profit = atr * self.TARGET_ATR_MULT
+        ctx.decision.stop_loss = current_price * self.STOP_ATR_MULT * daily_atr_pct
+        ctx.decision.take_profit = current_price * self.TARGET_ATR_MULT * daily_atr_pct
         return ctx
 
 

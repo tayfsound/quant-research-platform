@@ -35,7 +35,8 @@ async def run_cognitive_cycle(
         timeframe = settings_repo.get("candle_timeframe")
         lookback = int(settings_repo.get("candle_lookback"))
 
-    data = get_ohlcv_provider().get_ohlcv(symbol, timeframe, limit=lookback)
+    provider = get_ohlcv_provider()
+    data = provider.get_ohlcv(symbol, timeframe, limit=lookback)
     if not data:
         # build_cognitive_context() gerçek OHLCV verisi (data[-1]) gerektirir
         # — burada yok, ama risk state/limitler yine de yüklenmeli (Gap #15
@@ -59,7 +60,10 @@ async def run_cognitive_cycle(
         ctx.risk.min_seconds_between_trades = risk_state["min_seconds_between_trades"]
         ctx.risk.ai_enabled = risk_state["ai_enabled"]
     else:
-        ctx = build_cognitive_context(symbol, timeframe, data)
+        # Faz 251: risk ölçeklendirmesi için ayrıca günlük bar — bkz.
+        # services/orchestrator.py::build_cognitive_context üstündeki not.
+        daily_data = provider.get_ohlcv(symbol, "1d", limit=30)
+        ctx = build_cognitive_context(symbol, timeframe, data, daily_data=daily_data)
 
     result = engine.run(ctx)
 
