@@ -181,9 +181,14 @@ class DecisionPersistor:
         return [dict(r) for r in rows]
 
     def list_closed_trades(self, limit: int = 200):
+        # Faz 238: kullanıcı isteği — "kirli geçmiş veriyi temizle."
+        # excluded_from_stats=true işaretli satırlar (aşırı capital
+        # testlerinden kalan, gerçek olmayan notional'lı işlemler)
+        # varsayılan olarak dışarıda bırakılıyor — silinmiyor, sadece
+        # normal görünümden hariç tutuluyor.
         rows = self.session.execute(
             text(
-                "SELECT * FROM decisions WHERE status = 'closed' "
+                "SELECT * FROM decisions WHERE status = 'closed' AND excluded_from_stats = false "
                 "ORDER BY closed_at DESC LIMIT :limit"
             ),
             {"limit": limit},
@@ -204,21 +209,27 @@ class DecisionPersistor:
         TABLOYU limitlemeden, gerçek toplam üzerinden tek bir SQL
         agregasyonuyla hesaplıyor — hem /trades hem /performance artık
         AYNI, gerçek toplamı kullanabilir."""
+        # Faz 238: excluded_from_stats=true işaretli (kirli/aşırı-test)
+        # satırlar agregata hiç girmiyor.
         row = self.session.execute(
             text(
                 "SELECT count(*) AS trade_count, "
                 "sum(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS wins, "
                 "sum(pnl) AS total_pnl, "
                 "sum(entry_price * quantity) AS deployed_notional "
-                "FROM decisions WHERE status = 'closed'"
+                "FROM decisions WHERE status = 'closed' AND excluded_from_stats = false"
             )
         ).mappings().one()
+        excluded_count = self.session.execute(
+            text("SELECT count(*) FROM decisions WHERE status = 'closed' AND excluded_from_stats = true")
+        ).scalar()
         trade_count = row["trade_count"] or 0
         return {
             "trade_count": trade_count,
             "win_rate": (row["wins"] / trade_count) if trade_count else 0.0,
             "total_pnl": float(row["total_pnl"] or 0.0),
             "deployed_notional": float(row["deployed_notional"] or 0.0),
+            "excluded_count": excluded_count or 0,
         }
 
     def performance_by_period(self, period: str, limit: int = 200) -> list[dict]:
@@ -239,7 +250,7 @@ class DecisionPersistor:
                     sum(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS wins,
                     sum(entry_price * quantity) AS deployed_notional
                 FROM decisions
-                WHERE status = 'closed' AND closed_at IS NOT NULL
+                WHERE status = 'closed' AND closed_at IS NOT NULL AND excluded_from_stats = false
                 GROUP BY bucket
                 ORDER BY bucket DESC
                 LIMIT :limit

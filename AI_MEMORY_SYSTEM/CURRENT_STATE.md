@@ -1,9 +1,110 @@
-# Mevcut Durum -- v1.31.0 (Faz 213-227: zayıf ajanlar + ekonomi kalibrasyonu + dashboard okunabilirlik turu)
+# Mevcut Durum -- v1.32.0 (Faz 228-238: öğrenme döngüsü kilidi + gerçek backtest + sinyal zenginleştirme)
 
-**Tarih:** 2026-08-06
+**Tarih:** 2026-08-07
 **Branch:** main
 **Son commit (HEAD):** bkz. git log
-**Test:** 549+ passed, 1 xpassed (bilinen, non-regression flakiness: embedding-mock `TypeError`/`agent_memory.json` yarış durumu — full-suite'te izole halde geçiyor, git-stash ile doğrulandı, bu turun değişikliklerinden bağımsız). `npx tsc -b` temiz.
+**Test:** 594+ passed, 1 xpassed (bilinen, non-regression flakiness: embedding-mock `TypeError`/`agent_memory.json` yarış durumu + 1 yerel Ollama'ya bağlı test — git-stash ile tekrar tekrar doğrulandı). `npx tsc -b` temiz.
+
+## Faz 228-238 — öğrenme döngüsü kilidi + gerçek backtest + sinyal zenginleştirme (2026-08-07)
+
+Faz 213-227'nin hemen ardından, kullanıcının canlı sistemi denetlerken bulduğu
+kritik bir bulgudan başlayan yoğun bir tur. En önemli kararlar:
+
+**Faz 229 — KRİTİK: ağırlık öğrenme döngüsü 7000+ bekleyen onayla fiilen
+kilitlenmişti.** `WeightOptimizer.optimize()` (her gerçek trading cycle'da)
+ve `propose_weights()` (her pozisyon kapanışında) büyük bir ağırlık
+değişikliği hesapladığında, ZATEN bekleyen bir onay olup olmadığını hiç
+kontrol etmeden koşulsuzca yeni bir `WeightApproval` satırı ekliyordu.
+Canlıda doğrulandı: 6973 bekleyen onay, gerçek uygulanan ağırlıklar 2+
+saattir hiç güncellenmemiş. `WeightApprovalRepository.has_pending()` dedup
+kontrolü eklendi, backlog temizlendi (reddedildi, silinmedi), günlük
+`auto_reject_stale_weight_approvals_task` celery beat'e eklendi.
+
+**Faz 234 — KRİTİK: `WeightOptimizer.optimize()` tüm ajanlara aynı bloke
+skoru veriyordu.** Kullanıcı canlı bir onayda 9 ajanın HEPSİNE tıpatıp
+aynı +0.100 verildiğini fark etti — "doğru yolda ilerliyor gibi görünüyor
+mu?" Kök neden: `decision_score` (cycle'ın TEK genel sonucu) her ajana,
+o ajanın kendi yönü nihai kararla aynı mı ters mi olduğuna bakılmadan
+uygulanıyordu — `position_closer.py`'nin (Faz 211b) zaten doğru
+uyguladığı "ajanın KENDİ yönüne göre" ilkesi `optimize()`'a hiç
+taşınmamıştı. Artık `executed_direction` parametresiyle her ajan kendi
+yönüne göre ödüllendiriliyor/cezalandırılıyor.
+
+**Faz 232 — order_book_snapshots.time yerel saatle yazılıyordu.** Yeni
+sağlık kontrolünü (aşağıda) doğrularken bulundu: `age_seconds=-7146`
+(negatif, gelecekte!). `BinanceAdapter.get_order_book()` naive
+`datetime.now()` (CEST=UTC+2) kullanıyordu — aynı, Faz 210a'da
+`contracts/context.py`'de düzeltilen bug'ın farklı bir dosyadaki tekrarı.
+`datetime.now(UTC)`'ye çevrildi, gerçek DB'lerde 2160+ eski hatalı satır
+temizlendi.
+
+**Faz 236 — Backtests artık gerçek Binance geçmiş verisiyle çalışıyor.**
+Eski `/backtest/run` (dashboard'un tek butonu) sabit BTCUSDT'ye kodluydu
+VE `ctx.market.features`'ı hiç doldurmuyordu (`backtest/
+cognitive_backtest_runner.py`'nin dokümante ettiği bir sınırlama) — ATR=0
+olduğu için DecisionFusion her zaman reddediyordu, yön için gerçek
+council yerine sabit bir sezgi kullanılıyordu. Tam olarak Faz 203-211'in
+"ajanlar kör çalışıyor" bug'ının backtest koduna sızmış hali. Yeni
+`backtest/real_historical_backtest.py` — gerçek Binance geçmişi, gerçek
+signal_engine.py fonksiyonları, gerçek CognitiveEngine council'i, gerçek
+stop/target çıkış simülasyonu (`position_closer.py::_exit_reason` ile
+birebir aynı), maker/taker ücret ayrımı. Her adım gerçek bir
+`CognitiveEngine.run()` çalıştırdığı için (dakikalar sürer) her zaman
+async — `run_real_backtest_task` (celery) + `POST /backtest/run-real-async`.
+`BacktestRuns.tsx` artık watchlist'ten çoklu sembol seçebiliyor, gerçek/
+sahte veri modları ayrı gösteriliyor. Yan bulgu: `asyncio.run()`'ın zaten
+çalışan bir event loop içinden çağrılması (aynı, `data_provider.py`'de
+önceden bulunan bug) — aynı paylaşılan çözümle (`_run_coroutine_sync`)
+düzeltildi.
+
+**Faz 237 — gerçek Wyckoff olayları + Bollinger/VWAP/ADX/OBV.** Kullanıcı:
+"Gerçek wyckoff analizi yaptıralım. Ekleyebileceğimiz bütün teknik analiz
+yöntemlerini ekleyelim eğer matematiksel bir yöntemse." Gerçek, kesin
+tanımlı Wyckoff olayları (`_wyckoff_event`): Spring (menzil desteğinin
+altına sarkıp içeri kapanan sahte kırılım, bullish), Upthrust (aynısının
+aynası), Sign of Strength/Weakness (hacimle doğrulanmış gerçek kırılım/
+çöküş) — mevcut `structure_phase`'in (kasıtlı olarak kaba kalan genel-
+rejim yaklaşıklaması) yanına eklendi. Bollinger Bands (%B, bandwidth),
+VWAP sapması, ADX (Wilder, +DI/-DI — trend GÜCÜ, sistemde başka hiçbir
+gösterge bunu ölçmüyordu), OBV trend + fiyat/OBV ıraksaması —
+TechnicalAgent'a skorlandı. Kasıtlı olarak eklenmedi: Stochastic/Williams
+%R/CCI (RSI ile örtüşüyor), Parabolic SAR/Keltner/Donchian (mevcut trend/
+ATR/swing ile örtüşüyor), Ichimoku (yüksek karmaşıklık, düşük katma
+değer).
+
+**Faz 238 — kirli geçmiş veri (aşırı capital testleri) istatistiklerden
+hariç tutuldu.** Kullanıcının kendi deneyleri (`starting_capital` 10-500
+milyar) sırasında gerçek notional hedefi ~$1333 iken bazı işlemler $36-58
+milyon'a ulaşmıştı. Satırlar SİLİNMEDİ (Class 2 prensibi) — yeni
+`decisions.excluded_from_stats` kolonuyla işaretlendi (eşik: notional
+>$10,000, tarih aralığı DEĞİL çünkü sane/kirli işlemler zaman içinde iç
+içe geçmişti). `closed_trades_summary()`/`performance_by_period()`/
+`list_closed_trades()` artık bunları filtreliyor, Performance sayfası kaç
+tanesinin hariç tutulduğunu şeffafça gösteriyor.
+
+**Diğer önemli düzeltmeler/kaldırmalar:**
+- Faz 230: CI en az Faz 189'dan beri kırıktı (`quantdb_test` CI'da hiç
+  oluşturulmuyordu, her push kırmızıydı, kimse fark etmemişti) — düzeltildi.
+  Reddit OAuth2 sosyal medya sentiment eklendi (kullanıcının kendi ücretsiz
+  hesap kaydı gerekiyor, henüz tamamlanmadı — Reddit'in kendi CAPTCHA'sında
+  takıldı). `pytest-rerunfailures` (dar kapsamlı, sadece 2 bilinen imza).
+  `currency_provider.py`'ye 60sn önbellek. `pyproject.toml`'daki eksik
+  hatch paket listesi düzeltildi.
+- Faz 231: `GET /health/signals` — zombi-sinyal izleme (candle/order-book/
+  trading-cycle staleness + "son 30 karar hep WAIT" tespiti), dashboard'da
+  kırmızı alarm banner'ı.
+- Faz 233: Experiments özelliği tamamen kaldırıldı (her karar için git-sha
+  denetim kaydı yazıyordu, hiçbir ajan okumuyordu, 4885 satır birikmişti).
+- Faz 235: Live Predictions kaldırıldı (Tokens sayfasıyla birebir
+  yinelemeydi, Faz 217'de zaten aynı `build_tokens_list()`'i kullanıyordu).
+
+**Hâlâ açık, dürüstçe disclosed:** whale accumulation/exchange flow/MVRV
+(gerçek ücretsiz kaynak yok), Reddit sentiment (kullanıcı tarafında
+bekliyor), `reduce_threshold` vs `min_profit_target_pct` kalibrasyonu
+(kullanıcıyla netleşmedi), gerçek pozitif-EV kanıtı (yeni real_historical_
+backtest ile ölçülüyor, henüz uzun-vadeli sonuç yok).
+
+**Önceki durum (v1.31.0, Faz 213-227) aşağıda korunuyor.**
 
 ## Faz 213-227 — zayıf ajanlar + ekonomi kalibrasyonu + dashboard okunabilirlik turu (2026-08-06)
 

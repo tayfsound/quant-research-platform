@@ -126,6 +126,12 @@ async def performance_summary(user: AuthContext = Depends(get_current_user)):
                 "roi_pct": (total_pnl / starting_capital) if starting_capital else 0.0,
                 "roi_pct_on_deployed": (total_pnl / deployed_notional) if deployed_notional else 0.0,
                 "deployed_notional": deployed_notional,
+                # Faz 238: kullanıcı isteği — "kirli geçmiş veriyi
+                # temizle." Aşırı-capital test döneminden kalan, gerçek
+                # olmayan notional'lı işlemler (excluded_from_stats=true)
+                # istatistiklerden hariç tutuluyor — silinmiyor, sadece
+                # şeffaflık için kaç tanesinin hariç tutulduğu gösteriliyor.
+                "excluded_dirty_trades_count": summary["excluded_count"],
             },
             "daily": daily,
             "weekly": weekly,

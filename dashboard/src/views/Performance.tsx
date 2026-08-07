@@ -19,6 +19,7 @@ type AllTime = {
   roi_pct: number;
   roi_pct_on_deployed: number;
   deployed_notional: number;
+  excluded_dirty_trades_count: number;
 };
 
 type PerformanceData = {
@@ -101,6 +102,14 @@ export default function Performance() {
             her zaman ~0 görünür, stratejinin gerçek performansı yukarıdaki "kullanılan sermayeye göre"
             değeridir).
           </p>
+
+          {data.all_time.excluded_dirty_trades_count > 0 && (
+            <p className="text-xs text-ink-faint mb-4">
+              Not: {data.all_time.excluded_dirty_trades_count} adet, aşırı test ayarlarından (ör. milyarlarca
+              dolarlık kasa denemeleri) kalan gerçek olmayan büyüklükteki işlem yukarıdaki istatistiklerden
+              hariç tutuldu (silinmedi, sadece istatistiklere dahil edilmedi).
+            </p>
+          )}
 
           <div className="flex gap-1 mb-4">
             {TABS.map((t) => (
