@@ -271,9 +271,14 @@ def run_real_backtest_task(
     from database.session_factory import SessionFactory
     from backtest.real_historical_backtest import persist_real_backtest_run, run_real_backtest_multi
 
+    # Faz 248: kullanıcı isteği — backtest sonuçları artık gerçekten
+    # AgentMemory'ye (source="backtest" etiketiyle) besleniyor; dashboard'un
+    # "Gerçek Veriyle Çalıştır" butonuyla tetiklenen HER gerçek backtest
+    # koşusu artık ajan öğrenmesine katkı sağlıyor.
     result = run_real_backtest_multi(
         symbols, timeframe=timeframe, bars_count=bars_count, lookback=lookback,
         max_forward_bars=max_forward_bars, capital_per_trade=capital_per_trade,
+        feed_agent_learning=True,
     )
 
     with SessionFactory.get_session() as session:

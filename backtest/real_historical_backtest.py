@@ -25,6 +25,7 @@ simülasyonuna sızdırmamak için (services/orchestrator.py::
 build_cognitive_context()'i DOĞRUDAN çağırmıyoruz, ama AYNI signal_engine
 fonksiyonlarını kullanıyoruz — "iki beyin" riski sinyal hesaplamasında
 yok, sadece risk-context kurulumunda kasıtlı bir ayrım var)."""
+from contracts.agent import VOTING_AGENT_DOMAINS
 from contracts.context import CognitiveCycleContext
 from contracts.contexts.risk import RiskLimitEntry
 from exchange_gateway.binance.adapter import BinanceAdapter
@@ -42,6 +43,15 @@ from market_data.features.signal_engine import (
 from market_data.ingestion.ohlcv import OHLCV, from_binance_klines
 from services.cognitive_engine import CognitiveEngine
 from simulator.fee_engine import FeeEngine
+
+# Faz 248: kullanıcı isteği — "elimizde gerçek geçmiş veriyle binlerce
+# deneme yapabilecek bir motor var ama öğrenme döngüsüne bağlı değil,
+# neden bağlamıyoruz." Gerçek kısıt: yaşıyor işlem hacmi (canlıda haftalar
+# süren ~500 kapanmış işlem) AgentMemory/WeightOptimizer'ın istatistiksel
+# örneklem büyüklüğünü çok yavaş büyütüyor. Bu motor zaten gerçek Binance
+# geçmiş verisiyle, gerçek CognitiveEngine council'iyle, gerçek exit
+# mantığıyla çalışıyor — sadece sonuçlar hiçbir yere kaydedilmiyordu.
+_VALID_AGENT_DOMAINS = VOTING_AGENT_DOMAINS
 
 DEFAULT_LOOKBACK = 100
 DEFAULT_MAX_FORWARD_BARS = 200
@@ -128,6 +138,34 @@ def _simulate_real_exit(
     return None, None, None
 
 
+def _record_backtest_agent_learning(agent_memory, opinions, symbol: str, direction: str, net_pnl_usd: float) -> None:
+    """PositionCloser._record_agent_learning() ile AYNI mantık (Faz 211/245:
+    ajanın KENDİ önerdiği yön gerçekten alınan yönle karşılaştırılır; sadece
+    gerçekten yönlü (LONG/SHORT) oy veren ajanlar ölçülür, WAIT ne
+    ödüllendirilir ne cezalandırılır) — ama source="backtest" ile açıkça
+    etiketlenir, canlı işlemlerle asla sessizce karıştırılmaz."""
+    from contracts.agent_performance import AgentPerformanceRecord
+
+    profitable = net_pnl_usd > 0
+    for op in opinions or []:
+        domain = op.domain.value if hasattr(op.domain, "value") else str(op.domain)
+        if domain not in _VALID_AGENT_DOMAINS:
+            continue
+        agent_direction = (op.direction or "").upper()
+        if agent_direction not in ("LONG", "SHORT"):
+            continue
+        was_correct = profitable if agent_direction == direction else not profitable
+        agent_memory.record(AgentPerformanceRecord(
+            agent_domain=domain,
+            direction=op.direction,
+            confidence=op.confidence or 0.0,
+            was_correct=was_correct,
+            pnl=net_pnl_usd,
+            symbol=symbol,
+            source="backtest",
+        ))
+
+
 def run_real_backtest(
     symbol: str,
     timeframe: str = "15m",
@@ -136,11 +174,20 @@ def run_real_backtest(
     max_forward_bars: int = DEFAULT_MAX_FORWARD_BARS,
     capital_per_trade: float = 1000.0,
     engine: CognitiveEngine | None = None,
+    agent_memory=None,
 ) -> dict:
     """Tek sembol için gerçek Binance geçmiş verisiyle walk-forward
     backtest. Dönen dict, api/rest/backtest.py'nin BacktestRun.metrics'e
     yazdığı gerçek bulgular — icat edilmiş bir sayı yok, açık pozisyonda
-    (stop/target'a hiç ulaşmayan) işlemler sonuçlara dahil edilmiyor."""
+    (stop/target'a hiç ulaşmayan) işlemler sonuçlara dahil edilmiyor.
+
+    Faz 248: agent_memory verilirse, her gerçekten kapanan simüle işlemin
+    sonucu (gerçek council'in gerçek yönlü oyları + gerçek kâr/zarar)
+    source="backtest" etiketiyle AgentMemory'ye kaydedilir — canlı işlem
+    hacminin çok yavaş büyüdüğü örneklem boyutunu, gerçek geçmiş veriyle
+    hızla büyütmek için. UYARI: aynı geçmiş pencereyi tekrar tekrar
+    backtest etmek aynı işlemleri TEKRAR kaydeder (dedup yok) — bilinçli
+    bir sınır, çağıran taraf ne sıklıkla besleyeceğine karar vermeli."""
     engine = engine or CognitiveEngine()
     bars = _run_coroutine_sync(fetch_real_history(symbol, timeframe, bars_count))
     fee_engine = FeeEngine()
@@ -189,6 +236,10 @@ def run_real_backtest(
         exit_fee_pct = fee_engine.config.maker_rate if exit_is_maker else fee_engine.config.taker_rate
         net_pnl_pct = gross_pnl_pct - entry_fee_pct - exit_fee_pct
         net_pnl_usd = net_pnl_pct * capital_per_trade
+
+        if agent_memory is not None:
+            opinions = result_ctx.__dict__.get("_last_opinions") or []
+            _record_backtest_agent_learning(agent_memory, opinions, symbol, direction, net_pnl_usd)
 
         trades.append({
             "symbol": symbol,
@@ -270,17 +321,25 @@ def run_real_backtest_multi(
     lookback: int = DEFAULT_LOOKBACK,
     max_forward_bars: int = DEFAULT_MAX_FORWARD_BARS,
     capital_per_trade: float = 1000.0,
+    feed_agent_learning: bool = False,
 ) -> dict:
     """Birden fazla sembol için ayrı ayrı çalıştırıp birleştirir — her
     sembolün kendi gerçek geçmiş verisi, kendi walk-forward'u var (ortak
     bir zaman ekseni ZORUNLU değil, cognitive_backtest_runner.py'nin
     aksine — o yüzden VectorizedBacktestEngine'in "tüm semboller aynı
-    sayıda bar" kısıtına burada gerek yok)."""
+    sayıda bar" kısıtına burada gerek yok).
+
+    Faz 248: feed_agent_learning=True ise, her sembolün gerçek simüle
+    işlem sonuçları AgentMemory'ye source="backtest" ile kaydedilir."""
+    from services.agent_memory import AgentMemory
+
     engine = CognitiveEngine()
+    agent_memory = AgentMemory() if feed_agent_learning else None
     per_symbol = {}
     for symbol in symbols:
         per_symbol[symbol] = run_real_backtest(
-            symbol, timeframe, bars_count, lookback, max_forward_bars, capital_per_trade, engine=engine
+            symbol, timeframe, bars_count, lookback, max_forward_bars, capital_per_trade,
+            engine=engine, agent_memory=agent_memory,
         )
 
     total_pnl_usd = sum(r["total_pnl_usd"] for r in per_symbol.values())

@@ -30,6 +30,21 @@ class LearningLoop:
         )
         raw = event.market_snapshot.get("raw_snapshot", {})
         regime = raw.get("trend", "unknown")
+        # Faz 248: kritik bulgu — bu yol (services/orchestrator.py::
+        # finalize_proposal, ForwardOutcome ile AYNI cycle'da geriye dönük
+        # bir "n-bar" hesabı yapıyor, gerçekten zaman geçmesini beklemiyor)
+        # PositionCloser'dan TAMAMEN BAĞIMSIZ, çok daha yüksek frekansta
+        # (her trading cycle'da, her sembol için) AgentMemory'ye yazıyordu.
+        # İki ayrı, düzeltilmiş bug'ı hâlâ taşıyordu: (1) Faz 211'in
+        # düzelttiği "tek blanket was_correct her ajana uygulanıyor" hatası
+        # (ajanın KENDİ yönü hiç kontrol edilmiyordu), (2) Faz 245'in
+        # düzelttiği "WAIT diyen ajan bile ödüllendiriliyor/cezalandırılıyor"
+        # hatası. Artık PositionCloser._record_agent_learning() ile BİREBİR
+        # aynı mantık kullanılıyor, ve source="forward_estimate" ile açıkça
+        # etiketleniyor — gerçek (source="live") kapanışlarla asla sessizce
+        # karışmıyor.
+        executed_direction = (event.final_action or "").upper()
+        profitable = pnl > 0
         for opinion in event.agent_opinions:
             domain = opinion.get("domain")
             if isinstance(domain, Enum):
@@ -44,14 +59,20 @@ class LearningLoop:
             # biri değilse kayıt tamamen atlanıyor.
             if str(domain) not in VOTING_AGENT_DOMAINS:
                 continue
+            agent_direction = (opinion.get("direction") or "").upper()
+            if agent_direction not in ("LONG", "SHORT"):
+                continue
+            agent_was_correct = profitable if agent_direction == executed_direction else not profitable
             self.agent_memory.record(
                 AgentPerformanceRecord(
                     agent_domain=str(domain),
                     direction=opinion.get("direction", ""),
                     confidence=opinion.get("confidence", 0.0),
-                    was_correct=was_correct,
+                    was_correct=agent_was_correct,
+                    pnl=pnl,
                     market_regime=regime,
                     symbol=event.symbol,
+                    source="forward_estimate",
                 )
             )
 

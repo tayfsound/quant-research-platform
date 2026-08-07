@@ -2,6 +2,7 @@
 from contracts.belief import Belief
 from contracts.context import CognitiveCycleContext
 from contracts.contexts.decision import ActionType
+from services.confidence_calibration import calibrate_confidence
 from services.inner_critic import InnerCritic
 
 
@@ -14,7 +15,14 @@ class DecisionFusion:
         ctx: CognitiveCycleContext,
         belief: Belief | None = None,
     ) -> CognitiveCycleContext:
-        confidence = ctx.decision.confidence or (belief.strength if belief else 0.0)
+        raw_confidence = ctx.decision.confidence or (belief.strength if belief else 0.0)
+        # Faz 248: kritik bulgu — gerçek veriyle ölçüldü, beyan edilen
+        # confidence sistemli olarak şişirilmiş (%40-60 aralığında gerçek
+        # kazanma oranı 20-24 puan daha düşük). EV hesabı ham confidence
+        # yerine gerçek geçmiş kararlardan çıkarılan ampirik kalibrasyon
+        # eğrisinden geçirilmiş halini kullanıyor — yeterli veri yoksa
+        # (fail-closed) ham değer değişmeden kalıyor.
+        confidence = calibrate_confidence(raw_confidence)
         win = ctx.decision.take_profit or 0.0
         loss = abs(ctx.decision.stop_loss or 0.0)
         ev = confidence * win - (1 - confidence) * loss

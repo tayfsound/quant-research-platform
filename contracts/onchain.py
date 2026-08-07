@@ -34,3 +34,12 @@ class OnChainContext(BaseModel):
     # gerekir. Şimdilik bilinçli bir kapsam sınırı, kod hatası değil.
     network_activity_trend: str = "stable"
     hash_rate_trend: str = "stable"
+    # Faz 248: kritik bulgu — network_activity_trend/hash_rate_trend SADECE
+    # Bitcoin zincirinden geliyor (yukarıdaki not, Faz 224 review bulgusu C)
+    # ama agents/onchain_agent.py bunları TÜM sembollere (ETHUSDT, SOLUSDT
+    # dahil) aynen yön puanına uyguluyordu — ETH/SOL işlem alırken aslında
+    # BTC'nin ağ sağlığına göre karar veriliyordu. symbol alanı, ajanın bu
+    # BTC-özel sinyalleri SADECE gerçekten BTC işlem alırken yön puanına
+    # katmasını, diğer sembollerde sadece bilgi notu (evidence) olarak
+    # bırakmasını sağlıyor.
+    symbol: str = ""

@@ -53,19 +53,40 @@ class OnChainAgent:
         # (hafif bullish). Hash rate düşüşü tarihsel olarak madenci
         # kapitülasyonuyla ilişkilendirilir (hafif bearish); artışı
         # madenci güveni/ağ güvenliği artıyor demek (hafif bullish).
+        #
+        # Faz 248: kritik bulgu — bu iki metrik SADECE Bitcoin zincirinden
+        # geliyor ama önceden TÜM sembollere (ETHUSDT, SOLUSDT dahil) aynen
+        # yön puanına uygulanıyordu — ETH/SOL işlem alırken aslında BTC'nin
+        # ağ sağlığına göre karar veriliyordu. Artık SADECE gerçekten BTC
+        # işlem görürken yön puanına katkı sağlıyor; diğer sembollerde
+        # (ETH/SOL'a özel bir eşdeğer henüz yok — bkz. contracts/onchain.py
+        # üstteki not) sadece bilgi notu (evidence) olarak kalıyor, eth_gas_
+        # price_gwei/solana_tps ile AYNI kasıtlı sınırlama.
+        is_btc = context.symbol.upper().startswith("BTC")
+
         if context.network_activity_trend == "rising":
-            score += 0.5
-            evidence.append("Active address count rising — real network usage growing")
+            if is_btc:
+                score += 0.5
+            evidence.append("Active address count rising — real network usage growing (BTC)")
         elif context.network_activity_trend == "falling":
-            score -= 0.5
-            evidence.append("Active address count falling — network usage declining")
+            if is_btc:
+                score -= 0.5
+            evidence.append("Active address count falling — network usage declining (BTC)")
 
         if context.hash_rate_trend == "falling":
-            score -= 0.5
-            evidence.append("Hash rate declining — possible miner capitulation")
+            if is_btc:
+                score -= 0.5
+            evidence.append("Hash rate declining — possible miner capitulation (BTC)")
         elif context.hash_rate_trend == "rising":
-            score += 0.5
-            evidence.append("Hash rate rising — miner conviction/network security increasing")
+            if is_btc:
+                score += 0.5
+            evidence.append("Hash rate rising — miner conviction/network security increasing (BTC)")
+
+        if not is_btc and context.network_activity_trend != "stable":
+            caveats.append(
+                f"BTC-{context.network_activity_trend} sinyali {context.symbol or 'bu sembol'} için bilgi "
+                "amaçlı — yön puanına katılmadı (zincire özel bir eşdeğer henüz yok)"
+            )
 
         # MVRV Z-Score
         if context.mvrv_zscore > 3.0:

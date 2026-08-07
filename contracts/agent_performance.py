@@ -17,6 +17,13 @@ class AgentPerformanceRecord(BaseModel):
     confidence: float
     was_correct: bool
 
+    # Faz 248: backtest motorunu öğrenme döngüsüne bağlarken eklendi —
+    # gerçek parayla açılmış canlı işlemleri, gerçek geçmiş veri üzerinde
+    # simüle edilmiş backtest "denemelerinden" AYIRT ETMEK için. Asla
+    # sessizce karıştırma ilkesi: ikisi aynı dosyada birikir ama her
+    # zaman filtrelenebilir/denetlenebilir kalır.
+    source: str = "live"
+
     # Decision quality metrics
     decision_score: float = 0.0
     r_multiple: float = 0.0

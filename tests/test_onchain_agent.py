@@ -94,11 +94,24 @@ def test_single_real_network_trend_signal_alone_produces_a_direction():
     gerçek trend sinyalinin artık (düşük konviksiyonla da olsa) bir görüş
     üretebildiğini kanıtlıyor."""
     agent = OnChainAgent()
-    ctx = OnChainContext(network_activity_trend="rising")
+    ctx = OnChainContext(symbol="BTCUSDT", network_activity_trend="rising")
     opinion = agent.analyze(ctx)
     assert opinion.direction == "LONG"
     assert 0 < opinion.confidence < 0.2
 
-    ctx_falling = OnChainContext(hash_rate_trend="falling")
+    ctx_falling = OnChainContext(symbol="BTCUSDT", hash_rate_trend="falling")
     opinion_falling = agent.analyze(ctx_falling)
     assert opinion_falling.direction == "SHORT"
+
+
+def test_btc_trend_signal_does_not_affect_direction_for_other_symbols():
+    """Faz 248: kritik bulgu — network_activity_trend/hash_rate_trend
+    SADECE Bitcoin zincirinden geliyor ama önceden TÜM sembollere
+    (ETHUSDT dahil) aynen uygulanıyordu. Bu test, aynı "rising" sinyalinin
+    ETHUSDT için yön puanına KATILMADIĞINI (WAIT kaldığını) ama bilgi notu
+    olarak hâlâ göründüğünü kanıtlıyor."""
+    agent = OnChainAgent()
+    ctx = OnChainContext(symbol="ETHUSDT", network_activity_trend="rising")
+    opinion = agent.analyze(ctx)
+    assert opinion.direction == "WAIT"
+    assert any("bilgi amaçlı" in c for c in opinion.caveats)

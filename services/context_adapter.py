@@ -155,6 +155,7 @@ class ContextAdapter:
             hash_rate_trend=self._get(
                 ctx, "hash_rate_trend", real_metrics.get("hash_rate_trend", "stable")
             ),
+            symbol=ctx.market.symbol or "",
         )
 
     def _latest_external_signal(self, symbol: str, max_age_seconds: float = 1800.0):
