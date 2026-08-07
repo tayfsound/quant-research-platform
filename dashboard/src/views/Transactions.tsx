@@ -82,6 +82,7 @@ export default function Transactions() {
                 <th className="py-2 pr-4">Yön</th>
                 <th className="py-2 pr-4">Giriş Fiyatı</th>
                 <th className="py-2 pr-4">Miktar</th>
+                <th className="py-2 pr-4">Pozisyon Büyüklüğü</th>
                 <th className="py-2 pr-4">Stop / Hedef</th>
                 <th className="py-2 pr-4">Açıldı</th>
               </tr>
@@ -95,6 +96,9 @@ export default function Transactions() {
                   </td>
                   <td className="py-2 pr-4 font-mono text-ink-soft">{format(p.entry_price)}</td>
                   <td className="py-2 pr-4 font-mono text-ink-soft">{fmt(p.quantity, 4)}</td>
+                  <td className="py-2 pr-4 font-mono text-ink-soft">
+                    {p.entry_price != null && p.quantity != null ? format(p.entry_price * p.quantity) : "—"}
+                  </td>
                   <td className="py-2 pr-4 font-mono text-xs">
                     <span className="text-fall">{format(p.stop_loss_price)}</span>
                     {" / "}
@@ -126,6 +130,7 @@ export default function Transactions() {
                 <th className="py-2 pr-4">Yön</th>
                 <th className="py-2 pr-4">Giriş</th>
                 <th className="py-2 pr-4">Çıkış</th>
+                <th className="py-2 pr-4">Pozisyon Büyüklüğü</th>
                 <th className="py-2 pr-4">PnL</th>
                 <th className="py-2 pr-4">Nasıl Kapandı</th>
                 <th className="py-2 pr-4">Kapandı</th>
@@ -140,6 +145,9 @@ export default function Transactions() {
                   </td>
                   <td className="py-2 pr-4 font-mono text-ink-soft">{format(t.entry_price)}</td>
                   <td className="py-2 pr-4 font-mono text-ink-soft">{format(t.exit_price)}</td>
+                  <td className="py-2 pr-4 font-mono text-ink-soft">
+                    {t.entry_price != null && t.quantity != null ? format(t.entry_price * t.quantity) : "—"}
+                  </td>
                   <td className={`py-2 pr-4 font-mono ${t.pnl && t.pnl > 0 ? "text-rise" : t.pnl && t.pnl < 0 ? "text-fall" : "text-ink-soft"}`}>
                     {format(t.pnl)}
                   </td>
