@@ -295,6 +295,57 @@ export default function Settings() {
             ))}
           </div>
         </Card>
+
+        <Card>
+          <h3 className="text-sm font-semibold text-ink mb-1">Token bazlı kaldıraç</h3>
+          <p className="text-xs text-ink-soft mb-3">
+            Her sembol için ayrı kaldıraç ayarlayabilirsin (ör. altın 25x, BTC 10x, XRP 3x). Boş/1
+            bırakılan bir sembol spot (kaldıraçsız) işlem görür — likidasyon fiyatı gerçekten hesaplanıp
+            takip edilir, kaldıraçlı bir pozisyon likidasyona uğrarsa sistem bunu görmezden gelmez.
+          </p>
+          <div className="space-y-2">
+            {(draft.watchlist ?? settings.watchlist ?? "")
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean)
+              .map((symbol) => {
+                let leverageMap: Record<string, number> = {};
+                try {
+                  leverageMap = JSON.parse(settings.symbol_leverage || "{}");
+                } catch {
+                  leverageMap = {};
+                }
+                const draftMap: Record<string, string> =
+                  (draft as any)._leverageDraft || {};
+                const current = draftMap[symbol] ?? String(leverageMap[symbol] ?? 1);
+                return (
+                  <div key={symbol} className="flex items-center gap-2">
+                    <span className="w-24 font-mono text-xs text-ink-soft">{symbol}</span>
+                    <Input
+                      type="number"
+                      value={current}
+                      onChange={(v) =>
+                        setDraft((d) => ({
+                          ...d,
+                          _leverageDraft: { ...((d as any)._leverageDraft || {}), [symbol]: v },
+                        } as any))
+                      }
+                    />
+                    <Button
+                      disabled={saving === "symbol_leverage"}
+                      onClick={() => {
+                        const nextLeverage = Math.max(1, parseFloat(current) || 1);
+                        const nextMap = { ...leverageMap, [symbol]: nextLeverage };
+                        save("symbol_leverage", JSON.stringify(nextMap));
+                      }}
+                    >
+                      Kaydet
+                    </Button>
+                  </div>
+                );
+              })}
+          </div>
+        </Card>
       </div>
     </div>
   );

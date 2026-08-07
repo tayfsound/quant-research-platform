@@ -102,6 +102,12 @@ DEFAULTS: dict[str, str] = {
     # endeks zaten USD) — bu sadece GÖRÜNTÜLEME tercihi, hesaplamalar
     # değişmiyor.
     "display_currency": "USD",
+    # Faz 255: kullanıcı isteği — "olay kaldıraçta zaten asıl olay o."
+    # Token bazlı kaldıraç — JSON dict, {"BTCUSDT": 10, "XAUTUSDT": 25}
+    # gibi. Watchlist'te olup burada anahtarı olmayan bir sembol 1.0x
+    # (spot, kaldıraçsız) sayılır — fail-closed varsayılan, kaldıraç
+    # sadece kullanıcı AÇIKÇA bir sembol için ayarlarsa devreye girer.
+    "symbol_leverage": "{}",
 }
 
 CANDLE_TIMEFRAMES = ("1m", "5m", "15m", "1h", "4h", "1d")

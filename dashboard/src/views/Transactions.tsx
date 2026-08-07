@@ -14,6 +14,8 @@ type Position = {
   pnl: number | null;
   stop_loss_price: number | null;
   take_profit_price: number | null;
+  leverage: number | null;
+  liquidation_price: number | null;
   exit_reason: string | null;
   opened_at: string | null;
   closed_at: string | null;
@@ -23,6 +25,7 @@ const EXIT_REASON_LABELS: Record<string, string> = {
   take_profit: "Hedefe ulaştı",
   stop_loss: "Stop oldu",
   time_expired: "Vadesi doldu",
+  liquidation: "Likidasyon",
 };
 
 function fmt(n: number | null | undefined, digits = 2) {
@@ -83,6 +86,7 @@ export default function Transactions() {
                 <th className="py-2 pr-4">Giriş Fiyatı</th>
                 <th className="py-2 pr-4">Miktar</th>
                 <th className="py-2 pr-4">Pozisyon Büyüklüğü</th>
+                <th className="py-2 pr-4">Kaldıraç</th>
                 <th className="py-2 pr-4">Stop / Hedef</th>
                 <th className="py-2 pr-4">Açıldı</th>
               </tr>
@@ -99,10 +103,20 @@ export default function Transactions() {
                   <td className="py-2 pr-4 font-mono text-ink-soft">
                     {p.entry_price != null && p.quantity != null ? format(p.entry_price * p.quantity) : "—"}
                   </td>
+                  <td className="py-2 pr-4">
+                    {p.leverage && p.leverage > 1 ? (
+                      <Badge tone="accent">{p.leverage}x</Badge>
+                    ) : (
+                      <span className="text-ink-faint text-xs">spot</span>
+                    )}
+                  </td>
                   <td className="py-2 pr-4 font-mono text-xs">
                     <span className="text-fall">{format(p.stop_loss_price)}</span>
                     {" / "}
                     <span className="text-rise">{format(p.take_profit_price)}</span>
+                    {p.liquidation_price != null && (
+                      <div className="text-fall/70 mt-0.5">likidasyon: {format(p.liquidation_price)}</div>
+                    )}
                   </td>
                   <td className="py-2 pr-4 text-ink-faint">{p.opened_at ? new Date(p.opened_at).toLocaleString() : "—"}</td>
                 </tr>
@@ -142,6 +156,9 @@ export default function Transactions() {
                   <td className="py-2 pr-4 font-mono text-ink">{t.symbol}</td>
                   <td className="py-2 pr-4">
                     <Badge tone={t.direction === "LONG" ? "rise" : "fall"}>{t.direction}</Badge>
+                    {t.leverage && t.leverage > 1 && (
+                      <span className="ml-1 text-xs text-accent font-medium">{t.leverage}x</span>
+                    )}
                   </td>
                   <td className="py-2 pr-4 font-mono text-ink-soft">{format(t.entry_price)}</td>
                   <td className="py-2 pr-4 font-mono text-ink-soft">{format(t.exit_price)}</td>
@@ -153,7 +170,7 @@ export default function Transactions() {
                   </td>
                   <td className="py-2 pr-4">
                     {t.exit_reason && (
-                      <Badge tone={t.exit_reason === "take_profit" ? "rise" : t.exit_reason === "stop_loss" ? "fall" : "neutral"}>
+                      <Badge tone={t.exit_reason === "take_profit" ? "rise" : (t.exit_reason === "stop_loss" || t.exit_reason === "liquidation") ? "fall" : "neutral"}>
                         {EXIT_REASON_LABELS[t.exit_reason] || t.exit_reason}
                       </Badge>
                     )}

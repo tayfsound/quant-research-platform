@@ -45,6 +45,49 @@ def test_risk_approved_directional_decision_opens_a_real_position_with_entry_pri
     assert pos["exit_price"] is None
 
 
+def test_leveraged_position_scales_quantity_and_computes_liquidation_price():
+    """Faz 255: kullanıcı isteği — token bazlı kaldıraç. symbol_leverage
+    ayarında bir sembol için kaldıraç varsa, açılan pozisyonun quantity'si
+    (aynı teminatla daha büyük notional kontrolü — gerçek kaldıraçlı
+    işlemin tanımı) buna göre ölçeklenmeli ve gerçek bir likidasyon
+    fiyatı hesaplanmalı."""
+    import json
+    from unittest.mock import patch
+
+    from database.repositories.app_settings_repository import AppSettingsRepository
+    from simulator.margin import compute_liquidation_price
+
+    symbol = f"POSLEV{uuid4().hex[:8]}"
+
+    with SessionFactory.get_session() as session:
+        repo = AppSettingsRepository(session)
+        current = json.loads(repo.get("symbol_leverage") or "{}")
+        current[symbol] = 10.0
+        repo.set("symbol_leverage", json.dumps(current), updated_by="test")
+
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        from contracts.context import CognitiveCycleContext
+        from services.decision_recorder import DecisionRecorder
+
+        ctx = CognitiveCycleContext()
+        ctx.market.symbol = symbol
+        ctx.decision.proposed_direction = "LONG"
+        ctx.decision.final_size = 0.3
+        ctx.decision.filled_price = 100.0
+        ctx.risk.evaluation.verdict = "approved"
+
+        DecisionRecorder().record(ctx)
+
+    with SessionFactory.get_session() as session:
+        rows = DecisionPersistor(session).list_open_positions(limit=200)
+    pos = next(r for r in rows if r["symbol"] == symbol)
+
+    assert pos["leverage"] == 10.0
+    assert abs(pos["quantity"] - 3.0) < 1e-9  # 0.3 * 10x kaldıraç
+    expected_liq = compute_liquidation_price(100.0, "LONG", leverage=10.0)
+    assert abs(pos["liquidation_price"] - expected_liq) < 1e-9
+
+
 def test_wait_decision_never_opens_a_position():
     from unittest.mock import patch
 
@@ -400,3 +443,67 @@ def test_position_closer_still_closes_on_legitimate_large_but_plausible_move():
         closed = closer.close_due_positions(DecisionPersistor(session))
 
     assert str(event.id) in {c["decision_id"] for c in closed}
+
+
+def test_position_closer_closes_at_liquidation_price_before_stop_loss_for_leveraged_position():
+    """Faz 255: kullanıcı isteği — kaldıraç desteği. Kaldıraçlı bir
+    pozisyon gerçek likidasyon fiyatına stop_loss'tan ÖNCE ulaşırsa,
+    sistem bunu "liquidation" olarak açıkça etiketleyip kapatmalı —
+    stop_loss ile karışmamalı, likidasyonu görmezden gelmemeli."""
+    from contracts.decision_event import DecisionEvent
+    from simulator.margin import compute_liquidation_price
+
+    symbol = f"POSLIQ{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    leverage = 10.0
+    liquidation_price = compute_liquidation_price(100.0, "LONG", leverage=leverage)
+
+    with SessionFactory.get_session() as session:
+        event = DecisionEvent(
+            id=uuid4(), timestamp=now, symbol=symbol,
+            proposed_direction="LONG", final_action="LONG", final_size=1.0, confidence=0.7,
+            status="open", entry_price=100.0, quantity=1.0, opened_at=now,
+            stop_loss_price=80.0, take_profit_price=120.0,  # geniş stop — likidasyon önce tetiklenmeli
+            leverage=leverage, liquidation_price=liquidation_price,
+        )
+        DecisionPersistor(session).persist(event)
+
+    # Fiyat likidasyon seviyesinin altına düştü ama stop_loss'a (80) henüz ulaşmadı.
+    closer = PositionCloser(_FixedPriceProvider(liquidation_price - 0.5), hold_seconds=3600)
+    with SessionFactory.get_session() as session:
+        closed = closer.close_due_positions(DecisionPersistor(session))
+
+    closed_ids = {c["decision_id"]: c for c in closed}
+    assert str(event.id) in closed_ids
+    assert closed_ids[str(event.id)]["exit_reason"] == "liquidation"
+
+    with SessionFactory.get_session() as session:
+        row = DecisionPersistor(session).get_by_id(str(event.id))
+    assert row["exit_price"] == liquidation_price
+
+
+def test_position_closer_ignores_liquidation_for_spot_position():
+    """leverage=1.0 (spot) bir pozisyonda liquidation_price None olmalı —
+    likidasyon kavramı kaldıraçsız pozisyonda geçersiz, hiçbir fiyat
+    hareketi "liquidation" olarak kapatmamalı."""
+    from contracts.decision_event import DecisionEvent
+
+    symbol = f"POSSPOT{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+
+    with SessionFactory.get_session() as session:
+        event = DecisionEvent(
+            id=uuid4(), timestamp=now, symbol=symbol,
+            proposed_direction="LONG", final_action="LONG", final_size=1.0, confidence=0.7,
+            status="open", entry_price=100.0, quantity=1.0, opened_at=now,
+            stop_loss_price=90.0, take_profit_price=110.0,
+            leverage=1.0, liquidation_price=None,
+        )
+        DecisionPersistor(session).persist(event)
+
+    # Fiyat stop/target arasında — hiçbir sebeple kapanmamalı.
+    closer = PositionCloser(_FixedPriceProvider(95.0), hold_seconds=3600)
+    with SessionFactory.get_session() as session:
+        closed = closer.close_due_positions(DecisionPersistor(session))
+
+    assert str(event.id) not in {c["decision_id"] for c in closed}

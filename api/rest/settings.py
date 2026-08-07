@@ -98,6 +98,23 @@ def _validate(key: str, value: str) -> None:
     elif key == "display_currency":
         if value not in DISPLAY_CURRENCIES:
             raise HTTPException(400, f"display_currency must be one of {list(DISPLAY_CURRENCIES)}")
+    elif key == "symbol_leverage":
+        # Faz 255: kullanıcı isteği — token bazlı kaldıraç. JSON dict,
+        # {"BTCUSDT": 10, "XAUTUSDT": 25} gibi. 1-125 aralığı Binance'in
+        # gerçek futures kaldıraç sınırına (max_leverage=125,
+        # exchange_gateway/binance/adapter.py) dayanıyor — icat edilmiş
+        # bir tavan değil.
+        import json as _json
+        try:
+            mapping = _json.loads(value)
+            if not isinstance(mapping, dict):
+                raise ValueError
+            for lev in mapping.values():
+                lev_f = float(lev)
+                if not (1.0 <= lev_f <= 125.0):
+                    raise ValueError
+        except (ValueError, TypeError):
+            raise HTTPException(400, "symbol_leverage must be a JSON object of {symbol: leverage in [1, 125]}")
     else:
         raise HTTPException(400, f"unknown setting key: {key}")
 

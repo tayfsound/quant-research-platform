@@ -95,10 +95,15 @@ filterwarnings = [
     "ignore:Using `httpx` with `starlette.testclient` is deprecated.*:starlette.exceptions.StarletteDeprecationWarning",
 ]
 # Faz 230: kullanıcı bulgusu — "flaky test için retry mekanizması eklenmeli."
-# Bu oturum boyunca tekrar tekrar doğrulanan, tek ve bilinen non-regression
+# Bu oturum boyunca tekrar tekrar doğrulanan, bilinen non-regression
 # flakiness kaynağı: full-suite'te (izole çalışınca geçen) embedding-mock
-# TypeError'ı ve agent_memory.json'a eşzamanlı yazımdan doğan
-# JSONDecodeError. --only-rerun bilerek DAR tutuldu — SADECE bu iki bilinen
-# hata imzasına uyan testler yeniden denenir, farklı bir hatayla başarısız
-# olan (gerçek bir regresyon olabilecek) bir test asla sessizce maskelenmez.
-addopts = "--reruns 2 --only-rerun \"(received an invalid combination of arguments|JSONDecodeError: Expecting value)\""
+# TypeError'ı. --only-rerun bilerek DAR tutuldu — SADECE bu bilinen hata
+# imzasına uyan testler yeniden denenir, farklı bir hatayla başarısız olan
+# (gerçek bir regresyon olabilecek) bir test asla sessizce maskelenmez.
+#
+# Faz 255 review notu: JSONDecodeError imzası burada DAHA ÖNCE de vardı
+# (agent_memory.json'a eşzamanlı yazımdan) — Faz 246'da kök nedeni gerçekten
+# çözüldü (dosya kilidi + atomik yazma + kilit-altında-yeniden-okuma).
+# Listede kalması artık gereksiz risk (yeni bir regresyon aynı imzayı
+# üretirse maskelenebilirdi) — kaldırıldı.
+addopts = "--reruns 2 --only-rerun \"received an invalid combination of arguments\""

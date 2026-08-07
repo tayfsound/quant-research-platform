@@ -87,6 +87,22 @@ class DecisionRecorder:
                     stop_loss_price = entry_price + risk_mag
                     take_profit_price = entry_price - reward_mag
 
+        # Faz 255: kullanıcı isteği — token bazlı kaldıraç. Aynı capital_
+        # per_trade "teminatı" leverage kadar daha büyük bir notional
+        # kontrol ediyor (gerçek kaldıraçlı işlemin tanımı) — quantity
+        # buna göre ölçekleniyor, gerçek likidasyon fiyatı hesaplanıyor.
+        # Sembol için ayar yoksa leverage=1.0 (spot, önceki davranışla
+        # birebir aynı, geriye dönük uyumlu).
+        leverage = 1.0
+        liquidation_price = None
+        quantity = getattr(ctx.decision, "final_size", 0.0)
+        if opens_position:
+            leverage = self._symbol_leverage(ctx.market.symbol)
+            if leverage > 1.0:
+                quantity = quantity * leverage
+                from simulator.margin import compute_liquidation_price
+                liquidation_price = compute_liquidation_price(entry_price, direction, leverage)
+
         event = DecisionEvent(
             id=ctx.cycle_id,
             timestamp=ctx.timestamp,
@@ -118,10 +134,12 @@ class DecisionRecorder:
             belief_snapshot_id=belief.id if belief is not None else None,
             status="open" if opens_position else "no_trade",
             entry_price=entry_price if opens_position else None,
-            quantity=getattr(ctx.decision, "final_size", 0.0) if opens_position else None,
+            quantity=quantity if opens_position else None,
             opened_at=ctx.timestamp if opens_position else None,
             stop_loss_price=stop_loss_price,
             take_profit_price=take_profit_price,
+            leverage=leverage,
+            liquidation_price=liquidation_price,
         )
 
         self.persistor.persist(event)
@@ -131,6 +149,26 @@ class DecisionRecorder:
             log_file.write_text(event.model_dump_json(indent=2))
 
         return event
+
+    def _symbol_leverage(self, symbol: str) -> float:
+        """Faz 255: kullanıcı isteği — token bazlı kaldıraç
+        (Settings'ten, {"BTCUSDT": 10, "XAUTUSDT": 25} gibi bir JSON).
+        Ayarlanmamış/bozuk/eksik bir sembol için her zaman 1.0 (spot,
+        kaldıraçsız) döner — fail-closed, asla icat edilmiş bir kaldıraç
+        uygulanmaz."""
+        import json
+
+        from database.repositories.app_settings_repository import AppSettingsRepository
+        from database.session_factory import SessionFactory
+
+        try:
+            with SessionFactory.get_session() as session:
+                raw = AppSettingsRepository(session).get("symbol_leverage")
+            mapping = json.loads(raw) if raw else {}
+            leverage = float(mapping.get(symbol, 1.0))
+            return leverage if leverage >= 1.0 else 1.0
+        except Exception:
+            return 1.0
 
     def replay(self, decision_id: str):
         data = self.persistor.get_by_id(decision_id)

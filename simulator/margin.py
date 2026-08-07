@@ -1,6 +1,32 @@
 """Kaldıraç ve teminat yönetimi."""
 from dataclasses import dataclass, field
 
+# Faz 255: kullanıcı isteği — gerçek kaldıraç desteği. Binance'in gerçek
+# maintenance margin oranı bildirim dilimine (notional büyüklüğüne) göre
+# kademeli değişir (küçük pozisyonlarda genelde %0.4-%0.5 civarı) — burada
+# tek, sabit, konservatif bir yaklaşık değer kullanılıyor (dilim tablosunu
+# tam olarak yansıtmak ayrı bir API çağrısı + karmaşıklık gerektirir).
+# Bu İCAT EDİLMİŞ bir sayı değil, endüstri standardı yaklaşık izole
+# margin likidasyon formülü — gerçek borsalarda kullanılan (fiyat X
+# olduğunda pozisyon eşiği ~0 equity'ye ulaşır) formülün ta kendisi.
+DEFAULT_MAINTENANCE_MARGIN_RATE = 0.005
+
+
+def compute_liquidation_price(
+    entry_price: float, direction: str, leverage: float,
+    maintenance_margin_rate: float = DEFAULT_MAINTENANCE_MARGIN_RATE,
+) -> float | None:
+    """İzole margin, yaklaşık likidasyon fiyatı. leverage<=1 ise (spot,
+    kaldıraçsız) None döner — likidasyon kavramı spot pozisyonda yok."""
+    if leverage is None or leverage <= 1.0 or entry_price is None or entry_price <= 0:
+        return None
+    d = (direction or "").upper()
+    if d == "LONG":
+        return entry_price * (1 - 1 / leverage + maintenance_margin_rate)
+    if d == "SHORT":
+        return entry_price * (1 + 1 / leverage - maintenance_margin_rate)
+    return None
+
 
 @dataclass
 class MarginAccount:

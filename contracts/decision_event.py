@@ -43,3 +43,9 @@ class DecisionEvent(BaseModel):
     # gerçekten açıldığı andaki entry_price'a göre mutlak fiyat karşılığı.
     stop_loss_price: float | None = None
     take_profit_price: float | None = None
+    # Faz 255: kaldıraç desteği — leverage=1.0 spot (kaldıraçsız, önceki
+    # davranışla birebir aynı, geriye dönük uyumlu). liquidation_price
+    # sadece leverage>1 ise set edilir (bkz. simulator/margin.py::
+    # compute_liquidation_price).
+    leverage: float = 1.0
+    liquidation_price: float | None = None

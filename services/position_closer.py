@@ -199,13 +199,27 @@ class PositionCloser:
                 )
                 continue
 
-            exit_reason = self._exit_reason(
-                direction, current_price, pos.get("stop_loss_price"), pos.get("take_profit_price")
+            # Faz 255: kullanıcı isteği — kaldıraç desteği. Kaldıraçlı bir
+            # pozisyon (leverage>1) gerçek likidasyon fiyatına ulaşırsa,
+            # bu stop-loss'tan ÖNCE kontrol edilir — gerçek bir kaldıraçlı
+            # pozisyon likidasyona uğrarsa sistem bunu görmezden gelemez
+            # (fail-fake olmaz). "liquidation" ayrı, açıkça etiketlenmiş
+            # bir exit_reason — normal stop_loss ile karışmıyor.
+            liquidation_price = pos.get("liquidation_price")
+            liquidated = liquidation_price is not None and (
+                (direction == "LONG" and current_price <= liquidation_price)
+                or (direction == "SHORT" and current_price >= liquidation_price)
             )
-            if exit_reason is None:
-                continue
-
-            exit_price = current_price
+            if liquidated:
+                exit_reason = "liquidation"
+                exit_price = liquidation_price
+            else:
+                exit_reason = self._exit_reason(
+                    direction, current_price, pos.get("stop_loss_price"), pos.get("take_profit_price")
+                )
+                if exit_reason is None:
+                    continue
+                exit_price = current_price
 
             if direction == "LONG":
                 gross_pnl = (exit_price - entry_price) * quantity

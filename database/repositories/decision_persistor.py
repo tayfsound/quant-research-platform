@@ -59,7 +59,9 @@ class DecisionPersistor:
                     quantity,
                     opened_at,
                     stop_loss_price,
-                    take_profit_price
+                    take_profit_price,
+                    leverage,
+                    liquidation_price
                 )
                 VALUES (
                     :id,
@@ -77,7 +79,9 @@ class DecisionPersistor:
                     :quantity,
                     :opened_at,
                     :stop_loss_price,
-                    :take_profit_price
+                    :take_profit_price,
+                    :leverage,
+                    :liquidation_price
                 )
                 ON CONFLICT (id, timestamp) DO NOTHING
             """),
@@ -112,6 +116,8 @@ class DecisionPersistor:
                 "opened_at": event.opened_at,
                 "stop_loss_price": event.stop_loss_price,
                 "take_profit_price": event.take_profit_price,
+                "leverage": event.leverage,
+                "liquidation_price": event.liquidation_price,
             },
         )
 
