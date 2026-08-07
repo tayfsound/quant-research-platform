@@ -1,9 +1,54 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { authHeaders } from "../api/auth";
 import { PageHeader, Button, Badge, StatCard, ErrorNote } from "../components/ui";
 import { useCurrency } from "../lib/currency";
 
 type SettingsMap = Record<string, string>;
+
+// Faz 242: kullanıcı isteği — pasif banner yetmiyor, sayfaya bakılmadığı
+// sürece fark edilmiyor. Web Audio API ile (dışarıdan ses dosyası
+// gerektirmeden) kısa bir alarm sesi + Notification API ile sekme
+// arka plandayken de görünen masaüstü bildirimi. İlk unhealthy anında
+// VE sonrasında sorun devam ederse her 5 dakikada bir tekrar uyarır
+// (tek seferlik bildirim kolayca kaçırılır).
+const ALARM_RENOTIFY_MS = 5 * 60 * 1000;
+
+function playAlarmBeep() {
+  try {
+    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    [0, 220, 440].forEach((delayMs, i) => {
+      setTimeout(() => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = i % 2 === 0 ? 880 : 660;
+        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.2);
+      }, delayMs);
+    });
+  } catch {
+    // Ses çalınamıyorsa (ör. tarayıcı kısıtlaması) sessizce geç —
+    // masaüstü bildirimi zaten ayrı bir kanal.
+  }
+}
+
+function notifyUnhealthy(unhealthyLabels: string[]) {
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  new Notification("⚠ Trading sistemi sessiz kalmış olabilir", {
+    body: unhealthyLabels.join(", "),
+    tag: "signal-health-alarm",
+  });
+}
+
+function notifyRecovered() {
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  new Notification("✓ Sistem normale döndü", { tag: "signal-health-alarm" });
+}
 
 function StatusCard({
   eyebrow,
@@ -87,7 +132,32 @@ export default function Dashboard() {
   const [openCount, setOpenCount] = useState(0);
   const [summary, setSummary] = useState<{ count: number; win_rate: number; total_pnl: number } | null>(null);
   const [signalHealth, setSignalHealth] = useState<SignalHealth | null>(null);
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | "unsupported">(
+    typeof Notification === "undefined" ? "unsupported" : Notification.permission
+  );
+  const wasHealthyRef = useRef<boolean | null>(null);
+  const lastAlarmAtRef = useRef<number>(0);
   const { format, currency } = useCurrency();
+
+  const handleSignalHealth = (data: SignalHealth) => {
+    setSignalHealth(data);
+    const now = Date.now();
+    if (!data.healthy) {
+      const isNewEpisode = wasHealthyRef.current !== false;
+      const dueForRenotify = now - lastAlarmAtRef.current > ALARM_RENOTIFY_MS;
+      if (isNewEpisode || dueForRenotify) {
+        const unhealthyLabels = Object.entries(data.checks)
+          .filter(([, v]) => v.healthy === false)
+          .map(([key]) => HEALTH_CHECK_LABELS[key] || key);
+        playAlarmBeep();
+        notifyUnhealthy(unhealthyLabels);
+        lastAlarmAtRef.current = now;
+      }
+    } else if (wasHealthyRef.current === false) {
+      notifyRecovered();
+    }
+    wasHealthyRef.current = data.healthy;
+  };
 
   const load = () => {
     fetch("/api/v1/settings/", { headers: authHeaders() })
@@ -106,8 +176,13 @@ export default function Dashboard() {
     // yaşanmaması için — bkz. observability/signal_health.py.
     fetch("/health/signals")
       .then((r) => r.json())
-      .then(setSignalHealth)
+      .then(handleSignalHealth)
       .catch(() => {});
+  };
+
+  const requestNotifPermission = () => {
+    if (typeof Notification === "undefined") return;
+    Notification.requestPermission().then(setNotifPermission);
   };
 
   useEffect(() => {
@@ -143,6 +218,15 @@ export default function Dashboard() {
 
       {error && <ErrorNote>{error}</ErrorNote>}
 
+      {notifPermission === "default" && (
+        <div className="mb-6 rounded-xl border border-line bg-canvas-soft p-4 flex items-center justify-between gap-4">
+          <p className="text-xs text-ink-soft">
+            Sistem sessiz kalırsa (uzun süre işlem açmazsa) masaüstü bildirimi + sesli alarm almak ister misin?
+          </p>
+          <Button variant="secondary" onClick={requestNotifPermission}>Bildirimleri etkinleştir</Button>
+        </div>
+      )}
+
       {signalHealth && !signalHealth.healthy && (
         <div className="mb-6 rounded-xl border border-fall/20 bg-fall-soft p-4">
           <p className="text-sm font-semibold text-fall mb-2">
@@ -159,6 +243,12 @@ export default function Dashboard() {
                 </li>
               ))}
           </ul>
+          {notifPermission === "denied" && (
+            <p className="text-xs text-ink-faint mt-2">
+              Not: tarayıcı bildirimleri engellenmiş — sadece sesli alarm çalıyor. Bildirimleri açmak için
+              tarayıcı adres çubuğundaki site ayarlarından izin verebilirsin.
+            </p>
+          )}
         </div>
       )}
 
