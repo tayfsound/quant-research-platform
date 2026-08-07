@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { authHeaders } from "../api/auth";
-import { Card, PageHeader, Badge, Button, ErrorNote, EmptyState, Spinner } from "../components/ui";
+import { Card, PageHeader, Badge, Button, ErrorNote, EmptyState, Spinner, Input } from "../components/ui";
 import { useCurrency } from "../lib/currency";
 
 type Token = {
@@ -82,9 +82,104 @@ function TokenList({ tokens, onSelect }: { tokens: Token[]; onSelect: (symbol: s
   );
 }
 
+// Faz 259: kullanıcı isteği — kaldıraç ayarı Settings'ten kaldırılıp
+// buraya, Binance'daki gibi token detayında bir diyalog penceresine
+// taşındı. Backend'de değişen bir şey yok, hâlâ aynı symbol_leverage
+// ayarı (services/decision_recorder.py) — sadece nereden düzenlendiği
+// değişti.
+function LeverageDialog({
+  symbol,
+  currentLeverage,
+  onClose,
+  onSaved,
+}: {
+  symbol: string;
+  currentLeverage: number;
+  onClose: () => void;
+  onSaved: (nextLeverage: number) => void;
+}) {
+  const [value, setValue] = useState(String(currentLeverage));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const numeric = Math.min(125, Math.max(1, parseFloat(value.replace(",", ".")) || 1));
+
+  const save = () => {
+    setSaving(true);
+    setError(null);
+    fetch("/api/v1/settings/", { headers: authHeaders() })
+      .then((r) => r.json())
+      .then((data) => {
+        let map: Record<string, number> = {};
+        try {
+          map = JSON.parse(data.settings?.symbol_leverage || "{}");
+        } catch {
+          map = {};
+        }
+        map = { ...map, [symbol]: numeric };
+        return fetch(`/api/v1/settings/symbol_leverage?value=${encodeURIComponent(JSON.stringify(map))}`, {
+          method: "POST",
+          headers: authHeaders(),
+        });
+      })
+      .then(async (r) => {
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          throw new Error(body.detail || `${r.status}`);
+        }
+        onSaved(numeric);
+        onClose();
+      })
+      .catch((e) => setError(e.message || String(e)))
+      .finally(() => setSaving(false));
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-sm">
+        <Card>
+          <h3 className="text-sm font-semibold text-ink mb-1">{symbol} kaldıracı</h3>
+          <p className="text-xs text-ink-soft mb-4">
+            1x = spot (kaldıraçsız). Kaldıraçlı bir pozisyon gerçek likidasyon fiyatına ulaşırsa
+            sistem bunu görmezden gelmez — pozisyon likidasyon fiyatından kapanır.
+          </p>
+
+          {error && <ErrorNote>{error}</ErrorNote>}
+
+          <div className="flex items-center gap-3 mb-3">
+            <input
+              type="range"
+              min={1}
+              max={125}
+              step={1}
+              value={Math.round(numeric)}
+              onChange={(e) => setValue(e.target.value)}
+              className="flex-1 accent-accent"
+            />
+            <span className="w-14 text-right font-mono text-sm text-ink font-semibold">{numeric}x</span>
+          </div>
+
+          <div className="flex gap-2 mb-5">
+            <Input decimal value={value} onChange={setValue} placeholder="ör. 2.5" />
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={onClose}>İptal</Button>
+            <Button onClick={save} disabled={saving}>
+              {saving ? "Kaydediliyor…" : "Kaydet"}
+            </Button>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 function TokenDetailView({ symbol, onBack }: { symbol: string; onBack: () => void }) {
   const [detail, setDetail] = useState<TokenDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [leverage, setLeverage] = useState<number>(1);
+  const [leverageDialogOpen, setLeverageDialogOpen] = useState(false);
   const { format } = useCurrency();
 
   const load = () => {
@@ -96,6 +191,18 @@ function TokenDetailView({ symbol, onBack }: { symbol: string; onBack: () => voi
       })
       .then(setDetail)
       .catch((e) => setError(String(e.message || e)));
+
+    fetch("/api/v1/settings/", { headers: authHeaders() })
+      .then((r) => r.json())
+      .then((data) => {
+        try {
+          const map = JSON.parse(data.settings?.symbol_leverage || "{}");
+          setLeverage(Number(map[symbol]) || 1);
+        } catch {
+          setLeverage(1);
+        }
+      })
+      .catch(() => {});
   };
 
   useEffect(() => {
@@ -111,11 +218,25 @@ function TokenDetailView({ symbol, onBack }: { symbol: string; onBack: () => voi
         title={symbol}
         description="Bu sembol için son council kararları, güncel fiyat ve order book."
         action={
-          <Button variant="secondary" onClick={onBack}>
-            ← Tokens'a dön
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={() => setLeverageDialogOpen(true)}>
+              Kaldıraç: {leverage}x
+            </Button>
+            <Button variant="secondary" onClick={onBack}>
+              ← Tokens'a dön
+            </Button>
+          </div>
         }
       />
+
+      {leverageDialogOpen && (
+        <LeverageDialog
+          symbol={symbol}
+          currentLeverage={leverage}
+          onClose={() => setLeverageDialogOpen(false)}
+          onSaved={setLeverage}
+        />
+      )}
 
       {error && <ErrorNote>{error}</ErrorNote>}
 

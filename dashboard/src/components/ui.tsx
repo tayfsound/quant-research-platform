@@ -82,20 +82,30 @@ export function Input({
   onChange,
   placeholder,
   type = "text",
+  decimal = false,
   className = "",
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   type?: string;
+  // Ondalıklı sayı alanları (kaldıraç, sermaye payı gibi) için: gerçek
+  // bulgu — native <input type="number"> tarayıcı/işletim sistemi
+  // ayarına göre "," girişini ya tamamen engelliyor ya da sessizce
+  // görmezden geliyordu, kullanıcı Türkçe klavye alışkanlığıyla "2,5"
+  // yazınca alan görünüşte dolu ama gerçek değer boş/geçersiz kalıyordu.
+  // decimal=true iken metin girişine geçilip "," otomatik "."'a
+  // çevriliyor — hem "." hem "," ile yazılan değer aynı şekilde çalışır.
+  decimal?: boolean;
   className?: string;
 }) {
   return (
     <input
       value={value}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={(e) => onChange(decimal ? e.target.value.replace(",", ".") : e.target.value)}
       placeholder={placeholder}
-      type={type}
+      type={decimal ? "text" : type}
+      inputMode={decimal ? "decimal" : undefined}
       className={`w-full px-3 py-2 rounded-lg bg-canvas-soft border border-line text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent ${className}`}
     />
   );
