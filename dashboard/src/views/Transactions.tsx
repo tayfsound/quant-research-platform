@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { authHeaders } from "../api/auth";
 import { PageHeader, Badge, EmptyState, StatCard } from "../components/ui";
 import { useCurrency } from "../lib/currency";
@@ -38,11 +38,42 @@ function fmt(n: number | null | undefined, digits = 2) {
   return n === null || n === undefined ? "—" : n.toFixed(digits);
 }
 
+// Gerçek bulgu (Faz 260): risk/ATR formülü her değiştiğinde, dashboard'da
+// görünen "son N işlem" bir süre eski formülle açılmış pozisyonlardan
+// oluşmaya devam ediyor — kullanıcı her seferinde bunu YENİ formülün
+// başarısızlığı sanıyordu. Bu filtre, "sadece gerçekten yakın zamanda
+// kapananları göster" diyebilmek için — sunucu tarafında bir şey
+// değişmiyor, zaten çekilmiş olan `trades` listesi client-side süzülüyor.
+const SINCE_OPTIONS: { label: string; minutes: number | null }[] = [
+  { label: "Son 15 dk", minutes: 15 },
+  { label: "Son 1 saat", minutes: 60 },
+  { label: "Son 24 saat", minutes: 1440 },
+  { label: "Tümü", minutes: null },
+];
+
 export default function Transactions() {
   const [open, setOpen] = useState<Position[]>([]);
   const [trades, setTrades] = useState<Position[]>([]);
   const [summary, setSummary] = useState<{ count: number; win_rate: number; total_pnl: number } | null>(null);
+  const [sinceMinutes, setSinceMinutes] = useState<number | null>(null);
   const { format, currency } = useCurrency();
+
+  const filteredTrades = useMemo(() => {
+    if (sinceMinutes === null) return trades;
+    const cutoff = Date.now() - sinceMinutes * 60_000;
+    return trades.filter((t) => t.closed_at && new Date(t.closed_at).getTime() >= cutoff);
+  }, [trades, sinceMinutes]);
+
+  const filteredSummary = useMemo(() => {
+    if (sinceMinutes === null) return null;
+    const wins = filteredTrades.filter((t) => (t.pnl ?? 0) > 0).length;
+    const totalPnl = filteredTrades.reduce((sum, t) => sum + (t.pnl ?? 0), 0);
+    return {
+      count: filteredTrades.length,
+      win_rate: filteredTrades.length ? wins / filteredTrades.length : 0,
+      total_pnl: totalPnl,
+    };
+  }, [filteredTrades, sinceMinutes]);
 
   const load = () => {
     fetch("/api/v1/positions", { headers: authHeaders() })
@@ -144,8 +175,33 @@ export default function Transactions() {
           her zaman gerçek toplamı yansıtır).
         </p>
       )}
-      {trades.length === 0 ? (
-        <EmptyState label="Henüz kapanmış işlem yok." />
+
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        {SINCE_OPTIONS.map((opt) => (
+          <button
+            key={opt.label}
+            onClick={() => setSinceMinutes(opt.minutes)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+              sinceMinutes === opt.minutes
+                ? "bg-accent text-white border-accent"
+                : "bg-canvas-soft text-ink-soft border-line hover:bg-surface-soft"
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {filteredSummary && (
+        <p className="text-xs text-ink-faint mb-3">
+          {filteredSummary.count === 0
+            ? "Bu aralıkta henüz kapanmış işlem yok — yukarıdaki genel özet daha eski işlemleri yansıtıyor."
+            : `Bu aralıkta ${filteredSummary.count} işlem kapandı — %${(filteredSummary.win_rate * 100).toFixed(0)} kazanma oranı, ${format(filteredSummary.total_pnl)} toplam PnL.`}
+        </p>
+      )}
+
+      {filteredTrades.length === 0 ? (
+        <EmptyState label={sinceMinutes === null ? "Henüz kapanmış işlem yok." : "Bu aralıkta kapanmış işlem yok."} />
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -163,7 +219,7 @@ export default function Transactions() {
               </tr>
             </thead>
             <tbody>
-              {trades.map((t) => (
+              {filteredTrades.map((t) => (
                 <tr key={t.id} className="border-t border-line-soft">
                   <td className="py-2 pr-4 font-mono text-ink">
                     {t.symbol}
