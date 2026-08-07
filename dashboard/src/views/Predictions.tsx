@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { authHeaders } from "../api/auth";
 import { Card, PageHeader, Badge, Button, ErrorNote, EmptyState } from "../components/ui";
+import { useCurrency } from "../lib/currency";
 
 function directionTone(direction: string) {
   if (direction === "LONG") return "rise" as const;
@@ -14,6 +15,7 @@ export default function Predictions() {
   const [loading, setLoading] = useState(false);
   const [watchlist, setWatchlist] = useState<string[]>([]);
   const [symbol, setSymbol] = useState("");
+  const { format } = useCurrency();
 
   useEffect(() => {
     // Faz 215: kullanıcı "Predictions sadece BTC ile çalışıyor" dedi —
@@ -101,9 +103,9 @@ export default function Predictions() {
           <Card>
             <p className="text-xs text-ink-faint uppercase tracking-wide">Simulated PnL</p>
             <p className={`text-xl font-semibold mt-2 ${result.pnl >= 0 ? "text-rise" : "text-fall"}`}>
-              {result.pnl?.toFixed(2)}
+              {format(result.pnl)}
             </p>
-            <p className="text-xs text-ink-soft mt-1">fee: {result.fee?.toFixed(4)}</p>
+            <p className="text-xs text-ink-soft mt-1">fee: {format(result.fee)}</p>
           </Card>
 
           <Card>

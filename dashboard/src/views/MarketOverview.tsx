@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createChart, CandlestickSeries, ColorType, type IChartApi } from "lightweight-charts";
 import { authHeaders } from "../api/auth";
 import { Card, PageHeader, Badge, EmptyState, Input, Button } from "../components/ui";
+import { useCurrency } from "../lib/currency";
 
 const RESOLUTIONS = ["1m", "5m", "15m", "1h", "4h", "1d"];
 
@@ -12,6 +13,7 @@ export default function MarketOverview() {
   const [orderBook, setOrderBook] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [watchlist, setWatchlist] = useState<string[]>([]);
+  const { format } = useCurrency();
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
 
@@ -170,11 +172,11 @@ export default function MarketOverview() {
         <div className="grid grid-cols-4 gap-3 mt-4">
           <Card>
             <p className="text-xs text-ink-faint">Best Bid</p>
-            <p className="text-lg font-semibold text-rise mt-1">{orderBook.best_bid.toFixed(2)}</p>
+            <p className="text-lg font-semibold text-rise mt-1">{format(orderBook.best_bid)}</p>
           </Card>
           <Card>
             <p className="text-xs text-ink-faint">Best Ask</p>
-            <p className="text-lg font-semibold text-fall mt-1">{orderBook.best_ask.toFixed(2)}</p>
+            <p className="text-lg font-semibold text-fall mt-1">{format(orderBook.best_ask)}</p>
           </Card>
           <Card>
             <p className="text-xs text-ink-faint">Imbalance</p>
