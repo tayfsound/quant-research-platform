@@ -17,6 +17,30 @@ from services.decision_recorder import DecisionRecorder
 from config import get_settings
 from contracts.context import CognitiveCycleContext
 
+import time
+
+# Faz 255 performans düzeltmesi: kritik bulgu — canlıda doğrulandı. Günlük
+# ATR'yi (risk ölçeklendirmesi için) HER trading cycle'da (120s'de bir),
+# HER sembol için yeniden çekmek gerçek bir performans regresyonuna yol
+# açtı — her cycle sembol başına bir EK Binance isteği eklendi, bu da
+# cycle süresini uzatıp trading_cycle sağlık kontrolünün "unhealthy"
+# (dakikalarca bayat) düşmesine sebep oldu. Günlük ATR zaten GÜNLÜK bir
+# ölçü — 120 saniyede bir tazelenmesinin hiçbir anlamı yok. 15 dakikalık
+# önbellek, riski gerçekçi tutarken gereksiz API yükünü ~7x azaltıyor.
+_DAILY_BARS_CACHE: dict[str, tuple[float, list]] = {}
+_DAILY_BARS_CACHE_TTL_SECONDS = 900
+
+
+def _get_daily_bars_cached(data_provider, symbol: str) -> list:
+    now = time.time()
+    cached = _DAILY_BARS_CACHE.get(symbol)
+    if cached and (now - cached[0]) < _DAILY_BARS_CACHE_TTL_SECONDS:
+        return cached[1]
+    bars = data_provider.get_ohlcv(symbol, "1d", limit=30) or []
+    _DAILY_BARS_CACHE[symbol] = (now, bars)
+    return bars
+
+
 def build_cognitive_context(symbol: str, timeframe: str, data, daily_data=None) -> CognitiveCycleContext:
     """Faz 224 review bulgusu (E): bu mantık önceden HEM burada (özel
     _build_context metodu olarak) HEM DE api/rest/cognitive.py'de
@@ -132,7 +156,7 @@ class CognitiveOrchestrator:
         # Faz 251: risk ölçeklendirmesi için ayrıca günlük bar — bkz.
         # build_cognitive_context üstündeki not. Çekilemezse (ör. geçici
         # ağ hatası) None kalır, fail-closed.
-        daily_data = self.data_provider.get_ohlcv(symbol, "1d", limit=30)
+        daily_data = _get_daily_bars_cached(self.data_provider, symbol)
 
         ctx = self._build_context(symbol, timeframe, data, daily_data=daily_data)
         ctx = self.engine.run(ctx, persist=False)

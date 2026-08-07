@@ -5,7 +5,7 @@ from contracts.auth import Role
 from market_data.ingestion.data_provider import get_ohlcv_provider
 from services.auth_service import AuthContext, require_role
 from services.cognitive_engine import CognitiveEngine
-from services.orchestrator import build_cognitive_context
+from services.orchestrator import _get_daily_bars_cached, build_cognitive_context
 
 router = APIRouter(prefix="/cognitive", tags=["cognitive"])
 
@@ -62,7 +62,7 @@ async def run_cognitive_cycle(
     else:
         # Faz 251: risk ölçeklendirmesi için ayrıca günlük bar — bkz.
         # services/orchestrator.py::build_cognitive_context üstündeki not.
-        daily_data = provider.get_ohlcv(symbol, "1d", limit=30)
+        daily_data = _get_daily_bars_cached(provider, symbol)
         ctx = build_cognitive_context(symbol, timeframe, data, daily_data=daily_data)
 
     result = engine.run(ctx)
