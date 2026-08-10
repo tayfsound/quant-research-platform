@@ -14,6 +14,12 @@ class AgentWeightSnapshot(BaseModel):
     weights: dict[str, float] = Field(default_factory=dict)
 
     evaluation_window: int = 0
+    # Faz 268g — kullanıcı isteği: kısa/orta/uzun vadeli ölçümler ayrı ayrı
+    # değerlendirilsin (tek bir pencereye göre şişirilmiş bir sayı yerine).
+    # {domain: {"short": x, "medium": y, "long": z}} — nihai `weights`
+    # bunların ortalaması, ama her bileşen ayrı ayrı burada şeffaf kalıyor
+    # (bkz. services/weight_optimizer.py::propose_weights).
+    window_breakdown: dict[str, dict[str, float]] = Field(default_factory=dict)
     previous_snapshot_id: UUID | None = None
     snapshot_hash: str = ""
     reason: str = "performance_update"

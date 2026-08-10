@@ -122,31 +122,49 @@ def test_train_confidence_model_learns_a_real_pattern_from_fresh_window_dominate
     base_time = datetime.now(UTC) + timedelta(days=3650)
     symbol = f"CONFMODEL{uuid4().hex[:8]}"
 
-    # Yuksek RSI'da technical_agent'in yonu HEP dogru cikiyor (executed'la
-    # ayni), dusuk RSI'da HEP yanlis - ogrenilebilir, net bir orunte.
-    for i in range(window // 2):
-        _persist_closed_decision(
-            symbol, technical_direction="LONG", executed_direction="LONG",
-            pnl=10.0, features={"RSI": 85.0, "trend": "bullish"},
-            closed_at=base_time - timedelta(seconds=i),
-        )
-    for i in range(window // 2):
-        _persist_closed_decision(
-            symbol, technical_direction="LONG", executed_direction="SHORT",
-            pnl=10.0, features={"RSI": 15.0, "trend": "bearish"},
-            closed_at=base_time - timedelta(seconds=window // 2 + i),
-        )
+    try:
+        # Yuksek RSI'da technical_agent'in yonu HEP dogru cikiyor (executed'la
+        # ayni), dusuk RSI'da HEP yanlis - ogrenilebilir, net bir orunte.
+        for i in range(window // 2):
+            _persist_closed_decision(
+                symbol, technical_direction="LONG", executed_direction="LONG",
+                pnl=10.0, features={"RSI": 85.0, "trend": "bullish"},
+                closed_at=base_time - timedelta(seconds=i),
+            )
+        for i in range(window // 2):
+            _persist_closed_decision(
+                symbol, technical_direction="LONG", executed_direction="SHORT",
+                pnl=10.0, features={"RSI": 15.0, "trend": "bearish"},
+                closed_at=base_time - timedelta(seconds=window // 2 + i),
+            )
 
-    model = train_confidence_model("technical", window=window, min_samples=window)
+        model = train_confidence_model("technical", window=window, min_samples=window)
 
-    assert model is not None
-    assert model.sample_count == window
-    assert model.domain == "technical"
-    assert "rsi_value" in model.numeric_features
+        assert model is not None
+        assert model.sample_count == window
+        assert model.domain == "technical"
+        assert "rsi_value" in model.numeric_features
 
-    # Model, yuksek RSI'yi dogru cikma ile iliskilendirmis olmali (pozitif katsayi).
-    rsi_idx = model.numeric_features.index("rsi_value")
-    assert model.coefficients[rsi_idx] > 0
+        # Model, yuksek RSI'yi dogru cikma ile iliskilendirmis olmali (pozitif katsayi).
+        rsi_idx = model.numeric_features.index("rsi_value")
+        assert model.coefficients[rsi_idx] > 0
+    finally:
+        # Faz 268j — kritik bulgu: bu testin base_time=+3650 gün gelecek
+        # zaman damgası kalıcı olarak DB'de kalınca (temizlenmeden),
+        # sembolden bağımsız HERHANGİ bir "ORDER BY closed_at DESC"
+        # sorgusunun (ör. services/threshold_optimizer.py, services/
+        # confidence_calibration.py) en üstünü SONSUZA KADAR işgal
+        # ediyordu — testin kendisi izole ama paylaşılan quantdb_test'i
+        # kirletiyordu. Gerçek bulgu: 11 ayrı test çalıştırmasından kalan
+        # 1320+ satır, tam test paketinde test_threshold_optimizer.py'yi
+        # gerçekten kırdı (act_threshold 0.5 yerine 0.4 çıktı, çünkü
+        # kendi 500 satırlık penceresi tamamen bu gelecek-tarihli
+        # satırlarla doluydu). Diğer testlerin (ör. Faz 262'deki symbol_
+        # leverage temizliği) kurduğu AYNI desen.
+        with SessionFactory.get_session() as session:
+            from sqlalchemy import text
+            session.execute(text("DELETE FROM decisions WHERE symbol = :symbol"), {"symbol": symbol})
+            session.commit()
 
 
 def test_train_confidence_model_returns_none_when_below_min_samples():

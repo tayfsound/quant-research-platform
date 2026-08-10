@@ -25,6 +25,8 @@ simülasyonuna sızdırmamak için (services/orchestrator.py::
 build_cognitive_context()'i DOĞRUDAN çağırmıyoruz, ama AYNI signal_engine
 fonksiyonlarını kullanıyoruz — "iki beyin" riski sinyal hesaplamasında
 yok, sadece risk-context kurulumunda kasıtlı bir ayrım var)."""
+from datetime import timedelta
+
 from contracts.agent import VOTING_AGENT_DOMAINS
 from contracts.context import CognitiveCycleContext
 from contracts.contexts.risk import RiskLimitEntry
@@ -57,6 +59,38 @@ _VALID_AGENT_DOMAINS = VOTING_AGENT_DOMAINS
 DEFAULT_LOOKBACK = 100
 DEFAULT_MAX_FORWARD_BARS = 200
 
+# Faz 268d — kritik bulgu: son 3 backtest çalıştırması (15m, iki tekli
+# BTCUSDT/ETHUSDT ve bir SOLUSDT+BNBUSDT) 0 işlem üretti. Gerçek veriyle
+# doğrulandı: bu dosya risk (stop/target) tabanını backtest'in KENDİ
+# `timeframe`'inden bağımsız, HER ZAMAN gerçek GÜNLÜK ATR'den kuruyordu
+# (aşağıdaki eski `daily_bars = fetch_real_history(symbol, "1d", 400)`).
+# BTCUSDT örneği: günlük ATR ~%2.0, 1:4 oranla hedef mesafesi ~$5188 —
+# ama test edilen 300 bar'lık (75 saatlik) 15m penceresinde fiyat baştan
+# sona sadece $1520 aralığında kaldı. Hedefe ulaşmak MATEMATİKSEL OLARAK
+# imkansızdı, max_forward_bars (200 bar = 50 saat) içinde hiçbir pozisyon
+# kapanamadı (120/120 "open_positions_never_closed"). Bu, canlıda Faz
+# 262b/265'in düzelttiği AYNI hata sınıfı ("kısa-vadeli katmana günlük
+# ATR tabanlı, çok geniş hedef") — ama o düzeltme sadece services/
+# orchestrator.py::propose()'a uygulanmıştı, bu backtest modülüne hiç
+# yansımamıştı. Aynı mantığı burada da uyguluyoruz: risk tabanı artık
+# backtest'in KENDİ timeframe'ine göre seçiliyor (candle_timeframe ↔
+# risk_timeframe eşlemesi, TRADE_HORIZON_TO_RISK_TIMEFRAME'in ruhu aynı
+# ama burada kullanıcı ayarı değil, backtest'in test ettiği timeframe
+# giriş noktası).
+_BACKTEST_TIMEFRAME_TO_RISK_TIMEFRAME: dict[str, str] = {
+    "1m": "1h", "3m": "1h", "5m": "1h",
+    "15m": "1h", "30m": "4h",
+    "1h": "4h", "2h": "4h", "4h": "4h",
+    "1d": "1d",
+}
+
+_TIMEFRAME_TO_TIMEDELTA: dict[str, timedelta] = {
+    "1m": timedelta(minutes=1), "3m": timedelta(minutes=3), "5m": timedelta(minutes=5),
+    "15m": timedelta(minutes=15), "30m": timedelta(minutes=30),
+    "1h": timedelta(hours=1), "2h": timedelta(hours=2), "4h": timedelta(hours=4),
+    "1d": timedelta(days=1),
+}
+
 
 async def fetch_real_history(symbol: str, timeframe: str, limit: int) -> list[OHLCV]:
     adapter = BinanceAdapter()
@@ -68,16 +102,17 @@ async def fetch_real_history(symbol: str, timeframe: str, limit: int) -> list[OH
     return from_binance_klines(raw)
 
 
-def _daily_atr_pct_asof(daily_bars: list[OHLCV], as_of, period: int = 14) -> float | None:
-    """Faz 251: no-lookahead günlük ATR — services/orchestrator.py::
-    build_cognitive_context ile aynı risk çerçevesi, ama backtest walk-
-    forward'ında gerçek zamanın simülasyonu bozulmasın diye SADECE as_of
-    anından önce tamamen kapanmış günlük barlar kullanılıyor (bugünün
-    hâlâ oluşmakta olan mumu asla dahil edilmiyor)."""
-    if not daily_bars:
+def _risk_atr_pct_asof(
+    risk_bars: list[OHLCV], as_of, bar_duration: timedelta, period: int = 14,
+) -> float | None:
+    """Faz 251/268d: no-lookahead risk ATR — SADECE as_of anından önce
+    TAMAMEN kapanmış bar'lar kullanılıyor (bar_duration, o bar'ın ne zaman
+    gerçekten kapandığını hesaba katıyor — 1d bar'lar için gün başlangıcı,
+    1h/4h bar'lar için kendi süreleri; hâlâ oluşmakta olan/gelecekteki
+    hiçbir bar asla dahil edilmiyor)."""
+    if not risk_bars:
         return None
-    day_start = as_of.replace(hour=0, minute=0, second=0, microsecond=0)
-    visible = [b for b in daily_bars if b.timestamp < day_start]
+    visible = [b for b in risk_bars if b.timestamp + bar_duration <= as_of]
     if len(visible) < period + 1:
         return None
     return compute_daily_atr_pct(visible, period=period)
@@ -211,20 +246,22 @@ def run_real_backtest(
     bars = _run_coroutine_sync(fetch_real_history(symbol, timeframe, bars_count))
     fee_engine = FeeEngine()
 
-    # Faz 251: risk ölçeklendirmesi için günlük bar geçmişi — TEK seferde
-    # çekilip (API çağrısı israfı yok), her walk-forward adımında sadece
-    # o ana kadar GERÇEKTEN kapanmış günleri kullanan _daily_atr_pct_asof
-    # ile no-lookahead şekilde dilimleniyor. 400 gün (~13 ay) 1000 bar'lık
-    # herhangi bir timeframe'in (1m'den 1d'ye) kapsayacağı süreyi rahatça
-    # aşıyor.
-    daily_bars = _run_coroutine_sync(fetch_real_history(symbol, "1d", 400))
+    # Faz 268d: risk ölçeklendirmesi artık backtest'in KENDİ timeframe'ine
+    # göre seçilen bir bar setinden geliyor (ör. 15m sinyal -> 1h risk
+    # tabanı), her zaman günlük DEĞİL — bkz. dosya başındaki Faz 268d
+    # notu. TEK seferde çekilip (API çağrısı israfı yok), her walk-forward
+    # adımında sadece o ana kadar GERÇEKTEN kapanmış bar'ları kullanan
+    # _risk_atr_pct_asof ile no-lookahead şekilde dilimleniyor.
+    risk_timeframe = _BACKTEST_TIMEFRAME_TO_RISK_TIMEFRAME.get(timeframe, "1d")
+    risk_bar_duration = _TIMEFRAME_TO_TIMEDELTA.get(risk_timeframe, timedelta(days=1))
+    risk_bars = _run_coroutine_sync(fetch_real_history(symbol, risk_timeframe, 400))
 
     trades = []
     open_positions_never_closed = 0
 
     for t in range(lookback, len(bars) - 1):
         window = bars[max(0, t - lookback): t + 1]
-        daily_atr_pct = _daily_atr_pct_asof(daily_bars, bars[t].timestamp)
+        daily_atr_pct = _risk_atr_pct_asof(risk_bars, bars[t].timestamp, risk_bar_duration)
         ctx = _build_backtest_context(symbol, timeframe, window, capital_per_trade, daily_atr_pct=daily_atr_pct)
         result_ctx = engine.run(ctx, persist=False)
 

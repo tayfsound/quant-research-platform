@@ -42,3 +42,32 @@ def test_debate_with_rounds():
     result = debate.run_debate(opinions, {})
     assert result.final_direction == "LONG"
     assert len(result.rounds) == 2
+
+
+def test_wait_votes_cannot_outvote_directional_conviction():
+    """Faz 268f: kritik bulgu — düşük confidence'lı ama çoğunlukta olan
+    yönlü oylar (LONG), yüksek confidence'lı ama azınlıkta olan WAIT
+    oylarına yenik düşmemeli. WAIT bir yön tahmini değil, çekimser kalma
+    — LONG/SHORT'u "oy" olarak yenemez, sadece nihai confidence'ı
+    seyreltir."""
+    debate = AgentDebate(max_rounds=0)
+    opinions = [
+        AgentOpinion(domain=AgentDomain.TECHNICAL, direction="LONG", confidence=0.3).recalculate(),
+        AgentOpinion(domain=AgentDomain.QUANT, direction="LONG", confidence=0.3).recalculate(),
+        AgentOpinion(domain=AgentDomain.PATTERN, direction="LONG", confidence=0.3).recalculate(),
+        AgentOpinion(domain=AgentDomain.SENTIMENT, direction="LONG", confidence=0.3).recalculate(),
+        AgentOpinion(domain=AgentDomain.TIME, direction="WAIT", confidence=0.6).recalculate(),
+        AgentOpinion(domain=AgentDomain.EPISTEMOLOGY, direction="WAIT", confidence=0.6).recalculate(),
+    ]
+    result = debate.run_debate(opinions, {})
+    assert result.final_direction == "LONG"
+
+
+def test_all_wait_opinions_still_resolve_to_wait():
+    debate = AgentDebate(max_rounds=0)
+    opinions = [
+        AgentOpinion(domain=AgentDomain.TIME, direction="WAIT", confidence=0.6).recalculate(),
+        AgentOpinion(domain=AgentDomain.EPISTEMOLOGY, direction="WAIT", confidence=0.6).recalculate(),
+    ]
+    result = debate.run_debate(opinions, {})
+    assert result.final_direction == "WAIT"

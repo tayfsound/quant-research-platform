@@ -48,12 +48,12 @@ class CognitiveEngine:
         self.decision_fusion = DecisionFusionStage()
         self.record_stage = RecordingStage()
         self.risk_gate_stage = RiskGateStage(self.guardrail_stage.risk_engine)
-        # Gap #8: MemoryEngine existed, worked (once its own two bugs were
-        # fixed — see services/memory_consolidator.py), and was never called
-        # from anywhere. Only wired into finalize(), not run(): backtests
-        # call run(persist=False) and never finalize(), so replaying
-        # thousands of historical bars doesn't spam real embedding
-        # computation + episodic DB writes for synthetic data.
+        # Faz 268j — kritik bulgu: finalize() artık memory_engine.execute()
+        # ÇAĞIRMIYOR (bkz. finalize()'ın docstring'i — sahte ForwardOutcome
+        # ile episodic hafızayı kirletiyordu, canlı kararları etkiliyordu).
+        # Instance burada kasıtlı olarak duruyor: gerçek kapanışlarla
+        # (services/position_closer.py) beslenecek şekilde yeniden
+        # bağlanmayı bekliyor — henüz yapılmadı, ayrı bir iş.
         self.memory_engine = MemoryEngine()
 
         self.outcome_evaluator = OutcomeEvaluator()
@@ -90,13 +90,33 @@ class CognitiveEngine:
         return ctx
 
     def finalize(self, ctx: CognitiveCycleContext) -> CognitiveCycleContext:
-        """Outcome set edildikten sonra tek kayit + learning."""
+        """Outcome set edildikten sonra tek kayit + learning.
+
+        Faz 268i/268j — kritik bulgu, kullanıcı kararıyla acil düzeltildi:
+        buradaki ctx.outcome, Faz 250'nin AgentMemory/WeightOptimizer'ı
+        beslemesini KESTİĞİ AYNI düşük kaliteli sinyal (services/
+        orchestrator.py::finalize_proposal'daki gerçek stop/target değil,
+        AYNI cycle içinde n-bar ileri hesaplanan bir proxy — gerçek zaman
+        hiç geçmiyor). memory_engine.execute(ctx) bunu episodic/pgvector
+        hafızaya yazıyordu, services/decision_context_builder.py da
+        (MemoryStage üzerinden, HER cycle'da, council oy vermeden ÖNCE)
+        bu hafızadan "benzer durumda ne oldu" diye bir MemoryInsight
+        (win_rate/dominant_direction/confidence) üretip ctx.cognition.
+        relevant_knowledge'a enjekte ediyordu — yani sahte n-bar sonuçları
+        gerçek canlı kararları DOĞRUDAN etkiliyordu. Faz 250'nin kapattığı
+        sızıntının tam bir eşiydi, sadece episodic/semantic-search yolundan.
+        Bu wiring önceki bir Gap #8 düzeltmesiydi ("hiç sinyal olmamasındansa
+        n-bar proxy'den gelen bir sinyal olsun") ama kullanıcı bu ödünleşimi
+        artık kabul etmiyor — gerçek olmayan bir "geçmişte kazandık/
+        kaybettik" sinyaliyle karar motorunu beslemektense (fail-fake),
+        hiç beslememek (fail-closed) tercih edildi. Episodic hafıza artık
+        SADECE gerçek kapanışlarla (services/position_closer.py) beslenmeli
+        — o bağlantı henüz kurulmadı, ayrı bir iş (bkz. tests/test_memory_
+        engine_wiring.py, artık bu no-op'u doğruluyor)."""
         belief = ctx.__dict__.get("_last_belief")
         opinions = ctx.__dict__.get("_last_opinions") or []
         event = self.record_stage.execute(ctx, belief, opinions)
         self._persist_and_learn(event, ctx)
-        if ctx.outcome is not None:
-            self.memory_engine.execute(ctx)
         return ctx
 
     def _persist_and_learn(

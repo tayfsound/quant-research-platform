@@ -50,44 +50,57 @@ class WeightOptimizer:
             )
 
 
+        # Faz 268g — kullanıcı bulgusu: tek bir evaluation_window'a göre
+        # şişirilmiş bir tek sayı, hem "piyasa rejimi hızlı değişiyor, kısa
+        # pencere lazım" hem de "kısa pencere gürültüye çok açık, uzun
+        # pencere lazım" endişelerinin İKİSİNİ de tek başına çözemiyordu.
+        # Artık kısa/orta/uzun vadeli doğruluk AYRI AYRI ölçülüyor (aynı
+        # evaluation_window'dan türetilen 3 pencere — varsayılan 100 için
+        # 50/100/500) ve nihai ağırlık bunların basit ortalaması: hiçbiri
+        # diğerine keyfi bir üstünlük verilmeden ("icat edilmiş" bir
+        # ağırlıklandırma değil), ama tek bir pencerenin o anki gürültüsü
+        # ya da tek bir rejimin şişirdiği tüm-zamanlar ortalaması artık tek
+        # başına belirleyici olamıyor. Her bileşen window_breakdown'da ayrı
+        # ayrı görünür kalıyor (şeffaflık, teşhis için).
+        windows = {
+            "short": max(1, evaluation_window // 2),
+            "medium": evaluation_window,
+            "long": evaluation_window * 5,
+        }
+
         proposed = {}
+        window_breakdown: dict[str, dict[str, float]] = {}
 
         for domain in domains:
+            component_scores = {}
+            for label, window in windows.items():
+                # Faz 263: kritik bulgu — evaluation_window önceden sadece
+                # confidence_factor'ü ölçeklendiriyordu, HANGİ kayıtların
+                # "doğruluk" sayılacağını asla sınırlamıyordu — ağırlıklar
+                # hep tüm-zamanlar ortalamasına göre belirleniyordu, bir
+                # ajanın YAKIN ZAMANDA çökmüş olması hiç yansımıyordu (gerçek
+                # bulgu: technical_agent tüm-zamanlar %76.7 ama son 20
+                # tahmininin %15'i doğru). Artık gerçekten SADECE ilgili
+                # pencerenin son N kaydı kullanılıyor.
+                summary = self.agent_memory.get_summary(domain, window=window)
 
-            # Faz 263: kritik bulgu — evaluation_window önceden sadece
-            # confidence_factor'ü ölçeklendiriyordu, HANGİ kayıtların
-            # "doğruluk" sayılacağını asla sınırlamıyordu — ağırlıklar
-            # hep tüm-zamanlar ortalamasına göre belirleniyordu, bir
-            # ajanın YAKIN ZAMANDA çökmüş olması hiç yansımıyordu (gerçek
-            # bulgu: technical_agent tüm-zamanlar %76.7 ama son 20
-            # tahmininin %15'i doğru). Artık gerçekten SADECE son
-            # evaluation_window kayıt kullanılıyor.
-            summary = self.agent_memory.get_summary(domain, window=evaluation_window)
+                total = summary.total_predictions
+                correct = int(summary.overall_accuracy * total)
 
-            total = summary.total_predictions
-            correct = int(
-                summary.overall_accuracy * total
-            )
+                smoothed_accuracy = (
+                    correct + self.prior_strength
+                ) / (
+                    total + self.prior_strength * 2
+                )
 
+                confidence_factor = min(total / window, 1.0)
 
-            smoothed_accuracy = (
-                correct + self.prior_strength
-            ) / (
-                total + self.prior_strength * 2
-            )
+                component_scores[label] = round(smoothed_accuracy * confidence_factor, 3)
 
-
-            confidence_factor = min(
-                total / evaluation_window,
-                1.0
-            )
-
-
+            window_breakdown[domain] = component_scores
             proposed[domain] = round(
-                smoothed_accuracy * confidence_factor,
-                3,
+                sum(component_scores.values()) / len(component_scores), 3
             )
-
 
         previous = self.weight_repository.get_latest()
         previous_weights = dict(previous.weights) if previous else {}

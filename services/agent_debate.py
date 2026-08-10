@@ -128,19 +128,33 @@ class AgentDebate:
     def _synthesize(
         self, opinions: list[AgentOpinion], adjusted_confidence: dict[str, float],
     ) -> AgentOpinion:
-        weighted_votes = {"LONG": 0.0, "SHORT": 0.0, "WAIT": 0.0}
+        """Faz 268f — kullanıcı bulgusu: WAIT diyen ajanların (time,
+        epistemology gibi çoğunlukla çekimser kalan domain'ler dahil)
+        confidence'ı LONG/SHORT ile AYNI "oy" havuzunda yarışıyordu —
+        4 ajan LONG (düşük confidence, ör. 0.3) + 2 ajan WAIT (yüksek
+        confidence, ör. 0.6) durumunda WAIT kazanabiliyordu. Ama WAIT bir
+        yön TAHMİNİ değil, bir çekimser kalma (Faz 245'te AgentMemory
+        skorlaması için zaten kurulmuş aynı ilke — burada debate sentezine
+        de uygulanıyor): "bu konuda net değilim" demek, "yön SIFIR'dır"
+        demek değil. Artık WAIT LONG/SHORT'u YENEMİYOR — sadece yönlü
+        oylar (LONG/SHORT) kendi aralarında yarışıyor. WAIT'in ağırlığı
+        yine de paydaya (total_weight) dahil kalıyor: çok sayıda çekimser
+        ajan varsa nihai confidence haklı olarak seyreliyor (sistem daha
+        az emin olmalı), ama yönü WAIT belirleyemiyor."""
+        directional_votes = {"LONG": 0.0, "SHORT": 0.0}
         total_weight = 0.0
 
         for opinion in opinions:
             weight = adjusted_confidence.get(opinion.domain.value, opinion.confidence)
-            weighted_votes[opinion.direction] += weight
             total_weight += weight
+            if opinion.direction in directional_votes:
+                directional_votes[opinion.direction] += weight
 
-        if total_weight == 0:
+        if total_weight == 0 or (directional_votes["LONG"] == 0 and directional_votes["SHORT"] == 0):
             return AgentOpinion(domain=AgentDomain.EXECUTIVE, direction="WAIT", confidence=0.0)
 
-        best_direction = max(weighted_votes, key=weighted_votes.get)
-        confidence = weighted_votes[best_direction] / total_weight if total_weight > 0 else 0.0
+        best_direction = max(directional_votes, key=directional_votes.get)
+        confidence = directional_votes[best_direction] / total_weight
 
         return AgentOpinion(
             domain=AgentDomain.EXECUTIVE,

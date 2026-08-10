@@ -57,10 +57,17 @@ class MacroAgent:
             score += 1.0
             evidence.append("Central bank stance supportive")
 
-        # İstihdam
+        # İstihdam — Faz 268h kritik bulgu: Faz 215'in liquidity_condition
+        # için düzelttiği AYNI asimetri burada da vardı — sadece
+        # "weakening" cezalandırılıyordu, fetch_employment_trend()'in
+        # döndürebildiği "improving" hiçbir zaman ödüllendirilmiyordu.
+        # Ajan istihdamın sadece kötü tarafını görebiliyordu.
         if context.employment_trend == "weakening":
             score -= 0.5
             evidence.append("Employment trend weakening")
+        elif context.employment_trend == "improving":
+            score += 0.5
+            evidence.append("Employment trend improving")
 
         if score > 0:
             direction = "LONG"

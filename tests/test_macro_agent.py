@@ -65,6 +65,17 @@ def test_contracting_net_liquidity_pushes_toward_short():
     assert opinion.direction == "SHORT"
 
 
+def test_improving_employment_pushes_toward_long():
+    """Faz 268h: kritik bulgu — Faz 215'in liquidity_condition için
+    düzelttiği asimetri (sadece kötü taraf cezalandırılıyordu) burada da
+    vardı. "improving" artık "weakening" ile simetrik ödüllendiriliyor."""
+    agent = MacroAgent()
+    ctx = MacroContext(indicators=[], employment_trend="improving")
+    opinion = agent.analyze(ctx)
+    assert opinion.direction == "LONG"
+    assert any("improving" in e.lower() for e in opinion.evidence)
+
+
 def test_empty_net_liquidity_trend_contributes_no_score():
     """Veri yoksa (API/key eksik, fetch_net_liquidity_trend None döndü)
     boş string kalır — icat edilmiş bir nötr varsayım değil, sadece
