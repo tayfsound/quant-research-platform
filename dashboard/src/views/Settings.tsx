@@ -4,14 +4,18 @@ import { Card, PageHeader, Button, ErrorNote, Input } from "../components/ui";
 
 type SettingsMap = Record<string, string>;
 
-// Trader jargonunda üçü de "kısa vadeli" sayılır (haftalar/aylar sürmüyor)
-// — "kısa/orta/uzun vadeli" etiketi yanıltıcıydı. Sistem zaten gün-içi
-// işlem için tasarlı (ATR-tabanlı hedefler, saniyeler içinde kapanış
-// kontrolü); gerçek çok haftalık/aylık swing/pozisyon trading ayrı bir iş.
+// Faz 265 — kritik bulgu: bu seçim daha önce (Faz 187) pozisyonu SÜREYE
+// göre zorla kapatıyordu ("~10 dk" gibi). Faz 215'te kullanıcı isteğiyle
+// ("vade dolunca kapatmak bile bile zarar etmek demek") bu tamamen
+// kaldırıldı — pozisyonlar artık SADECE gerçekten stop/hedefe ulaşınca
+// kapanıyor, süre hiç zorlamıyor. Ama seçim boş kalmasın diye: artık
+// stop/hedef MESAFESİNİ belirliyor (dar taban = küçük mesafe = saatler
+// içinde sonuçlanma eğilimi; geniş taban = büyük mesafe = günler/haftalar)
+// — süre garantisi değil, eğilim.
 const HORIZON_LABELS: Record<string, string> = {
-  short: "Scalp (~10 dk)",
-  medium: "Gün içi (~4 saat)",
-  long: "1 günlük swing (~1 gün)",
+  short: "Scalp (dar hedef, ~1 saatlik ATR)",
+  medium: "Gün içi (orta hedef, ~4 saatlik ATR)",
+  long: "Swing (geniş hedef, günlük ATR)",
 };
 
 // Faz 214: ajanların sinyal ürettiği mum aralığı — işlem vadesinden
@@ -210,9 +214,11 @@ export default function Settings() {
         </Card>
 
         <Card>
-          <h3 className="text-sm font-semibold text-ink mb-1">İşlem vadesi</h3>
+          <h3 className="text-sm font-semibold text-ink mb-1">Stop/hedef mesafesi</h3>
           <p className="text-xs text-ink-soft mb-3">
-            AI kısa vadeli işlemlere yönelsin, orta/uzun vadeli pozisyonlar açıp kasayı kilitlemesin istiyorsan "Kısa vadeli" seç.
+            Pozisyonlar hiçbir zaman süre yüzünden zorla kapatılmaz — sadece gerçekten stop veya hedefe
+            ulaşınca. Bu seçim, o stop/hedefin ne kadar UZAKTA olacağını belirler: dar bir mesafe (Scalp)
+            genelde saatler içinde sonuçlanır, geniş bir mesafe (Swing) günler/haftalar sürebilir.
           </p>
           <div className="flex flex-col gap-2">
             {Object.entries(HORIZON_LABELS).map(([key, label]) => (

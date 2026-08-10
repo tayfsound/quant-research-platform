@@ -108,9 +108,18 @@ def test_train_confidence_model_learns_a_real_pattern_from_fresh_window_dominate
     paylaşılan test DB'sinde kirlenme riski var. Bu test, window'u
     kendi taze verisiyle TAMAMEN doldurup (en yeni closed_at'e sahip
     olduğu için ORDER BY ... DESC LIMIT window bunları öne alır) eski
-    veriden bağımsız, kendi kendine yeterli hale getiriliyor."""
+    veriden bağımsız, kendi kendine yeterli hale getiriliyor.
+
+    Gerçek bulgu (2. tur): tam test paketi ~5 dakika sürüyor — aradan
+    geçen gerçek zamanda BAŞKA testler de "technical" domain'inde taze
+    (datetime.now(UTC)) kayıtlar ekleyebiliyor, bunlar benim
+    base_time=now() anlık görüntümden DAHA YENİ olup pencereden benim
+    verimi dışarı itebiliyordu (izole çalıştırınca geçiyordu, tam
+    pakette flaky çıktı). Gelecekteki bir zaman damgası kullanmak,
+    hiçbir eşzamanlı/sıralı testin gerçek datetime.now()'ının bunu asla
+    geçemeyeceğini garanti ediyor."""
     window = 120
-    base_time = datetime.now(UTC)
+    base_time = datetime.now(UTC) + timedelta(days=3650)
     symbol = f"CONFMODEL{uuid4().hex[:8]}"
 
     # Yuksek RSI'da technical_agent'in yonu HEP dogru cikiyor (executed'la

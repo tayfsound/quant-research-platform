@@ -4,11 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from contracts.auth import Role
 from database.repositories.app_settings_repository import (
-    CANDLE_TIMEFRAME_SECONDS,
     CANDLE_TIMEFRAMES,
     DEFAULTS,
     DISPLAY_CURRENCIES,
-    TRADE_HORIZON_SECONDS,
+    TRADE_HORIZON_TO_RISK_TIMEFRAME,
     AppSettingsRepository,
 )
 from database.session_factory import SessionFactory
@@ -41,8 +40,11 @@ def _validate(key: str, value: str) -> None:
         except ValueError:
             raise HTTPException(400, "starting_capital must be a positive number")
     elif key == "trade_horizon":
-        if value not in TRADE_HORIZON_SECONDS:
-            raise HTTPException(400, f"trade_horizon must be one of {list(TRADE_HORIZON_SECONDS)}")
+        # Faz 265: artık pozisyon süresini değil, kısa-vadeli katmanın risk
+        # (stop/hedef) tabanını hangi bar aralığından aldığını seçiyor —
+        # bkz. TRADE_HORIZON_TO_RISK_TIMEFRAME üstündeki not.
+        if value not in TRADE_HORIZON_TO_RISK_TIMEFRAME:
+            raise HTTPException(400, f"trade_horizon must be one of {list(TRADE_HORIZON_TO_RISK_TIMEFRAME)}")
     elif key == "min_seconds_between_trades":
         try:
             if int(value) < 0:
@@ -142,33 +144,6 @@ def _validate(key: str, value: str) -> None:
         raise HTTPException(400, f"unknown setting key: {key}")
 
 
-def _validate_horizon_timeframe_consistency(key: str, value: str, session) -> None:
-    """Faz 224 review bulgusu (B): trade_horizon ve candle_timeframe
-    bağımsız ayarlar olduğu için kullanıcı Settings'ten ikisini de ayrı
-    ayrı değiştirebilir — tam olarak Faz 215'teki gerçek bug'a (pozisyon,
-    sinyalin üretildiği mum bile tamamlanmadan kapanıyordu) yol açan
-    kombinasyona tekrar düşülebilir. trade_horizon_seconds, candle_
-    timeframe_seconds'ın en az 2 katı olmalı — sinyal en az bir kez
-    tazelenene kadar pozisyonun kapanmaması için."""
-    repo = AppSettingsRepository(session)
-    if key == "trade_horizon":
-        horizon_seconds = TRADE_HORIZON_SECONDS[value]
-        candle_seconds = CANDLE_TIMEFRAME_SECONDS[repo.get("candle_timeframe")]
-    elif key == "candle_timeframe":
-        horizon_seconds = TRADE_HORIZON_SECONDS[repo.get("trade_horizon")]
-        candle_seconds = CANDLE_TIMEFRAME_SECONDS[value]
-    else:
-        return
-
-    if horizon_seconds < candle_seconds * 2:
-        raise HTTPException(
-            400,
-            f"trade_horizon ({horizon_seconds}s) candle_timeframe'in ({candle_seconds}s) en az "
-            "2 katı olmalı — yoksa pozisyon, sinyalin üretildiği mum tamamlanmadan kapanabilir "
-            "(bkz. Faz 215).",
-        )
-
-
 @router.get("/")
 async def get_settings_(user: AuthContext = Depends(get_current_user)):
     with SessionFactory.get_session() as session:
@@ -177,7 +152,7 @@ async def get_settings_(user: AuthContext = Depends(get_current_user)):
 
 @router.get("/defaults")
 async def get_defaults(user: AuthContext = Depends(get_current_user)):
-    return {"defaults": DEFAULTS, "trade_horizon_seconds": TRADE_HORIZON_SECONDS}
+    return {"defaults": DEFAULTS, "trade_horizon_risk_timeframe": TRADE_HORIZON_TO_RISK_TIMEFRAME}
 
 
 @router.get("/currency-rates")
@@ -213,6 +188,5 @@ async def set_setting(key: str, value: str, user: AuthContext = Depends(require_
     # (gerçek bulgu: kullanıcı Dashboard'da "insufficient_role" hatası aldı).
     _validate(key, value)
     with SessionFactory.get_session() as session:
-        _validate_horizon_timeframe_consistency(key, value, session)
         AppSettingsRepository(session).set(key, value, updated_by=user.username)
         return {"key": key, "value": value, "updated_by": user.username}

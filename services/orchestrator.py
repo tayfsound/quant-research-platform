@@ -1,5 +1,6 @@
 """End-to-end cognitive loop orchestrator — v1.1 trusted paper cycle."""
 from typing import Any
+from database.repositories.app_settings_repository import TRADE_HORIZON_TO_RISK_TIMEFRAME
 from database.repositories.risk_limit_repository import load_active_limits
 from services.risk_state import load_position_risk_state
 from market_data.ingestion.data_provider import get_ohlcv_provider, OHLCVProvider
@@ -186,23 +187,28 @@ class CognitiveOrchestrator:
             # (bkz. services/risk_state.py).
             medium_term_enabled = settings_repo.get("medium_term_enabled") == "true"
             medium_term_timeframe = settings_repo.get("medium_term_timeframe")
+            # Faz 265 — kullanıcı isteği: "İşlem vadesi" (Scalp/Gün içi/
+            # Swing) artık hiçbir şeyi zorla kapatmıyor (Faz 215) ama YİNE
+            # DE gerçek bir anlamı olsun istedi — artık kısa-vadeli
+            # katmanın risk (stop/hedef) tabanını hangi bar aralığından
+            # aldığını seçiyor. Dar taban (1h) = küçük mesafe = saatler
+            # içinde sonuçlanma eğilimi ("scalp"); geniş taban (1d) =
+            # büyük mesafe = günler/haftalar ("swing") — ama hiçbiri süre
+            # yüzünden zorla kapatılmıyor, sadece gerçekten ulaşınca.
+            trade_horizon = settings_repo.get("trade_horizon")
 
         data = self.data_provider.get_ohlcv(symbol, timeframe, limit=lookback)
         if not data:
             return None
 
-        # Faz 262 — kritik bulgu: Faz 261'de kalibrasyon-uyumlu 1:4 oranı
-        # (bkz. RiskTargetStage) GÜNLÜK ATR'ye uygulanmıştı — bu, kısa-vadeli
-        # katman için de hedefleri (~%20+) haftalar sürecek hale getirdi,
-        # kullanıcının "scalp işlem kovalasın" niyetiyle çelişti ve 1074
-        # pozisyonun günlerce kapanmadan birikmesine katkı sağladı.
-        # Kısa-vadeli katman artık kendi risk tabanını GÜNLÜK değil 4
-        # SAATLİK bar'lardan alıyor — aynı 1:4 oran (kalibrasyon için hâlâ
-        # gerekli) artık çok daha küçük, saatler-günler içinde
-        # sonuçlanabilecek bir mesafeye uygulanıyor. Orta-vadeli katman
-        # (propose_medium_term) hâlâ gerçek günlük bar kullanıyor — "sabırlı,
-        # nadir, büyük" profil orada kalmalı.
-        risk_data = _get_risk_bars_cached(self.data_provider, symbol, timeframe="4h", limit=60)
+        # Faz 262/265: risk (stop/hedef) tabanı artık trade_horizon'a göre
+        # seçilen bar aralığından geliyor — aynı 1:4 oran (kalibrasyon için
+        # hâlâ gerekli, bkz. RiskTargetStage) artık kullanıcının seçtiği
+        # ölçeğe uygulanıyor. Orta-vadeli katman (propose_medium_term) hâlâ
+        # gerçek günlük bar kullanıyor — "sabırlı, nadir, büyük" profil
+        # orada kalmalı, bu ayardan etkilenmiyor.
+        risk_timeframe = TRADE_HORIZON_TO_RISK_TIMEFRAME.get(trade_horizon, "4h")
+        risk_data = _get_risk_bars_cached(self.data_provider, symbol, timeframe=risk_timeframe, limit=60)
 
         ctx = self._build_context(
             symbol,

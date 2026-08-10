@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 
 from config import get_settings
 from contracts.auth import Role
+from database.repositories.app_settings_repository import TRADE_HORIZON_TO_RISK_TIMEFRAME
 from market_data.ingestion.data_provider import get_ohlcv_provider
 from services.auth_service import AuthContext, require_role
 from services.cognitive_engine import CognitiveEngine
@@ -34,6 +35,7 @@ async def run_cognitive_cycle(
         settings_repo = AppSettingsRepository(session)
         timeframe = settings_repo.get("candle_timeframe")
         lookback = int(settings_repo.get("candle_lookback"))
+        trade_horizon = settings_repo.get("trade_horizon")
 
     provider = get_ohlcv_provider()
     data = provider.get_ohlcv(symbol, timeframe, limit=lookback)
@@ -60,11 +62,12 @@ async def run_cognitive_cycle(
         ctx.risk.min_seconds_between_trades = risk_state["min_seconds_between_trades"]
         ctx.risk.ai_enabled = risk_state["ai_enabled"]
     else:
-        # Faz 262: risk ölçeklendirmesi için ayrıca 4 saatlik bar — bkz.
-        # services/orchestrator.py::build_cognitive_context üstündeki not.
-        # Bu endpoint orchestrator.propose()'un (kısa-vadeli) manuel tetikleme
-        # karşılığı, aynı risk tabanını kullanmalı.
-        risk_data = _get_risk_bars_cached(provider, symbol, timeframe="4h", limit=60)
+        # Faz 262/265: risk ölçeklendirmesi için trade_horizon'a göre
+        # seçilen bar aralığı — bkz. services/orchestrator.py::propose
+        # üstündeki not. Bu endpoint orchestrator.propose()'un (kısa-vadeli)
+        # manuel tetikleme karşılığı, aynı risk tabanını kullanmalı.
+        risk_timeframe = TRADE_HORIZON_TO_RISK_TIMEFRAME.get(trade_horizon, "4h")
+        risk_data = _get_risk_bars_cached(provider, symbol, timeframe=risk_timeframe, limit=60)
         ctx = build_cognitive_context(symbol, timeframe, data, daily_data=risk_data)
 
     result = engine.run(ctx)

@@ -127,26 +127,24 @@ DEFAULTS: dict[str, str] = {
 CANDLE_TIMEFRAMES = ("1m", "5m", "15m", "1h", "4h", "1d")
 DISPLAY_CURRENCIES = ("USD", "BTC", "TRY")
 
-# Faz 187'nin PositionCloser.hold_seconds'ına karşılık gelen ön tanımlı
-# vadeler — "kısa vadeli işlemler alsın, bakiyeyi kilitlemesin" isteğinin
-# doğrudan karşılığı.
-TRADE_HORIZON_SECONDS: dict[str, int] = {
-    "short": 600,       # 10 dakika
-    "medium": 14400,    # 4 saat
-    "long": 86400,      # 1 gün
-}
-
-# Faz 224 review bulgusu (B): trade_horizon (pozisyonun ne kadar açık
-# kalabileceği) ile candle_timeframe (sinyalin hangi mum aralığından
-# üretildiği) birbirinden bağımsız iki ayar — kullanıcı Settings'ten
-# ikisini de istediği gibi değiştirebiliyor. Faz 215'te tam olarak bu
-# ikisinin uyuşmazlığı (trade_horizon=10dk < candle_timeframe=15dk)
-# gerçek bir bug'a yol açmıştı: pozisyon, sinyalin üretildiği mum bile
-# tamamlanmadan kapanabiliyordu. O zaman defaultlar düzeltildi ama
-# kullanıcı ayarları TEKRAR uyumsuz bir kombinasyona çekebilirdi — bu
-# yüzden artık her iki ayar da yazılırken KARŞI ayara göre doğrulanıyor.
-CANDLE_TIMEFRAME_SECONDS: dict[str, int] = {
-    "1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400,
+# Faz 265 — kritik bulgu: bu değerler Faz 187'de PositionCloser.
+# hold_seconds için kurulmuştu ("vade dolunca kapat"), ama Faz 215
+# ("bile bile zarar etmek demek bu") bunu tamamen kaldırdı — trade_horizon
+# artık pozisyon SÜRESİNİ hiç etkilemiyor, Settings ekranı hâlâ "Scalp
+# (~10 dk)" diye vaat ediyordu ama seçimin gerçekte hiçbir etkisi yoktu.
+# Kullanıcı isteği: "hem scalp işlem kovalasın hem vade dolunca kapatmasın"
+# — bunun gerçek karşılığı SÜRE değil, stop/hedef MESAFESİ: trade_horizon
+# artık kısa-vadeli katmanın risk tabanını hangi bar aralığından aldığını
+# seçiyor (bkz. services/orchestrator.py::propose, RiskTargetStage hâlâ
+# aynı 2.5x/10x oranı uyguluyor, sadece taban ATR'nin kaynağı değişiyor).
+# Dar taban (1h) = küçük stop/hedef = saatler içinde sonuçlanma eğilimi
+# ("scalp"); geniş taban (1d) = büyük stop/hedef = günler/haftalar
+# ("swing") — ama HİÇBİRİ süre yüzünden zorla kapatılmıyor, sadece
+# gerçekten stop/hedefe ulaşınca.
+TRADE_HORIZON_TO_RISK_TIMEFRAME: dict[str, str] = {
+    "short": "1h",
+    "medium": "4h",
+    "long": "1d",
 }
 
 

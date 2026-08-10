@@ -271,29 +271,22 @@ def run_pairs_trading_task() -> dict:
 
 
 @celery_app.task(name="close_due_positions_task")
-def close_due_positions_task(hold_seconds: int | None = None) -> dict:
+def close_due_positions_task() -> dict:
     """Faz 187/188: celery beat tarafından periyodik çalıştırılır (bkz.
-    celery_app.py:beat_schedule) — açık pozisyonlardan kullanıcının
-    app_settings'te seçtiği vadeden (trade_horizon) fazla süredir açık
-    olanları gerçek güncel fiyatla kapatır."""
-    from database.repositories.app_settings_repository import (
-        TRADE_HORIZON_SECONDS,
-        AppSettingsRepository,
-    )
+    celery_app.py:beat_schedule) — açık pozisyonları gerçek güncel
+    fiyatla kontrol edip stop/hedef/likidasyona ulaşanları kapatır. Faz
+    265: hold_seconds/trade_horizon parametresi kaldırıldı — Faz 215'ten
+    beri PositionCloser bunu zaten hiç kullanmıyordu (vade dolunca zorla
+    kapatma yok, sadece gerçekten stop/hedefe ulaşınca)."""
     from database.repositories.decision_persistor import DecisionPersistor
     from database.session_factory import SessionFactory
     from market_data.ingestion.data_provider import RoutingProvider
     from services.position_closer import PositionCloser
 
-    if hold_seconds is None:
-        with SessionFactory.get_session() as session:
-            horizon = AppSettingsRepository(session).get("trade_horizon")
-        hold_seconds = TRADE_HORIZON_SECONDS.get(horizon, 600)
-
     # Faz 194: açık pozisyonlar artık farklı varlık sınıflarında olabilir
     # (kripto + hisse/endeks/emtia) — RoutingProvider her pozisyonu kendi
     # gerçek fiyat kaynağına yönlendiriyor.
-    closer = PositionCloser(RoutingProvider(), hold_seconds=hold_seconds)
+    closer = PositionCloser(RoutingProvider())
     with SessionFactory.get_session() as session:
         closed = closer.close_due_positions(DecisionPersistor(session))
 
