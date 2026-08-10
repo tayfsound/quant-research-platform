@@ -56,6 +56,24 @@ export default function Settings() {
   const [resetting, setResetting] = useState(false);
   const [resetDone, setResetDone] = useState(false);
 
+  // Faz 268k — kullanıcı bulgusu: "Minimum kâr hedefi" kutusuna ondalık
+  // girilemiyordu ("0.0" yazarken sona 0 basınca her şey tek bir 0'a
+  // düşüyordu). Kök neden: kutunun value'su HER render'da draft.min_
+  // profit_target_pct'ten (backend'de fraction, ör. 0.02) yeniden
+  // Number()*100 ile türetiliyordu — kullanıcı daha "0." yazarken bile
+  // Number("0.")===0 olduğu için görüntü anında "0"a geri dönüyordu.
+  // Ayrı bir görüntü-string state'i, sadece settings gerçekten yüklenince
+  // (yazarken değil) senkronize ediliyor — normal React kontrollü-input
+  // deseni. Fraction'a çevirme sadece Kaydet'e basınca oluyor.
+  const [minProfitPctInput, setMinProfitPctInput] = useState("");
+  useEffect(() => {
+    setMinProfitPctInput(
+      settings.min_profit_target_pct != null && settings.min_profit_target_pct !== ""
+        ? String(Number(settings.min_profit_target_pct) * 100)
+        : ""
+    );
+  }, [settings.min_profit_target_pct]);
+
   // Faz 268b: kullanıcı isteği — "Dark/Light tema anahtarı Settings'e
   // eklensin." Diğer ayarların aksine sunucuya kaydedilmiyor — bu
   // tarayıcıya özel bir görüntüleme tercihi, backend'in bilmesine gerek
@@ -182,12 +200,15 @@ export default function Settings() {
           <div className="flex gap-2">
             <Input
               type="number"
-              value={draft.min_profit_target_pct != null && draft.min_profit_target_pct !== "" ? String(Number(draft.min_profit_target_pct) * 100) : ""}
-              onChange={(v) => setDraft((d) => ({ ...d, min_profit_target_pct: v === "" ? "" : String(Number(v) / 100) }))}
+              value={minProfitPctInput}
+              onChange={setMinProfitPctInput}
             />
             <Button
               disabled={saving === "min_profit_target_pct"}
-              onClick={() => save("min_profit_target_pct", draft.min_profit_target_pct)}
+              onClick={() => save(
+                "min_profit_target_pct",
+                minProfitPctInput === "" ? "" : String(Number(minProfitPctInput) / 100)
+              )}
             >
               {saved === "min_profit_target_pct" ? "Kaydedildi ✓" : "Kaydet"}
             </Button>

@@ -112,9 +112,11 @@ export default function Predictions() {
             <p className="text-xs text-ink-faint uppercase tracking-wide">Features</p>
             <div className="text-xs text-ink-soft mt-2 space-y-1">
               {result.features && Object.entries(result.features).map(([k, v]) => (
-                <div key={k} className="flex justify-between">
-                  <span className="capitalize">{k}</span>
-                  <span className="font-mono">{typeof v === "number" ? v.toFixed(2) : String(v)}</span>
+                <div key={k} className="flex justify-between gap-2">
+                  <span className="capitalize shrink-0">{k}</span>
+                  <span className="font-mono text-right break-all min-w-0">
+                    {typeof v === "number" ? v.toFixed(2) : String(v)}
+                  </span>
                 </div>
               ))}
             </div>
