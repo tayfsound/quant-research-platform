@@ -97,7 +97,16 @@ html, body, #root {
 }
 
 body {
-  background: var(--color-canvas);
+  /* Faz 268b: kullanıcı isteği — "opak glass effect." Card/Sidebar artık
+     yarı saydam + backdrop-blur; bunun görünür olması için zeminin düz
+     tek renk olmaması, hafif bir derinliği olması gerekiyor — köşelerde
+     çok belli belirsiz accent/rise renk lekeleri, sabit (scroll ile
+     kaymayan) bir arka plan. */
+  background:
+    radial-gradient(1100px 560px at 12% -8%, color-mix(in srgb, var(--color-accent) 9%, transparent), transparent 60%),
+    radial-gradient(900px 480px at 100% 0%, color-mix(in srgb, var(--color-rise) 7%, transparent), transparent 60%),
+    var(--color-canvas);
+  background-attachment: fixed;
   color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;

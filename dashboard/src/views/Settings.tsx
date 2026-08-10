@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
 import { authHeaders } from "../api/auth";
 import { Card, PageHeader, Button, ErrorNote, Input } from "../components/ui";
+import { applyThemePreference, getThemePreference, type ThemePreference } from "../lib/theme";
+
+const THEME_LABELS: Record<ThemePreference, string> = {
+  light: "Açık",
+  dark: "Koyu",
+  system: "Sistem",
+};
 
 type SettingsMap = Record<string, string>;
 
@@ -48,6 +55,16 @@ export default function Settings() {
 
   const [resetting, setResetting] = useState(false);
   const [resetDone, setResetDone] = useState(false);
+
+  // Faz 268b: kullanıcı isteği — "Dark/Light tema anahtarı Settings'e
+  // eklensin." Diğer ayarların aksine sunucuya kaydedilmiyor — bu
+  // tarayıcıya özel bir görüntüleme tercihi, backend'in bilmesine gerek
+  // yok (bkz. src/lib/theme.ts).
+  const [theme, setTheme] = useState<ThemePreference>(getThemePreference());
+  const chooseTheme = (pref: ThemePreference) => {
+    applyThemePreference(pref);
+    setTheme(pref);
+  };
 
   const load = () => {
     fetch("/api/v1/settings/", { headers: authHeaders() })
@@ -292,6 +309,29 @@ export default function Settings() {
                 onClick={() => save("display_currency", key)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
                   settings.display_currency === key
+                    ? "bg-accent text-white border-accent"
+                    : "bg-canvas-soft text-ink-soft border-line hover:bg-surface-soft"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </Card>
+
+        <Card>
+          <h3 className="text-sm font-semibold text-ink mb-1">Görünüm</h3>
+          <p className="text-xs text-ink-soft mb-3">
+            Açık/Koyu tema — sadece bu tarayıcıda geçerli, sunucuya kaydedilmez. "Sistem" işletim
+            sisteminin gece/gündüz tercihini takip eder.
+          </p>
+          <div className="flex gap-2">
+            {(Object.entries(THEME_LABELS) as [ThemePreference, string][]).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => chooseTheme(key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  theme === key
                     ? "bg-accent text-white border-accent"
                     : "bg-canvas-soft text-ink-soft border-line hover:bg-surface-soft"
                 }`}

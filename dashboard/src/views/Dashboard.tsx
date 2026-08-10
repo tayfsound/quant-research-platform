@@ -78,7 +78,7 @@ function StatusCard({
   const glowColor = glow === "rise" ? "var(--color-rise)" : "var(--color-accent)";
   return (
     <div
-      className="relative overflow-hidden rounded-xl border border-line bg-surface shadow-layer-1 hover:shadow-layer-2 p-6"
+      className="relative overflow-hidden rounded-xl border border-line bg-surface/75 backdrop-blur-xl shadow-layer-1 hover:shadow-layer-2 p-6"
       style={
         isOn
           ? { backgroundImage: `radial-gradient(120% 100% at 0% 0%, ${glowColor}14, transparent 60%)` }
