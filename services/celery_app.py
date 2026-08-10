@@ -87,6 +87,16 @@ celery_app.conf.beat_schedule = {
         "task": "optimize_thresholds_task",
         "schedule": 3600.0,
     },
+    # Faz 264: kullanıcı isteği — ajan içi özellik ağırlıkları kayan
+    # pencereyle (son N gerçek kapanmış işlem) düzenli aralıklarla
+    # yeniden eğitiliyor, piyasa rejimi değiştikçe model de haftalar
+    # değil GÜNLER içinde adapte olabilsin diye günlük (threshold
+    # kalibrasyonuyla aynı ritim, ucuz bir işlem — sadece birkaç yüz
+    # satırlık lojistik regresyon).
+    "retrain-agent-confidence-models-daily": {
+        "task": "retrain_agent_confidence_models_task",
+        "schedule": 86400.0,
+    },
     # Faz 229: kritik bulgu — WeightOptimizer'ın onay-gate'i (Faz 160-165)
     # dedup kontrolü olmadan üretimde 7000'den fazla bekleyen onay biriktirdi.
     # Dedup eklendi (has_pending()) ama zaten var olan/ilerideki süresi

@@ -28,3 +28,4 @@ os.environ["DATABASE_URL_SYNC"] = "postgresql+psycopg2://quant:quantpass@localho
 os.environ["DATABASE_URL"] = "postgresql+asyncpg://quant:quantpass@localhost:5432/quantdb_test"
 os.environ["TIMESCALE_URL"] = "postgresql+asyncpg://quant:quantpass@localhost:5432/quantdb_test"
 os.environ["AGENT_MEMORY_STORAGE_PATH"] = "tmp_test_memory/agent_memory_history"
+os.environ["AGENT_CONFIDENCE_MODEL_STORAGE_PATH"] = "tmp_test_memory/confidence_model_history"

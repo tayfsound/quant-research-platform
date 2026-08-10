@@ -67,6 +67,29 @@ class CouncilOrchestrator:
 
             try:
                 opinion = agent.analyze(ctx)
+
+                # Faz 264: kullanıcı isteği — ajanın kendi yön/skor mantığı
+                # (agent.analyze) DEĞİŞMİYOR, ama gerçek kapanmış işlemlerden
+                # kayan pencereyle periyodik öğrenilen bir model, bu ajanın
+                # BU ÖZEL durumda ne kadar güvenilir çıktığına göre
+                # confidence'ı ayarlıyor. Henüz eğitilmiş bir model yoksa
+                # (ör. yeterli veri birikmediyse) çarpan 1.0 — no-op,
+                # fail-closed.
+                if opinion.direction in ("LONG", "SHORT"):
+                    from services.agent_confidence_model import (
+                        FEATURE_SCHEMAS,
+                        predict_confidence_multiplier,
+                    )
+                    domain_value = domain.value if hasattr(domain, "value") else str(domain)
+                    if domain_value in FEATURE_SCHEMAS:
+                        multiplier = predict_confidence_multiplier(domain_value, ctx.model_dump())
+                        if multiplier != 1.0:
+                            opinion.confidence = round(min(opinion.confidence * multiplier, 0.95), 3)
+                            opinion.caveats.append(
+                                f"Confidence kalibrasyon modeli x{multiplier:.2f} ayarladı "
+                                f"(bu tür durumlarda ajanın gerçek doğruluğuna göre)"
+                            )
+
                 opinions.append(opinion)
 
             except Exception as e:

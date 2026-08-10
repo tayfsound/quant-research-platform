@@ -126,6 +126,39 @@ def optimize_thresholds_task() -> dict:
     return suggestion
 
 
+@celery_app.task(name="retrain_agent_confidence_models_task")
+def retrain_agent_confidence_models_task() -> dict:
+    """Faz 264: kullanıcı isteği — ajan içi özellik ağırlıkları (RSI/trend/
+    momentum vb.) elle yazılmış sabitler yerine gerçek sonuçlardan
+    öğrenilsin, AMA tek seferlik/donuk bir model olmasın — "piyasa sürekli
+    devinim içinde" gerekçesiyle kayan pencereyle (son N gerçek kapanmış
+    işlem) düzenli aralıklarla yeniden eğitiliyor. Yetersiz veri varsa
+    (bkz. train_confidence_model min_samples) o domain için hiçbir şey
+    değiştirmez — eski model (varsa) geçerliliğini korur, icat edilmiş
+    bir model kaydedilmez."""
+    from services.agent_confidence_model import (
+        FEATURE_SCHEMAS,
+        ConfidenceModelRepository,
+        train_confidence_model,
+    )
+
+    repo = ConfidenceModelRepository()
+    results = {}
+    for domain in FEATURE_SCHEMAS:
+        model = train_confidence_model(domain)
+        if model is None:
+            results[domain] = {"skipped": "insufficient_samples"}
+            continue
+        repo.save(model)
+        results[domain] = {
+            "sample_count": model.sample_count,
+            "test_accuracy": model.test_accuracy,
+            "test_auc": model.test_auc,
+            "baseline_correctness_rate": model.baseline_correctness_rate,
+        }
+    return results
+
+
 @celery_app.task(name="auto_reject_stale_weight_approvals_task")
 def auto_reject_stale_weight_approvals_task(max_age_hours: float = 24) -> dict:
     """Faz 229: kritik bulgu — canlı üretimde WeightOptimizer.optimize()/
