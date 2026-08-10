@@ -19,26 +19,35 @@ from contracts.context import CognitiveCycleContext
 
 import time
 
-# Faz 255 performans düzeltmesi: kritik bulgu — canlıda doğrulandı. Günlük
-# ATR'yi (risk ölçeklendirmesi için) HER trading cycle'da (120s'de bir),
-# HER sembol için yeniden çekmek gerçek bir performans regresyonuna yol
-# açtı — her cycle sembol başına bir EK Binance isteği eklendi, bu da
+# Faz 255 performans düzeltmesi: kritik bulgu — canlıda doğrulandı. Risk
+# ölçeklendirmesi için kullanılan bar'ları HER trading cycle'da (120s'de
+# bir), HER sembol için yeniden çekmek gerçek bir performans regresyonuna
+# yol açtı — her cycle sembol başına bir EK Binance isteği eklendi, bu da
 # cycle süresini uzatıp trading_cycle sağlık kontrolünün "unhealthy"
-# (dakikalarca bayat) düşmesine sebep oldu. Günlük ATR zaten GÜNLÜK bir
-# ölçü — 120 saniyede bir tazelenmesinin hiçbir anlamı yok. 15 dakikalık
-# önbellek, riski gerçekçi tutarken gereksiz API yükünü ~7x azaltıyor.
-_DAILY_BARS_CACHE: dict[str, tuple[float, list]] = {}
-_DAILY_BARS_CACHE_TTL_SECONDS = 900
+# (dakikalarca bayat) düşmesine sebep oldu. Bu bar'lar (1d/4h) zaten
+# yavaş değişen bir ölçü — 120 saniyede bir tazelenmesinin hiçbir anlamı
+# yok. 15 dakikalık önbellek, riski gerçekçi tutarken gereksiz API
+# yükünü ~7x azaltıyor.
+_RISK_BARS_CACHE: dict[tuple[str, str], tuple[float, list]] = {}
+_RISK_BARS_CACHE_TTL_SECONDS = 900
+
+
+def _get_risk_bars_cached(data_provider, symbol: str, timeframe: str = "1d", limit: int = 30) -> list:
+    now = time.time()
+    key = (symbol, timeframe)
+    cached = _RISK_BARS_CACHE.get(key)
+    if cached and (now - cached[0]) < _RISK_BARS_CACHE_TTL_SECONDS:
+        return cached[1]
+    bars = data_provider.get_ohlcv(symbol, timeframe, limit=limit) or []
+    _RISK_BARS_CACHE[key] = (now, bars)
+    return bars
 
 
 def _get_daily_bars_cached(data_provider, symbol: str) -> list:
-    now = time.time()
-    cached = _DAILY_BARS_CACHE.get(symbol)
-    if cached and (now - cached[0]) < _DAILY_BARS_CACHE_TTL_SECONDS:
-        return cached[1]
-    bars = data_provider.get_ohlcv(symbol, "1d", limit=30) or []
-    _DAILY_BARS_CACHE[symbol] = (now, bars)
-    return bars
+    """Orta-vadeli katman (propose_medium_term) için gerçek günlük bar —
+    kısa-vadeli katman artık _get_risk_bars_cached(..., timeframe="4h")
+    kullanıyor, bkz. Faz 262 notu."""
+    return _get_risk_bars_cached(data_provider, symbol, timeframe="1d")
 
 
 def build_cognitive_context(
@@ -77,11 +86,17 @@ def build_cognitive_context(
     ctx.market.features = {**technical_signals, **quant_signals}
     # Faz 251: kullanıcı kararı — risk (stop/target) ölçeklendirmesi sinyal
     # zaman diliminden (genelde 1m, gürültü seviyesinde ATR) bağımsız,
-    # günlük ATR'den türetiliyor (bkz. signal_engine.compute_daily_atr_pct
-    # üstündeki not). daily_data verilmezse ya da yetersizse None kalır —
-    # RiskTargetStage bu durumda fail-closed davranır (stop/target set
-    # etmez, DecisionFusion zaten yönlü olmayan/eksik bir kararı WAIT'e
-    # çevirir).
+    # daha yavaş bir bar setinden türetiliyor (bkz. signal_engine.
+    # compute_daily_atr_pct üstündeki not — fonksiyon adı "günlük" ama
+    # herhangi bir bar listesi üzerinde çalışır). Faz 262: kısa-vadeli
+    # katman (orchestrator.propose) artık buraya 4 saatlik bar veriyor
+    # ("scalp" niyetine uygun, saatler-günler içinde sonuçlanan mesafe),
+    # orta-vadeli katman (propose_medium_term) gerçek günlük bar veriyor
+    # ("sabırlı, nadir, büyük" profil) — aynı feature adı ("daily_atr_pct"),
+    # farklı çağıranlar farklı kaynak veriyor. daily_data verilmezse ya da
+    # yetersizse None kalır — RiskTargetStage bu durumda fail-closed
+    # davranır (stop/target set etmez, DecisionFusion zaten yönlü olmayan/
+    # eksik bir kararı WAIT'e çevirir).
     if daily_data:
         ctx.market.features["daily_atr_pct"] = compute_daily_atr_pct(daily_data)
     ctx.market.raw_snapshot = {
@@ -176,16 +191,24 @@ class CognitiveOrchestrator:
         if not data:
             return None
 
-        # Faz 251: risk ölçeklendirmesi için ayrıca günlük bar — bkz.
-        # build_cognitive_context üstündeki not. Çekilemezse (ör. geçici
-        # ağ hatası) None kalır, fail-closed.
-        daily_data = _get_daily_bars_cached(self.data_provider, symbol)
+        # Faz 262 — kritik bulgu: Faz 261'de kalibrasyon-uyumlu 1:4 oranı
+        # (bkz. RiskTargetStage) GÜNLÜK ATR'ye uygulanmıştı — bu, kısa-vadeli
+        # katman için de hedefleri (~%20+) haftalar sürecek hale getirdi,
+        # kullanıcının "scalp işlem kovalasın" niyetiyle çelişti ve 1074
+        # pozisyonun günlerce kapanmadan birikmesine katkı sağladı.
+        # Kısa-vadeli katman artık kendi risk tabanını GÜNLÜK değil 4
+        # SAATLİK bar'lardan alıyor — aynı 1:4 oran (kalibrasyon için hâlâ
+        # gerekli) artık çok daha küçük, saatler-günler içinde
+        # sonuçlanabilecek bir mesafeye uygulanıyor. Orta-vadeli katman
+        # (propose_medium_term) hâlâ gerçek günlük bar kullanıyor — "sabırlı,
+        # nadir, büyük" profil orada kalmalı.
+        risk_data = _get_risk_bars_cached(self.data_provider, symbol, timeframe="4h", limit=60)
 
         ctx = self._build_context(
             symbol,
             timeframe,
             data,
-            daily_data=daily_data,
+            daily_data=risk_data,
             exclude_timeframe=medium_term_timeframe if medium_term_enabled else None,
         )
         ctx = self.engine.run(ctx, persist=False)

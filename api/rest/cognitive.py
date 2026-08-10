@@ -5,7 +5,7 @@ from contracts.auth import Role
 from market_data.ingestion.data_provider import get_ohlcv_provider
 from services.auth_service import AuthContext, require_role
 from services.cognitive_engine import CognitiveEngine
-from services.orchestrator import _get_daily_bars_cached, build_cognitive_context
+from services.orchestrator import _get_risk_bars_cached, build_cognitive_context
 
 router = APIRouter(prefix="/cognitive", tags=["cognitive"])
 
@@ -60,10 +60,12 @@ async def run_cognitive_cycle(
         ctx.risk.min_seconds_between_trades = risk_state["min_seconds_between_trades"]
         ctx.risk.ai_enabled = risk_state["ai_enabled"]
     else:
-        # Faz 251: risk ölçeklendirmesi için ayrıca günlük bar — bkz.
+        # Faz 262: risk ölçeklendirmesi için ayrıca 4 saatlik bar — bkz.
         # services/orchestrator.py::build_cognitive_context üstündeki not.
-        daily_data = _get_daily_bars_cached(provider, symbol)
-        ctx = build_cognitive_context(symbol, timeframe, data, daily_data=daily_data)
+        # Bu endpoint orchestrator.propose()'un (kısa-vadeli) manuel tetikleme
+        # karşılığı, aynı risk tabanını kullanmalı.
+        risk_data = _get_risk_bars_cached(provider, symbol, timeframe="4h", limit=60)
+        ctx = build_cognitive_context(symbol, timeframe, data, daily_data=risk_data)
 
     result = engine.run(ctx)
 
