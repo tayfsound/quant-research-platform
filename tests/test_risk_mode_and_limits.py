@@ -13,10 +13,57 @@ def _ctx(direction="LONG", size=0.3):
     return ctx
 
 
-def test_test_mode_approves_even_with_no_limits_configured_at_all():
+def test_test_mode_now_rejects_with_no_limits_just_like_live():
+    """Faz 262 — kritik bulgu: eski davranış (test modu MISSING_LIMIT dahil
+    HER kontrolü atlardı) kasa/eşzamanlılık limitlerinin test modunda hiç
+    uygulanmamasına yol açtı — Faz 261'in geniş hedef/stop oranıyla
+    birleşince pozisyonlar günlerce açık kalıp 1074'e kadar birikti, kasa
+    yapılandırılmış %5 limitin 3 katını aştı. Kullanıcı kararı: test modu
+    artık live'la AYNI kuralları uyguluyor."""
     ctx = _ctx()
     ctx.risk.trading_mode = "test"
-    ctx.risk.limits = {}  # live modda MISSING_LIMIT ile reddedilirdi
+    ctx.risk.limits = {}  # artık live'la aynı: MISSING_LIMIT ile reddedilir
+
+    result = RiskEngine().execute(ctx)
+
+    assert result.risk.evaluation.verdict == "rejected"
+    assert any(r.code == "MISSING_LIMIT" for r in result.risk.evaluation.reasons)
+
+
+def test_test_mode_rejects_when_concurrent_position_limit_reached():
+    ctx = _ctx()
+    ctx.risk.trading_mode = "test"
+    ctx.risk.limits = {"max_position_size": RiskLimitEntry(value=10.0)}
+    ctx.risk.open_position_count = 3
+    ctx.risk.max_concurrent_positions = 3
+
+    result = RiskEngine().execute(ctx)
+
+    assert result.risk.evaluation.verdict == "rejected"
+    assert any(r.code == "MAX_CONCURRENT_POSITIONS" for r in result.risk.evaluation.reasons)
+
+
+def test_test_mode_rejects_when_capital_pct_limit_reached():
+    ctx = _ctx()
+    ctx.risk.trading_mode = "test"
+    ctx.risk.limits = {"max_position_size": RiskLimitEntry(value=10.0)}
+    ctx.risk.capital_used_pct = 0.6
+    ctx.risk.max_capital_pct = 0.5
+
+    result = RiskEngine().execute(ctx)
+
+    assert result.risk.evaluation.verdict == "rejected"
+    assert any(r.code == "MAX_CAPITAL_PCT" for r in result.risk.evaluation.reasons)
+
+
+def test_test_mode_approves_when_within_all_limits():
+    ctx = _ctx()
+    ctx.risk.trading_mode = "test"
+    ctx.risk.limits = {"max_position_size": RiskLimitEntry(value=10.0)}
+    ctx.risk.open_position_count = 2
+    ctx.risk.max_concurrent_positions = 3
+    ctx.risk.capital_used_pct = 0.1
+    ctx.risk.max_capital_pct = 0.5
 
     result = RiskEngine().execute(ctx)
 
@@ -89,6 +136,7 @@ def test_cooldown_passes_once_enough_time_has_elapsed():
     ctx.risk.trading_mode = "test"
     ctx.risk.seconds_since_last_trade = 120.0
     ctx.risk.min_seconds_between_trades = 60
+    ctx.risk.limits = {"max_position_size": RiskLimitEntry(value=10.0)}
 
     result = RiskEngine().execute(ctx)
 

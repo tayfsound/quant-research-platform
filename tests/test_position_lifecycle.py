@@ -65,27 +65,39 @@ def test_leveraged_position_scales_quantity_and_computes_liquidation_price():
         current[symbol] = 10.0
         repo.set("symbol_leverage", json.dumps(current), updated_by="test")
 
-    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
-        from contracts.context import CognitiveCycleContext
-        from services.decision_recorder import DecisionRecorder
+    try:
+        with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+            from contracts.context import CognitiveCycleContext
+            from services.decision_recorder import DecisionRecorder
 
-        ctx = CognitiveCycleContext()
-        ctx.market.symbol = symbol
-        ctx.decision.proposed_direction = "LONG"
-        ctx.decision.final_size = 0.3
-        ctx.decision.filled_price = 100.0
-        ctx.risk.evaluation.verdict = "approved"
+            ctx = CognitiveCycleContext()
+            ctx.market.symbol = symbol
+            ctx.decision.proposed_direction = "LONG"
+            ctx.decision.final_size = 0.3
+            ctx.decision.filled_price = 100.0
+            ctx.risk.evaluation.verdict = "approved"
 
-        DecisionRecorder().record(ctx)
+            DecisionRecorder().record(ctx)
 
-    with SessionFactory.get_session() as session:
-        rows = DecisionPersistor(session).list_open_positions(limit=200)
-    pos = next(r for r in rows if r["symbol"] == symbol)
+        with SessionFactory.get_session() as session:
+            rows = DecisionPersistor(session).list_open_positions(limit=200)
+        pos = next(r for r in rows if r["symbol"] == symbol)
 
-    assert pos["leverage"] == 10.0
-    assert abs(pos["quantity"] - 3.0) < 1e-9  # 0.3 * 10x kaldıraç
-    expected_liq = compute_liquidation_price(100.0, "LONG", leverage=10.0)
-    assert abs(pos["liquidation_price"] - expected_liq) < 1e-9
+        assert pos["leverage"] == 10.0
+        assert abs(pos["quantity"] - 3.0) < 1e-9  # 0.3 * 10x kaldıraç
+        expected_liq = compute_liquidation_price(100.0, "LONG", leverage=10.0)
+        assert abs(pos["liquidation_price"] - expected_liq) < 1e-9
+    finally:
+        # Gerçek bulgu: bu test her çalıştığında symbol_leverage'e YENİ bir
+        # POSLEV<hex> girdisi ekleyip hiç temizlemiyordu — paylaşılan test
+        # DB'sinde onlarca çalıştırma sonucunda değer 256 karakter VARCHAR
+        # sınırını aştı (StringDataRightTruncation), bu testi VE ilgisiz
+        # başka testleri (test_pairs_trader.py) çökertti.
+        with SessionFactory.get_session() as session:
+            repo = AppSettingsRepository(session)
+            current = json.loads(repo.get("symbol_leverage") or "{}")
+            current.pop(symbol, None)
+            repo.set("symbol_leverage", json.dumps(current), updated_by="test")
 
 
 def test_wait_decision_never_opens_a_position():

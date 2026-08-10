@@ -189,6 +189,28 @@ class DecisionPersistor:
 
         return [dict(r) for r in rows]
 
+    def open_positions_summary(self) -> dict:
+        """Faz 262 — Faz 224'ün kapanmış işlemler için çözdüğü AYNI bug,
+        açık pozisyonlarda hâlâ vardı: GET /positions'ın döndürdüğü liste
+        limit=100'e sabitliydi, dashboard'daki "Açık pozisyon" sayacı da bu
+        listenin uzunluğunu (open.length) gösteriyordu — gerçek açık
+        pozisyon sayısı 100'ü geçtiği anda ekran hep "100"de donuyordu,
+        gerçek (ve büyümeye devam eden) sayıyı hiç yansıtmıyordu. Kullanıcı
+        bulgusu: "iki gün önceki gibi hâlâ 100 görünüyor" — gerçek sayı bu
+        sırada 1074'tü. TABLOYU limitlemeden, gerçek toplam üzerinden tek
+        bir SQL agregasyonu."""
+        row = self.session.execute(
+            text(
+                "SELECT count(*) AS open_count, "
+                "sum(entry_price * quantity) AS committed_notional "
+                "FROM decisions WHERE status = 'open'"
+            )
+        ).mappings().one()
+        return {
+            "open_count": row["open_count"] or 0,
+            "committed_notional": float(row["committed_notional"] or 0.0),
+        }
+
     def list_closed_trades(self, limit: int = 200):
         # Faz 238: kullanıcı isteği — "kirli geçmiş veriyi temizle."
         # excluded_from_stats=true işaretli satırlar (aşırı capital

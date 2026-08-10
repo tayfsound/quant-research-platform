@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import numpy as np
 
-from database.repositories.app_settings_repository import AppSettingsRepository
+from database.repositories.app_settings_repository import DEFAULTS, AppSettingsRepository
 from database.repositories.decision_persistor import DecisionPersistor
 from database.session_factory import SessionFactory
 from market_data.ingestion.ohlcv import OHLCV
@@ -45,13 +45,34 @@ def test_pair_with_extreme_divergence_opens_both_legs():
         with SessionFactory.get_session() as session:
             AppSettingsRepository(session).set("ai_enabled", "true", updated_by="test")
             AppSettingsRepository(session).set("trading_mode", "test", updated_by="test")
+            # Faz 262: kritik bulgu — RiskEngine artık test modunda da
+            # gerçek kasa/eşzamanlılık limitlerini uyguluyor (bkz.
+            # engines/risk_engine.py). Bu test paylaşılan/kirlenmiş test
+            # DB'sinin GERÇEK birikmiş kapasitesinden bağımsız,
+            # kointegrasyon/zscore mantığını doğruluyor — kasa limitlerini
+            # kasıtlı olarak bol tutuyoruz.
+            # Gerçek bulgu: paylaşılan test DB'si, bu oturum boyunca hiç
+            # temizlenmeden biriken "open" pozisyonlardan dolayı
+            # capital_used_pct'i zaten >%600'e taşımış durumda (gerçek
+            # kapanmamış test verisi, starting_capital'ın test varsayılanı
+            # küçük olduğu için) — "1.0" (yani %100) bile yetersiz kalıyordu.
+            # Bu test kasa muhasebesini değil kointegrasyon/yön mantığını
+            # doğruluyor, o yüzden sınırı kasıtlı olarak çok bol tutuyoruz.
+            AppSettingsRepository(session).set("max_capital_pct", "1000000", updated_by="test")
+            AppSettingsRepository(session).set("max_concurrent_positions", "100000", updated_by="test")
 
         trader = PairsTrader(data_provider=provider)
-        result = trader._check_pair(sym_a, sym_b)
+        try:
+            result = trader._check_pair(sym_a, sym_b)
 
-        assert result["cointegrated"] is True
-        assert abs(result["zscore"]) >= 2.0
-        assert set(result["opened_legs"]) == {sym_a, sym_b}
+            assert result["cointegrated"] is True
+            assert abs(result["zscore"]) >= 2.0
+            assert set(result["opened_legs"]) == {sym_a, sym_b}
+        finally:
+            with SessionFactory.get_session() as session:
+                repo = AppSettingsRepository(session)
+                repo.set("max_capital_pct", DEFAULTS["max_capital_pct"], updated_by="test")
+                repo.set("max_concurrent_positions", DEFAULTS["max_concurrent_positions"], updated_by="test")
 
     with SessionFactory.get_session() as session:
         repo = DecisionPersistor(session)

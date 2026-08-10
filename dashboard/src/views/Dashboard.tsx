@@ -166,7 +166,11 @@ export default function Dashboard() {
       .catch((e) => setError(String(e)));
     fetch("/api/v1/positions", { headers: authHeaders() })
       .then((r) => r.json())
-      .then((data) => setOpenCount((data.positions || []).length));
+      // Faz 262: kritik bulgu — (data.positions || []).length API'nin
+      // limit=100 varsayılanına sabitliydi, gerçek açık pozisyon sayısı
+      // (o an 1074) hiç yansımıyordu. summary.open_count limitsiz, gerçek
+      // toplam.
+      .then((data) => setOpenCount(data.summary?.open_count ?? (data.positions || []).length));
     fetch("/api/v1/trades", { headers: authHeaders() })
       .then((r) => r.json())
       .then((data) => setSummary(data.summary || null));

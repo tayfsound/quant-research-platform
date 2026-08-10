@@ -47,16 +47,20 @@ class RiskEngine:
             risk_rejections_total.labels(reason="COOLDOWN_ACTIVE").inc()
             return ctx
 
-        # Faz 188: "test modunda ai sınırsız takılabilsin ... live moda
-        # geçtiğinde kurallar devreye girsin" — test modunda tüm kontroller
-        # atlanır, her şey onaylanır. Varsayılan "live" (güvenli taraf).
-        if ctx.risk.trading_mode == "test":
-            ctx.risk.evaluation.verdict = "approved"
-            factor = max(0.5, min(ctx.risk.adjustment.factor, 1.0))
-            ctx.decision.risk_adjusted_size = ctx.decision.proposed_size * factor
-            risk_decisions_total.labels(verdict="approved", symbol=symbol).inc()
-            return ctx
-
+        # Faz 262 — kritik bulgu: Faz 188'in "test modunda ai sınırsız
+        # takılabilsin" kararı (aşağıdaki bypass, artık kaldırıldı) kasa/
+        # eşzamanlılık/drawdown kontrollerini test modunda TAMAMEN
+        # atlıyordu. Pozisyonlar dakikalar içinde kapandığı eski rejimde
+        # zararsızdı, ama Faz 261'in 1:4 hedef/stop oranı pozisyonların
+        # günler/haftalar açık kalmasına yol açınca bu "sınırsız" kural
+        # kontrolsüz birikmeye dönüştü — gerçek bulgu: kasa %15.9'a
+        # (yapılandırılmış %5 limitin 3 katı üzerine) ulaşıp 1074 açık
+        # pozisyon birikene kadar hiçbir kontrol devreye girmedi.
+        # Kullanıcı kararı: test modu artık live modla AYNI kuralları
+        # uyguluyor — "live'a geçince karşılaşacağımız sorunları şimdiden
+        # görüp çözelim" gerekçesiyle. trading_mode hâlâ ayrı bir alan
+        # (execution/exchange rotasını belirlemek için) ama risk kapısı
+        # artık ona bakmıyor.
         limits = ctx.risk.limits
         proposed = ctx.decision.proposed_size
         reasons: list[RiskReason] = []

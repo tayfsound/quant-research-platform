@@ -45,8 +45,13 @@ def _serialize(row: dict) -> dict:
 @router.get("/positions")
 async def list_open_positions(limit: int = 100, user: AuthContext = Depends(get_current_user)):
     with SessionFactory.get_session() as session:
-        rows = DecisionPersistor(session).list_open_positions(limit=limit)
-        return {"positions": [_serialize(r) for r in rows]}
+        persistor = DecisionPersistor(session)
+        rows = persistor.list_open_positions(limit=limit)
+        summary = persistor.open_positions_summary()
+        return {
+            "positions": [_serialize(r) for r in rows],
+            "summary": summary,
+        }
 
 
 @router.get("/trades")

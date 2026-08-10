@@ -53,6 +53,7 @@ const SINCE_OPTIONS: { label: string; minutes: number | null }[] = [
 
 export default function Transactions() {
   const [open, setOpen] = useState<Position[]>([]);
+  const [openSummary, setOpenSummary] = useState<{ open_count: number; committed_notional: number } | null>(null);
   const [trades, setTrades] = useState<Position[]>([]);
   const [summary, setSummary] = useState<{ count: number; win_rate: number; total_pnl: number } | null>(null);
   const [sinceMinutes, setSinceMinutes] = useState<number | null>(null);
@@ -78,7 +79,10 @@ export default function Transactions() {
   const load = () => {
     fetch("/api/v1/positions", { headers: authHeaders() })
       .then((r) => r.json())
-      .then((data) => setOpen(data.positions || []));
+      .then((data) => {
+        setOpen(data.positions || []);
+        setOpenSummary(data.summary || null);
+      });
     fetch("/api/v1/trades", { headers: authHeaders() })
       .then((r) => r.json())
       .then((data) => {
@@ -101,7 +105,7 @@ export default function Transactions() {
       />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <StatCard label="Açık pozisyon" value={open.length} />
+        <StatCard label="Açık pozisyon" value={openSummary?.open_count ?? open.length} />
         <StatCard label="Kapanmış işlem" value={summary?.count ?? 0} sub={summary ? `%${(summary.win_rate * 100).toFixed(0)} kazanma oranı` : undefined} />
         <StatCard
           label={`Toplam PnL (kapanmış, ${currency})`}
@@ -110,7 +114,13 @@ export default function Transactions() {
         />
       </div>
 
-      <h2 className="text-sm font-semibold text-ink-soft uppercase tracking-wide mb-3">Açık Pozisyonlar</h2>
+      <h2 className="text-sm font-semibold text-ink-soft uppercase tracking-wide mb-1">Açık Pozisyonlar</h2>
+      {openSummary && openSummary.open_count > open.length && (
+        <p className="text-xs text-ink-faint mb-3">
+          En son {open.length} pozisyon gösteriliyor (toplam {openSummary.open_count} — üstteki özet kutusu
+          her zaman gerçek toplamı yansıtır).
+        </p>
+      )}
       {open.length === 0 ? (
         <EmptyState label="Şu an açık pozisyon yok." />
       ) : (

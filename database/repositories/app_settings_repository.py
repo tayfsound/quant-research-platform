@@ -5,7 +5,7 @@ bu, daha genel operasyonel ayarlar için (mod anahtarı gibi string değerler
 de içeriyor)."""
 from datetime import UTC, datetime
 
-from sqlalchemy import Column, DateTime, String
+from sqlalchemy import Column, DateTime, String, Text
 from sqlalchemy.orm import Session
 
 from database.base import Base
@@ -153,7 +153,9 @@ CANDLE_TIMEFRAME_SECONDS: dict[str, int] = {
 class AppSettingModel(Base):
     __tablename__ = "app_settings"
     key = Column(String(64), primary_key=True)
-    value = Column(String(256), nullable=False)
+    # Faz 262: kritik bulgu — VARCHAR(256) idi, symbol_leverage gibi
+    # açık-uçlu JSON değerler (watchlist büyüdükçe büyür) bunu aşabiliyordu.
+    value = Column(Text, nullable=False)
     updated_by = Column(String(128), nullable=False)
     updated_at = Column(DateTime(timezone=True), nullable=False)
 
