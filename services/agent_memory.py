@@ -135,6 +135,7 @@ class AgentMemory:
     def get_summary(
         self,
         domain: str,
+        window: int | None = None,
     ) -> AgentPerformanceSummary:
         # Faz 253: kritik bulgu — canlıda doğrulandı. Faz 245, WAIT diyen
         # bir ajanın kaydedilmesini (record() çağrısını) durdurmuştu ama
@@ -150,6 +151,19 @@ class AgentMemory:
             r for r in self._records.get(domain, [])
             if (r.direction or "").upper() in ("LONG", "SHORT")
         ]
+
+        # Faz 263 — kritik bulgu: WeightOptimizer.propose_weights() bu
+        # metodu window'suz çağırıyordu, yani ağırlıklar HER ZAMAN tüm
+        # geçmişin ortalamasına göre belirleniyordu. Gerçek veriyle
+        # doğrulandı: technical_agent'ın tüm-zamanlar doğruluğu %76.7 ama
+        # SON 20 tahmininin sadece %15'i doğru — ajan gerçekte çökmüş
+        # durumdayken hâlâ yüksek ağırlıkla oy kullanıyordu, çünkü eski
+        # (artık geçerli olmayan) başarısı yeni çöküşü matematiksel olarak
+        # gizliyordu. window verilirse SADECE o kadar en yeni yönlü kayıt
+        # kullanılır — WeightOptimizer artık kendi evaluation_window
+        # parametresini (adının vaat ettiği gibi) gerçekten uyguluyor.
+        if window is not None and window > 0:
+            records = records[-window:]
 
         if not records:
             return AgentPerformanceSummary(

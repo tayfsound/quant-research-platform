@@ -54,7 +54,15 @@ class WeightOptimizer:
 
         for domain in domains:
 
-            summary = self.agent_memory.get_summary(domain)
+            # Faz 263: kritik bulgu — evaluation_window önceden sadece
+            # confidence_factor'ü ölçeklendiriyordu, HANGİ kayıtların
+            # "doğruluk" sayılacağını asla sınırlamıyordu — ağırlıklar
+            # hep tüm-zamanlar ortalamasına göre belirleniyordu, bir
+            # ajanın YAKIN ZAMANDA çökmüş olması hiç yansımıyordu (gerçek
+            # bulgu: technical_agent tüm-zamanlar %76.7 ama son 20
+            # tahmininin %15'i doğru). Artık gerçekten SADECE son
+            # evaluation_window kayıt kullanılıyor.
+            summary = self.agent_memory.get_summary(domain, window=evaluation_window)
 
             total = summary.total_predictions
             correct = int(
