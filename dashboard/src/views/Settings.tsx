@@ -84,6 +84,35 @@ export default function Settings() {
     setTheme(pref);
   };
 
+  // Faz 268m — kullanıcı bulgusu: max_position_size (risk_limits tablosu,
+  // hash-imzalı, app_settings'ten AYRI) hiç bu sayfada yoktu — sadece bir
+  // kerelik migration'la $2000'e sabitlenmişti. Kullanıcı starting_capital/
+  // max_capital_pct/max_concurrent_positions'ı sonradan değiştirince (kasa
+  // başına pay: starting_capital*max_capital_pct/max_concurrent_positions
+  // = $25,000) bu üç ayarla senkron dışı kaldı — HER işlem SIZE_EXCEEDED
+  // ile reddedilmeye başladı, üç ayarı değiştiren kullanıcı bunu asla
+  // göremedi (max_position_size ayrı bir tabloda, ayrı bir sayfada bile
+  // değildi). Kullanıcı kararı: kontrol tamamen kaldırılmasın (AI'ın
+  // açabileceği pozisyona hâlâ bir tavan olsun), ama artık diğer üçüyle
+  // AYNI sayfadan, elle yönetilebilsin.
+  const [maxPositionSize, setMaxPositionSize] = useState<string>("");
+  const [maxPositionSizeInput, setMaxPositionSizeInput] = useState<string>("");
+  const [savingLimit, setSavingLimit] = useState(false);
+  const [savedLimit, setSavedLimit] = useState(false);
+  const [limitError, setLimitError] = useState<string | null>(null);
+
+  const loadRiskLimit = () => {
+    fetch("/api/v1/risk-limits/?scope=global", { headers: authHeaders() })
+      .then((r) => r.json())
+      .then((data) => {
+        const entry = (data.limits || []).find((l: { limit_type: string }) => l.limit_type === "max_position_size");
+        const value = entry ? String(entry.value) : "";
+        setMaxPositionSize(value);
+        setMaxPositionSizeInput(value);
+      })
+      .catch(() => {});
+  };
+
   const load = () => {
     fetch("/api/v1/settings/", { headers: authHeaders() })
       .then((r) => r.json())
@@ -92,9 +121,47 @@ export default function Settings() {
         setDraft(data.settings || {});
       })
       .catch((e) => setError(String(e)));
+    loadRiskLimit();
   };
 
   useEffect(load, []);
+
+  const saveMaxPositionSize = () => {
+    const value = Number(maxPositionSizeInput);
+    if (!maxPositionSizeInput || Number.isNaN(value) || value <= 0) {
+      setLimitError("max_position_size: pozitif bir sayı girin");
+      return;
+    }
+    setSavingLimit(true);
+    setLimitError(null);
+    fetch(`/api/v1/risk-limits/max_position_size?value=${encodeURIComponent(String(value))}&scope=global`, {
+      method: "POST",
+      headers: authHeaders(),
+    })
+      .then(async (r) => {
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          throw new Error(body.detail || `${r.status}`);
+        }
+        setMaxPositionSize(String(value));
+        setSavedLimit(true);
+        setTimeout(() => setSavedLimit(false), 1500);
+      })
+      .catch((e) => setLimitError(`max_position_size: ${e.message || e}`))
+      .finally(() => setSavingLimit(false));
+  };
+
+  // Kasa ayarlarının GERÇEKTEN ürettiği işlem başı payı, kullanıcı henüz
+  // Kaydet'e basmadan (draft'tan) canlı hesaplayıp gösteriyor — bugünkü
+  // olayın (üç ayar değişti, dördüncüsü fark edilmeden senkron dışı kaldı)
+  // bir daha sessizce tekrarlanmaması için.
+  const computedCapitalPerTrade = (() => {
+    const capital = Number(draft.starting_capital);
+    const pct = Number(draft.max_capital_pct);
+    const concurrent = Number(draft.max_concurrent_positions);
+    if (!capital || !pct || !concurrent) return null;
+    return (capital * pct) / concurrent;
+  })();
 
   const resetToDefaults = () => {
     setResetting(true);
@@ -229,6 +296,36 @@ export default function Settings() {
               onClick={() => save("starting_capital", draft.starting_capital)}
             >
               {saved === "starting_capital" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+        </Card>
+
+        <Card>
+          <h3 className="text-sm font-semibold text-ink mb-1">Maksimum pozisyon büyüklüğü ($)</h3>
+          <p className="text-xs text-ink-soft mb-3">
+            RiskEngine'in gerçek üst sınırı — AI, işlem başına hesaplanan payı bu değerin üzerindeyse
+            pozisyonu reddeder (SIZE_EXCEEDED). Kasa/pay/eşzamanlılık ayarlarından (yukarıda ve solda)
+            AYRI bir tablo — biri değişince diğerini elle güncellemeniz gerekir.
+          </p>
+          {computedCapitalPerTrade != null && (
+            <p className={`text-xs mb-3 ${
+              maxPositionSize && computedCapitalPerTrade > Number(maxPositionSize) ? "text-fall" : "text-ink-faint"
+            }`}>
+              Şu anki kasa ayarlarına göre işlem başı hesaplanan pay: {computedCapitalPerTrade.toLocaleString()}
+              {maxPositionSize && computedCapitalPerTrade > Number(maxPositionSize) && (
+                <> — bu, aşağıdaki limitten BÜYÜK, her işlem reddedilir.</>
+              )}
+            </p>
+          )}
+          {limitError && <p className="text-xs text-fall mb-3">{limitError}</p>}
+          <div className="flex gap-2">
+            <Input
+              type="number"
+              value={maxPositionSizeInput}
+              onChange={setMaxPositionSizeInput}
+            />
+            <Button disabled={savingLimit} onClick={saveMaxPositionSize}>
+              {savingLimit ? "Kaydediliyor…" : savedLimit ? "Kaydedildi ✓" : "Kaydet"}
             </Button>
           </div>
         </Card>
