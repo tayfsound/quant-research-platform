@@ -104,3 +104,43 @@ def fetch_liquidity_condition() -> str | None:
     if pct_change < -0.005:
         return "tight"
     return "neutral"
+
+
+def fetch_net_liquidity_trend() -> str | None:
+    """Faz 267 — kullanıcı bulgusu: "devletler borçlarını dört yıllık
+    dönemlerle öder, bu döngü tamamlanınca piyasaya likidite girer."
+    liquidity_condition (M2SL, aylık, yavaş) bu döngüyü yakalayamıyor.
+    Gerçek, makro analistlerin ("net liquidity") kullandığı standart
+    formül — haftalık/günlük, çok daha hızlı hareket eden üç GERÇEK
+    FRED serisinden:
+    - WALCL: Fed'in toplam bilançosu (milyon $, haftalık)
+    - WTREGEN: Hazine'nin Fed'deki nakit hesabı — TGA (milyon $, haftalık).
+      Borç tavanı çözülüp Hazine yeniden borçlanmaya başlayınca bu hesap
+      hızla dolar (piyasadan likidite çeker); Hazine harcama yaparken
+      boşalır (piyasaya likidite geri döner) — kullanıcının tarif ettiği
+      döngünün doğrudan karşılığı.
+    - RRPONTSYD: Fed'in gecelik ters repo tesisi (milyar $, günlük) —
+      bankaların/fonların Fed'e "park ettiği" (piyasada OLMAYAN) para.
+    Net Likidite = WALCL - WTREGEN - (RRPONTSYD * 1000, birim milyona
+    çevriliyor). Yükseliyorsa risk varlıkları için tarihsel olarak
+    destekleyici (expanding); düşüyorsa kısıtlayıcı (contracting)."""
+    walcl = _fetch_series("WALCL", limit=8)
+    tga = _fetch_series("WTREGEN", limit=8)
+    rrp = _fetch_series("RRPONTSYD", limit=8)
+    if not walcl or not tga or not rrp:
+        return None
+
+    n = min(len(walcl), len(tga), len(rrp))
+    if n < 2:
+        return None
+
+    net_liquidity = [walcl[i] - tga[i] - rrp[i] * 1000 for i in range(n)]
+    if net_liquidity[-1] == 0:
+        return None
+
+    pct_change = (net_liquidity[0] - net_liquidity[-1]) / abs(net_liquidity[-1])
+    if pct_change > 0.01:
+        return "expanding"
+    if pct_change < -0.01:
+        return "contracting"
+    return "stable"

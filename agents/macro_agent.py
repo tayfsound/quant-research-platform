@@ -31,6 +31,24 @@ class MacroAgent:
             score += 1.0
             evidence.append("Liquidity conditions expansionary")
 
+        # Faz 267 — kullanıcı bulgusu: "devletler borçlarını dört yıllık
+        # dönemlerle öder, bu döngü tamamlanınca piyasaya likidite girer."
+        # liquidity_condition (yukarıda, M2SL) bunu yakalayamıyor — aylık,
+        # yavaş. net_liquidity_trend (Fed bilançosu - Hazine nakit hesabı
+        # - ters repo) haftalık/günlük, çok daha hızlı. Boş string ("veri
+        # yok", API/key eksikse) hiçbir puan vermiyor — icat edilmiş bir
+        # nötr varsayım değil. DİKKAT: bu yeni bir sinyal, henüz gerçek
+        # kapanmış işlemlerle doğrulanmadı (bkz. Faz 258'in volume_
+        # confirmation'da yaptığı gibi bir feature-importance ölçümü
+        # bekliyor) — ağırlığı kasıtlı olarak diğer köklü sinyallerle aynı
+        # (±1.0), ne fazla ne az güveniliyor.
+        if context.net_liquidity_trend == "expanding":
+            score += 1.0
+            evidence.append("Net liquidity (Fed balance sheet - TGA - reverse repo) expanding")
+        elif context.net_liquidity_trend == "contracting":
+            score -= 1.0
+            evidence.append("Net liquidity (Fed balance sheet - TGA - reverse repo) contracting")
+
         # Merkez bankası
         if context.central_bank_bias == "hawkish":
             score -= 1.0

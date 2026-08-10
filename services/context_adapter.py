@@ -31,6 +31,7 @@ class ContextAdapter:
             fetch_employment_trend,
             fetch_inflation_trend,
             fetch_liquidity_condition,
+            fetch_net_liquidity_trend,
         )
 
         return MacroContext(
@@ -38,6 +39,13 @@ class ContextAdapter:
             liquidity_condition=self._get(ctx, "liquidity_condition", fetch_liquidity_condition() or "neutral"),
             central_bank_bias=self._get(ctx, "central_bank_bias", fetch_central_bank_bias() or "neutral"),
             employment_trend=self._get(ctx, "employment_trend", fetch_employment_trend() or "stable"),
+            # Faz 267: kullanıcı isteği — hazine borç/likidite döngüsü.
+            # fetch_net_liquidity_trend None dönerse (API/key yoksa)
+            # dürüstçe boş string — macro_agent bunu "veri yok" sayıp
+            # atlıyor, "stable" gibi icat edilmiş bir varsayılana düşmüyor
+            # (diğer 4 alandan kasıtlı olarak farklı: onlar zaten var olan,
+            # köklü sinyaller, bu yeni ve henüz doğrulanmamış).
+            net_liquidity_trend=self._get(ctx, "net_liquidity_trend", fetch_net_liquidity_trend() or ""),
         )
 
     def to_sentiment(self, ctx: CognitiveCycleContext) -> SentimentContext:

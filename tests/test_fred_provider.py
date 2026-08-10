@@ -6,6 +6,7 @@ from market_data.macro.fred_provider import (
     fetch_employment_trend,
     fetch_inflation_trend,
     fetch_liquidity_condition,
+    fetch_net_liquidity_trend,
 )
 
 
@@ -23,6 +24,25 @@ def test_fetch_central_bank_bias_returns_a_real_recognized_category():
 
 def test_fetch_liquidity_condition_returns_a_real_recognized_category():
     assert fetch_liquidity_condition() in ("loose", "tight", "neutral")
+
+
+def test_fetch_net_liquidity_trend_returns_a_real_recognized_category():
+    """Faz 267: kullanıcı bulgusu — hazine borç/likidite döngüsü. Gerçek
+    FRED serileriyle (WALCL, WTREGEN, RRPONTSYD) hesaplanıyor; None de
+    dönebilir (birinden biri çekilemezse, fail-closed)."""
+    assert fetch_net_liquidity_trend() in ("expanding", "contracting", "stable", None)
+
+
+def test_net_liquidity_trend_is_none_without_api_key(monkeypatch):
+    fred_provider._CACHE.clear()
+    monkeypatch.setenv("FRED_API_KEY", "")
+    from config import get_settings
+    get_settings.cache_clear()
+    try:
+        assert fetch_net_liquidity_trend() is None
+    finally:
+        get_settings.cache_clear()
+        fred_provider._CACHE.clear()
 
 
 def test_returns_none_without_api_key(monkeypatch):

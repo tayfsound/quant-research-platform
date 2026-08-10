@@ -21,4 +21,16 @@ class MacroContext(BaseModel):
     employment_trend: str = ""      # "improving", "weakening"
     liquidity_condition: str = ""   # "tight", "neutral", "loose"
     central_bank_bias: str = ""     # "hawkish", "neutral", "dovish"
+    # Faz 267 — kullanıcı bulgusu: "devletler borçlarını dört yıllık
+    # dönemlerle öder, bu döngü tamamlanınca piyasaya likidite girer."
+    # liquidity_condition (M2 büyümesi) bunu YAKALAMIYOR — M2 aylık,
+    # yavaş değişen bir ölçü; Hazine'nin nakit hesabını (TGA) doldurup
+    # boşaltması ve Fed'in ters repo tesisi haftalar içinde çok daha
+    # büyük, çok daha hızlı likidite dalgalanmaları yaratıyor (borç
+    # tavanı sonrası TGA yeniden dolarken likidite hızla çekilir, TGA
+    # boşalırken piyasaya geri döner). Gerçek, tanınmış bir formül
+    # (bkz. market_data/macro/fred_provider.py::fetch_net_liquidity_trend):
+    # Net Likidite = Fed Bilançosu (WALCL) - Hazine Nakit Hesabı (WTREGEN)
+    # - Ters Repo (RRPONTSYD).
+    net_liquidity_trend: str = ""   # "expanding", "contracting", "stable"
     timestamp: datetime = Field(default_factory=datetime.now)
