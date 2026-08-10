@@ -83,6 +83,36 @@ async def run_real_backtest_async(
     return {"task_id": task.id, "status": "queued"}
 
 
+@router.post("/run-portfolio-async")
+async def run_portfolio_backtest_async(
+    symbols: str = "BTCUSDT,ETHUSDT",
+    timeframe: str = "15m",
+    bars_count: int = 1000,
+    lookback: int = 100,
+    max_forward_bars: int = 200,
+    starting_capital: float = 10000.0,
+    max_concurrent_positions: int = 5,
+    max_capital_pct: float = 0.5,
+    user: AuthContext = Depends(require_role(Role.OPERATOR)),
+):
+    """Faz 268o: kullanıcı isteği — "backtest motoru rötuşu... portföy
+    seviyesi backtest." /run-real-async'ten (her sembol KENDİ TAM
+    sermayesini bağımsız kullanır, ortak bir kısıt yok) farkı: burada TÜM
+    semboller TEK bir paylaşılan sermaye havuzunu ve TEK bir
+    max_concurrent_positions limitini paylaşarak GERÇEKTEN aynı anda
+    simüle edilir — bkz. backtest/real_historical_backtest.py::
+    run_portfolio_backtest. Aynı sebeple (her adım gerçek bir Cognitive
+    Engine.run()) her zaman async."""
+    from services.tasks import run_portfolio_backtest_task
+
+    symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
+    task = run_portfolio_backtest_task.delay(
+        symbol_list, timeframe, bars_count, lookback, max_forward_bars,
+        starting_capital, max_concurrent_positions, max_capital_pct,
+    )
+    return {"task_id": task.id, "status": "queued"}
+
+
 @router.get("/tasks/{task_id}")
 async def get_backtest_task(task_id: str, user: AuthContext = Depends(get_current_user)):
     from services.celery_app import celery_app

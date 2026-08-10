@@ -357,3 +357,40 @@ def run_real_backtest_task(
         "total_pnl": run.total_pnl,
         "metrics": run.metrics,
     }
+
+
+@celery_app.task(name="run_portfolio_backtest_task", bind=True)
+def run_portfolio_backtest_task(
+    self,
+    symbols: list[str],
+    timeframe: str = "15m",
+    bars_count: int = 1000,
+    lookback: int = 100,
+    max_forward_bars: int = 200,
+    starting_capital: float = 10000.0,
+    max_concurrent_positions: int = 5,
+    max_capital_pct: float = 0.5,
+) -> dict:
+    """Faz 268o: kullanıcı isteği — "backtest motoru rötuşu... portföy
+    seviyesi backtest." run_real_backtest_task'ın (her sembol bağımsız
+    kendi TAM sermayesini kullanır) aksine, burada TÜM semboller TEK bir
+    paylaşılan sermaye havuzunu ve TEK bir eşzamanlılık limitini paylaşır
+    — bkz. backtest/real_historical_backtest.py::run_portfolio_backtest."""
+    from database.session_factory import SessionFactory
+    from backtest.real_historical_backtest import persist_portfolio_backtest_run, run_portfolio_backtest
+
+    result = run_portfolio_backtest(
+        symbols, timeframe=timeframe, bars_count=bars_count, lookback=lookback,
+        max_forward_bars=max_forward_bars, starting_capital=starting_capital,
+        max_concurrent_positions=max_concurrent_positions, max_capital_pct=max_capital_pct,
+    )
+
+    with SessionFactory.get_session() as session:
+        run = persist_portfolio_backtest_run(result, session, lookback=lookback)
+
+    return {
+        "id": str(run.id),
+        "symbols": run.symbols,
+        "total_pnl": run.total_pnl,
+        "metrics": run.metrics,
+    }

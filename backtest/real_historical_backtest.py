@@ -46,6 +46,7 @@ from market_data.features.signal_engine import (
 from market_data.ingestion.ohlcv import OHLCV, from_binance_klines
 from services.cognitive_engine import CognitiveEngine
 from simulator.fee_engine import FeeEngine
+from simulator.slippage_model import SlippageModel
 
 # Faz 248: kullanıcı isteği — "elimizde gerçek geçmiş veriyle binlerce
 # deneme yapabilecek bir motor var ama öğrenme döngüsüne bağlı değil,
@@ -245,6 +246,17 @@ def run_real_backtest(
     engine = engine or CognitiveEngine()
     bars = _run_coroutine_sync(fetch_real_history(symbol, timeframe, bars_count))
     fee_engine = FeeEngine()
+    # Faz 268n — kullanıcı isteği: backtest motoru rötuşu, "slippage
+    # modellemesi" eksikti. Önceden entry_price = bars[t].close, exit_price
+    # = stop/target'ın TAM teorik seviyesiydi — gerçek bir dolum hiçbir
+    # zaman tam o fiyattan olmaz, backtest sonuçları sistematik olarak
+    # iyimserdi. simulator/slippage_model.py (Faz 268e'de LONG/SHORT<->BUY/
+    # SELL yön hatası düzeltilmiş AYNI modül, canlı orchestrator.py'nin
+    # kullandığı) burada da kullanılıyor — entry HER ZAMAN, exit ise SADECE
+    # stop_loss'ta (gerçek bir market emri, tetiklenince aleyhte kayar);
+    # take_profit önceden oturmuş bir LIMIT emri olduğu için (zaten maker
+    # ücret varsayımıyla tutarlı) tam hedef fiyattan dolar, kaymaz.
+    slippage_model = SlippageModel()
 
     # Faz 268d: risk ölçeklendirmesi artık backtest'in KENDİ timeframe'ine
     # göre seçilen bir bar setinden geliyor (ör. 15m sinyal -> 1h risk
@@ -270,12 +282,19 @@ def run_real_backtest(
         if direction not in ("LONG", "SHORT") or size <= 0:
             continue
 
-        entry_price = bars[t].close
+        raw_price = bars[t].close
+        size_seed = capital_per_trade / raw_price if raw_price else 1.0
+        entry_side = "BUY" if direction == "LONG" else "SELL"
+        entry_price = slippage_model.apply(raw_price, entry_side, size_seed)
+
         risk_mag = result_ctx.decision.stop_loss
         reward_mag = result_ctx.decision.take_profit
         if not risk_mag or not reward_mag:
             continue
 
+        # Stop/target mesafeleri GERÇEKTEN doldurulan fiyata göre (raw
+        # sinyal fiyatına göre değil) — gerçek bir pozisyonun risk tabanı
+        # kendi maliyet bazıdır.
         if direction == "LONG":
             stop_price = entry_price - risk_mag
             target_price = entry_price + reward_mag
@@ -289,6 +308,10 @@ def run_real_backtest(
         if exit_price is None:
             open_positions_never_closed += 1
             continue
+
+        if exit_reason == "stop_loss":
+            exit_side = "SELL" if direction == "LONG" else "BUY"
+            exit_price = slippage_model.apply(exit_price, exit_side, size_seed)
 
         if direction == "LONG":
             gross_pnl_pct = (exit_price - entry_price) / entry_price
@@ -462,5 +485,275 @@ def persist_real_backtest_run(result: dict, session, lookback: int = DEFAULT_LOO
             "per_symbol": per_symbol_metrics,
         },
         equity_curve=result["combined_equity_curve"],
+    )
+    return BacktestRunRepository(session).save(run)
+
+
+def run_portfolio_backtest(
+    symbols: list[str],
+    timeframe: str = "15m",
+    bars_count: int = 1000,
+    lookback: int = DEFAULT_LOOKBACK,
+    max_forward_bars: int = DEFAULT_MAX_FORWARD_BARS,
+    starting_capital: float = 10000.0,
+    max_concurrent_positions: int = 5,
+    max_capital_pct: float = 0.5,
+) -> dict:
+    """Faz 268o — kullanıcı isteği: "backtest motoru rötuşu... portföy
+    seviyesi backtest." run_real_backtest_multi() her sembolü BAĞIMSIZ
+    çalıştırıyordu — her biri KENDİ TAM capital_per_trade'ini kullanıyordu,
+    ortak bir sermaye/eşzamanlılık kısıtı yoktu (5 sembolde 5 kat sermaye
+    varmış gibi). Burada TEK bir paylaşılan sermaye havuzu ve TEK bir
+    max_concurrent_positions limiti üzerinden, TÜM semboller GERÇEKTEN
+    aynı anda simüle ediliyor — canlı RiskEngine'in MAX_CONCURRENT_
+    POSITIONS/MAX_CAPITAL_PCT kontrolüyle aynı mantık (bkz. engines/
+    risk_engine.py). Her adımda ÖNCE açık pozisyonlar kapanma kontrolünden
+    geçer (sermaye serbest kalsın), SONRA yeni sinyaller değerlendirilir —
+    aynı adımda kapanan bir pozisyonun sermayesi aynı adımda yeni bir
+    pozisyona akabilir, tıpkı gerçek zamanlı bir sistemde olacağı gibi.
+
+    Varsayım (dürüstçe belirtilmeli): tüm sembollerin aynı `timeframe`'deki
+    bar'larının aynı bar indeksinde aynı gerçek zamana denk geldiği kabul
+    ediliyor — büyük Binance USDT çiftleri için mum sınırları global
+    olarak hizalıdır (hepsi aynı :00/:15/:30 UTC'de başlar), bu yüzden
+    pratikte doğru, ama hiçbir sembolde eksik/boş bar olmadığı varsayımına
+    dayanıyor."""
+    engine = CognitiveEngine()
+    fee_engine = FeeEngine()
+    slippage_model = SlippageModel()
+
+    bars_by_symbol: dict[str, list[OHLCV]] = {}
+    risk_bars_by_symbol: dict[str, list[OHLCV]] = {}
+    risk_duration_by_symbol: dict[str, timedelta] = {}
+    for symbol in symbols:
+        bars_by_symbol[symbol] = _run_coroutine_sync(fetch_real_history(symbol, timeframe, bars_count))
+        risk_timeframe = _BACKTEST_TIMEFRAME_TO_RISK_TIMEFRAME.get(timeframe, "1d")
+        risk_bars_by_symbol[symbol] = _run_coroutine_sync(fetch_real_history(symbol, risk_timeframe, 400))
+        risk_duration_by_symbol[symbol] = _TIMEFRAME_TO_TIMEDELTA.get(risk_timeframe, timedelta(days=1))
+
+    min_len = min(len(b) for b in bars_by_symbol.values())
+
+    open_positions: list[dict] = []
+    closed_trades: list[dict] = []
+    open_positions_never_closed = 0
+    equity_curve = [starting_capital]
+    equity = starting_capital
+
+    for t in range(lookback, min_len - 1):
+        # 1) Açık pozisyonların bu adımda kapanıp kapanmadığını ÖNCE
+        #    kontrol et — kapananlar sermayeyi yeni girişlerden önce
+        #    serbest bırakır.
+        still_open = []
+        for pos in open_positions:
+            bar = bars_by_symbol[pos["symbol"]][t]
+            exit_price = None
+            exit_reason = None
+            if pos["direction"] == "LONG":
+                if pos["stop_price"] is not None and bar.low <= pos["stop_price"]:
+                    exit_price, exit_reason = pos["stop_price"], "stop_loss"
+                elif pos["target_price"] is not None and bar.high >= pos["target_price"]:
+                    exit_price, exit_reason = pos["target_price"], "take_profit"
+            else:
+                if pos["stop_price"] is not None and bar.high >= pos["stop_price"]:
+                    exit_price, exit_reason = pos["stop_price"], "stop_loss"
+                elif pos["target_price"] is not None and bar.low <= pos["target_price"]:
+                    exit_price, exit_reason = pos["target_price"], "take_profit"
+
+            if exit_price is None and (t - pos["entry_idx"]) >= max_forward_bars:
+                # Faz 216 ilkesi: vade dolunca kapatma yok — sonsuza dek
+                # açık kalmış sayılır, uydurma bir fiyat İCAT EDİLMEZ,
+                # sonuçlara dahil edilmez (ama sermayesi de bir daha
+                # kullanılamaz — gerçek bir "asla kapanmayan" pozisyonun
+                # gerçek maliyeti budur).
+                open_positions_never_closed += 1
+                continue
+
+            if exit_price is None:
+                still_open.append(pos)
+                continue
+
+            if exit_reason == "stop_loss":
+                exit_side = "SELL" if pos["direction"] == "LONG" else "BUY"
+                exit_price = slippage_model.apply(exit_price, exit_side, pos["size_seed"])
+
+            if pos["direction"] == "LONG":
+                gross_pnl_pct = (exit_price - pos["entry_price"]) / pos["entry_price"]
+            else:
+                gross_pnl_pct = (pos["entry_price"] - exit_price) / pos["entry_price"]
+
+            exit_is_maker = exit_reason == "take_profit"
+            entry_fee_pct = fee_engine.config.taker_rate
+            exit_fee_pct = fee_engine.config.maker_rate if exit_is_maker else fee_engine.config.taker_rate
+            net_pnl_pct = gross_pnl_pct - entry_fee_pct - exit_fee_pct
+            net_pnl_usd = net_pnl_pct * pos["notional"]
+
+            equity += net_pnl_usd
+            equity_curve.append(equity)
+            closed_trades.append({
+                "symbol": pos["symbol"],
+                "direction": pos["direction"],
+                "confidence": pos["confidence"],
+                "entry_price": pos["entry_price"],
+                "exit_price": exit_price,
+                "exit_reason": exit_reason,
+                "net_return_pct": net_pnl_pct,
+                "net_pnl_usd": net_pnl_usd,
+                "win": net_pnl_pct > 0,
+                "bars_held": t - pos["entry_idx"],
+                "entry_time": pos["entry_time"].isoformat(),
+                "exit_time": bar.timestamp.isoformat(),
+            })
+
+        open_positions = still_open
+
+        # 2) Sonra her sembol için yeni sinyal değerlendir — kapananların
+        #    az önce serbest bıraktığı kapasiteyi kullanabilir.
+        capital_used = sum(p["notional"] for p in open_positions)
+        open_symbols = {p["symbol"] for p in open_positions}
+        for symbol in symbols:
+            if len(open_positions) >= max_concurrent_positions:
+                break
+            if symbol in open_symbols:
+                continue  # aynı sembolde aynı anda ikinci pozisyon açılmaz
+
+            bars = bars_by_symbol[symbol]
+            remaining_slots = max_concurrent_positions - len(open_positions)
+            available_capital = starting_capital * max_capital_pct - capital_used
+            if available_capital <= 0 or remaining_slots <= 0:
+                continue
+            capital_per_trade = available_capital / remaining_slots
+
+            window = bars[max(0, t - lookback): t + 1]
+            daily_atr_pct = _risk_atr_pct_asof(
+                risk_bars_by_symbol[symbol], bars[t].timestamp, risk_duration_by_symbol[symbol]
+            )
+            ctx = _build_backtest_context(symbol, timeframe, window, capital_per_trade, daily_atr_pct=daily_atr_pct)
+            result_ctx = engine.run(ctx, persist=False)
+
+            direction = result_ctx.decision.proposed_direction or "WAIT"
+            size = result_ctx.decision.final_size or 0.0
+            if direction not in ("LONG", "SHORT") or size <= 0:
+                continue
+
+            risk_mag = result_ctx.decision.stop_loss
+            reward_mag = result_ctx.decision.take_profit
+            if not risk_mag or not reward_mag:
+                continue
+
+            raw_price = bars[t].close
+            size_seed = capital_per_trade / raw_price if raw_price else 1.0
+            entry_side = "BUY" if direction == "LONG" else "SELL"
+            entry_price = slippage_model.apply(raw_price, entry_side, size_seed)
+
+            if direction == "LONG":
+                stop_price = entry_price - risk_mag
+                target_price = entry_price + reward_mag
+            else:
+                stop_price = entry_price + risk_mag
+                target_price = entry_price - reward_mag
+
+            open_positions.append({
+                "symbol": symbol,
+                "direction": direction,
+                "entry_idx": t,
+                "entry_price": entry_price,
+                "stop_price": stop_price,
+                "target_price": target_price,
+                "notional": capital_per_trade,
+                "size_seed": size_seed,
+                "confidence": result_ctx.decision.confidence or 0.0,
+                "entry_time": bars[t].timestamp,
+            })
+            capital_used += capital_per_trade
+            open_symbols.add(symbol)
+
+    return _summarize_portfolio(
+        symbols, timeframe, min_len, closed_trades, open_positions_never_closed, starting_capital, equity_curve
+    )
+
+
+def _summarize_portfolio(
+    symbols: list[str], timeframe: str, num_bars: int, trades: list[dict],
+    open_positions_never_closed: int, starting_capital: float, equity_curve: list[float],
+) -> dict:
+    from collections import Counter
+
+    from analytics.metrics.engine import MetricsEngine
+
+    if not trades:
+        return {
+            "symbols": symbols,
+            "timeframe": timeframe,
+            "num_bars": num_bars,
+            "trade_count": 0,
+            "open_positions_never_closed": open_positions_never_closed,
+            "total_pnl_usd": 0.0,
+            "starting_capital": starting_capital,
+            "metrics": {},
+            "equity_curve": equity_curve,
+        }
+
+    wins = sum(1 for t in trades if t["win"])
+    total_pnl_usd = sum(t["net_pnl_usd"] for t in trades)
+    returns = [t["net_return_pct"] for t in trades]
+
+    metrics = {
+        "win_rate": wins / len(trades),
+        "avg_return_pct": sum(returns) / len(returns),
+        "sharpe_ratio": float(MetricsEngine.sharpe_ratio(returns)),
+        "sortino_ratio": float(MetricsEngine.sortino_ratio(returns)),
+        "max_drawdown": float(MetricsEngine.max_drawdown(equity_curve)),
+        "avg_bars_held": sum(t["bars_held"] for t in trades) / len(trades),
+        "exit_reason_distribution": dict(Counter(t["exit_reason"] for t in trades)),
+        "open_positions_never_closed": open_positions_never_closed,
+        "per_symbol_trade_count": dict(Counter(t["symbol"] for t in trades)),
+    }
+
+    return {
+        "symbols": symbols,
+        "timeframe": timeframe,
+        "num_bars": num_bars,
+        "trade_count": len(trades),
+        "open_positions_never_closed": open_positions_never_closed,
+        "total_pnl_usd": total_pnl_usd,
+        "starting_capital": starting_capital,
+        "metrics": metrics,
+        "equity_curve": equity_curve,
+        "trades": trades,
+    }
+
+
+def persist_portfolio_backtest_run(result: dict, session, lookback: int = DEFAULT_LOOKBACK):
+    """run_portfolio_backtest()'in çıktısını persist_real_backtest_run()
+    ile AYNI BacktestRun contract'ına yazar — metrics.mode='portfolio' ile
+    ayırt edilir, tek sembollü/bağımsız-çoklu-sembol çalıştırmalarla
+    karışmaz."""
+    from collections import defaultdict
+
+    from contracts.backtest_run import BacktestRun
+    from contracts.experiment_registry import ExperimentRegistry
+    from database.repositories.backtest_run_repository import BacktestRunRepository
+
+    per_symbol_pnl: dict[str, float] = defaultdict(float)
+    for t in result.get("trades", []):
+        per_symbol_pnl[t["symbol"]] += t["net_pnl_usd"]
+
+    run = BacktestRun(
+        symbols=result["symbols"],
+        git_sha=ExperimentRegistry.get_git_sha(),
+        fee=FeeEngine().config.taker_rate,
+        lookback=lookback,
+        num_bars=result["num_bars"],
+        total_pnl=result["total_pnl_usd"],
+        per_symbol_pnl=dict(per_symbol_pnl),
+        metrics={
+            "mode": "portfolio",
+            "timeframe": result["timeframe"],
+            "total_trades": result["trade_count"],
+            "overall_win_rate": result["metrics"].get("win_rate", 0.0),
+            "starting_capital": result["starting_capital"],
+            **result["metrics"],
+        },
+        equity_curve=result["equity_curve"],
     )
     return BacktestRunRepository(session).save(run)
