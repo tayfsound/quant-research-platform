@@ -55,12 +55,34 @@ function fmt(n: number | null | undefined, digits = 2) {
 // başarısızlığı sanıyordu. Bu filtre, "sadece gerçekten yakın zamanda
 // kapananları göster" diyebilmek için — sunucu tarafında bir şey
 // değişmiyor, zaten çekilmiş olan `trades` listesi client-side süzülüyor.
+//
+// Faz 268c — kullanıcı bulgusu: "Bugün 8 işlem kapanmış diye gördüm
+// Transactions'ta, Performance'ın günlüğünde 2 yazıyor." Gerçek veriyle
+// doğrulandı: İKİSİ DE doğruydu, sadece "bugün"ün TANIMI farklıydı.
+// "Son 24 saat" burada her zaman KAYAN bir pencereydi (şu andan geriye
+// 24 saat, gün sınırı gözetmeden) — Performance'ın "Günlük" sekmesi ise
+// SQL date_trunc('day', closed_at) ile TAKVİM GÜNÜ (UTC 00:00'dan
+// itibaren) kullanıyor. Gün henüz birkaç saatliyken bu iki sayı doğal
+// olarak farklı çıkar. TODAY_UTC_SENTINEL, Performance'ınkiyle AYNI
+// tanımı (UTC takvim günü) kullanan gerçek bir "Bugün" seçeneği ekliyor
+// — artık ikisi karşılaştırılabilir, biri diğerinin "hatası" değil.
+const TODAY_UTC_SENTINEL = -1;
+
 const SINCE_OPTIONS: { label: string; minutes: number | null }[] = [
-  { label: "Son 15 dk", minutes: 15 },
+  { label: "Bugün (UTC takvim günü)", minutes: TODAY_UTC_SENTINEL },
+  { label: "Son 24 saat (kayan pencere)", minutes: 1440 },
   { label: "Son 1 saat", minutes: 60 },
-  { label: "Son 24 saat", minutes: 1440 },
+  { label: "Son 15 dk", minutes: 15 },
   { label: "Tümü", minutes: null },
 ];
+
+function sinceCutoffMs(minutes: number): number {
+  if (minutes === TODAY_UTC_SENTINEL) {
+    const now = new Date();
+    return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  }
+  return Date.now() - minutes * 60_000;
+}
 
 export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (symbol: string) => void } = {}) {
   const [open, setOpen] = useState<Position[]>([]);
@@ -74,7 +96,7 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
 
   const filteredTrades = useMemo(() => {
     if (sinceMinutes === null) return trades;
-    const cutoff = Date.now() - sinceMinutes * 60_000;
+    const cutoff = sinceCutoffMs(sinceMinutes);
     return trades.filter((t) => t.closed_at && new Date(t.closed_at).getTime() >= cutoff);
   }, [trades, sinceMinutes]);
 

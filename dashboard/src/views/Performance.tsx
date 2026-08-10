@@ -126,6 +126,15 @@ export default function Performance() {
             ))}
           </div>
 
+          {tab === "daily" && (
+            <p className="text-xs text-ink-faint mb-3">
+              "Günlük" burada takvim günü demek (UTC 00:00'dan itibaren) — Transactions sayfasındaki
+              "Son 24 saat" ise şu andan geriye kayan bir pencere, gün sınırı gözetmez. Gün henüz
+              birkaç saatliyken ikisi doğal olarak farklı sayı gösterebilir; Transactions'ta gerçekten
+              aynı tanımı isteyen "Bugün (UTC takvim günü)" seçeneği var.
+            </p>
+          )}
+
           <Card padded={false}>
             {data[tab].length === 0 ? (
               <div className="p-5">
