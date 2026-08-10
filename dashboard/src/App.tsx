@@ -19,6 +19,17 @@ import { clearToken, hasToken } from './api/auth';
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(hasToken);
   const [view, setView] = useState('dashboard');
+  // Faz 266: kullanıcı isteği — Transactions'ta bir işlem satırına
+  // tıklayınca direkt o varlığın grafiğine (Tokens sayfasındaki detay
+  // görünümü) gitsin. Tokens kendi "seçili sembol" durumunu kendi
+  // içinde tutuyor (App.tsx'in "view" mantığıyla aynı basit desen) —
+  // dışarıdan bir sembol "aşılamak" için bunu buraya taşıyoruz.
+  const [tokenDetailSymbol, setTokenDetailSymbol] = useState<string | null>(null);
+
+  const navigateToToken = (symbol: string) => {
+    setTokenDetailSymbol(symbol);
+    setView('tokens');
+  };
 
   if (!isLoggedIn) {
     return <Login onLogin={() => setIsLoggedIn(true)} />;
@@ -35,10 +46,10 @@ function App() {
       <main className="flex-1 min-w-0 overflow-x-auto">
         <div className="max-w-6xl mx-auto px-8 py-8">
           {view === 'dashboard' && <Dashboard />}
-          {view === 'transactions' && <Transactions />}
+          {view === 'transactions' && <Transactions onSelectSymbol={navigateToToken} />}
           {view === 'performance' && <Performance />}
           {view === 'market' && <MarketOverview />}
-          {view === 'tokens' && <Tokens />}
+          {view === 'tokens' && <Tokens initialSymbol={tokenDetailSymbol} onSymbolConsumed={() => setTokenDetailSymbol(null)} />}
           {view === 'predictions' && <Predictions />}
           {view === 'strategies' && <Strategies />}
           {view === 'risk' && <RiskDashboard />}

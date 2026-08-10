@@ -51,7 +51,7 @@ const SINCE_OPTIONS: { label: string; minutes: number | null }[] = [
   { label: "Tümü", minutes: null },
 ];
 
-export default function Transactions() {
+export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (symbol: string) => void } = {}) {
   const [open, setOpen] = useState<Position[]>([]);
   const [openSummary, setOpenSummary] = useState<{ open_count: number; committed_notional: number } | null>(null);
   const [trades, setTrades] = useState<Position[]>([]);
@@ -142,7 +142,17 @@ export default function Transactions() {
               {open.map((p) => (
                 <tr key={p.id} className="border-t border-line-soft">
                   <td className="py-2 pr-4 font-mono text-ink">
-                    {p.symbol}
+                    {onSelectSymbol ? (
+                      <button
+                        onClick={() => onSelectSymbol(p.symbol)}
+                        className="hover:underline hover:text-accent transition-colors"
+                        title={`${p.symbol} grafiğini aç`}
+                      >
+                        {p.symbol}
+                      </button>
+                    ) : (
+                      p.symbol
+                    )}
                     {p.timeframe && MEDIUM_TERM_TIMEFRAMES.has(p.timeframe) && (
                       <span className="ml-1"><Badge tone="accent">orta vadeli</Badge></span>
                     )}
@@ -232,7 +242,17 @@ export default function Transactions() {
               {filteredTrades.map((t) => (
                 <tr key={t.id} className="border-t border-line-soft">
                   <td className="py-2 pr-4 font-mono text-ink">
-                    {t.symbol}
+                    {onSelectSymbol ? (
+                      <button
+                        onClick={() => onSelectSymbol(t.symbol)}
+                        className="hover:underline hover:text-accent transition-colors"
+                        title={`${t.symbol} grafiğini aç`}
+                      >
+                        {t.symbol}
+                      </button>
+                    ) : (
+                      t.symbol
+                    )}
                     {t.timeframe && MEDIUM_TERM_TIMEFRAMES.has(t.timeframe) && (
                       <span className="ml-1"><Badge tone="accent">orta vadeli</Badge></span>
                     )}

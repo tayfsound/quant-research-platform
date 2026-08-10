@@ -387,7 +387,13 @@ function TokenDetailView({ symbol, onBack }: { symbol: string; onBack: () => voi
   );
 }
 
-export default function Tokens() {
+export default function Tokens({
+  initialSymbol,
+  onSymbolConsumed,
+}: {
+  initialSymbol?: string | null;
+  onSymbolConsumed?: () => void;
+} = {}) {
   const [tokens, setTokens] = useState<Token[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -409,6 +415,16 @@ export default function Tokens() {
     const interval = setInterval(load, 15000);
     return () => clearInterval(interval);
   }, []);
+
+  // Faz 266: Transactions'tan "bu varlığın sayfasına git" ile gelindiyse
+  // (initialSymbol), doğrudan o sembolün detayını aç.
+  useEffect(() => {
+    if (initialSymbol) {
+      setSelected(initialSymbol);
+      onSymbolConsumed?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSymbol]);
 
   if (selected) {
     return <TokenDetailView symbol={selected} onBack={() => setSelected(null)} />;
