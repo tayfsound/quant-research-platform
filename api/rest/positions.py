@@ -17,7 +17,7 @@ from services.position_closer import PositionCloser
 router = APIRouter(tags=["positions"])
 
 
-def _serialize(row: dict) -> dict:
+def _serialize(row: dict, current_price: float | None = None, net_unrealized_pnl: float | None = None) -> dict:
     outcome = row.get("outcome") or {}
     return {
         "id": str(row["id"]),
@@ -36,9 +36,34 @@ def _serialize(row: dict) -> dict:
         "timeframe": row.get("timeframe"),
         "exit_reason": outcome.get("exit_reason"),
         "realized_pnl": outcome.get("realized_pnl"),
+        # Faz 268p — kullanıcı isteği: "pozisyon o an karda mı zararda mı
+        # göremiyorum." current_price/net_unrealized_pnl SADECE açık
+        # pozisyonlar için (GET /positions'tan) dolduruluyor — komisyon
+        # düşülmüş, "şimdi kapatsam cebe ne geçer" rakamı (services/
+        # position_closer.py::estimate_net_pnl_if_closed_now ile AYNI
+        # formül, toplu-kapatma kararıyla asla çelişmesin diye).
+        "current_price": current_price,
+        "net_unrealized_pnl": net_unrealized_pnl,
         "opened_at": row["opened_at"].isoformat() if row.get("opened_at") else None,
         "closed_at": row["closed_at"].isoformat() if row.get("closed_at") else None,
     }
+
+
+def _fetch_current_prices(symbols: set[str]) -> dict[str, float]:
+    """Faz 268p: her benzersiz sembol için TEK bir fiyat çekiyor (100'lerce
+    pozisyon aynı ~10-15 watchlist sembolünü paylaşıyor) — pozisyon başına
+    değil, sembol başına bir istek. Bir sembol çekilemezse (fail-closed)
+    sadece o sembol sözlükte hiç yer almaz, diğerleri etkilenmez."""
+    provider = RoutingProvider()
+    prices: dict[str, float] = {}
+    for symbol in symbols:
+        try:
+            data = provider.get_ohlcv(symbol, "1m", limit=1)
+            if data:
+                prices[symbol] = data[-1].close
+        except Exception:
+            continue
+    return prices
 
 
 @router.get("/positions")
@@ -47,10 +72,19 @@ async def list_open_positions(limit: int = 100, user: AuthContext = Depends(get_
         persistor = DecisionPersistor(session)
         rows = persistor.list_open_positions(limit=limit)
         summary = persistor.open_positions_summary()
-        return {
-            "positions": [_serialize(r) for r in rows],
-            "summary": summary,
-        }
+
+    prices = _fetch_current_prices({r["symbol"] for r in rows})
+    closer = PositionCloser(RoutingProvider())
+    positions = []
+    for r in rows:
+        price = prices.get(r["symbol"])
+        net_pnl = closer.estimate_net_pnl_if_closed_now(r, price) if price is not None else None
+        positions.append(_serialize(r, current_price=price, net_unrealized_pnl=net_pnl))
+
+    return {
+        "positions": positions,
+        "summary": summary,
+    }
 
 
 @router.get("/trades")
@@ -184,3 +218,51 @@ async def partial_close_position(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
     return result
+
+
+@router.post("/positions/close-profitable")
+async def close_profitable_positions(
+    user: AuthContext = Depends(require_role(Role.OPERATOR)),
+):
+    """Faz 268p — kullanıcı isteği: "kârda olan pozisyonları toplu kapatma
+    butonu... komisyona ezilmeyecek şekilde karda ise kapansınlar."
+    Kapatmadan ÖNCE her pozisyon için güncel fiyatla net (komisyon
+    düşülmüş) kâr tahmini hesaplanır — SADECE pozitif çıkanlar gerçekten
+    kapatılır. Kapanış işlemi geri alınamaz olduğu için (services/
+    position_closer.py::close_partial fraction=1.0 çağrısı DB'yi hemen
+    günceller), önce filtrelemek zorunlu — "kapat, zarardaysa geri al"
+    diye bir şey yok. Görünen sayfa (limit=100) ile sınırlı DEĞİL — TÜM
+    açık pozisyonlar taranır."""
+    closer = PositionCloser(RoutingProvider())
+    with SessionFactory.get_session() as session:
+        persistor = DecisionPersistor(session)
+        positions = persistor.list_open_positions(limit=100_000)
+
+    prices = _fetch_current_prices({p["symbol"] for p in positions})
+
+    closed = []
+    skipped_unprofitable = 0
+    skipped_no_price = 0
+    for pos in positions:
+        price = prices.get(pos["symbol"])
+        if price is None:
+            skipped_no_price += 1
+            continue
+        estimated_net_pnl = closer.estimate_net_pnl_if_closed_now(pos, price)
+        if estimated_net_pnl <= 0:
+            skipped_unprofitable += 1
+            continue
+
+        with SessionFactory.get_session() as session:
+            try:
+                result = closer.close_partial(DecisionPersistor(session), str(pos["id"]), 1.0)
+            except ValueError:
+                continue
+        closed.append({"decision_id": str(pos["id"]), "symbol": pos["symbol"], "pnl": result["pnl"]})
+
+    return {
+        "closed_count": len(closed),
+        "closed": closed,
+        "skipped_unprofitable": skipped_unprofitable,
+        "skipped_no_price": skipped_no_price,
+    }

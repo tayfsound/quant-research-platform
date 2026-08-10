@@ -144,6 +144,33 @@ class PositionCloser:
 
         return recorded
 
+    def estimate_net_pnl_if_closed_now(self, pos: dict, current_price: float) -> float:
+        """Faz 268p — kullanıcı isteği: "hem her pozisyonun anlık kâr/
+        zararını göster, hem kârdakileri toplu kapat ama komisyona
+        ezilmeyecek şekilde." Aynı formül İKİSİ için de kullanılıyor —
+        dashboard'da gösterilen sayı ile toplu kapamanın "kârlı mı"
+        kararı asla birbirinden farklı çıkmasın diye. close_partial()'ın
+        fraction=1.0 ile kullandığı AYNI ücret varsayımı (giriş+çıkış
+        taker) — bu GERÇEKTEN kapatılırsa cebe geçecek net rakam, ham
+        (komisyonsuz) bir sayı değil."""
+        entry_price = pos.get("entry_price")
+        quantity = pos.get("quantity") or 0.0
+        direction = (pos.get("direction") or "").upper()
+        if entry_price is None or quantity <= 0 or current_price is None:
+            return 0.0
+
+        if direction == "LONG":
+            gross_pnl = (current_price - entry_price) * quantity
+        elif direction == "SHORT":
+            gross_pnl = (entry_price - current_price) * quantity
+        else:
+            return 0.0
+
+        fee = self.fee_engine.calculate(entry_price * quantity) + self.fee_engine.calculate(
+            current_price * quantity
+        )
+        return gross_pnl - fee
+
     def close_partial(
         self,
         decision_repo: DecisionPersistor,

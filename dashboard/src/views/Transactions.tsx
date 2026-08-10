@@ -13,6 +13,8 @@ type Position = {
   status: string;
   pnl: number | null;
   realized_pnl: number | null;
+  current_price: number | null;
+  net_unrealized_pnl: number | null;
   stop_loss_price: number | null;
   take_profit_price: number | null;
   leverage: number | null;
@@ -92,6 +94,8 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
   const [sinceMinutes, setSinceMinutes] = useState<number | null>(null);
   const [closingId, setClosingId] = useState<string | null>(null);
   const [closeError, setCloseError] = useState<string | null>(null);
+  const [closingProfitable, setClosingProfitable] = useState(false);
+  const [closeProfitableResult, setCloseProfitableResult] = useState<string | null>(null);
   const { format, currency } = useCurrency();
 
   const filteredTrades = useMemo(() => {
@@ -153,6 +157,35 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
     }
   };
 
+  // Faz 268p — kullanıcı isteği: "kârdaki pozisyonları toplu kapatma
+  // butonu... komisyona ezilmeyecek şekilde karda ise kapansınlar."
+  // Backend zaten kapatmadan ÖNCE filtreliyor (services/position_closer.
+  // py::estimate_net_pnl_if_closed_now) — burada sadece tetikliyoruz.
+  const closeProfitablePositions = async () => {
+    setCloseError(null);
+    setCloseProfitableResult(null);
+    setClosingProfitable(true);
+    try {
+      const res = await fetch("/api/v1/positions/close-profitable", {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.detail || `İstek başarısız oldu (${res.status})`);
+      }
+      const data = await res.json();
+      setCloseProfitableResult(
+        `${data.closed_count} pozisyon kapatıldı (komisyon sonrası net kârlı) — ${data.skipped_unprofitable} zararda/nötr olduğu için atlandı.`
+      );
+      load();
+    } catch (err) {
+      setCloseError(err instanceof Error ? err.message : "Toplu kapatma başarısız oldu.");
+    } finally {
+      setClosingProfitable(false);
+    }
+  };
+
   return (
     <div>
       <PageHeader
@@ -170,9 +203,24 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
         />
       </div>
 
-      <h2 className="text-sm font-semibold text-ink-soft uppercase tracking-wide mb-1">Açık Pozisyonlar</h2>
+      <div className="flex items-center justify-between gap-4 mb-1">
+        <h2 className="text-sm font-semibold text-ink-soft uppercase tracking-wide">Açık Pozisyonlar</h2>
+        {open.length > 0 && (
+          <Button
+            variant="secondary"
+            disabled={closingProfitable}
+            onClick={closeProfitablePositions}
+            className="!px-3 !py-1.5 text-xs"
+          >
+            {closingProfitable ? "Kapatılıyor…" : "Kârdakileri Toplu Kapat"}
+          </Button>
+        )}
+      </div>
       {closeError && (
         <p className="text-xs text-fall mb-3">{closeError}</p>
+      )}
+      {closeProfitableResult && (
+        <p className="text-xs text-ink-soft mb-3">{closeProfitableResult}</p>
       )}
       {openSummary && openSummary.open_count > open.length && (
         <p className="text-xs text-ink-faint mb-3">
@@ -215,6 +263,17 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
                     )}
                     {p.timeframe && MEDIUM_TERM_TIMEFRAMES.has(p.timeframe) && (
                       <span className="ml-1"><Badge tone="accent">orta vadeli</Badge></span>
+                    )}
+                    {/* Faz 268p — kullanıcı isteği: "pozisyon o an karda mı
+                        zararda mı göremiyorum, sembol adının altında pnl
+                        yazsın." Komisyon düşülmüş net rakam — "kârdakileri
+                        toplu kapat" butonunun kullandığı AYNI sayı. */}
+                    {p.net_unrealized_pnl != null ? (
+                      <div className={`text-xs font-mono mt-0.5 ${p.net_unrealized_pnl > 0 ? "text-rise" : p.net_unrealized_pnl < 0 ? "text-fall" : "text-ink-faint"}`}>
+                        {p.net_unrealized_pnl > 0 ? "+" : ""}{format(p.net_unrealized_pnl)}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-ink-faint mt-0.5">—</div>
                     )}
                   </td>
                   <td className="py-2 pr-4">

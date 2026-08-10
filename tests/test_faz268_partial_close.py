@@ -159,3 +159,34 @@ def test_partial_close_feeds_agent_learning():
         with SessionFactory.get_session() as session:
             closer.close_partial(DecisionPersistor(session), str(event.id), 0.5)
         assert spy.called
+
+
+def test_estimate_net_pnl_if_closed_now_is_positive_when_profitable_after_fees():
+    """Faz 268p — kullanıcı isteği: "kârdaki pozisyonları toplu kapat, ama
+    komisyona ezilmeyecek şekilde." Bu tahmin, close_partial(fraction=1.0)
+    ile GERÇEKTEN kapatılırsa alınacak net pnl ile AYNI formülü kullanmalı
+    — dashboard'da gösterilen sayı ile toplu kapatmanın kararı asla
+    çelişmesin diye."""
+    closer = PositionCloser(_FixedPriceProvider(999.0))  # provider burada kullanılmıyor, sadece imza için
+    pos = {"entry_price": 100.0, "quantity": 10.0, "direction": "LONG"}
+    # %10 fiyat artışı = $100 brüt kâr, komisyon bunun küçük bir kısmı.
+    net_pnl = closer.estimate_net_pnl_if_closed_now(pos, current_price=110.0)
+    assert net_pnl > 0
+    assert net_pnl < 100.0  # komisyon düşülmüş olmalı, ham kârdan az
+
+
+def test_estimate_net_pnl_if_closed_now_is_negative_when_commission_erases_tiny_gain():
+    """Çok küçük bir fiyat hareketi komisyonu karşılamamalı — 'komisyona
+    ezilmeyecek şekilde' talebinin tam karşılığı."""
+    closer = PositionCloser(_FixedPriceProvider(999.0))
+    pos = {"entry_price": 100.0, "quantity": 10.0, "direction": "LONG"}
+    # %0.01'lik bir hareket — taker ücretinin (varsayılan ~%0.05 x2) çok altında.
+    net_pnl = closer.estimate_net_pnl_if_closed_now(pos, current_price=100.01)
+    assert net_pnl < 0
+
+
+def test_estimate_net_pnl_if_closed_now_handles_short_direction():
+    closer = PositionCloser(_FixedPriceProvider(999.0))
+    pos = {"entry_price": 100.0, "quantity": 10.0, "direction": "SHORT"}
+    net_pnl = closer.estimate_net_pnl_if_closed_now(pos, current_price=90.0)
+    assert net_pnl > 0
