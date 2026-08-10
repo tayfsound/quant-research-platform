@@ -321,6 +321,61 @@ class DecisionPersistor:
 
         self.session.commit()
 
+    def close_position_partial(
+        self,
+        decision_id: str,
+        close_qty: float,
+        exit_price: float,
+        pnl: float,
+        fee: float,
+        exit_reason: str,
+        closed_at,
+    ) -> dict:
+        """Faz 268 — kullanıcı isteği: "pozisyonun yarısını/çeyreğini kademeli
+        kapatabilen mekanizma." Var olan close_position() her zaman TÜM
+        pozisyonu kapatıyordu (tek satır, tek işlem = binary open/closed).
+        Burada satır 'open' kalıyor, sadece quantity gerçekten kapatılan
+        miktar kadar azaltılıyor — RiskEngine/risk_state.py zaten quantity'yi
+        her cycle'da taze okuyor, yani capital_used_pct otomatik ve doğru
+        küçülüyor, hiçbir risk-motoru değişikliği gerekmiyor. Realize edilen
+        pnl bir sonraki (kısmi ya da nihai) kapanışta kaybolmasın diye
+        outcome jsonb'sinde (zaten agent_contributions gibi yapılı veri için
+        kullanılan aynı kolon) partial_closes listesi + kümülatif
+        realized_pnl olarak biriktiriliyor; nihai tam kapanışta bu kümülatif
+        pnl'e son dilimin pnl'i eklenerek decisions.pnl yazılıyor — closed_
+        trades_summary()'nin sum(pnl)'i hiçbir şema değişikliği olmadan
+        doğru kalıyor."""
+        row = self.get_by_id(decision_id)
+        if row is None or row.get("status") != "open":
+            raise ValueError(f"decision {decision_id} not open")
+
+        current_qty = float(row.get("quantity") or 0.0)
+        new_qty = current_qty - close_qty
+        existing_outcome = row.get("outcome") or {}
+        realized_pnl = float(existing_outcome.get("realized_pnl") or 0.0) + pnl
+        partial_closes = list(existing_outcome.get("partial_closes") or [])
+        partial_closes.append({
+            "close_qty": close_qty,
+            "exit_price": exit_price,
+            "pnl": pnl,
+            "fee": fee,
+            "exit_reason": exit_reason,
+            "closed_at": str(closed_at),
+        })
+        outcome = {**existing_outcome, "realized_pnl": realized_pnl, "partial_closes": partial_closes}
+
+        self.session.execute(
+            text("""
+                UPDATE decisions
+                SET quantity = :new_qty, outcome = CAST(:outcome AS jsonb)
+                WHERE id = :id AND status = 'open'
+            """),
+            {"id": decision_id, "new_qty": new_qty, "outcome": json.dumps(outcome, default=str)},
+        )
+        self.session.commit()
+
+        return {"remaining_quantity": new_qty, "realized_pnl": realized_pnl}
+
     def update_outcome(
         self,
         decision_id: str,

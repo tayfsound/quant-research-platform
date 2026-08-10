@@ -3,7 +3,8 @@
 Binance tarzı "my trades" görünümü için gerekli tek gerçek kaynak — decisions
 tablosundaki status='open'/'closed' satırları, services/position_closer.py
 tarafından gerçek zaman geçtikten sonra gerçek fiyatla kapatılıyor."""
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from contracts.auth import Role
 from database.repositories.app_settings_repository import AppSettingsRepository
@@ -34,6 +35,7 @@ def _serialize(row: dict) -> dict:
         "liquidation_price": row.get("liquidation_price"),
         "timeframe": row.get("timeframe"),
         "exit_reason": outcome.get("exit_reason"),
+        "realized_pnl": outcome.get("realized_pnl"),
         "opened_at": row["opened_at"].isoformat() if row.get("opened_at") else None,
         "closed_at": row["closed_at"].isoformat() if row.get("closed_at") else None,
     }
@@ -158,3 +160,27 @@ async def close_due_positions(
     with SessionFactory.get_session() as session:
         closed = closer.close_due_positions(DecisionPersistor(session))
     return {"closed_count": len(closed), "closed": closed}
+
+
+class PartialCloseRequest(BaseModel):
+    fraction: float
+
+
+@router.post("/positions/{decision_id}/partial-close")
+async def partial_close_position(
+    decision_id: str,
+    body: PartialCloseRequest,
+    user: AuthContext = Depends(require_role(Role.OPERATOR)),
+):
+    """Faz 268 — kullanıcı isteği: "aşamalı kapama, pozisyonun yarısını/
+    çeyreğini kademeli kapatabilen mekanizma." fraction=0.5 açık miktarın
+    yarısını, 0.25 çeyreğini gerçek güncel fiyattan realize eder; pozisyon
+    'open' kalır, sadece quantity azalır. fraction=1.0 kalanın tamamını
+    kapatır (gerçek bir tam kapanış)."""
+    closer = PositionCloser(RoutingProvider())
+    with SessionFactory.get_session() as session:
+        try:
+            result = closer.close_partial(DecisionPersistor(session), decision_id, body.fraction)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+    return result

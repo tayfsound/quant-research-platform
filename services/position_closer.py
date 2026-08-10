@@ -144,6 +144,99 @@ class PositionCloser:
 
         return recorded
 
+    def close_partial(
+        self,
+        decision_repo: DecisionPersistor,
+        decision_id: str,
+        fraction: float,
+        timeframe: str = "1m",
+    ) -> dict:
+        """Faz 268 — kullanıcı isteği: "pozisyonun yarısını/çeyreğini
+        kademeli kapatabilen mekanizma." close_due_positions()'un aksine bu
+        stop/target/likidasyon fiyatına bağlı DEĞİL — kullanıcı manuel
+        olarak "şu an kârın bir kısmını realize et" diyor. fraction=1.0
+        pratikte tam kapanışla aynı (decision_repo.close_position), ama
+        önceki kısmi kapanışlardan birikmiş realized_pnl varsa ona
+        ekleniyor — closed_trades_summary()'nin toplam pnl'i hep doğru
+        kalsın diye."""
+        if not (0 < fraction <= 1):
+            raise ValueError("fraction must be in (0, 1]")
+
+        pos = decision_repo.get_by_id(decision_id)
+        if pos is None or pos.get("status") != "open":
+            raise ValueError(f"decision {decision_id} not open")
+
+        symbol = pos["symbol"]
+        entry_price = pos.get("entry_price")
+        quantity = pos.get("quantity") or 0.0
+        direction = (pos.get("direction") or "").upper()
+        if entry_price is None or quantity <= 0:
+            raise ValueError(f"decision {decision_id} has no closeable quantity")
+
+        data = self.data_provider.get_ohlcv(symbol, timeframe, limit=1)
+        if not data:
+            raise ValueError(f"no current price available for {symbol}")
+        exit_price = data[-1].close
+
+        # Faz 239'un close_due_positions'taki aynı sağlamlık kontrolü —
+        # bariz bozuk/mock bir fiyatla manuel kapanış da yapılmasın.
+        if exit_price <= 0 or exit_price > entry_price * 20 or exit_price < entry_price / 20:
+            raise ValueError(f"suspicious current price for {symbol}: {exit_price}")
+
+        close_qty = quantity * fraction
+        if direction == "LONG":
+            gross_pnl = (exit_price - entry_price) * close_qty
+        elif direction == "SHORT":
+            gross_pnl = (entry_price - exit_price) * close_qty
+        else:
+            gross_pnl = 0.0
+
+        fee = self.fee_engine.calculate(entry_price * close_qty) + self.fee_engine.calculate(
+            exit_price * close_qty
+        )
+        pnl = gross_pnl - fee
+        now = datetime.now(UTC)
+
+        # fraction'ı 1.0'a çok yakın vermek (ör. kalan miktarın tamamı)
+        # gerçek bir tam kapanış — status='open' kalan, quantity'si ~0 olan
+        # bir "hayalet" pozisyon bırakmamak için bu durumda close_position
+        # çağrılıyor (önceki kısmi kapanışlardan birikmiş realized_pnl dahil).
+        remaining_qty = quantity - close_qty
+        if remaining_qty <= max(1e-8, quantity * 1e-6):
+            existing_outcome = pos.get("outcome") or {}
+            realized_pnl = float(existing_outcome.get("realized_pnl") or 0.0) + pnl
+            decision_repo.close_position(
+                decision_id=str(pos["id"]),
+                exit_price=exit_price,
+                pnl=realized_pnl,
+                closed_at=now,
+                outcome={
+                    **existing_outcome,
+                    "pnl": realized_pnl,
+                    "gross_pnl": gross_pnl,
+                    "fee": fee,
+                    "win": realized_pnl > 0,
+                    "entry_price": entry_price,
+                    "exit_price": exit_price,
+                    "quantity": quantity,
+                    "exit_reason": "manual_full",
+                },
+            )
+            self._record_agent_learning(pos, pnl)
+            return {"fully_closed": True, "exit_price": exit_price, "pnl": pnl, "realized_pnl": realized_pnl}
+
+        result = decision_repo.close_position_partial(
+            decision_id=str(pos["id"]),
+            close_qty=close_qty,
+            exit_price=exit_price,
+            pnl=pnl,
+            fee=fee,
+            exit_reason="manual_partial",
+            closed_at=now,
+        )
+        self._record_agent_learning(pos, pnl)
+        return {"fully_closed": False, "exit_price": exit_price, "pnl": pnl, **result}
+
     def close_due_positions(self, decision_repo: DecisionPersistor, timeframe: str = "1m") -> list[dict]:
         """Açık pozisyonları gerçek güncel fiyatla kontrol eder: fiyat gerçek
         stop-loss/take-profit seviyesine ulaştıysa kapatır. Başka HİÇBİR

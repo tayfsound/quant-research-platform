@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { authHeaders } from "../api/auth";
-import { PageHeader, Badge, EmptyState, StatCard } from "../components/ui";
+import { PageHeader, Badge, EmptyState, StatCard, Button } from "../components/ui";
 import { useCurrency } from "../lib/currency";
 
 type Position = {
@@ -12,6 +12,7 @@ type Position = {
   quantity: number | null;
   status: string;
   pnl: number | null;
+  realized_pnl: number | null;
   stop_loss_price: number | null;
   take_profit_price: number | null;
   leverage: number | null;
@@ -21,6 +22,16 @@ type Position = {
   opened_at: string | null;
   closed_at: string | null;
 };
+
+// Faz 268: kullanıcı isteği — "aşamalı kapama, pozisyonun yarısını/
+// çeyreğini kademeli kapatabilen mekanizma." Backend fraction'ı (0, 1]
+// aralığında kabul ediyor; 1.0 kalanın tamamını (gerçek bir tam kapanış)
+// kapatıyor.
+const PARTIAL_CLOSE_OPTIONS: { label: string; fraction: number }[] = [
+  { label: "%25 Kapat", fraction: 0.25 },
+  { label: "%50 Kapat", fraction: 0.5 },
+  { label: "Tümünü Kapat", fraction: 1.0 },
+];
 
 const EXIT_REASON_LABELS: Record<string, string> = {
   take_profit: "Hedefe ulaştı",
@@ -57,6 +68,8 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
   const [trades, setTrades] = useState<Position[]>([]);
   const [summary, setSummary] = useState<{ count: number; win_rate: number; total_pnl: number } | null>(null);
   const [sinceMinutes, setSinceMinutes] = useState<number | null>(null);
+  const [closingId, setClosingId] = useState<string | null>(null);
+  const [closeError, setCloseError] = useState<string | null>(null);
   const { format, currency } = useCurrency();
 
   const filteredTrades = useMemo(() => {
@@ -97,6 +110,27 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
     return () => clearInterval(interval);
   }, []);
 
+  const partialClose = async (id: string, fraction: number) => {
+    setCloseError(null);
+    setClosingId(id);
+    try {
+      const res = await fetch(`/api/v1/positions/${id}/partial-close`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ fraction }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.detail || `İstek başarısız oldu (${res.status})`);
+      }
+      load();
+    } catch (err) {
+      setCloseError(err instanceof Error ? err.message : "Kapatma işlemi başarısız oldu.");
+    } finally {
+      setClosingId(null);
+    }
+  };
+
   return (
     <div>
       <PageHeader
@@ -115,6 +149,9 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
       </div>
 
       <h2 className="text-sm font-semibold text-ink-soft uppercase tracking-wide mb-1">Açık Pozisyonlar</h2>
+      {closeError && (
+        <p className="text-xs text-fall mb-3">{closeError}</p>
+      )}
       {openSummary && openSummary.open_count > open.length && (
         <p className="text-xs text-ink-faint mb-3">
           En son {open.length} pozisyon gösteriliyor (toplam {openSummary.open_count} — üstteki özet kutusu
@@ -136,6 +173,7 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
                 <th className="py-2 pr-4">Kaldıraç</th>
                 <th className="py-2 pr-4">Stop / Hedef</th>
                 <th className="py-2 pr-4">Açıldı</th>
+                <th className="py-2 pr-4">Aşamalı Kapama</th>
               </tr>
             </thead>
             <tbody>
@@ -181,6 +219,26 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
                     )}
                   </td>
                   <td className="py-2 pr-4 text-ink-faint">{p.opened_at ? new Date(p.opened_at).toLocaleString() : "—"}</td>
+                  <td className="py-2 pr-4">
+                    <div className="flex flex-wrap gap-1.5">
+                      {PARTIAL_CLOSE_OPTIONS.map((opt) => (
+                        <Button
+                          key={opt.label}
+                          variant={opt.fraction === 1.0 ? "danger" : "secondary"}
+                          disabled={closingId === p.id}
+                          onClick={() => partialClose(p.id, opt.fraction)}
+                          className="!px-2 !py-1 text-xs"
+                        >
+                          {opt.label}
+                        </Button>
+                      ))}
+                    </div>
+                    {p.realized_pnl != null && (
+                      <div className="text-xs text-ink-faint mt-1">
+                        Realize edilen: <span className={p.realized_pnl > 0 ? "text-rise" : p.realized_pnl < 0 ? "text-fall" : ""}>{format(p.realized_pnl)}</span>
+                      </div>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
