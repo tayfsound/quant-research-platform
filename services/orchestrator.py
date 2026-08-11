@@ -17,6 +17,7 @@ from services.forward_outcome import ForwardOutcome
 from services.decision_recorder import DecisionRecorder
 from config import get_settings
 from contracts.context import CognitiveCycleContext
+from contracts.contexts.decision import ActionType
 
 import time
 
@@ -156,6 +157,20 @@ class CognitiveOrchestrator:
     ):
         self.engine = CognitiveEngine()
         self.fill_engine = FillEngine()
+        # Faz 268aa — üçüncü taraf incelemesi bulgusu (P2): kullanıcı
+        # Faz 252-253'te RL eğitim döngüsünü ("Replay + Explain kazanç
+        # isabetine katkısı yok") kaldırmıştı, ama bu ReplayMemory
+        # instance'ı ve finalize_proposal()'daki self.memory.add() çağrısı
+        # kalmıştı. Doğrulandı: ml/training/pipeline.py::TrainingPipeline
+        # (bu buffer'ın TEK gerçek tüketicisi — .memory/.sample()
+        # okuyan) hiçbir üretim kodundan hiç çağrılmıyor, sadece kendi
+        # dosyasında tanımlı. Yani bu buffer HER cycle'da dolduruluyor
+        # ama hiçbir eğitim asla onu okumuyor — kasıtlı olarak
+        # SİLİNMEDİ (api/rest/orchestrator.py::/metrics endpoint'i hâlâ
+        # memory_size'ı raporluyor, kaldırmak o endpoint'in yanıt
+        # şeklini değiştirir) — sadece durum burada açıkça belgeleniyor,
+        # bir sonraki kişi "bu neden hiç kullanılmıyor" diye tekrar
+        # araştırmasın.
         self.memory = ReplayMemory(capacity=10000)
         self.forward = ForwardOutcome(bars_forward=10)
         self.recorder = DecisionRecorder()
@@ -350,7 +365,16 @@ class CognitiveOrchestrator:
         # Memory (sadece risk-onaylı)
         ctx = self.engine.finalize(ctx)
 
-        if direction != "NEUTRAL" and size > 0:
+        # Faz 268aa — üçüncü taraf incelemesi bulgusu (P2, savunmacı
+        # programlama): final_size zaten DecisionFusion/RiskGateStage
+        # reddettiğinde 0'a çekiliyor, bu yüzden `size > 0` pratikte
+        # ctx.decision.action == WAIT durumunu da kapsıyor. Ama bu örtük
+        # bir bağımlılık — gelecekte bir refactor final_size=0 atamasını
+        # unutursa, risk reddine rağmen ReplayMemory'ye "gerçek" bir
+        # işlem gibi kayıt düşebilirdi. action'ı ayrıca kontrol etmek,
+        # bu iki sinyalin (final_size VE action) İKİSİNİN de reddi doğru
+        # yansıtmasını zorunlu kılıyor.
+        if direction != "NEUTRAL" and size > 0 and ctx.decision.action != ActionType.WAIT:
             self.memory.add({
                 "decision_id": f"cycle_{seed}",
                 "features": ctx.market.features,
