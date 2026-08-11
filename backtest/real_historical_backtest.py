@@ -230,11 +230,21 @@ def run_real_backtest(
     capital_per_trade: float = 1000.0,
     engine: CognitiveEngine | None = None,
     agent_memory=None,
+    reverse_direction: bool = False,
 ) -> dict:
     """Tek sembol için gerçek Binance geçmiş verisiyle walk-forward
     backtest. Dönen dict, api/rest/backtest.py'nin BacktestRun.metrics'e
     yazdığı gerçek bulgular — icat edilmiş bir sayı yok, açık pozisyonda
     (stop/target'a hiç ulaşmayan) işlemler sonuçlara dahil edilmiyor.
+
+    Faz 268ab — kullanıcının getirdiği "tam tersini yap" teşhis testi:
+    reverse_direction=True iken council'in GERÇEK yönlü kararı (LONG/SHORT
+    seçimi, WAIT/red mantığı DEĞİL) ters çevrilir, stop/target/slippage/
+    ücret hesabı ters çevrilmiş yöne göre AYNI gerçek mantıkla yeniden
+    kurulur. Amaç: "sistem trend-following ama kısa vadeli kripto mean-
+    reverting mi davranıyor" hipotezini gerçek veriyle ucuzca test etmek
+    — canlı MetaStage/DecisionFusion koduna HİÇ dokunulmadan (orada
+    değiştirmek riskli olurdu), sadece bu izole backtest fonksiyonunda.
 
     Faz 248: agent_memory verilirse, her gerçekten kapanan simüle işlemin
     sonucu (gerçek council'in gerçek yönlü oyları + gerçek kâr/zarar)
@@ -281,6 +291,13 @@ def run_real_backtest(
         size = result_ctx.decision.final_size or 0.0
         if direction not in ("LONG", "SHORT") or size <= 0:
             continue
+
+        # Faz 268ab: council'in WAIT/red kararı DOKUNULMADI (yukarıdaki
+        # continue zaten geçti) — sadece council'in GERÇEK yönlü kararı
+        # ters çevriliyor, stop/target/slippage aşağıda bu ters yöne göre
+        # tutarlı şekilde yeniden kuruluyor.
+        if reverse_direction:
+            direction = "SHORT" if direction == "LONG" else "LONG"
 
         raw_price = bars[t].close
         size_seed = capital_per_trade / raw_price if raw_price else 1.0

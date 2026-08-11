@@ -78,6 +78,51 @@ def test_run_real_backtest_produces_real_consistent_metrics():
         assert abs(result["equity_curve"][-1] - (1000.0 + result["total_pnl_usd"])) < 0.01
 
 
+class _FixedDirectionEngine:
+    """Faz 268ab: council'i her adımda AYNI, bilinen kararı verecek şekilde
+    sabitleyen sahte engine — reverse_direction'ın gerçekten LONG<->SHORT
+    çevirdiğini (ve stop/target'ın da doğru yöne kurulduğunu) council'in
+    gerçek (değişken) kararına bağlı kalmadan deterministik doğrulamak
+    için."""
+    def __init__(self, direction: str, stop: float, target: float):
+        self.direction = direction
+        self.stop = stop
+        self.target = target
+
+    def run(self, ctx, persist=False):
+        ctx.decision.proposed_direction = self.direction
+        ctx.decision.final_size = 1.0
+        ctx.decision.confidence = 0.6
+        ctx.decision.stop_loss = self.stop
+        ctx.decision.take_profit = self.target
+        return ctx
+
+
+def test_reverse_direction_flips_long_to_short_and_stop_target_follow():
+    """Faz 268ab — kullanıcının getirdiği 'tam tersini yap' teşhis testi:
+    reverse_direction=True iken council LONG dese bile gerçekleşen işlem
+    SHORT olmalı, stop/target de SHORT'a göre (stop üstte, target altta)
+    doğru kurulmalı — sadece yön etiketi değişip risk yapısı tutarsız
+    kalmamalı."""
+    engine = _FixedDirectionEngine(direction="LONG", stop=100.0, target=200.0)
+
+    normal = run_real_backtest(
+        "BTCUSDT", timeframe="15m", bars_count=105, lookback=100, max_forward_bars=3,
+        capital_per_trade=1000.0, engine=engine,
+    )
+    reversed_result = run_real_backtest(
+        "BTCUSDT", timeframe="15m", bars_count=105, lookback=100, max_forward_bars=3,
+        capital_per_trade=1000.0, engine=engine, reverse_direction=True,
+    )
+
+    normal_trades = normal.get("trades", [])
+    reversed_trades = reversed_result.get("trades", [])
+    assert len(normal_trades) > 0
+    assert len(reversed_trades) > 0
+    assert all(t["direction"] == "LONG" for t in normal_trades)
+    assert all(t["direction"] == "SHORT" for t in reversed_trades)
+
+
 def test_real_backtest_applies_slippage_to_entries():
     """Faz 268n: kritik bulgu — backtest entry_price = bars[t].close (tam
     kapanış fiyatı) kullanıyordu. Gerçek bir dolum hiçbir zaman tam o
