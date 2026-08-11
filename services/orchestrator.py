@@ -108,6 +108,35 @@ def build_cognitive_context(
         "low": data[-1].low,
         **pattern_signals,
     }
+
+    # Faz 268ac — kullanıcı bulgusu: "Predictions'da run cycle yaptığımda
+    # gelen features'ta MVRV vs. görünmüyor." Gerçek sebep: OnChainAgent'a
+    # giden mvrv_zscore/network_activity_trend/hash_rate_trend (services/
+    # context_adapter.py::to_onchain, CouncilStage içinde) kararı GERÇEKTEN
+    # etkiliyor ama SADECE oradaki ayrı OnChainContext'te yaşıyordu —
+    # ctx.market.features'a (Predictions'ın gösterdiği TEK yer) hiç
+    # yansımıyordu. Burada AYRICA (aynı, önbellekli fonksiyonlarla) çekilip
+    # features'a ekleniyor — sadece görünürlük için, gerçek skorlama zaten
+    # to_onchain() üzerinden aynı şekilde çalışıyordu. mvrv_zscore zaten
+    # saatlik önbellekli olduğu için burada da çağırmak ek ağ isteği
+    # yaratmıyor (aynı süreç-içi önbelleği paylaşıyor).
+    if symbol.upper().endswith(("USDT", "BUSD", "USDC", "FDUSD")):
+        from market_data.onchain.onchain_provider import (
+            fetch_hash_rate_trend,
+            fetch_mvrv_zscore,
+            fetch_network_activity_trend,
+        )
+
+        mvrv = fetch_mvrv_zscore()
+        if mvrv is not None:
+            ctx.market.features["mvrv_zscore"] = mvrv
+        activity = fetch_network_activity_trend()
+        if activity is not None:
+            ctx.market.features["network_activity_trend"] = activity
+        hash_rate = fetch_hash_rate_trend()
+        if hash_rate is not None:
+            ctx.market.features["hash_rate_trend"] = hash_rate
+
     # Gap #15: bu alan önceden boş bir dict'ti, bu yüzden RiskEngine her
     # cycle'ı MISSING_LIMIT ile reddediyordu.
     ctx.risk.limits = load_active_limits()
