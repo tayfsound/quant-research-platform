@@ -280,7 +280,7 @@ export default function Dashboard() {
           description={
             isLive
               ? "Kasa/pozisyon/işlem-sıklığı kuralları gerçekten uygulanıyor."
-              : "AI sınırsız deneyebiliyor, kural uygulanmıyor. Emin olunca Live'a geç."
+              : "Live ile AYNI kasa/pozisyon/işlem-sıklığı kuralları uygulanıyor — tek fark, düşük güvenli sinyaller de (küçük boyutta) denenip gerçek sonuç biriktirebiliyor. Emin olunca Live'a geç."
           }
           isOn={isLive}
           onLabel="Live"
