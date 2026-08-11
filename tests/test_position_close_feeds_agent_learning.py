@@ -88,7 +88,7 @@ def test_closing_a_real_position_records_the_real_market_regime():
         status="open", entry_price=100.0, quantity=1.0, opened_at=now - timedelta(minutes=20),
         stop_loss_price=90.0, take_profit_price=105.0,
         agent_opinions=[{"domain": "technical", "direction": "LONG", "confidence": 0.8}],
-        market_snapshot={"features": {"trend": "bullish"}, "raw_snapshot": {}},
+        market_snapshot={"features": {"trend": "bullish", "volatility_regime": "high"}, "raw_snapshot": {}},
     )
     with SessionFactory.get_session() as session:
         DecisionPersistor(session).persist(event)
@@ -100,4 +100,6 @@ def test_closing_a_real_position_records_the_real_market_regime():
         closer.close_due_positions(DecisionPersistor(session))
 
     reloaded = AgentMemory()
-    assert reloaded._records["technical"][-1].market_regime == "bullish"
+    # Faz 268s: market_regime artık trend + volatility_regime birleşimi —
+    # "hangi ajan yüksek volatiliteli bullish'te iyi" sorusu cevaplanabilsin.
+    assert reloaded._records["technical"][-1].market_regime == "bullish_high"

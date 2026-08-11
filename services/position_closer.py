@@ -115,11 +115,24 @@ class PositionCloser:
         # hangi rejimde iyi" sorusu hiç cevaplanamıyordu. market_snapshot
         # zaten agent_contributions içinde duruyor (decision_persistor.py),
         # sadece hiç okunmuyordu.
+        #
+        # Faz 268s — kritik bulgu: market_regime SADECE trend'i (bullish/
+        # bearish/neutral) yakalıyordu, volatility_regime (low/normal/
+        # high — TechnicalContext'te zaten gerçekten var olan bir alan)
+        # hiç dahil edilmiyordu. "Yüksek volatilitede hangi ajan iyi?"
+        # sorusu hiç cevaplanamıyordu — ör. bir trend-takip ajanı sakin
+        # bir "bullish" rejimde iyi olup yüksek volatiliteli whipsaw'da
+        # kötü olabilir, ama ikisi de tek "bullish" etiketi altında
+        # karışıyordu. trend bilinmiyorsa (gerçek market_snapshot yoksa)
+        # hâlâ "unknown" — volatility'yi trend'siz birleştirmek anlamsız.
         market_regime = "unknown"
         for item in contributions:
             if isinstance(item, dict) and item.get("type") == "market_snapshot":
                 features = ((item.get("data") or {}).get("features")) or {}
-                market_regime = features.get("trend", "unknown")
+                trend = features.get("trend", "unknown")
+                if trend != "unknown":
+                    volatility = features.get("volatility_regime", "normal")
+                    market_regime = f"{trend}_{volatility}"
                 break
 
         recorded = False

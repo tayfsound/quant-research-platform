@@ -70,8 +70,24 @@ def get_calibration_curve(force_refresh: bool = False) -> list[tuple[float, floa
 
 def calibrate_confidence(raw_confidence: float, curve: list[tuple[float, float]] | None = None) -> float:
     """raw_confidence'ı ampirik eğriden geçirir (doğrusal enterpolasyon).
-    Eğri boşsa (yeterli veri yok) ya da raw_confidence eğrinin dışındaysa,
-    ham değeri DEĞİŞTİRMEDEN döner — icat edilmiş bir düzeltme değil."""
+    Eğri boşsa (yeterli veri yok) ham değeri DEĞİŞTİRMEDEN döner — icat
+    edilmiş bir düzeltme değil.
+
+    Faz 268r — kritik bulgu: raw_confidence, eğrinin en üst noktasının
+    (curve[-1][0]) ÜZERİNDEYSE (ör. eğri 0.6'da bitiyor ama raw=0.85
+    geldi), önceki hal ham değeri DEĞİŞMEDEN döndürüyordu — yani DecisionFusion'ın
+    EV hesabı, gerçek veriyle HİÇ doğrulanmamış bir güveni aynen
+    kullanıyordu. Bu tam olarak Faz248'in çözmeye çalıştığı sorunun
+    (beyan edilen güven şişkin) en tehlikeli ucuydu — yüksek beyan edilen
+    güven daha büyük pozisyon demek, ve bu bölgede hiç kalibrasyon
+    uygulanmıyordu. Artık eğrinin dışına taşan ÜST uç, eğrinin bildiği EN
+    SON gerçek orana sabitleniyor (curve[-1][1]) — bu bir icat değil,
+    elimizdeki EN YAKIN gerçek gözlem: "bu kadar yüksek bir güven
+    bölgesinde, gördüğümüz en iyi gerçek kazanma oranı bile şu kadardı."
+    ALT uç (raw_confidence <= curve[0][0]) kasıtlı olarak DEĞİŞTİRİLMEDEN
+    bırakılıyor — zaten düşük bir değeri daha da aşağı çekmenin (ya da
+    icat edilmiş bir taban vermenin) EV gate'i yanlış yönde etkileme
+    riski yok, mevcut davranış zaten güvenli tarafta."""
     if curve is None:
         curve = get_calibration_curve()
     if not curve:
@@ -80,7 +96,7 @@ def calibrate_confidence(raw_confidence: float, curve: list[tuple[float, float]]
     if raw_confidence <= curve[0][0]:
         return curve[0][1] if raw_confidence == curve[0][0] else raw_confidence
     if raw_confidence >= curve[-1][0]:
-        return curve[-1][1] if raw_confidence == curve[-1][0] else raw_confidence
+        return curve[-1][1]
 
     for (x0, y0), (x1, y1) in zip(curve, curve[1:]):
         if x0 <= raw_confidence <= x1:

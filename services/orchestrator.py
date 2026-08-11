@@ -322,29 +322,30 @@ class CognitiveOrchestrator:
         filled_price = ctx.decision.filled_price
         size = ctx.decision.final_size or 0.0
 
-        # Bu anlık "n-bar forward" hesaplaması iki farklı amaca hizmet
-        # ediyor ve bunları birbirinden ayırmak önemli:
-        # 1) ctx.outcome (TradeOutcome) — CognitiveEngine.finalize()'ın
-        #    memory_engine/learning_loop/weight_optimizer'ı tetiklemek için
-        #    HER cycle'da ihtiyaç duyduğu öğrenme sinyali (ctx.outcome is
-        #    None ise learning tamamen atlanıyor — bkz. cognitive_engine.py).
-        #    Bunu kaldırmak öğrenme döngüsünü tamamen kırar (gerçek bulgu,
-        #    tests/test_memory_engine_wiring.py ile yakalandı).
-        # 2) decisions.status/entry_price/exit_price/opened_at/closed_at —
-        #    Faz 187'nin GERÇEK, zaman-bazlı pozisyon yaşam döngüsü. Bu ikisi
-        #    kasıtlı olarak birbirinden bağımsız: decisions.outcome kolonu
-        #    artık kayıt anında hep boş kalıyor (DecisionRecorder), pozisyon
-        #    gerçekten services/position_closer.py ile kapanana kadar.
+        # Faz 268t — kritik bulgu: bu anlık "n-bar forward" hesaplaması
+        # ÖNCEDEN iki amaca hizmet ediyordu — ctx.outcome (TradeOutcome)
+        # CognitiveEngine.finalize()'ın memory_engine'i tetiklemesi için
+        # okunuyordu. Faz 268j (episodic hafızanın sahte ForwardOutcome
+        # ile kirlenmesini kapatan düzeltme) finalize()'daki memory_engine.
+        # execute(ctx) çağrısını kaldırdığından beri ctx.outcome'ın TEK
+        # okuyucusu gitti — artık hiçbir yerde okunmuyor (doğrulandı: grep
+        # ile RecordingStage/_persist_and_learn/finalize()'ın hiçbiri
+        # ctx.outcome'a bakmıyor). `outcome` (yerel değişken, ctx.outcome
+        # DEĞİL) hâlâ gerçek bir tüketicisi olan ReplayMemory (self.memory.
+        # add, aşağıda) için hesaplanmaya devam ediyor — o yüzden
+        # self.forward.calculate() çağrısının kendisi silinmedi, sadece
+        # artık hiç okunmayan ctx.outcome=TradeOutcome(...) ataması
+        # kaldırıldı.
+        #
+        # decisions.status/entry_price/exit_price/opened_at/closed_at,
+        # Faz 187'nin GERÇEK, zaman-bazlı pozisyon yaşam döngüsü — bu
+        # yukarıdaki n-bar proxy'den kasıtlı olarak bağımsız: decisions.
+        # outcome kolonu kayıt anında hep boş kalır (DecisionRecorder),
+        # pozisyon gerçekten services/position_closer.py ile kapanana
+        # kadar.
         outcome = self.forward.calculate(filled_price, direction, data)
         pnl = outcome["pnl"] - fee
         win = outcome["win"]
-        from contracts.outcome import TradeOutcome
-        ctx.outcome = TradeOutcome(
-            pnl=outcome["pnl"],
-            win=outcome["win"],
-            decision=direction,
-            confidence_at_decision=ctx.decision.confidence,
-        )
 
         # Memory (sadece risk-onaylı)
         ctx = self.engine.finalize(ctx)

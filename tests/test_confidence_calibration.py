@@ -19,12 +19,22 @@ def test_calibrate_exact_match_returns_observed_value():
     assert calibrate_confidence(0.6, curve=curve) == 0.3
 
 
-def test_calibrate_outside_curve_range_returns_raw_value_unchanged():
-    """Eğri dışındaki bir değer için (ör. çok yüksek/düşük, hiç
-    gözlenmemiş) icat edilmiş bir düzeltme yapılmamalı."""
+def test_calibrate_below_curve_range_returns_raw_value_unchanged():
+    """Eğrinin ALT ucunun dışında (hiç gözlenmemiş, çok düşük bir değer)
+    icat edilmiş bir düzeltme yapılmamalı — zaten güvenli tarafta."""
     curve = [(0.4, 0.2), (0.6, 0.3)]
-    assert calibrate_confidence(0.9, curve=curve) == 0.9
     assert calibrate_confidence(0.1, curve=curve) == 0.1
+
+
+def test_calibrate_above_curve_range_clamps_to_last_observed_rate():
+    """Faz 268r — kritik bulgu: eğrinin ÜST ucunun dışında (ör. raw=0.9
+    ama eğri 0.6'da bitiyor) önceden ham değer DEĞİŞMEDEN dönüyordu —
+    DecisionFusion'ın EV hesabı hiç doğrulanmamış bir güveni aynen
+    kullanıyordu. Artık elimizdeki EN SON gerçek gözleme (curve[-1][1])
+    sabitleniyor — icat edilmiş bir sayı değil, "bu kadar yüksek bir
+    bölgede gördüğümüz en iyi gerçek oran" oydu."""
+    curve = [(0.4, 0.2), (0.6, 0.3)]
+    assert calibrate_confidence(0.9, curve=curve) == 0.3
 
 
 def test_compute_calibration_curve_ignores_buckets_below_min_samples():
