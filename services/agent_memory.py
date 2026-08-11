@@ -136,6 +136,7 @@ class AgentMemory:
         self,
         domain: str,
         window: int | None = None,
+        regime: str | None = None,
     ) -> AgentPerformanceSummary:
         # Faz 253: kritik bulgu — canlıda doğrulandı. Faz 245, WAIT diyen
         # bir ajanın kaydedilmesini (record() çağrısını) durdurmuştu ama
@@ -151,6 +152,14 @@ class AgentMemory:
             r for r in self._records.get(domain, [])
             if (r.direction or "").upper() in ("LONG", "SHORT")
         ]
+
+        # Faz 268b — Regime-Aware Learning: regime verilirse, SADECE o
+        # piyasa rejiminde alınmış gerçek kararlar sayılır. window (aşağıda)
+        # bu filtreden SONRA uygulanıyor — "bu rejimin en yeni N kaydı",
+        # "tüm rejimlerin en yeni N'i sonra bu rejime göre filtrelenmiş
+        # kalanı" değil.
+        if regime is not None:
+            records = [r for r in records if (r.market_regime or "unknown") == regime]
 
         # Faz 263 — kritik bulgu: WeightOptimizer.propose_weights() bu
         # metodu window'suz çağırıyordu, yani ağırlıklar HER ZAMAN tüm

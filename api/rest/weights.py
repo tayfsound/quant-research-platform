@@ -22,6 +22,7 @@ async def list_pending(limit: int = 10):
                     "proposed": r.proposed_weights,
                     "previous": r.previous_weights,
                     "max_delta": r.max_delta,
+                    "regime": r.regime,
                     "status": r.status,
                 }
                 for r in rows
@@ -45,6 +46,7 @@ async def approve(approval_id: str, user: AuthContext = Depends(require_role(Rol
             weights=approval.proposed_weights,
             evaluation_window=100,
             previous_snapshot_id=None,
+            regime=approval.regime,
         ).finalize()
         WeightRepository().save(snapshot)
 

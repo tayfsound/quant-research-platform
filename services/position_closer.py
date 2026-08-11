@@ -132,15 +132,7 @@ class PositionCloser:
         # kötü olabilir, ama ikisi de tek "bullish" etiketi altında
         # karışıyordu. trend bilinmiyorsa (gerçek market_snapshot yoksa)
         # hâlâ "unknown" — volatility'yi trend'siz birleştirmek anlamsız.
-        market_regime = "unknown"
-        for item in contributions:
-            if isinstance(item, dict) and item.get("type") == "market_snapshot":
-                features = ((item.get("data") or {}).get("features")) or {}
-                trend = features.get("trend", "unknown")
-                if trend != "unknown":
-                    volatility = features.get("volatility_regime", "normal")
-                    market_regime = f"{trend}_{volatility}"
-                break
+        market_regime = self._extract_market_regime(pos)
 
         recorded = False
         for item in contributions:
@@ -169,6 +161,19 @@ class PositionCloser:
             if isinstance(item, dict) and item.get("type") == "market_snapshot":
                 return ((item.get("data") or {}).get("features")) or {}
         return {}
+
+    def _extract_market_regime(self, pos: dict) -> str:
+        """Faz 258/268s/268b — açılış anındaki gerçek trend+volatility'den
+        "trend_volatility" formatında piyasa rejimi (bkz. engines/
+        cognitive_pipeline.py::CouncilStage'in karar anında hesapladığı
+        AYNI format — regime-özel snapshot'ların doğru seçilebilmesi bu
+        ikisinin birebir eşleşmesine bağlı)."""
+        features = self._extract_features(pos)
+        trend = features.get("trend", "unknown")
+        if trend == "unknown":
+            return "unknown"
+        volatility = features.get("volatility_regime", "normal")
+        return f"{trend}_{volatility}"
 
     def _record_episodic_memory(self, pos: dict, pnl: float, exit_reason: str) -> None:
         """Faz 268aj — gerçek kapanışı episodic memory'ye yazar (bkz.
@@ -368,6 +373,7 @@ class PositionCloser:
         now = datetime.now(UTC)
         closed = []
         learned_any = False
+        regimes_seen: set[str] = set()
 
         for pos in decision_repo.list_open_positions():
             opened_at = pos.get("opened_at")
@@ -494,9 +500,18 @@ class PositionCloser:
 
             if self._record_agent_learning(pos, pnl):
                 learned_any = True
+                market_regime = self._extract_market_regime(pos)
+                if market_regime != "unknown":
+                    regimes_seen.add(market_regime)
             self._record_episodic_memory(pos, pnl, exit_reason)
 
         if learned_any and len(self.agent_memory.domains()) > 0:
             self.weight_optimizer.propose_weights(evaluation_window=100)
+            # Faz 268b — Regime-Aware Learning: global öneriye ek olarak,
+            # bu batch'te gerçekten kapanmış işlem gördüğümüz HER rejim
+            # için de ayrı bir öneri hesaplanır — bir rejimin snapshot'ı
+            # sadece o rejimde gerçek kapanış oldukça güncellenir.
+            for regime in regimes_seen:
+                self.weight_optimizer.propose_weights(evaluation_window=100, regime=regime)
 
         return closed

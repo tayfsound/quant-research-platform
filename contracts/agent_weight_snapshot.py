@@ -24,6 +24,11 @@ class AgentWeightSnapshot(BaseModel):
     snapshot_hash: str = ""
     reason: str = "performance_update"
 
+    # Faz 268b — Regime-Aware Learning: None = global (rejimden bağımsız)
+    # snapshot, aksi halde "trend_volatility" formatında hangi piyasa
+    # rejimi için üretildiği (bkz. PositionCloser._record_agent_learning).
+    regime: str | None = None
+
     engine_version: str = "1.0.0"
 
     def compute_hash(self) -> str:

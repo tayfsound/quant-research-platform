@@ -14,6 +14,7 @@ class WeightApprovalModel(Base):
     proposed_weights = Column(JSON, default=dict)
     previous_weights = Column(JSON, default=dict)
     max_delta = Column(Float, default=0.10)
+    regime = Column(String(64), nullable=True)
     status = Column(String(16), default="pending")
     approved_by = Column(String(64), default="")
     expires_at = Column(DateTime, nullable=True)
@@ -31,6 +32,7 @@ class WeightApprovalRepository:
             proposed_weights=approval.proposed_weights,
             previous_weights=approval.previous_weights,
             max_delta=approval.max_delta,
+            regime=approval.regime,
             status=approval.status,
             approved_by=approval.approved_by,
             expires_at=approval.expires_at,
@@ -42,7 +44,7 @@ class WeightApprovalRepository:
     def get_pending(self, limit: int = 10):
         return self.session.query(WeightApprovalModel).filter_by(status="pending").order_by(WeightApprovalModel.timestamp.desc()).limit(limit).all()
 
-    def has_pending(self) -> bool:
+    def has_pending(self, regime: str | None = None) -> bool:
         """Faz 229: kritik bulgu — WeightOptimizer.optimize()/propose_weights()
         her büyük ağırlık değişikliğinde KOŞULSUZCA yeni bir onay satırı
         oluşturuyordu, mevcut bekleyen bir onay olup olmadığını hiç kontrol
@@ -52,10 +54,16 @@ class WeightApprovalRepository:
         gözden geçiremeyeceği bir kuyruk, ve gerçek ağırlıklar saatlerce
         güncellenmeden donuk kaldı (her iki metod da onaylanana kadar ESKİ
         ağırlığı döndürüyor). Artık yeni bir onay oluşturmadan önce burası
-        kontrol ediliyor — zaten bekleyen bir onay varsa yenisi eklenmiyor."""
+        kontrol ediliyor — zaten bekleyen bir onay varsa yenisi eklenmiyor.
+
+        Faz 268b — Regime-Aware Learning: regime parametresi olmadan bu
+        kontrol GLOBAL çalışırdı — bir rejimin bekleyen onayı, TAMAMEN
+        FARKLI bir rejimin yeni önerisini de bloke ederdi (iki rejim aynı
+        anda pending kalamaz gibi yanlış bir davranış). Artık her rejim
+        kendi bekleyen onayına göre kontrol ediliyor."""
         return (
             self.session.query(WeightApprovalModel)
-            .filter_by(status="pending")
+            .filter_by(status="pending", regime=regime)
             .first()
             is not None
         )

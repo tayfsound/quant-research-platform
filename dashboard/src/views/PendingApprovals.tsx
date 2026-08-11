@@ -8,6 +8,7 @@ type Approval = {
   proposed: Record<string, number>;
   previous: Record<string, number>;
   max_delta: number;
+  regime: string | null;
   status: string;
 };
 
@@ -108,6 +109,13 @@ export default function PendingApprovals() {
                   <div className="flex items-center gap-2">
                     <span className="text-ink font-medium font-mono text-xs">{a.id.slice(0, 8)}…</span>
                     <Badge tone="neutral">izin verilen max değişim: ±{a.max_delta.toFixed(2)}</Badge>
+                    {/* Faz 268b — Regime-Aware Learning: bu öneri global mi
+                        (rejimden bağımsız, tüm geçmiş) yoksa belirli bir
+                        piyasa rejimi için mi (ör. bullish_high) — insan
+                        onaylayıcının NE'yi onayladığını bilmesi lazım. */}
+                    <Badge tone={a.regime ? "accent" : "neutral"}>
+                      {a.regime ? `rejim: ${a.regime}` : "global"}
+                    </Badge>
                   </div>
                   {a.timestamp && (
                     <p className="text-xs text-ink-faint mt-1">{new Date(a.timestamp).toLocaleString()}</p>

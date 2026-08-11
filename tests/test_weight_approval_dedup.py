@@ -114,6 +114,57 @@ def test_optimize_does_not_queue_a_duplicate_when_one_is_already_pending():
         _cleanup(name)
 
 
+def test_regime_specific_approval_does_not_block_or_get_blocked_by_a_different_regime():
+    """Faz 268b — Regime-Aware Learning: has_pending() regime parametresi
+    olmadan GLOBAL çalışırdı — bir rejimin bekleyen onayı, TAMAMEN
+    FARKLI bir rejimin yeni önerisini de bloke ederdi. İki farklı rejim
+    aynı anda kendi bekleyen onayına sahip olabilmeli, birbirini
+    etkilememeli."""
+    name_a = "test_weights_regime_dedup_a"
+    name_b = "test_weights_regime_dedup_b"
+    try:
+        _clear_all_pending()
+
+        repo_a = _isolated_repo(name_a)
+        repo_a.save(AgentWeightSnapshot(weights={"technical": 1.0}, regime="bullish_high").finalize())
+        memory_a = AgentMemory()
+        for _ in range(50):
+            memory_a.record(AgentPerformanceRecord(
+                agent_domain="technical", direction="SHORT", confidence=0.6,
+                was_correct=False, market_regime="bullish_high",
+            ))
+        optimizer_a = WeightOptimizer(memory_a, weight_repository=repo_a)
+        optimizer_a.propose_weights(evaluation_window=50, regime="bullish_high")
+
+        with SessionFactory.get_session() as session:
+            assert WeightApprovalRepository(session).has_pending(regime="bullish_high") is True
+            # Farklı bir rejimin bekleyen onayı YOK — "bullish_high"ın
+            # onayı "bearish_low"u bloklamıyor.
+            assert WeightApprovalRepository(session).has_pending(regime="bearish_low") is False
+
+        repo_b = _isolated_repo(name_b)
+        repo_b.save(AgentWeightSnapshot(weights={"technical": 1.0}, regime="bearish_low").finalize())
+        memory_b = AgentMemory()
+        for _ in range(50):
+            memory_b.record(AgentPerformanceRecord(
+                agent_domain="technical", direction="SHORT", confidence=0.6,
+                was_correct=False, market_regime="bearish_low",
+            ))
+        optimizer_b = WeightOptimizer(memory_b, weight_repository=repo_b)
+        result_b = optimizer_b.propose_weights(evaluation_window=50, regime="bearish_low")
+
+        # bullish_high'ın bekleyen onayı VARKEN bile bearish_low'un önerisi
+        # gerçekten yeni bir onay satırı olarak kuyruğa girdi.
+        with SessionFactory.get_session() as session:
+            pending = WeightApprovalRepository(session).get_pending(limit=100000)
+            bearish_pending = [p for p in pending if p.regime == "bearish_low"]
+        assert len(bearish_pending) == 1
+        assert result_b.weights.get("technical") == 1.0  # onaya takıldı, eski değer döndü
+    finally:
+        _cleanup(name_a)
+        _cleanup(name_b)
+
+
 def test_normalize_domain_rejects_non_voting_agents_instead_of_falling_back_to_unknown():
     """Faz 229: canlı üretimde doğrulandı — pending onaylarda gerçekten
     "unknown" diye bir domain satırı oluşmuştu. _normalize_domain artık

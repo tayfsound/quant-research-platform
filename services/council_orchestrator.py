@@ -53,7 +53,8 @@ class CouncilOrchestrator:
 
     def deliberate(
         self,
-        contexts: dict[AgentDomain, object]
+        contexts: dict[AgentDomain, object],
+        regime: str | None = None,
     ) -> tuple[Belief, list[AgentOpinion]]:
 
         opinions: list[AgentOpinion] = []
@@ -144,9 +145,16 @@ class CouncilOrchestrator:
         )
 
         if self.pinned_weight_snapshot_id is not None:
+            # Backtest determinizmi: pinned bir snapshot her zaman TAM
+            # olarak istenen ID'yi kullanır, rejime göre farklı bir
+            # snapshot'a kaymaz.
             snapshot = self.weight_repository.get_by_id(self.pinned_weight_snapshot_id)
         else:
-            snapshot = self.weight_repository.get_latest()
+            # Faz 268b — Regime-Aware Learning: o an geçerli piyasa
+            # rejimi için üretilmiş bir snapshot varsa o kullanılır;
+            # yoksa (fail-closed) global snapshot'a düşülür (bkz.
+            # WeightRepository.get_latest docstring).
+            snapshot = self.weight_repository.get_latest(regime=regime)
         self.active_weight_snapshot_id = snapshot.id if snapshot else None
 
         if snapshot:

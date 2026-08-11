@@ -67,7 +67,15 @@ class CouncilStage:
             AgentDomain.EPISTEMOLOGY: self.adapter.to_epistemology(ctx),
         }
 
-        belief, opinions = self.orchestrator.deliberate(contexts)
+        # Faz 268b — Regime-Aware Learning: PositionCloser._record_agent_
+        # learning'in kapanmış işlemleri etiketlediği AYNI format
+        # ("trend_volatility") — bu ikisi eşleşmezse regime-özel
+        # snapshot'lar hiçbir zaman doğru anda seçilmez.
+        features = ctx.market.features or {}
+        trend = features.get("trend", "unknown")
+        current_regime = f"{trend}_{features.get('volatility_regime', 'normal')}" if trend != "unknown" else None
+
+        belief, opinions = self.orchestrator.deliberate(contexts, regime=current_regime)
 
         ctx.cognition.relevant_knowledge.append({
             "type": "weight_snapshot",

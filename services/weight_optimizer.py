@@ -36,7 +36,14 @@ class WeightOptimizer:
     def propose_weights(
         self,
         evaluation_window: int = 100,
+        regime: str | None = None,
     ) -> AgentWeightSnapshot:
+        """Faz 268b — Regime-Aware Learning: regime verilirse, önerilen
+        ağırlıklar SADECE o piyasa rejiminde alınmış gerçek kararlardan
+        hesaplanır ve o rejime özel bir snapshot olarak saklanır (global
+        snapshot'tan bağımsız, ayrı bir onay kuyruğunda). regime=None
+        (varsayılan) önceki davranışla birebir aynı — tüm geçmiş, tek
+        global snapshot."""
 
         # Faz 229: savunma katmanı — agent_memory_history/agent_memory.json
         # dosyasında (bu düzeltmeden ÖNCE yazılmış) hâlâ geçersiz domain'ler
@@ -47,6 +54,7 @@ class WeightOptimizer:
             return AgentWeightSnapshot(
                 weights={},
                 evaluation_window=evaluation_window,
+                regime=regime,
             )
 
 
@@ -82,7 +90,7 @@ class WeightOptimizer:
                 # bulgu: technical_agent tüm-zamanlar %76.7 ama son 20
                 # tahmininin %15'i doğru). Artık gerçekten SADECE ilgili
                 # pencerenin son N kaydı kullanılıyor.
-                summary = self.agent_memory.get_summary(domain, window=window)
+                summary = self.agent_memory.get_summary(domain, window=window, regime=regime)
 
                 total = summary.total_predictions
                 correct = int(summary.overall_accuracy * total)
@@ -102,7 +110,11 @@ class WeightOptimizer:
                 sum(component_scores.values()) / len(component_scores), 3
             )
 
-        previous = self.weight_repository.get_latest()
+        # Faz 268b — Regime-Aware Learning: sadece AYNI rejimin (ya da
+        # regime=None ise global'in) önceki snapshot'ıyla karşılaştırılır
+        # — farklı rejimlerin ağırlıkları elma-armut kıyaslanmaz, ve bir
+        # rejimin büyük değişimi başka bir rejimin onay kuyruğunu bloklamaz.
+        previous = self.weight_repository.get_latest(regime=regime)
         previous_weights = dict(previous.weights) if previous else {}
 
         snapshot = AgentWeightSnapshot(
@@ -113,6 +125,7 @@ class WeightOptimizer:
                 if previous
                 else None
             ),
+            regime=regime,
         ).finalize()
 
         # Faz 214: kritik bulgu — bu metod optimize()'daki (aynı sınıfın
@@ -137,13 +150,14 @@ class WeightOptimizer:
                         # büyük fark yeniden hesaplanıp KOŞULSUZCA yeni bir
                         # satır ekleniyordu — üretimde 7000'den fazla
                         # neredeyse aynı bekleyen onay birikti.
-                        if repo.has_pending():
+                        if repo.has_pending(regime=regime):
                             return previous
                         approval = WeightApproval(
                             expires_at=datetime.now() + timedelta(hours=24),
                             proposed_weights=proposed,
                             previous_weights=previous_weights,
                             max_delta=MAX_WEIGHT_DELTA,
+                            regime=regime,
                             status="pending",
                         )
                         repo.save(approval)

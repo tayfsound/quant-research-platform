@@ -10,6 +10,10 @@ class WeightApproval(BaseModel):
     proposed_weights: dict = Field(default_factory=dict)
     previous_weights: dict = Field(default_factory=dict)
     max_delta: float = 0.10
+    # Faz 268b — Regime-Aware Learning: None = global (rejimden bağımsız)
+    # öneri, aksi halde "trend_volatility" formatında (bkz. PositionCloser.
+    # _record_agent_learning) hangi piyasa rejimi için önerildiği.
+    regime: str | None = None
     status: str = "pending"  # pending | approved | rejected
     approved_by: str = ""    # human or system
     expires_at: datetime | None = None  # TTL: None = no expiry

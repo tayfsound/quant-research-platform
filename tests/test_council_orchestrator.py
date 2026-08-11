@@ -81,6 +81,68 @@ def test_domain_confidence_calibration_is_applied_before_recalculate(monkeypatch
     assert abs(technical.intrinsic_trust - expected_intrinsic_trust) < 1e-9
 
 
+def test_deliberate_uses_the_regime_specific_snapshot_when_one_exists(tmp_path):
+    """Faz 268b — Regime-Aware Learning: deliberate(regime=...)'e verilen
+    rejim için bir snapshot varsa, GLOBAL en yeni snapshot değil o
+    kullanılmalı. active_weight_snapshot_id ile hangi snapshot'ın
+    gerçekten uygulandığı doğrulanabiliyor."""
+    import shutil
+
+    from contracts.agent_weight_snapshot import AgentWeightSnapshot
+    from services.weight_repository import WeightRepository
+
+    name = str(tmp_path / "council_regime_weights")
+    try:
+        repo = WeightRepository(storage_path=name)
+        global_snapshot = repo.save(AgentWeightSnapshot(weights={"technical": 1.0}, regime=None).finalize())
+        regime_snapshot = repo.save(
+            AgentWeightSnapshot(weights={"technical": 1.0}, regime="bullish_high").finalize()
+        )
+
+        registry = AgentRegistry.create_default()
+        orchestrator = CouncilOrchestrator(registry)
+        orchestrator.weight_repository = repo
+        ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs")
+
+        orchestrator.deliberate({AgentDomain.TECHNICAL: ctx}, regime="bullish_high")
+        assert orchestrator.active_weight_snapshot_id == regime_snapshot.id
+
+        orchestrator.deliberate({AgentDomain.TECHNICAL: ctx}, regime="never_seen_regime")
+        assert orchestrator.active_weight_snapshot_id == global_snapshot.id  # fail-closed fallback
+    finally:
+        shutil.rmtree(name, ignore_errors=True)
+
+
+def test_council_stage_derives_regime_from_market_features_and_forwards_it(monkeypatch):
+    """Faz 268b — Regime-Aware Learning: CouncilStage.execute()'ın ctx.
+    market.features'tan ("trend" + "volatility_regime") hesapladığı rejim,
+    PositionCloser._extract_market_regime'in kapanmış işlemleri
+    etiketlediği AYNI format ("trend_volatility") olmalı — aksi halde
+    regime-özel snapshot'lar karar anında hiçbir zaman doğru seçilmez."""
+    from contracts.context import CognitiveCycleContext
+    from engines.cognitive_pipeline import CouncilStage
+    import services.council_orchestrator as co_module
+
+    captured = {}
+    original_deliberate = co_module.CouncilOrchestrator.deliberate
+
+    def spy_deliberate(self, contexts, regime=None):
+        captured["regime"] = regime
+        return original_deliberate(self, contexts, regime=regime)
+
+    monkeypatch.setattr(co_module.CouncilOrchestrator, "deliberate", spy_deliberate)
+
+    registry = AgentRegistry.create_default()
+    stage = CouncilStage(registry)
+
+    ctx = CognitiveCycleContext()
+    ctx.market.symbol = "BTCUSDT"
+    ctx.market.features = {"trend": "bullish", "volatility_regime": "high"}
+    stage.execute(ctx)
+
+    assert captured["regime"] == "bullish_high"
+
+
 def test_technical_confidence_model_adjusts_opinion_confidence_when_saved():
     """Faz 264: ajan içi güven kalibrasyonu — kaydedilmiş bir model varsa
     technical ajanının confidence'ı gerçek geçmiş doğruluğa göre

@@ -103,3 +103,39 @@ def test_closing_a_real_position_records_the_real_market_regime():
     # Faz 268s: market_regime artık trend + volatility_regime birleşimi —
     # "hangi ajan yüksek volatiliteli bullish'te iyi" sorusu cevaplanabilsin.
     assert reloaded._records["technical"][-1].market_regime == "bullish_high"
+
+
+def test_closing_a_real_position_also_proposes_regime_specific_weights():
+    """Faz 268b — Regime-Aware Learning: close_due_positions() global
+    propose_weights()'e EK olarak, batch'te gerçekten görülen her rejim
+    için de ayrı bir öneri hesaplamalı — aksi halde regime-özel
+    snapshot'lar hiçbir zaman güncellenmez."""
+    symbol = f"LRNRGW{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+
+    event = DecisionEvent(
+        id=uuid4(), timestamp=now - timedelta(minutes=20), symbol=symbol,
+        proposed_direction="LONG", final_action="LONG", final_size=1.0, confidence=0.7,
+        status="open", entry_price=100.0, quantity=1.0, opened_at=now - timedelta(minutes=20),
+        stop_loss_price=90.0, take_profit_price=105.0,
+        agent_opinions=[{"domain": "technical", "direction": "LONG", "confidence": 0.8}],
+        market_snapshot={"features": {"trend": "bullish", "volatility_regime": "high"}, "raw_snapshot": {}},
+    )
+    with SessionFactory.get_session() as session:
+        DecisionPersistor(session).persist(event)
+
+    closer = PositionCloser(_FixedPriceProvider(price=110.0), hold_seconds=600)
+    calls = []
+    original_propose = closer.weight_optimizer.propose_weights
+
+    def spy_propose(evaluation_window=100, regime=None):
+        calls.append(regime)
+        return original_propose(evaluation_window=evaluation_window, regime=regime)
+
+    closer.weight_optimizer.propose_weights = spy_propose
+
+    with SessionFactory.get_session() as session:
+        closer.close_due_positions(DecisionPersistor(session))
+
+    assert None in calls  # global öneri hâlâ çağrılıyor
+    assert "bullish_high" in calls  # AYRICA bu rejim için de çağrıldı
