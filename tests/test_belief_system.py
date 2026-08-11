@@ -58,3 +58,34 @@ def test_apply_weights_does_not_resurrect_a_benched_agents_vote():
     belief = engine.apply_weights([benched_wait, healthy_long], snapshot)
 
     assert belief.direction == "LONG"
+
+
+def test_wait_votes_cannot_outvote_directional_conviction():
+    """Faz 268u — KRİTİK, canlıda yakalanan bulgu: best_direction daha önce
+    weighted_votes'un TAMAMINDAN (WAIT dahil) seçiliyordu. time/
+    epistemology ajanları TASARIM GEREĞİ (Faz 245) her cycle'da WAIT oyu
+    veriyor — bunların ağırlığı (BENCH'lenmemiş, gerçek, meşru WAIT
+    oyları) genel WAIT payını yeterince büyütünce, gerçek yönlü konviksiyon
+    olsa bile nihai karar WAIT'e dönüyordu. Gerçek canlı veriyle
+    doğrulandı: TÜM watchlist sembolleri aynı anda WAIT + confidence=0.0
+    üretiyordu. WAIT artık LONG/SHORT'u YENEMİYOR."""
+    engine = BeliefEngine()
+    opinions = [
+        AgentOpinion(domain=AgentDomain.TECHNICAL, direction="LONG", confidence=0.5).recalculate(),
+        AgentOpinion(domain=AgentDomain.QUANT, direction="LONG", confidence=0.5).recalculate(),
+        AgentOpinion(domain=AgentDomain.TIME, direction="WAIT", confidence=0.9).recalculate(),
+        AgentOpinion(domain=AgentDomain.EPISTEMOLOGY, direction="WAIT", confidence=0.9).recalculate(),
+        AgentOpinion(domain=AgentDomain.ORDER_FLOW, direction="WAIT", confidence=0.9).recalculate(),
+    ]
+    belief = engine.synthesize(opinions)
+    assert belief.direction == "LONG"
+
+
+def test_all_wait_opinions_still_resolve_to_wait():
+    engine = BeliefEngine()
+    opinions = [
+        AgentOpinion(domain=AgentDomain.TIME, direction="WAIT", confidence=0.9).recalculate(),
+        AgentOpinion(domain=AgentDomain.EPISTEMOLOGY, direction="WAIT", confidence=0.9).recalculate(),
+    ]
+    belief = engine.synthesize(opinions)
+    assert belief.direction == "WAIT"

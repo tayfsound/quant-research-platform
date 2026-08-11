@@ -73,11 +73,32 @@ class BeliefEngine:
             weighted_votes[rep.direction] += weight
             total_weight += weight
 
-        if total_weight == 0:
+        # Faz 268u — KRİTİK, canlıda yakalanan bulgu: best_direction daha
+        # önce weighted_votes'un TAMAMINDAN (WAIT dahil) seçiliyordu — yani
+        # WAIT, LONG/SHORT ile AYNI oy havuzunda yarışıp kazanabiliyordu.
+        # time/epistemology ajanları TASARIM GEREĞİ her cycle'da WAIT oyu
+        # veriyor (Faz 245: bunlar yön tahmini yapan ajanlar değil) — bu
+        # ikisinin ağırlığı + herhangi bir başka ajanın da WAIT'e kayması,
+        # WAIT'i sürekli kazandırabiliyordu. Gerçek canlı veriyle
+        # doğrulandı: TÜM watchlist sembolleri (kripto+altın+gümüş —
+        # birbiriyle korelasyonsuz varlıklar) AYNI ANDA, ART ARDA
+        # cycle'larda WAIT + confidence=0.0 üretiyordu — bu apply_weights()
+        # üstündeki yorumda daha önce TESPİT EDİLİP KISMEN düzeltilmiş AYNI
+        # kök nedenin (bkz. o yorum: "gerçek 190 karar örneğinde %100
+        # WAIT'in doğrudan sebebi buydu") kapatılmamış kalan yarısıydı — o
+        # düzeltme sadece "bench sıfırının sessizce geri gelmesini"
+        # kapatmıştı, "WAIT'in genel olarak bir oy olarak yarışması"
+        # sorununu değil. Aynı ilke burada da uygulanıyor (bkz. services/
+        # agent_debate.py::_synthesize, Faz 268f): WAIT artık LONG/SHORT'u
+        # YENEMİYOR, sadece paydaya (total_weight) dahil kalıp nihai
+        # strength'i seyreltiyor.
+        directional_votes = {"LONG": weighted_votes["LONG"], "SHORT": weighted_votes["SHORT"]}
+
+        if total_weight == 0 or (directional_votes["LONG"] == 0 and directional_votes["SHORT"] == 0):
             return Belief(direction="WAIT")
 
-        best_direction = max(weighted_votes, key=weighted_votes.get)
-        vote_strength = weighted_votes[best_direction] / total_weight
+        best_direction = max(directional_votes, key=directional_votes.get)
+        vote_strength = directional_votes[best_direction] / total_weight
         strength = round(vote_strength * cluster_balance * coverage * (1 - crowding_penalty * 0.5), 3)
 
         max_other = max((v for k, v in weighted_votes.items() if k != best_direction), default=0.0)
