@@ -5,6 +5,19 @@ import { useCurrency } from "../lib/currency";
 
 const TIMEFRAMES = ["5m", "15m", "1h", "4h", "1d"];
 
+// Faz 268am — kullanıcı bulgusu: "arka planda hali hazırda çalışan bir
+// test olduğunda ben bunu göremiyorum." Gerçek sebep: runningReal/
+// realStatus sadece bileşenin kendi local state'iydi, hiçbir yerde
+// saklanmıyordu — sayfadan ayrılıp dönünce (ya da yenileyince) React
+// state sıfırlanıyordu ama celery task arka planda gerçekten çalışmaya
+// devam ediyordu; sayfa bundan habersiz "boş" görünüyordu. task_id'yi
+// localStorage'a yazıp sayfa her açıldığında kontrol ediyoruz. 3 saatten
+// eski bir kayıt (muhtemelen kaybolmuş/çok eski bir task_id) fail-closed
+// olarak yok sayılıyor — sonsuza kadar "çalışıyor" görünen bir hayalet
+// state bırakmamak için.
+const BACKTEST_TASK_STORAGE_KEY = "qrp_backtest_task";
+const BACKTEST_TASK_MAX_AGE_MS = 3 * 60 * 60 * 1000;
+
 type BacktestRunSummary = {
   id: string;
   created_at: string;
@@ -39,6 +52,23 @@ export default function BacktestRuns() {
         setWatchlist(list);
         if (list.length) setSelectedSymbols([list[0]]);
       });
+
+    const stored = localStorage.getItem(BACKTEST_TASK_STORAGE_KEY);
+    if (stored) {
+      try {
+        const { taskId, startedAt } = JSON.parse(stored);
+        if (taskId && Date.now() - startedAt < BACKTEST_TASK_MAX_AGE_MS) {
+          setRunningReal(true);
+          setRealStatus("...");
+          pollTask(taskId);
+        } else {
+          localStorage.removeItem(BACKTEST_TASK_STORAGE_KEY);
+        }
+      } catch {
+        localStorage.removeItem(BACKTEST_TASK_STORAGE_KEY);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const toggleSymbol = (sym: string) => {
@@ -52,11 +82,13 @@ export default function BacktestRuns() {
         .then((data) => {
           if (data.status === "SUCCESS") {
             clearInterval(interval);
+            localStorage.removeItem(BACKTEST_TASK_STORAGE_KEY);
             setRunningReal(false);
             setRealStatus(null);
             load();
           } else if (data.status === "FAILURE") {
             clearInterval(interval);
+            localStorage.removeItem(BACKTEST_TASK_STORAGE_KEY);
             setRunningReal(false);
             setRealStatus(null);
             setError(`Backtest başarısız: ${data.error || "bilinmeyen hata"}`);
@@ -89,7 +121,13 @@ export default function BacktestRuns() {
         }
         return r.json();
       })
-      .then((data) => pollTask(data.task_id))
+      .then((data) => {
+        localStorage.setItem(
+          BACKTEST_TASK_STORAGE_KEY,
+          JSON.stringify({ taskId: data.task_id, startedAt: Date.now() })
+        );
+        pollTask(data.task_id);
+      })
       .catch((e) => {
         setError(String(e.message || e));
         setRunningReal(false);

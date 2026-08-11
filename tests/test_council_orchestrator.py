@@ -46,6 +46,41 @@ def test_empty_council():
     assert len(opinions) == 0
 
 
+def test_domain_confidence_calibration_is_applied_before_recalculate(monkeypatch):
+    """Faz 268al — "İsabeti artırmanın yolu daha akıllı kullanım" yol
+    haritasının A fazı (Confidence Kalibrasyonu). Her ajanın oy ağırlığına
+    giren confidence (bkz. AgentOpinion.recalculate -> intrinsic_trust ->
+    effective_influence -> BeliefEngine oy ağırlıklandırması), council
+    birleştirmesinden ÖNCE domain-özel kalibrasyon eğrisinden geçmeli.
+    Eğrinin kendi matematiği ayrı test ediliyor (test_confidence_
+    calibration.py) — burada SADECE deliberate()'in bunu gerçekten
+    çağırıp opinion.confidence'ı (ve dolayısıyla intrinsic_trust'ı)
+    değiştirdiği doğrulanıyor."""
+    import services.council_orchestrator as co_module
+
+    monkeypatch.setattr(co_module, "calibrate_domain_confidence", lambda domain, raw: 0.01)
+
+    registry = AgentRegistry.create_default()
+    orchestrator = CouncilOrchestrator(registry)
+    ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs")
+
+    _, opinions = orchestrator.deliberate({AgentDomain.TECHNICAL: ctx})
+    technical = next(o for o in opinions if o.domain == AgentDomain.TECHNICAL)
+
+    assert technical.confidence == 0.01
+    # recalculate() intrinsic_trust'ı confidence'ın %25'i üzerinden
+    # hesaplıyor — kalibrasyon sonrası değerle yeniden hesaplanmış olmalı,
+    # ajanın ham (kalibrasyon öncesi) beyanıyla değil.
+    expected_intrinsic_trust = (
+        0.01 * 0.25
+        + technical.data_quality * 0.20
+        + technical.evidence_strength * 0.20
+        + technical.freshness * 0.15
+        + technical.source_reliability * 0.20
+    )
+    assert abs(technical.intrinsic_trust - expected_intrinsic_trust) < 1e-9
+
+
 def test_technical_confidence_model_adjusts_opinion_confidence_when_saved():
     """Faz 264: ajan içi güven kalibrasyonu — kaydedilmiş bir model varsa
     technical ajanının confidence'ı gerçek geçmiş doğruluğa göre

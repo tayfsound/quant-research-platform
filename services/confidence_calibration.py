@@ -106,3 +106,87 @@ def calibrate_confidence(raw_confidence: float, curve: list[tuple[float, float]]
             return y0 + t * (y1 - y0)
 
     return raw_confidence
+
+
+# Faz 268al — "İsabeti artırmanın yolu daha akıllı kullanım" yol
+# haritasının A fazı (Confidence Kalibrasyonu). compute_calibration_curve()
+# yukarıda TEK bir (council-sonrası, fused) eğri üretiyor — DecisionFusion'ın
+# EV hesabını düzeltiyor ama BeliefEngine'in oy ağırlıklandırması
+# (AgentOpinion.effective_influence, her ajanın KENDİ ham confidence'ını
+# kullanıyor, bkz. contracts/agent.py::recalculate) hâlâ kalibre edilmemiş
+# sayılarla çalışıyordu — yani 9 ajanın oyu birleştirilirken, hangi ajanın
+# ne kadar "haklı çıktığı" hiç doğrulanmamış ham beyanlarla ölçülüyordu.
+# Buradaki fonksiyonlar her ajan domain'i için AYRI bir eğri üretir —
+# AgentMemory'deki gerçek (confidence, was_correct) çiftlerinden, YUKARIDAKİ
+# ile AYNI ampirik-kova + doğrusal enterpolasyon yöntemiyle (icat edilmiş
+# bir model/logistic regression değil — bu kod tabanının zaten kanıtlanmış
+# yaklaşımı, ek bir bağımlılık/overfit riski olmadan).
+_DOMAIN_MIN_BUCKET_SAMPLES = 20
+_domain_cache: dict = {"curves": None, "computed_at": 0.0}
+
+
+def compute_domain_calibration_curves(memory=None) -> dict[str, list[tuple[float, float]]]:
+    """Her ajan domain'i için, GERÇEKTEN yönlü (LONG/SHORT) oy verdiği
+    kayıtlardan beyan edilen güven kovası -> gerçekten doğru çıkma oranı
+    eğrisi. WAIT kayıtları (time/epistemology'nin tasarım gereği her
+    zaman verdiği oy) dahil edilmez — bir tahmin değil, doğru/yanlış
+    ölçülemez (Faz245 ile aynı ilke). Yeterli örneklemi olmayan domain'ler
+    (ör. bu yüzden time/epistemology) boş eğriyle kalır — fail-closed.
+
+    `memory` parametresi (varsayılan AgentMemory()) testlerin gerçek
+    (paylaşılan, tüm test oturumu boyunca biriken) agent_memory dosyasına
+    dokunmadan izole bir AgentMemory enjekte edebilmesi için — bkz.
+    backtest/real_historical_backtest.py::_record_backtest_agent_learning
+    ile aynı desen."""
+    from collections import defaultdict
+
+    from services.agent_memory import AgentMemory
+
+    memory = memory or AgentMemory()
+    curves: dict[str, list[tuple[float, float]]] = {}
+
+    for domain in memory.domains():
+        buckets: dict[float, list[float]] = defaultdict(list)
+        for record in memory._records.get(domain, []):
+            if record.direction.upper() not in ("LONG", "SHORT"):
+                continue
+            bucket = round(record.confidence, 1)
+            buckets[bucket].append(1.0 if record.was_correct else 0.0)
+
+        curve = []
+        for bucket, outcomes in sorted(buckets.items()):
+            if len(outcomes) < _DOMAIN_MIN_BUCKET_SAMPLES:
+                continue
+            curve.append((bucket, sum(outcomes) / len(outcomes)))
+        if curve:
+            curves[domain] = curve
+
+    return curves
+
+
+def get_domain_calibration_curves(force_refresh: bool = False) -> dict[str, list[tuple[float, float]]]:
+    now = time.time()
+    if (
+        force_refresh
+        or _domain_cache["curves"] is None
+        or (now - _domain_cache["computed_at"]) > _CACHE_TTL_SECONDS
+    ):
+        try:
+            _domain_cache["curves"] = compute_domain_calibration_curves()
+        except Exception:
+            # AgentMemory dosyası okunamazsa: kalibrasyon YOK sayılır
+            # (fail-closed) — ham güven değerleri değişmeden kullanılır.
+            _domain_cache["curves"] = {}
+        _domain_cache["computed_at"] = now
+    return _domain_cache["curves"]
+
+
+def calibrate_domain_confidence(domain: str, raw_confidence: float) -> float:
+    """Bir ajanın KENDİ domain'ine ait ampirik eğrisinden geçirir —
+    calibrate_confidence()'ın üst/alt uç mantığı (fail-closed alt uç,
+    en-son-gözleme-sabitleme üst uç) burada da aynen geçerli. O domain
+    için yeterli veri yoksa ham değeri değiştirmeden döner."""
+    curve = get_domain_calibration_curves().get(domain)
+    if not curve:
+        return raw_confidence
+    return calibrate_confidence(raw_confidence, curve=curve)

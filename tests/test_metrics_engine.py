@@ -75,6 +75,25 @@ def test_sortino_ratio_matches_hand_computed_value():
     assert MetricsEngine.sortino_ratio(returns) == pytest.approx(expected)
 
 
+def test_sortino_ratio_with_single_losing_trade_is_finite_not_infinity():
+    """Faz 268an — gerçek bulgu: TEK kayıp içeren bir dönüşte (ör.
+    tek-işlemlik bir backtest) downside dizisi tek elemanlı oluyor,
+    np.std([tek_değer]) matematiksel olarak tam 0.0 — önceki kod bunu
+    sadece downside HİÇ yoksa koruyordu (0.0001 sabit payda), tek
+    elemanlı gerçek-sıfır std'yi kaçırıyordu. Sonuç gerçek bir prod
+    hatasıydı: backtest_runs.metrics'e (Postgres JSON) -Infinity
+    yazılmaya çalışılınca DataError fırlıyordu."""
+    result = MetricsEngine.sortino_ratio([-0.05])
+    assert result == 0.0
+    assert result not in (float("inf"), float("-inf"))
+
+
+def test_sortino_ratio_with_no_losing_trades_is_finite_not_infinity():
+    result = MetricsEngine.sortino_ratio([0.01, 0.02, 0.03])
+    assert result == 0.0
+    assert result not in (float("inf"), float("-inf"))
+
+
 def test_win_rate_matches_hand_computed_value():
     fills = [{"pnl": 10}, {"pnl": -5}, {"pnl": 20}, {"pnl": -5}]
     assert MetricsEngine.win_rate(fills) == pytest.approx(0.5)

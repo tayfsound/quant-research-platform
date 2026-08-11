@@ -46,3 +46,43 @@ def test_compute_calibration_curve_ignores_buckets_below_min_samples():
         assert original == 20
     finally:
         confidence_calibration._MIN_BUCKET_SAMPLES = original
+
+
+def test_compute_domain_calibration_curves_builds_one_curve_per_domain(tmp_path):
+    """Faz 268al — "İsabeti artırmanın yolu daha akıllı kullanım" yol
+    haritasının A fazı: her ajan KENDİ (confidence, was_correct)
+    geçmişinden ayrı bir eğri üretmeli — WAIT kayıtları (bir tahmin
+    değil) hariç, yeterli örneklemi olmayan domain'ler (technical'e göre
+    çok daha az kaydı olan quant gibi) hiç eğri üretmemeli."""
+    from contracts.agent_performance import AgentPerformanceRecord
+    from services.agent_memory import AgentMemory
+    from services.confidence_calibration import compute_domain_calibration_curves
+
+    memory = AgentMemory(storage_path=str(tmp_path / "agent_memory"))
+
+    # technical: 0.7 kovasında 25 kayıt, gerçek doğruluk %80 (20/25) —
+    # eşiği (20) geçiyor, eğriye girmeli.
+    for i in range(25):
+        memory.record(AgentPerformanceRecord(
+            agent_domain="technical", direction="LONG", confidence=0.7,
+            was_correct=(i < 20), pnl=1.0 if i < 20 else -1.0,
+        ))
+    # quant: sadece 5 kayıt — eşiğin (20) altında, eğriye hiç girmemeli.
+    for i in range(5):
+        memory.record(AgentPerformanceRecord(
+            agent_domain="quant", direction="SHORT", confidence=0.6,
+            was_correct=True, pnl=1.0,
+        ))
+    # time: hep WAIT (Faz245 tasarımı) — kalibrasyona hiç girmemeli.
+    for i in range(25):
+        memory.record(AgentPerformanceRecord(
+            agent_domain="time", direction="WAIT", confidence=0.5,
+            was_correct=False, pnl=0.0,
+        ))
+
+    curves = compute_domain_calibration_curves(memory=memory)
+
+    assert "technical" in curves
+    assert curves["technical"] == [(0.7, 0.8)]
+    assert "quant" not in curves
+    assert "time" not in curves

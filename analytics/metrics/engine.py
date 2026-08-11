@@ -12,10 +12,20 @@ class MetricsEngine:
 
     @staticmethod
     def sortino_ratio(returns: list[float], risk_free: float = 0.0) -> float:
+        """Faz 268an — gerçek bulgu: tam olarak BİR kayıp içeren bir
+        dönüşte (ör. tek işlemlik bir backtest) downside dizisi tek
+        elemanlı oluyor, np.std([tek_değer]) matematiksel olarak tam
+        0.0 — önceki kod bunu SADECE downside hiç yoksa (0.0001 sabit
+        payda) koruyordu, tek elemanlı gerçek-sıfır std'yi kaçırıyordu.
+        Sonuç: bölme -Infinity/Infinity üretti, bu da backtest_runs.
+        metrics'e (Postgres JSON — Infinity kabul etmiyor) yazılırken
+        gerçek bir DataError'a yol açtı. sharpe_ratio ile AYNI, kanıtlanmış
+        fail-closed desen: payda sıfırsa (ya da tanımsızsa) 0.0."""
         arr = np.array(returns)
         downside = arr[arr < 0]
-        std_down = np.std(downside) if len(downside) > 0 else 0.0001
-        return (np.mean(arr) - risk_free) / std_down
+        std_down = np.std(downside) if len(downside) > 0 else 0.0
+        excess = np.mean(arr) - risk_free
+        return float(excess / std_down) if std_down > 0 else 0.0
 
     @staticmethod
     def max_drawdown(equity: list[float]) -> float:

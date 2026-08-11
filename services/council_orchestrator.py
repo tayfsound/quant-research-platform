@@ -4,6 +4,7 @@ from agents.critics.risk_challenger import RiskChallenger
 from contracts.agent import AgentDomain, AgentOpinion, DebateResult
 from services.agent_debate import AgentDebate
 from services.belief_engine import Belief, BeliefEngine
+from services.confidence_calibration import calibrate_domain_confidence
 from services.council_reliability import ReliabilityAnnotator
 from services.weight_repository import WeightRepository
 
@@ -107,6 +108,18 @@ class CouncilOrchestrator:
             [{"domain": o.domain.value, "confidence": o.confidence} for o in opinions]
         )
         for opinion, info in zip(opinions, annotated):
+            # Faz 268al — "İsabeti artırmanın yolu daha akıllı kullanım"
+            # yol haritasının A fazı (Confidence Kalibrasyonu). Her ajan
+            # kendi ham, hiç doğrulanmamış confidence'ını beyan ediyordu;
+            # bu doğrudan intrinsic_trust/effective_influence'a (bkz.
+            # AgentOpinion.recalculate) girip oy ağırlığını belirliyordu.
+            # Artık her ajanın KENDİ domain'ine ait gerçek (confidence,
+            # was_correct) geçmişinden çıkarılan ampirik eğriden geçiyor —
+            # services/confidence_calibration.py'nin decisions.confidence
+            # için zaten yaptığı (Faz248) şeyin ajan-seviyesi eşi. Yeterli
+            # veri olmayan bir domain için (fail-closed) ham değer aynen
+            # kalır.
+            opinion.confidence = calibrate_domain_confidence(opinion.domain.value, opinion.confidence)
             opinion.source_reliability = info["source_reliability"]
             if info.get("benched"):
                 # Auto-bench: bu domain art arda BENCH_AFTER kez düşük
