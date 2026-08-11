@@ -84,6 +84,36 @@ class MemoryConsolidator:
                     "data": k.get("data", {}),
                 })
 
+    def record_real_episode(
+        self,
+        *,
+        cycle_id,
+        symbol: str,
+        features: dict,
+        decision: str,
+        outcome: dict,
+        lesson: str = "",
+    ):
+        """Faz 268aj — kullanıcı isteği: episodic memory GERÇEK verilerle
+        beslensin. capture_cycle()'ın aksine (canlı cycle sırasında,
+        sonucu henüz belli olmayan ctx'ten çağrılıyor, Faz 268j'den beri
+        hiç kullanılmıyor — bkz. CognitiveEngine.finalize()'daki not) bu
+        SADECE gerçekten kapanmış bir pozisyondan (services/
+        position_closer.py), gerçek pnl/win ile çağrılıyor. Faz 268j'nin
+        kapattığı sızıntı (sahte n-bar proxy ile hafızayı kirletme) burada
+        tekrarlanmıyor — outcome her zaman gerçek kapanıştan geliyor."""
+        episode = Episode(
+            cycle_id=cycle_id,
+            symbol=symbol,
+            observation={"features": features},
+            binding_expression="",
+            decision=decision,
+            outcome=outcome,
+            lesson=lesson,
+        )
+        self.episodic.episodes.append(episode)
+        return self.commit_to_episodic()
+
     def commit_to_episodic(self, ctx=None):
         session = get_session()
         saved = None

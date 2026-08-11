@@ -86,6 +86,39 @@ def test_trades_endpoint_summary_matches_performance_all_time_even_when_table_is
         assert trades_body["summary"]["count"] >= 3
 
 
+def test_deployed_notional_reflects_real_margin_not_leveraged_notional():
+    """Faz 268ah — kullanıcı bulgusu: "ROI konusunda problem olduğundan
+    şüpheliyim, pozisyon büyüklükleri ilişkisi kaotik." Gerçek bug:
+    DecisionRecorder kaldıraçlı pozisyonlarda quantity'yi zaten leverage
+    ile çarpıyordu (Faz 255) — entry_price*quantity GERÇEK yatırılan
+    marjin değil, kaldıraçlı TAM notional'dı. Kapanmış işlemlerde
+    doğrulandı: $419k "deployed" gösteriyordu, gerçek marjin $33.8k
+    (12.4x fark) — sembol başına farklı kaldıraç notional'ı orantısız
+    şişiriyordu. Bu test: 10x kaldıraçlı bir pozisyonun deployed_notional'a
+    katkısının notional (entry*quantity) değil, gerçek marjin (notional/
+    leverage) olduğunu doğruluyor."""
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        symbol = f"PERFLEV{uuid4().hex[:8]}"
+        now = datetime.now(UTC)
+        # 10x kaldıraç, entry=100, quantity=10 (zaten leverage ile
+        # çarpılmış gerçek değer) -> notional=$1000, gerçek marjin=$100.
+        event = DecisionEvent(
+            id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+            final_size=10.0, confidence=0.6,
+            status="open", entry_price=100.0, quantity=10.0, opened_at=now,
+            leverage=10.0,
+        )
+        with SessionFactory.get_session() as session:
+            repo = DecisionPersistor(session)
+            repo.persist(event)
+            before = repo.closed_trades_summary()["deployed_notional"]
+            repo.close_position(decision_id=str(event.id), exit_price=100.0, pnl=5.0, closed_at=now)
+            after = repo.closed_trades_summary()["deployed_notional"]
+
+        added = after - before
+        assert abs(added - 100.0) < 0.01  # gerçek marjin ($100), notional ($1000) DEĞİL
+
+
 def test_trades_marked_excluded_from_stats_do_not_pollute_aggregates():
     """Faz 238: kullanıcı isteği — "kirli geçmiş veriyi temizle." Kendi
     aşırı-capital deneyleri sırasında (starting_capital 10-500 milyar)

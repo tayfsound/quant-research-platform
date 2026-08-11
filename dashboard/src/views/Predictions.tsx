@@ -1,26 +1,25 @@
 import { useEffect, useState } from "react";
 import { authHeaders } from "../api/auth";
-import { Card, PageHeader, Badge, Button, ErrorNote, EmptyState } from "../components/ui";
-import { useCurrency } from "../lib/currency";
+import { Card, PageHeader, Button, ErrorNote, EmptyState } from "../components/ui";
 
-function directionTone(direction: string) {
-  if (direction === "LONG") return "rise" as const;
-  if (direction === "SHORT") return "fall" as const;
-  return "neutral" as const;
-}
-
+// Faz 268ai — kullanıcı isteği: Predictions sayfası eskiden manuel "Run
+// Cycle" ile Direction/Risk Verdict/Simulated PnL gösteriyordu. Kullanıcı
+// bulgusu: risk kontrolü (cooldown vb.) council'den ÖNCE çalıştığı için
+// manuel tetikleme çoğu zaman council'i hiç çalıştırmadan reddediliyor —
+// "isabet" ölçmek için faydasız (gerçek isabet Performance/Transactions'
+// taki GERÇEK kapanmış işlemlerden ölçülüyor). Features ise farklı: ctx.
+// market.features risk kontrolünden ÖNCE hesaplanıyor, cooldown'da bile
+// dolu geliyor (doğrulandı: 27 gerçek sinyal) — o yüzden SADECE bu kısım
+// tutuldu, Direction/Risk Verdict/Simulated PnL kartları tamamen kaldırıldı.
 export default function Predictions() {
-  const [result, setResult] = useState<any>(null);
+  const [features, setFeatures] = useState<Record<string, unknown> | null>(null);
+  const [resultSymbol, setResultSymbol] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [watchlist, setWatchlist] = useState<string[]>([]);
   const [symbol, setSymbol] = useState("");
-  const { format } = useCurrency();
 
   useEffect(() => {
-    // Faz 215: kullanıcı "Predictions sadece BTC ile çalışıyor" dedi —
-    // gerçek sebep, /orchestrator/cycle'a hiç symbol gönderilmiyordu,
-    // her zaman backend'in varsayılan sembolüne düşüyordu.
     fetch("/api/v1/settings/", { headers: authHeaders() })
       .then((r) => r.json())
       .then((data) => {
@@ -32,7 +31,7 @@ export default function Predictions() {
       .catch(() => setWatchlist([]));
   }, []);
 
-  const runCycle = () => {
+  const fetchFeatures = () => {
     setLoading(true);
     setError(null);
     fetch("/api/v1/orchestrator/cycle", {
@@ -43,7 +42,8 @@ export default function Predictions() {
       .then(async (r) => {
         const data = await r.json();
         if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
-        setResult(data);
+        setFeatures(data.features || {});
+        setResultSymbol(data.symbol || symbol);
       })
       .catch((e) => setError(String(e.message || e)))
       .finally(() => setLoading(false));
@@ -53,7 +53,7 @@ export default function Predictions() {
     <div>
       <PageHeader
         title="Predictions"
-        description="9 ajanlı council'i gerçek bir cycle ile tetikleyip nihai kararı gösterir (CognitiveOrchestrator.run_cycle)."
+        description="Sembolün şu anki gerçek teknik/onchain sinyal değerleri — risk/cooldown kontrolünden bağımsız, her zaman güncel."
         action={
           <div className="flex items-center gap-2">
             <select
@@ -67,8 +67,8 @@ export default function Predictions() {
                 </option>
               ))}
             </select>
-            <Button onClick={runCycle} disabled={loading}>
-              {loading ? "Running…" : "Run Cycle"}
+            <Button onClick={fetchFeatures} disabled={loading}>
+              {loading ? "Getiriliyor…" : "Sinyalleri Getir"}
             </Button>
           </div>
         }
@@ -76,52 +76,24 @@ export default function Predictions() {
 
       {error && <ErrorNote>{error}</ErrorNote>}
 
-      {!result && !error && (
-        <EmptyState label="Henüz çalıştırılmadı — gerçek bir council kararı görmek için “Run Cycle”e basın." />
+      {!features && !error && (
+        <EmptyState label="Henüz getirilmedi — güncel sinyalleri görmek için “Sinyalleri Getir”e basın." />
       )}
 
-      {result && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Card>
-            <p className="text-xs text-ink-faint uppercase tracking-wide">Direction — {result.symbol}</p>
-            <div className="mt-2">
-              <Badge tone={directionTone(result.direction)}>{result.direction}</Badge>
-            </div>
-            <p className="text-xs text-ink-soft mt-3">Confidence: {(result.confidence * 100).toFixed(0)}%</p>
-          </Card>
-
-          <Card>
-            <p className="text-xs text-ink-faint uppercase tracking-wide">Risk Verdict</p>
-            <div className="mt-2">
-              <Badge tone={result.risk_verdict === "approved" ? "rise" : "fall"}>{result.risk_verdict}</Badge>
-            </div>
-            {result.risk_reasons?.length > 0 && (
-              <p className="text-xs text-ink-soft mt-3">{result.risk_reasons.join(", ")}</p>
-            )}
-          </Card>
-
-          <Card>
-            <p className="text-xs text-ink-faint uppercase tracking-wide">Simulated PnL</p>
-            <p className={`text-xl font-semibold mt-2 ${result.pnl >= 0 ? "text-rise" : "text-fall"}`}>
-              {format(result.pnl)}
-            </p>
-            <p className="text-xs text-ink-soft mt-1">fee: {format(result.fee)}</p>
-          </Card>
-
-          <Card>
-            <p className="text-xs text-ink-faint uppercase tracking-wide">Features</p>
-            <div className="text-xs text-ink-soft mt-2 space-y-1">
-              {result.features && Object.entries(result.features).map(([k, v]) => (
-                <div key={k} className="flex justify-between gap-2">
-                  <span className="capitalize shrink-0">{k}</span>
-                  <span className="font-mono text-right break-all min-w-0">
-                    {typeof v === "number" ? v.toFixed(2) : String(v)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </div>
+      {features && (
+        <Card>
+          <p className="text-xs text-ink-faint uppercase tracking-wide">Features — {resultSymbol}</p>
+          <div className="text-xs text-ink-soft mt-3 space-y-1.5">
+            {Object.entries(features).map(([k, v]) => (
+              <div key={k} className="flex justify-between gap-2">
+                <span className="capitalize shrink-0">{k}</span>
+                <span className="font-mono text-right break-all min-w-0">
+                  {typeof v === "number" ? v.toFixed(4) : String(v)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </Card>
       )}
     </div>
   );

@@ -5,11 +5,8 @@ import MarketOverview from './views/MarketOverview';
 import Tokens from './views/Tokens';
 import Predictions from './views/Predictions';
 import Strategies from './views/Strategies';
-import RiskDashboard from './views/RiskDashboard';
 import Settings from './views/Settings';
 import Transactions from './views/Transactions';
-import Performance from './views/Performance';
-import LatestCycle from './views/LatestCycle';
 import PendingApprovals from './views/PendingApprovals';
 import BacktestRuns from './views/BacktestRuns';
 import ResearchWorkspace from './views/ResearchWorkspace';
@@ -47,14 +44,11 @@ function App() {
         <div className="max-w-6xl mx-auto px-8 py-8">
           {view === 'dashboard' && <Dashboard />}
           {view === 'transactions' && <Transactions onSelectSymbol={navigateToToken} />}
-          {view === 'performance' && <Performance />}
           {view === 'market' && <MarketOverview />}
           {view === 'tokens' && <Tokens initialSymbol={tokenDetailSymbol} onSymbolConsumed={() => setTokenDetailSymbol(null)} />}
           {view === 'predictions' && <Predictions />}
           {view === 'strategies' && <Strategies />}
-          {view === 'risk' && <RiskDashboard />}
           {view === 'settings' && <Settings />}
-          {view === 'cycle' && <LatestCycle />}
           {view === 'approvals' && <PendingApprovals />}
           {view === 'backtest' && <BacktestRuns />}
           {view === 'workspace' && <ResearchWorkspace />}

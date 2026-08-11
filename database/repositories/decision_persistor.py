@@ -247,12 +247,23 @@ class DecisionPersistor:
         AYNI, gerçek toplamı kullanabilir."""
         # Faz 238: excluded_from_stats=true işaretli (kirli/aşırı-test)
         # satırlar agregata hiç girmiyor.
+        #
+        # Faz 268ah — kullanıcı bulgusu: "ROI konusunda problem olduğundan
+        # şüpheliyim, pozisyon büyüklükleri ilişkisi kaotik." Gerçek bug:
+        # DecisionRecorder kaldıraçlı pozisyonlarda quantity'yi zaten
+        # leverage ile çarpıyor (Faz 255) — yani entry_price*quantity
+        # GERÇEK yatırılan marjin değil, kaldıraçlı TAM notional. Kapanmış
+        # işlemlerde doğrulandı: mevcut hesap $419k notional gösteriyordu,
+        # gerçek marjin sadece $33.8k (12.4x fark) — sembol başına farklı
+        # kaldıraç (1x/5x/10x/25x) notional'ı orantısız şişiriyordu, ROI'yi
+        # kaotik/anlamsız kılan tam olarak buydu. deployed_notional artık
+        # gerçek marjini (notional/leverage) topluyor.
         row = self.session.execute(
             text(
                 "SELECT count(*) AS trade_count, "
                 "sum(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS wins, "
                 "sum(pnl) AS total_pnl, "
-                "sum(entry_price * quantity) AS deployed_notional "
+                "sum(entry_price * quantity / COALESCE(NULLIF(leverage, 0), 1)) AS deployed_notional "
                 "FROM decisions WHERE status = 'closed' AND excluded_from_stats = false"
             )
         ).mappings().one()
@@ -284,7 +295,7 @@ class DecisionPersistor:
                     count(*) AS trade_count,
                     sum(pnl) AS total_pnl,
                     sum(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS wins,
-                    sum(entry_price * quantity) AS deployed_notional
+                    sum(entry_price * quantity / COALESCE(NULLIF(leverage, 0), 1)) AS deployed_notional
                 FROM decisions
                 WHERE status = 'closed' AND closed_at IS NOT NULL AND excluded_from_stats = false
                 GROUP BY bucket

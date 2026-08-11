@@ -27,7 +27,10 @@ class Settings(BaseSettings):
 
     SECRET_KEY: str = ""
     JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRE_MINUTES: int = 1440
+    # Faz 268ag — kullanıcı isteği: "30 gün olsun." Önceki 1440dk (24 saat),
+    # bu proje günler süren tek oturumlarla çalıştığı için token'ın sık sık
+    # sona ermesine yol açıyordu.
+    JWT_EXPIRE_MINUTES: int = 43200
     # Güvenlik incelemesi bulgusu (güven 5/10): boşsa ilk /auth/register
     # çağrısı otomatik ADMIN olur (dev/local kolaylığı, geriye dönük uyumlu).
     # Prod'da set edilirse, o ilk-admin bootstrap'ı bu token'ı bilmeyen biri

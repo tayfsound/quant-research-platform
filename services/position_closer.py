@@ -17,6 +17,7 @@ from database.repositories.decision_persistor import DecisionPersistor
 from market_data.ingestion.data_provider import OHLCVProvider
 from market_data.market_hours import is_market_open
 from services.agent_memory import AgentMemory
+from services.memory_consolidator import MemoryConsolidator
 from services.weight_optimizer import WeightOptimizer
 from services.weight_repository import WeightRepository
 from simulator.fee_engine import FeeEngine
@@ -44,6 +45,12 @@ class PositionCloser:
             agent_memory=self.agent_memory,
             weight_repository=WeightRepository(),
         )
+        # Faz 268aj — kullanıcı isteği: episodic memory GERÇEK kapanışlarla
+        # beslensin (bkz. MemoryConsolidator.record_real_episode). Faz 268j
+        # CognitiveEngine.finalize()'daki sahte n-bar proxy beslemesini
+        # kasıtlı kesmişti ama "gerçek kapanışlarla yeniden bağlanacak" diye
+        # not düşülen iş hiç yapılmamıştı — burada tamamlanıyor.
+        self.memory_consolidator = MemoryConsolidator()
 
     def _age_seconds(self, opened_at: datetime, now: datetime) -> float:
         # Bilinen borç (CURRENT_STATE.md'de dokümante): DB'de naive/aware
@@ -157,6 +164,28 @@ class PositionCloser:
 
         return recorded
 
+    def _extract_features(self, pos: dict) -> dict:
+        for item in pos.get("agent_contributions") or []:
+            if isinstance(item, dict) and item.get("type") == "market_snapshot":
+                return ((item.get("data") or {}).get("features")) or {}
+        return {}
+
+    def _record_episodic_memory(self, pos: dict, pnl: float, exit_reason: str) -> None:
+        """Faz 268aj — gerçek kapanışı episodic memory'ye yazar (bkz.
+        MemoryConsolidator.record_real_episode). Bir hata pozisyon
+        kapanışını asla engellemiyor — episodic hafıza ikincil bir
+        sonuç, gerçek para hareketini (kapanışın kendisini) bloklamamalı."""
+        try:
+            self.memory_consolidator.record_real_episode(
+                cycle_id=pos.get("id"),
+                symbol=pos["symbol"],
+                features=self._extract_features(pos),
+                decision=(pos.get("direction") or "WAIT"),
+                outcome={"pnl": pnl, "win": pnl > 0, "exit_reason": exit_reason},
+            )
+        except Exception as exc:
+            logger.warning("episodic_memory_record_failed", symbol=pos.get("symbol"), error=str(exc))
+
     def estimate_net_pnl_if_closed_now(self, pos: dict, current_price: float) -> float:
         """Faz 268p — kullanıcı isteği: "hem her pozisyonun anlık kâr/
         zararını göster, hem kârdakileri toplu kapat ama komisyona
@@ -263,6 +292,7 @@ class PositionCloser:
                 },
             )
             self._record_agent_learning(pos, pnl)
+            self._record_episodic_memory(pos, realized_pnl, "manual_full")
             return {"fully_closed": True, "exit_price": exit_price, "pnl": pnl, "realized_pnl": realized_pnl}
 
         result = decision_repo.close_position_partial(
@@ -464,6 +494,7 @@ class PositionCloser:
 
             if self._record_agent_learning(pos, pnl):
                 learned_any = True
+            self._record_episodic_memory(pos, pnl, exit_reason)
 
         if learned_any and len(self.agent_memory.domains()) > 0:
             self.weight_optimizer.propose_weights(evaluation_window=100)

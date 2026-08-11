@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { authHeaders } from "../api/auth";
-import { PageHeader, Button, Badge, StatCard, ErrorNote } from "../components/ui";
+import { PageHeader, Button, Badge, StatCard, Card, ErrorNote, EmptyState, Spinner } from "../components/ui";
 import { useCurrency } from "../lib/currency";
 
 type SettingsMap = Record<string, string>;
@@ -125,12 +125,53 @@ const HEALTH_CHECK_LABELS: Record<string, string> = {
   zombie_wait: "Yönlü karar üretimi",
 };
 
+// Faz 268ak — kullanıcı isteği: "Performance kısmı yanlış yerde, oradaki
+// verileri direkt Dashboard'a gömsek hem daha sade olur hem Dashboard'da
+// adam akıllı veri olur." Performance.tsx'in TÜM içeriği (all-time
+// istatistikler + günlük/haftalık/aylık/yıllık tablo) buraya taşındı,
+// Performance ayrı bir sayfa olmaktan çıktı.
+type Bucket = {
+  period_start: string;
+  trade_count: number;
+  total_pnl: number;
+  win_rate: number;
+  roi_pct: number;
+  roi_pct_on_deployed: number;
+};
+
+type AllTime = {
+  trade_count: number;
+  total_pnl: number;
+  win_rate: number;
+  roi_pct: number;
+  roi_pct_on_deployed: number;
+  deployed_notional: number;
+  excluded_dirty_trades_count: number;
+};
+
+type PerformanceData = {
+  starting_capital: number;
+  all_time: AllTime;
+  daily: Bucket[];
+  weekly: Bucket[];
+  monthly: Bucket[];
+  yearly: Bucket[];
+};
+
+const PERIOD_TABS: { key: keyof Pick<PerformanceData, "daily" | "weekly" | "monthly" | "yearly">; label: string }[] = [
+  { key: "daily", label: "Günlük" },
+  { key: "weekly", label: "Haftalık" },
+  { key: "monthly", label: "Aylık" },
+  { key: "yearly", label: "Yıllık" },
+];
+
 export default function Dashboard() {
   const [settings, setSettings] = useState<SettingsMap>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openCount, setOpenCount] = useState(0);
-  const [summary, setSummary] = useState<{ count: number; win_rate: number; total_pnl: number } | null>(null);
+  const [perf, setPerf] = useState<PerformanceData | null>(null);
+  const [periodTab, setPeriodTab] = useState<"daily" | "weekly" | "monthly" | "yearly">("daily");
   const [signalHealth, setSignalHealth] = useState<SignalHealth | null>(null);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | "unsupported">(
     typeof Notification === "undefined" ? "unsupported" : Notification.permission
@@ -171,9 +212,13 @@ export default function Dashboard() {
       // (o an 1074) hiç yansımıyordu. summary.open_count limitsiz, gerçek
       // toplam.
       .then((data) => setOpenCount(data.summary?.open_count ?? (data.positions || []).length));
-    fetch("/api/v1/trades", { headers: authHeaders() })
-      .then((r) => r.json())
-      .then((data) => setSummary(data.summary || null));
+    fetch("/api/v1/performance", { headers: authHeaders() })
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then(setPerf)
+      .catch((e) => setError(String(e.message || e)));
     // Faz 230: kullanıcı isteği — "sistem sessiz kalırsa alarma geçecek mi?"
     // Faz 203-211'deki 7 katmanlı sessiz-hata zincirinin (sistem çalışıyor
     // görünüp hiç gerçek işlem açmıyordu) bir daha fark edilmeden
@@ -293,19 +338,112 @@ export default function Dashboard() {
         />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <StatCard label="Açık pozisyon" value={openCount} />
-        <StatCard
-          label="Kapanmış işlem"
-          value={summary?.count ?? 0}
-          sub={summary ? `%${(summary.win_rate * 100).toFixed(0)} kazanma oranı` : undefined}
-        />
-        <StatCard
-          label={`Toplam PnL (${currency})`}
-          value={summary ? format(summary.total_pnl) : "—"}
-          tone={summary && summary.total_pnl > 0 ? "rise" : summary && summary.total_pnl < 0 ? "fall" : "neutral"}
-        />
-      </div>
+      {!perf && !error && (
+        <div className="flex justify-center py-12">
+          <Spinner />
+        </div>
+      )}
+
+      {perf && (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+            <StatCard label="Açık pozisyon" value={openCount} />
+            <StatCard label="Kapanmış işlem" value={perf.all_time.trade_count} />
+            <StatCard label="Kazanma oranı" value={`%${(perf.all_time.win_rate * 100).toFixed(0)}`} />
+            <StatCard
+              label={`Toplam PnL (${currency})`}
+              value={format(perf.all_time.total_pnl)}
+              tone={perf.all_time.total_pnl > 0 ? "rise" : perf.all_time.total_pnl < 0 ? "fall" : "neutral"}
+            />
+            <StatCard
+              label="Strateji getirisi"
+              value={`%${(perf.all_time.roi_pct_on_deployed * 100).toFixed(3)}`}
+              tone={perf.all_time.roi_pct_on_deployed > 0 ? "rise" : perf.all_time.roi_pct_on_deployed < 0 ? "fall" : "neutral"}
+              sub={`kullanılan: ${format(perf.all_time.deployed_notional)}`}
+            />
+          </div>
+
+          <p className="text-xs text-ink-soft mb-4">
+            Kasa büyüklüğüne göre ROI: %{(perf.all_time.roi_pct * 100).toFixed(6)} (sermaye:{" "}
+            {perf.starting_capital.toLocaleString()} — test için çok büyük bir değere ayarlıysa bu oran
+            her zaman ~0 görünür, stratejinin gerçek performansı yukarıdaki "kullanılan sermayeye göre"
+            değeridir).
+          </p>
+
+          {perf.all_time.excluded_dirty_trades_count > 0 && (
+            <p className="text-xs text-ink-faint mb-4">
+              Not: {perf.all_time.excluded_dirty_trades_count} adet kirli işlem (aşırı test ayarlarından kalan
+              gerçek olmayan büyüklükteki işlemler ve geçmişte bir veri sağlayıcı hatası yüzünden gerçek dışı
+              fiyatla kapanmış işlemler) yukarıdaki istatistiklerden hariç tutuldu (silinmedi, sadece
+              istatistiklere dahil edilmedi).
+            </p>
+          )}
+
+          <div className="flex gap-1 mb-4">
+            {PERIOD_TABS.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setPeriodTab(t.key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium ${
+                  periodTab === t.key ? "bg-accent text-white" : "bg-canvas-soft text-ink-soft hover:text-ink"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {periodTab === "daily" && (
+            <p className="text-xs text-ink-faint mb-3">
+              "Günlük" burada takvim günü demek (UTC 00:00'dan itibaren) — Transactions sayfasındaki
+              "Son 24 saat" ise şu andan geriye kayan bir pencere, gün sınırı gözetmez. Gün henüz
+              birkaç saatliyken ikisi doğal olarak farklı sayı gösterebilir; Transactions'ta gerçekten
+              aynı tanımı isteyen "Bugün (UTC takvim günü)" seçeneği var.
+            </p>
+          )}
+
+          <Card padded={false}>
+            {perf[periodTab].length === 0 ? (
+              <div className="p-5">
+                <EmptyState label="Bu dönem için henüz kapanmış işlem yok." />
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-ink-faint uppercase tracking-wide border-b border-line-soft">
+                      <th className="px-5 py-2 font-medium">Dönem</th>
+                      <th className="px-5 py-2 font-medium">İşlem</th>
+                      <th className="px-5 py-2 font-medium">Kazanma oranı</th>
+                      <th className="px-5 py-2 font-medium">PnL</th>
+                      <th className="px-5 py-2 font-medium">Strateji getirisi</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {perf[periodTab].map((b) => (
+                      <tr key={b.period_start} className="border-b border-line-soft last:border-0">
+                        <td className="px-5 py-2.5 text-ink-soft text-xs">
+                          {new Date(b.period_start).toLocaleDateString()}
+                        </td>
+                        <td className="px-5 py-2.5 text-ink-soft">{b.trade_count}</td>
+                        <td className="px-5 py-2.5">
+                          <Badge tone={b.win_rate >= 0.5 ? "rise" : "fall"}>{(b.win_rate * 100).toFixed(0)}%</Badge>
+                        </td>
+                        <td className={`px-5 py-2.5 font-medium ${b.total_pnl >= 0 ? "text-rise" : "text-fall"}`}>
+                          {format(b.total_pnl)}
+                        </td>
+                        <td className={`px-5 py-2.5 font-medium ${b.roi_pct_on_deployed >= 0 ? "text-rise" : "text-fall"}`}>
+                          {(b.roi_pct_on_deployed * 100).toFixed(3)}%
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        </>
+      )}
     </div>
   );
 }

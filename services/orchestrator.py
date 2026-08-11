@@ -19,6 +19,7 @@ from config import get_settings
 from contracts.context import CognitiveCycleContext
 from contracts.contexts.decision import ActionType
 
+import threading
 import time
 
 # Faz 255 performans düzeltmesi: kritik bulgu — canlıda doğrulandı. Risk
@@ -30,18 +31,26 @@ import time
 # yavaş değişen bir ölçü — 120 saniyede bir tazelenmesinin hiçbir anlamı
 # yok. 15 dakikalık önbellek, riski gerçekçi tutarken gereksiz API
 # yükünü ~7x azaltıyor.
+# 3. taraf inceleme bulgusu (2.5) — modül-seviyeli dict, kilitsiz. FastAPI
+# sync endpoint'leri gerçek OS thread pool'unda çalıştırıyor, yani teorik
+# olarak iki eşzamanlı istek check-then-write arasında çakışabilir. Tek
+# celery worker (-c 1) ve tek uvicorn sürecinde bugüne kadar gerçek bir
+# soruna yol açmadı, ama kilit eklemenin maliyeti sıfıra yakın.
 _RISK_BARS_CACHE: dict[tuple[str, str], tuple[float, list]] = {}
 _RISK_BARS_CACHE_TTL_SECONDS = 900
+_RISK_BARS_CACHE_LOCK = threading.Lock()
 
 
 def _get_risk_bars_cached(data_provider, symbol: str, timeframe: str = "1d", limit: int = 30) -> list:
     now = time.time()
     key = (symbol, timeframe)
-    cached = _RISK_BARS_CACHE.get(key)
-    if cached and (now - cached[0]) < _RISK_BARS_CACHE_TTL_SECONDS:
-        return cached[1]
+    with _RISK_BARS_CACHE_LOCK:
+        cached = _RISK_BARS_CACHE.get(key)
+        if cached and (now - cached[0]) < _RISK_BARS_CACHE_TTL_SECONDS:
+            return cached[1]
     bars = data_provider.get_ohlcv(symbol, timeframe, limit=limit) or []
-    _RISK_BARS_CACHE[key] = (now, bars)
+    with _RISK_BARS_CACHE_LOCK:
+        _RISK_BARS_CACHE[key] = (now, bars)
     return bars
 
 

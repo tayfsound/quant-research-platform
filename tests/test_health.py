@@ -2,6 +2,8 @@
 from fastapi.testclient import TestClient
 
 from api.main import app
+from contracts.auth import Role
+from tests.auth_helpers import make_authed_headers
 
 client = TestClient(app)
 
@@ -21,9 +23,17 @@ def test_live():
     assert resp.json()["status"] == "alive"
 
 def test_metrics():
-    resp = client.get("/metrics")
+    # 3. taraf inceleme bulgusu (5.2) — /metrics auth'suzdu, API 0.0.0.0'a
+    # bağlı (LAN'a açık) olduğu için aynı ağdaki biri metrikleri
+    # görebiliyordu. Artık diğer korumalı endpoint'lerle aynı auth şart.
+    resp = client.get("/metrics", headers=make_authed_headers(Role.VIEWER))
     assert resp.status_code == 200
     assert "llm_requests_total" in resp.text
+
+
+def test_metrics_requires_auth():
+    resp = client.get("/metrics")
+    assert resp.status_code == 401
 
 
 def test_signal_health_reports_real_freshness_per_module():
