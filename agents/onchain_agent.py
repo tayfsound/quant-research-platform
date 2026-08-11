@@ -97,9 +97,11 @@ class OnChainAgent:
             evidence.append(f"MVRV Z-Score extremely low ({context.mvrv_zscore}) — market undervalued")
 
         # Faz 247: kritik bulgu — exchange_inflow/outflow, whale_accumulation/
-        # distribution, mvrv_zscore hâlâ hiç uygulanmadı (Faz 196/215'in
-        # kasıtlı kararı: dürüstçe ölçülemeyen bir şeyi icat etmemek —
-        # contracts/onchain.py'de hep varsayılan/nötr kalıyorlar). Gerçek
+        # distribution hâlâ hiç uygulanmıyor (Faz 196/215'in kasıtlı kararı:
+        # dürüstçe ölçülemeyen bir şeyi icat etmemek — contracts/onchain.py'de
+        # hep varsayılan/nötr kalıyorlar). mvrv_zscore Faz 268v'de gerçek
+        # veriyle (bitcoin-data.com) beslenmeye başladı — bu skorlama zaten
+        # Faz 196'dan beri buradaydı, sadece veri hiç gelmiyordu. Gerçek
         # veride bu ajan 4.678 kayıtta TEK BİR KEZ bile yönlü oy vermemiş,
         # çünkü eşik (>0.5) SADECE bu hiç-tetiklenmeyen sinyaller devredeyken
         # anlamlıydı — GERÇEKTEN çalışan iki sinyal (network_activity_trend,

@@ -93,11 +93,12 @@ class ContextAdapter:
         )
 
     def _real_onchain_metrics(self, symbol: str) -> dict:
-        """Faz 196: SADECE gerçekten kolay/dürüst ölçülen metrikler —
-        exchange akışı/whale/MVRV kasıtlı olarak burada yok (indexer
-        gerektirir, icat edilmedi). Sadece kripto sembolleri için; ağ
-        hatası olursa (provider zaten None döner) sessizce atlanır, hiçbir
-        sayı uydurulmaz."""
+        """Faz 196/268v: SADECE gerçekten kolay/dürüst ölçülen metrikler —
+        exchange akışı/whale kasıtlı olarak burada yok (indexer gerektirir,
+        icat edilmedi). MVRV Z-Score Faz 268v'de eklendi (bitcoin-data.com,
+        API key gerektirmiyor, gerçek veri). Sadece kripto sembolleri için;
+        ağ hatası olursa (provider zaten None döner) sessizce atlanır,
+        hiçbir sayı uydurulmaz."""
         if not symbol.upper().endswith(("USDT", "BUSD", "USDC", "FDUSD")):
             return {}
 
@@ -106,6 +107,7 @@ class ContextAdapter:
         from market_data.onchain.onchain_provider import (
             fetch_eth_gas_price_gwei,
             fetch_hash_rate_trend,
+            fetch_mvrv_zscore,
             fetch_network_activity_trend,
             fetch_solana_tps,
             fetch_usdt_total_supply,
@@ -142,6 +144,13 @@ class ContextAdapter:
         if hash_rate is not None:
             result["hash_rate_trend"] = hash_rate
 
+        # Faz 268v: kullanıcı isteği — MVRV Z-Score, network_activity_trend/
+        # hash_rate_trend ile AYNI desende (Bitcoin'e özel, tüm kripto
+        # sembollerine "genel piyasa koşulu" olarak uygulanan bir sinyal).
+        mvrv = fetch_mvrv_zscore()
+        if mvrv is not None:
+            result["mvrv_zscore"] = mvrv
+
         return result
 
     def to_onchain(self, ctx: CognitiveCycleContext) -> OnChainContext:
@@ -154,7 +163,7 @@ class ContextAdapter:
             stablecoin_mint_24h=self._get(
                 ctx, "stablecoin_mint_24h", real_metrics.get("stablecoin_mint_24h", 0.0)
             ),
-            mvrv_zscore=self._get(ctx, "mvrv_zscore", 0.0),
+            mvrv_zscore=self._get(ctx, "mvrv_zscore", real_metrics.get("mvrv_zscore", 0.0)),
             eth_gas_price_gwei=real_metrics.get("eth_gas_price_gwei"),
             solana_tps=real_metrics.get("solana_tps"),
             network_activity_trend=self._get(

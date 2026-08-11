@@ -1,13 +1,13 @@
-"""Faz 196/215: on-chain metrik motoru — SADECE gerçekten kolay ve dürüst
-ölçülebilen metrikler. Proje sahibinin kendi sözleriyle: "zor olanları
-icat etmeyelim... en önemli şey metriklerin doğru çalışması."
+"""Faz 196/215/268v: on-chain metrik motoru — SADECE gerçekten kolay ve
+dürüst ölçülebilen metrikler. Proje sahibinin kendi sözleriyle: "zor
+olanları icat etmeyelim... en önemli şey metriklerin doğru çalışması."
 
 Bilinçli olarak YAPILMADI (indexer/etiketli adres listesi gerektirir,
 Infura/Alchemy/Helius'un ücretsiz RPC erişimiyle dürüstçe hesaplanamaz):
-exchange_inflow/outflow, whale accumulation/distribution, MVRV Z-Score.
-Bunlar contracts/onchain.py'de hâlâ varsayılan (0.0/False) — icat edilmedi.
+exchange_inflow/outflow, whale accumulation/distribution. Bunlar
+contracts/onchain.py'de hâlâ varsayılan (0.0/False) — icat edilmedi.
 
-Gerçekten hesaplanan metrikler, hepsi tek bir çağrıyla:
+Gerçekten hesaplanan metrikler:
 - ETH gas price (Infura eth_gasPrice) — ağ talebinin doğrudan ölçüsü.
 - USDT toplam arzı (Infura eth_call, ERC20 totalSupply()) — 24 saatlik
   deltası stablecoin_mint_24h'i besliyor.
@@ -15,8 +15,16 @@ Gerçekten hesaplanan metrikler, hepsi tek bir çağrıyla:
 - Faz 215: blockchain.info'nun tamamen ücretsiz/kimliksiz charts API'si —
   aktif adres sayısı trendi ve hash rate trendi (Bitcoin'e özel, gerçek
   ağ sağlığı göstergeleri — "whale accumulation" gibi yorumlanmış bir
-  şey değil, dümdüz gözlemlenen sayılar)."""
+  şey değil, dümdüz gözlemlenen sayılar).
+- Faz 268v: kullanıcı isteği — MVRV Z-Score, X/Twitter'dan (yapılandırılmamış,
+  güvenilmez bir kaynak — bkz. konuşma) çekmek yerine gerçek, yapılandırılmış,
+  ücretsiz bir API'den (bitcoin-data.com / BGeometrics Bitcoin Data API) —
+  API key GEREKTİRMİYOR, gerçek güncel veri döndürüyor (doğrulandı:
+  2026-08-10 için 0.4177). agents/onchain_agent.py'nin mvrv_zscore skorlama
+  mantığı zaten vardı (Faz 196'dan beri), sadece hiç gerçek veriyle
+  beslenmiyordu."""
 import logging
+import time
 
 import httpx
 
@@ -25,6 +33,13 @@ from config import get_settings
 logger = logging.getLogger(__name__)
 
 _BLOCKCHAIN_INFO_CHARTS_URL = "https://api.blockchain.info/charts/{chart}"
+_BITCOIN_DATA_MVRV_ZSCORE_URL = "https://bitcoin-data.com/v1/mvrv-zscore/last"
+
+# Faz 268v: bitcoin-data.com'un ücretsiz katmanı 8 istek/saat, 15 istek/gün
+# ile sınırlı — MVRV zaten günlük değişen bir metrik, agresif bir önbellek
+# hem bu limiti aşmamak hem de gereksiz ağ trafiğini önlemek için ZORUNLU.
+_MVRV_CACHE: dict[str, tuple[float, float | None]] = {}
+_MVRV_CACHE_TTL_SECONDS = 3600
 
 
 def _fetch_blockchain_info_trend(chart: str, timespan: str = "14days") -> str | None:
@@ -138,4 +153,33 @@ def fetch_solana_tps() -> float | None:
         return sample.get("numTransactions", 0) / period
     except Exception as exc:
         logger.warning("Helius RPC call failed: %s", exc)
+        return None
+
+
+def fetch_mvrv_zscore() -> float | None:
+    """Faz 268v: BGeometrics'in ücretsiz, API key gerektirmeyen Bitcoin
+    Data API'sinden gerçek, güncel MVRV Z-Score — piyasa değerinin
+    gerçekleşen değere (realized value) göre kaç standart sapma uzakta
+    olduğunu gösteren, gerçek on-chain veriden hesaplanmış bir aşırı-
+    değerleme/ucuzluk göstergesi. agents/onchain_agent.py bunu zaten
+    skorluyordu (>3.0 aşırı değerli -> SHORT, <-1.0 aşırı ucuz -> LONG),
+    sadece hiç gerçek veriyle beslenmiyordu. Bitcoin'e özel bir metrik —
+    diğer network sağlığı göstergeleri (network_activity_trend/
+    hash_rate_trend) gibi tüm kripto sembollerine "genel piyasa koşulu"
+    olarak uygulanıyor (bkz. services/context_adapter.py)."""
+    cached = _MVRV_CACHE.get("mvrv_zscore")
+    if cached and (time.monotonic() - cached[0]) < _MVRV_CACHE_TTL_SECONDS:
+        return cached[1]
+
+    try:
+        response = httpx.get(_BITCOIN_DATA_MVRV_ZSCORE_URL, timeout=10)
+        response.raise_for_status()
+        value = float(response.json()["mvrvZscore"])
+        _MVRV_CACHE["mvrv_zscore"] = (time.monotonic(), value)
+        return value
+    except Exception as exc:
+        logger.warning("bitcoin-data.com MVRV Z-Score fetch failed: %s", exc)
+        # Başarısızlığı da önbelleğe alıyoruz — art arda hatalı isteklerle
+        # zaten sıkı olan 8/saat limitini tüketmeyelim.
+        _MVRV_CACHE["mvrv_zscore"] = (time.monotonic(), None)
         return None

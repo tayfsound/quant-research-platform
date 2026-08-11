@@ -80,5 +80,8 @@ async def run_cognitive_cycle(
         "uncertainty": result.decision.uncertainty,
         "knowledge": result.cognition.relevant_knowledge,
         "risk_verdict": result.risk.evaluation.verdict,
-        "risk_reasons": [r.code for r in result.risk.evaluation.reasons],
+        # Faz 268x — services/orchestrator.py::finalize_proposal ile aynı
+        # tutarlı format (kod + gerçek mesaj) — sadece kod, "869 open >=
+        # limit 10" gibi asıl bilgiyi kaybediyordu.
+        "risk_reasons": [f"{r.code}: {r.message}" for r in result.risk.evaluation.reasons],
     }

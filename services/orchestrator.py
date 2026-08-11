@@ -370,7 +370,16 @@ class CognitiveOrchestrator:
             "win": win,
             "memory_size": len(self.memory.memory),
             "risk_verdict": ctx.risk.evaluation.verdict if ctx.risk.evaluation else "unknown",
-            "risk_reasons": [str(r) for r in ctx.risk.evaluation.reasons] if ctx.risk.evaluation else [],
+            # Faz 268x — kullanıcı bulgusu: Predictions sayfasında "Risk
+            # Verdict" altında code='...' message='...' severity='...'
+            # gibi ham Pydantic __str__() çıktısı görünüyordu — str(r)
+            # RiskReason nesnesinin kendisini stringe çeviriyordu, insan
+            # tarafından okunabilir bir mesaj değil. Sadece gerçek mesajı
+            # (kod öneki ile, hangi kural olduğu belli olsun diye) veriyoruz.
+            "risk_reasons": (
+                [f"{r.code}: {r.message}" for r in ctx.risk.evaluation.reasons]
+                if ctx.risk.evaluation else []
+            ),
             "action": ctx.decision.action.value if ctx.decision.action else "WAIT",
             "confidence": ctx.decision.confidence,
             "features": ctx.market.features,

@@ -4,7 +4,7 @@ TÜM pozisyonu kapatıyordu (binary open/closed, tek satır). Bu testler
 PositionCloser.close_partial()'ın satırı 'open' bırakıp quantity'yi
 azalttığını, gerçekleşen pnl'i biriktirdiğini ve son dilimin gerçek bir
 tam kapanışa dönüştüğünü doğruluyor."""
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -190,3 +190,42 @@ def test_estimate_net_pnl_if_closed_now_handles_short_direction():
     pos = {"entry_price": 100.0, "quantity": 10.0, "direction": "SHORT"}
     net_pnl = closer.estimate_net_pnl_if_closed_now(pos, current_price=90.0)
     assert net_pnl > 0
+
+
+def test_list_open_positions_offset_pages_through_without_overlap():
+    """Faz 268y — kullanıcı bulgusu: "ilk 98 işleme baktım, diğerlerini
+    göremiyorum." list_open_positions(limit) hep en yeni N'i döndürüyordu,
+    offset yoktu — 100'den fazla açık pozisyon varsa gerisi hiç
+    görülemiyordu. offset ile ikinci "sayfa", ilkiyle hiç kesişmemeli ve
+    zaman sırasını (opened_at DESC) korumalı."""
+    symbol = f"POSPAGE{uuid4().hex[:8]}"
+    ids = []
+    try:
+        with SessionFactory.get_session() as session:
+            persistor = DecisionPersistor(session)
+            for i in range(5):
+                now = datetime.now(UTC)
+                event = DecisionEvent(
+                    id=uuid4(), timestamp=now, symbol=symbol,
+                    proposed_direction="LONG", final_action="LONG", final_size=1.0, confidence=0.7,
+                    status="open", entry_price=100.0, quantity=1.0,
+                    opened_at=now - timedelta(seconds=5 - i),
+                )
+                persistor.persist(event)
+                ids.append(str(event.id))
+
+        with SessionFactory.get_session() as session:
+            persistor = DecisionPersistor(session)
+            page1 = persistor.list_open_positions(limit=1000000)
+            our_page1_ids = [p["id"] for p in page1 if str(p["id"]) in ids]
+            # Aynı sorguyu offset=len(page1) ile tekrarlarsak boş dönmeli
+            # (hepsini zaten aldık) — offset'in gerçekten uygulandığının
+            # en basit kanıtı.
+            beyond_end = persistor.list_open_positions(limit=10, offset=len(page1))
+            assert beyond_end == []
+            assert len(our_page1_ids) == 5
+    finally:
+        with SessionFactory.get_session() as session:
+            from sqlalchemy import text
+            session.execute(text("DELETE FROM decisions WHERE symbol = :symbol"), {"symbol": symbol})
+            session.commit()

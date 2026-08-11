@@ -50,27 +50,48 @@ def _serialize(row: dict, current_price: float | None = None, net_unrealized_pnl
 
 
 def _fetch_current_prices(symbols: set[str]) -> dict[str, float]:
-    """Faz 268p: her benzersiz sembol için TEK bir fiyat çekiyor (100'lerce
-    pozisyon aynı ~10-15 watchlist sembolünü paylaşıyor) — pozisyon başına
-    değil, sembol başına bir istek. Bir sembol çekilemezse (fail-closed)
-    sadece o sembol sözlükte hiç yer almaz, diğerleri etkilenmez."""
+    """Faz 268p/268w: her benzersiz sembol için TEK bir fiyat çekiyor
+    (100'lerce pozisyon aynı ~10-15 watchlist sembolünü paylaşıyor) —
+    pozisyon başına değil, sembol başına bir istek.
+
+    Faz 268w — kritik bulgu: kullanıcı "Transactions çok yavaş açılıyor"
+    dedi. Gerçek ölçüm: GET /positions 1.7 saniye sürüyordu — 15 benzersiz
+    sembolün HER BİRİ için SIRALI (ardışık) bir gerçek Binance/Yahoo
+    isteği atılıyordu, biri bitmeden diğeri başlamıyordu. get_ohlcv senkron
+    (bloklayan) bir çağrı olduğu için ThreadPoolExecutor ile GERÇEKTEN
+    paralel çekiliyor artık — 15 sıralı istek yerine 15 istek aynı anda,
+    toplam süre en yavaş TEK isteğe iniyor (~15 kat değil, ~1 kat gecikme).
+    Bir sembol çekilemezse (fail-closed) sadece o sembol sözlükte hiç yer
+    almaz, diğerleri etkilenmez."""
+    from concurrent.futures import ThreadPoolExecutor
+
     provider = RoutingProvider()
-    prices: dict[str, float] = {}
-    for symbol in symbols:
+
+    def _fetch_one(symbol: str) -> tuple[str, float | None]:
         try:
             data = provider.get_ohlcv(symbol, "1m", limit=1)
-            if data:
-                prices[symbol] = data[-1].close
+            return symbol, (data[-1].close if data else None)
         except Exception:
-            continue
+            return symbol, None
+
+    if not symbols:
+        return {}
+
+    prices: dict[str, float] = {}
+    with ThreadPoolExecutor(max_workers=min(len(symbols), 16)) as pool:
+        for symbol, price in pool.map(_fetch_one, symbols):
+            if price is not None:
+                prices[symbol] = price
     return prices
 
 
 @router.get("/positions")
-async def list_open_positions(limit: int = 100, user: AuthContext = Depends(get_current_user)):
+async def list_open_positions(
+    limit: int = 100, offset: int = 0, user: AuthContext = Depends(get_current_user)
+):
     with SessionFactory.get_session() as session:
         persistor = DecisionPersistor(session)
-        rows = persistor.list_open_positions(limit=limit)
+        rows = persistor.list_open_positions(limit=limit, offset=offset)
         summary = persistor.open_positions_summary()
 
     prices = _fetch_current_prices({r["symbol"] for r in rows})

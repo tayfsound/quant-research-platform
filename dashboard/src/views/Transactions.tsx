@@ -98,6 +98,14 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
   const [closeProfitableResult, setCloseProfitableResult] = useState<string | null>(null);
   const { format, currency } = useCurrency();
 
+  // Faz 268y — kullanıcı bulgusu: "ilk 98 işleme baktım... diğerlerini
+  // göremiyorum." Açık pozisyon listesi hep en yeni 100'le sabitliydi
+  // (limit var ama offset yoktu) — 869 pozisyondan sadece ilki
+  // görülebiliyordu. Gerçek sayfalama: sayfa değişince backend'e offset
+  // ile yeniden istek atılıyor.
+  const OPEN_PAGE_SIZE = 100;
+  const [openPage, setOpenPage] = useState(0);
+
   const filteredTrades = useMemo(() => {
     if (sinceMinutes === null) return trades;
     const cutoff = sinceCutoffMs(sinceMinutes);
@@ -116,7 +124,8 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
   }, [filteredTrades, sinceMinutes]);
 
   const load = () => {
-    fetch("/api/v1/positions", { headers: authHeaders() })
+    const offset = openPage * OPEN_PAGE_SIZE;
+    fetch(`/api/v1/positions?limit=${OPEN_PAGE_SIZE}&offset=${offset}`, { headers: authHeaders() })
       .then((r) => r.json())
       .then((data) => {
         setOpen(data.positions || []);
@@ -134,7 +143,8 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
     load();
     const interval = setInterval(load, 15000);
     return () => clearInterval(interval);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openPage]);
 
   const partialClose = async (id: string, fraction: number) => {
     setCloseError(null);
@@ -222,10 +232,10 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
       {closeProfitableResult && (
         <p className="text-xs text-ink-soft mb-3">{closeProfitableResult}</p>
       )}
-      {openSummary && openSummary.open_count > open.length && (
+      {openSummary && openSummary.open_count > OPEN_PAGE_SIZE && (
         <p className="text-xs text-ink-faint mb-3">
-          En son {open.length} pozisyon gösteriliyor (toplam {openSummary.open_count} — üstteki özet kutusu
-          her zaman gerçek toplamı yansıtır).
+          {openPage * OPEN_PAGE_SIZE + 1}-{openPage * OPEN_PAGE_SIZE + open.length} / {openSummary.open_count}{" "}
+          pozisyon gösteriliyor — altta sayfalarla gezebilirsiniz.
         </p>
       )}
       {open.length === 0 ? (
@@ -324,6 +334,30 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {openSummary && openSummary.open_count > OPEN_PAGE_SIZE && (
+        <div className="flex items-center justify-center gap-3 mb-8 -mt-4">
+          <Button
+            variant="secondary"
+            disabled={openPage === 0}
+            onClick={() => setOpenPage((p) => Math.max(0, p - 1))}
+            className="!px-3 !py-1.5 text-xs"
+          >
+            ← Önceki
+          </Button>
+          <span className="text-xs text-ink-faint">
+            Sayfa {openPage + 1} / {Math.ceil(openSummary.open_count / OPEN_PAGE_SIZE)}
+          </span>
+          <Button
+            variant="secondary"
+            disabled={(openPage + 1) * OPEN_PAGE_SIZE >= openSummary.open_count}
+            onClick={() => setOpenPage((p) => p + 1)}
+            className="!px-3 !py-1.5 text-xs"
+          >
+            Sonraki →
+          </Button>
         </div>
       )}
 

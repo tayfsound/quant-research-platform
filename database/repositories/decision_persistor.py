@@ -178,13 +178,18 @@ class DecisionPersistor:
 
         return [dict(r) for r in rows]
 
-    def list_open_positions(self, limit: int = 200):
+    def list_open_positions(self, limit: int = 200, offset: int = 0):
+        # Faz 268y — kullanıcı bulgusu: 869 açık pozisyonun sadece ilk
+        # 100'ünü (limit sabit, offset hiç yoktu) görebiliyordu, "diğerlerini
+        # göremiyorum" — offset eklendi ki Transactions gerçek sayfalama
+        # yapabilsin, tüm açık pozisyonlar (sadece en yeni 100'ü değil)
+        # görülebilsin.
         rows = self.session.execute(
             text(
                 "SELECT * FROM decisions WHERE status = 'open' "
-                "ORDER BY opened_at DESC LIMIT :limit"
+                "ORDER BY opened_at DESC LIMIT :limit OFFSET :offset"
             ),
-            {"limit": limit},
+            {"limit": limit, "offset": offset},
         ).mappings().all()
 
         return [dict(r) for r in rows]

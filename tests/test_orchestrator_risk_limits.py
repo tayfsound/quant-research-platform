@@ -27,3 +27,16 @@ def test_orchestrator_run_cycle_picks_up_db_backed_risk_limit():
     result = CognitiveOrchestrator().run_cycle(seed=7)
 
     assert "MISSING_LIMIT" not in result["risk_reasons"]
+
+
+def test_risk_reasons_are_human_readable_not_raw_pydantic_repr():
+    """Faz 268x — kullanıcı bulgusu: Predictions sayfasında "Risk Verdict"
+    altında code='...' message='...' severity='...' gibi ham
+    RiskReason.__str__() çıktısı görünüyordu (str(r) nesnenin kendisini
+    stringe çeviriyordu). Artık "KOD: mesaj" formatında, okunabilir."""
+    result = CognitiveOrchestrator().run_cycle(seed=7)
+
+    for reason in result["risk_reasons"]:
+        assert "code='" not in reason
+        assert "message='" not in reason
+        assert ": " in reason  # "KOD: mesaj" formatı
