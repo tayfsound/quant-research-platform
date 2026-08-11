@@ -265,6 +265,102 @@ def test_position_closer_closes_immediately_on_stop_loss_before_hold_expires():
     assert row["pnl"] < 0
 
 
+def test_breakeven_stop_ratchets_stop_to_entry_after_1r_profit_and_prevents_full_loss():
+    """Faz 268ae — kullanıcı isteği: "pozisyon karlı gidiyor ama işler
+    tersine döndü, stop yükseltilse tam zarar yerine nötr/az zararla
+    çıkabilir." Gerçek veri bulgusu: son 30 günde stop_loss çıkışları
+    -$2422, take_profit çıkışları sadece +$130 — yani sistemin kurduğu
+    1:4 hedef/stop oranı gerçek sonuçlara hiç yansımıyordu, çünkü kârlı
+    açılıp geri dönen pozisyonlar tam stop mesafesini yiyordu. Bu test:
+    fiyat 1R (giriş-stop mesafesi kadar) lehte hareket edince stopun
+    girişe çekildiğini, SONRA fiyat geri dönüp o yeni (sıkı) stopa
+    takılınca kaybın eski (geniş) stopa göre çok daha küçük kaldığını
+    kanıtlıyor."""
+    from contracts.decision_event import DecisionEvent
+
+    symbol = f"POSBE{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    entry, old_stop, target = 100.0, 90.0, 140.0  # risk = 10 (1R), hedef uzakta
+
+    with SessionFactory.get_session() as session:
+        event = DecisionEvent(
+            id=uuid4(), timestamp=now, symbol=symbol,
+            proposed_direction="LONG", final_action="LONG", final_size=1.0, confidence=0.7,
+            status="open", entry_price=entry, quantity=1.0, opened_at=now,
+            stop_loss_price=old_stop, take_profit_price=target,
+        )
+        DecisionPersistor(session).persist(event)
+
+    # 1. adım: fiyat tam 1R kadar lehte (110) — ne stop ne hedefe ulaşmadı,
+    # ama breakeven ratchet tetiklenmeli.
+    closer_step1 = PositionCloser(_FixedPriceProvider(entry + (entry - old_stop)))
+    with SessionFactory.get_session() as session:
+        closed_step1 = closer_step1.close_due_positions(DecisionPersistor(session))
+    assert not any(c["decision_id"] == str(event.id) for c in closed_step1)
+
+    with SessionFactory.get_session() as session:
+        row = DecisionPersistor(session).get_by_id(str(event.id))
+    assert row["status"] == "open"
+    assert row["stop_loss_price"] == entry  # stop girişe çekildi
+
+    # 2. adım: fiyat geri dönüp YENİ (sıkı) stopun biraz altına düşüyor —
+    # eski stop (90) hâlâ çok uzakta olurdu, ama artık girişte takılmalı.
+    closer_step2 = PositionCloser(_FixedPriceProvider(99.0))
+    with SessionFactory.get_session() as session:
+        closed_step2 = closer_step2.close_due_positions(DecisionPersistor(session))
+
+    closed_ids = {c["decision_id"]: c for c in closed_step2}
+    assert str(event.id) in closed_ids
+    assert closed_ids[str(event.id)]["exit_reason"] == "breakeven_stop"
+
+    with SessionFactory.get_session() as session:
+        row = DecisionPersistor(session).get_by_id(str(event.id))
+    assert row["status"] == "closed"
+    # Eski (geniş) stop olan 90'a takılmış olsaydı kayıp ~10x daha büyük
+    # olurdu — breakeven ratchet kaybı gerçekten küçültmüş olmalı.
+    old_stop_gross_pnl = (old_stop - entry) * 1.0  # -10.0
+    assert old_stop_gross_pnl < row["pnl"] < 0.0
+
+
+def test_breakeven_stop_never_loosens_and_is_symmetric_for_short():
+    """Aynı mekanizmanın SHORT yönde de çalıştığını ve stopun asla ilk
+    seviyesinden daha gevşek bir yöne çekilmediğini (sadece sıkılaştığını)
+    doğruluyor."""
+    from contracts.decision_event import DecisionEvent
+
+    symbol = f"POSBESHORT{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    entry, old_stop, target = 100.0, 110.0, 60.0  # risk = 10, SHORT
+
+    with SessionFactory.get_session() as session:
+        event = DecisionEvent(
+            id=uuid4(), timestamp=now, symbol=symbol,
+            proposed_direction="SHORT", final_action="SHORT", final_size=1.0, confidence=0.7,
+            status="open", entry_price=entry, quantity=1.0, opened_at=now,
+            stop_loss_price=old_stop, take_profit_price=target,
+        )
+        DecisionPersistor(session).persist(event)
+
+    closer_step1 = PositionCloser(_FixedPriceProvider(entry - (old_stop - entry)))  # 90.0, 1R lehte
+    with SessionFactory.get_session() as session:
+        closer_step1.close_due_positions(DecisionPersistor(session))
+
+    with SessionFactory.get_session() as session:
+        row = DecisionPersistor(session).get_by_id(str(event.id))
+    assert row["status"] == "open"
+    assert row["stop_loss_price"] == entry
+
+    # Fiyat girişin biraz da altına inip geri girişin ÜSTÜNE çıksa bile
+    # (SHORT için "lehte" tekrar) stop girişten daha gevşek bir yere
+    # (>entry, yani eski 110'a doğru) ASLA geri çekilmemeli.
+    closer_step2 = PositionCloser(_FixedPriceProvider(80.0))
+    with SessionFactory.get_session() as session:
+        closer_step2.close_due_positions(DecisionPersistor(session))
+    with SessionFactory.get_session() as session:
+        row = DecisionPersistor(session).get_by_id(str(event.id))
+    assert row["stop_loss_price"] == entry  # hâlâ girişte, gevşemedi
+
+
 def test_take_profit_exit_is_charged_the_cheaper_maker_fee_not_taker():
     """Faz 223: kullanıcı isteği — "işlem ücretlerinden kurtulmanın ya da
     minimize etmenin yolları var mı." Gerçek bulgu: çıkış her zaman taker

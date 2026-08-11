@@ -133,6 +133,36 @@ def test_run_pairs_trading_task_runs_and_returns_pair_results():
                 celery_app.conf.task_always_eager = False
 
 
+def test_live_trading_tasks_refuse_to_run_when_market_data_source_is_not_binance(monkeypatch):
+    """Faz 268af — gerçek olay: 6 Ağustos'ta MARKET_DATA_SOURCE .env'den
+    yüklenemediği bir anda sistem sessizce mock (deterministik, sahte)
+    fiyatlarla gerçek pozisyon açtı, ~$1845 gerçek dışı kayıp yazdı.
+    config/settings.py'de MARKET_DATA_SOURCE varsayılanı "mock" — bu test,
+    canlı işlem task'larının artık bunu sessizce yutmadığını, "binance"
+    dışında bir kaynakla hiç çalışmadan atladığını doğruluyor."""
+    from config import get_settings
+    from services.celery_app import celery_app
+    from services.tasks import (
+        close_due_positions_task,
+        run_medium_term_cycle_task,
+        run_pairs_trading_task,
+        run_trading_cycle_task,
+    )
+
+    monkeypatch.setenv("MARKET_DATA_SOURCE", "mock")
+    get_settings.cache_clear()
+    celery_app.conf.task_always_eager = True
+    celery_app.conf.task_eager_propagates = True
+    try:
+        for task in (run_trading_cycle_task, run_pairs_trading_task, close_due_positions_task, run_medium_term_cycle_task):
+            result = task.delay()
+            assert result.successful()
+            assert result.result == {"skipped": "non_binance_market_data_source"}
+    finally:
+        celery_app.conf.task_always_eager = False
+        get_settings.cache_clear()  # sonraki testler gerçek "binance" ayarını görsün
+
+
 def test_run_trading_cycle_task_runs_a_real_cycle_when_ai_enabled():
     """Faz 190: 'gerçek işlem alıyormuş gibi' — celery beat'in periyodik
     tetiklediği görev, gerçek CognitiveOrchestrator.run_cycle()'ı çalıştırır."""

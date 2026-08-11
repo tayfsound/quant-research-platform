@@ -66,6 +66,40 @@ def test_get_positions_includes_net_unrealized_pnl_for_open_positions(client, mo
     assert match["net_unrealized_pnl"] > 0  # %10 hareket, komisyonu rahatça karşılar
 
 
+def test_get_positions_surfaces_pairs_trade_tag_for_hedge_legs(client, monkeypatch):
+    """Faz 268ad — kullanıcı: "sistem hedge işlem hiç denemiyor galiba."
+    Gerçek: services/pairs_trader.py çalışıyor ve gerçek iki-bacaklı hedge
+    pozisyonları açıyor, ama hiçbir yerde görünmüyordu — normal yönlü
+    işlemlerden ayırt edilemiyordu. Pair etiketi zaten agent_contributions
+    JSONB'sinde duruyordu (market_snapshot.raw_snapshot.pairs_trade); bu
+    test GET /positions'ın onu artık `pairs_trade` alanında geri
+    döndürdüğünü doğruluyor — normal (pairs olmayan) bir pozisyonun ise
+    None döndüğünü."""
+    now = datetime.now(UTC)
+    hedge_symbol = f"HEDGELEG{uuid4().hex[:8]}"
+    normal_symbol = f"NORMALPOS{uuid4().hex[:8]}"
+
+    hedge_event = DecisionEvent(
+        id=uuid4(), timestamp=now, symbol=hedge_symbol,
+        proposed_direction="LONG", final_action="LONG", final_size=0.2, confidence=0.0,
+        status="open", entry_price=100.0, quantity=0.2, opened_at=now,
+        stop_loss_price=99.0, take_profit_price=102.0,
+        market_snapshot={"raw_snapshot": {"close": 100.0, "pairs_trade": f"{hedge_symbol}/OTHERSYM", "pairs_zscore": 2.3}},
+    )
+    normal_event = _open_position(normal_symbol, direction="LONG", quantity=1.0, entry_price=100.0)
+    with SessionFactory.get_session() as session:
+        DecisionPersistor(session).persist(hedge_event)
+    _patch_price(monkeypatch, 100.0)
+
+    res = client.get("/api/v1/positions", headers=make_authed_headers(Role.VIEWER))
+    assert res.status_code == 200
+    body = res.json()
+    hedge_match = next(p for p in body["positions"] if p["id"] == str(hedge_event.id))
+    normal_match = next(p for p in body["positions"] if p["id"] == str(normal_event.id))
+    assert hedge_match["pairs_trade"] == f"{hedge_symbol}/OTHERSYM"
+    assert normal_match["pairs_trade"] is None
+
+
 def test_close_profitable_closes_only_net_positive_positions(client, monkeypatch):
     profitable_symbol = f"BULKPROFIT{uuid4().hex[:8]}"
     losing_symbol = f"BULKLOSS{uuid4().hex[:8]}"

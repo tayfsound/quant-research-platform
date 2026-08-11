@@ -277,6 +277,46 @@ class PositionCloser:
         self._record_agent_learning(pos, pnl)
         return {"fully_closed": False, "exit_price": exit_price, "pnl": pnl, **result}
 
+    def _apply_breakeven_stop(
+        self, pos: dict, current_price: float, decision_repo: DecisionPersistor
+    ) -> float | None:
+        """Faz 268ae — kullanıcı isteği: "pozisyon kârlı gidiyor ama işler
+        tersine döndü, stop yükseltilse tam zarar yerine nötr/az zararla
+        çıkabilir." Gerçek veri bulgusu: son 30 günde stop_loss çıkışları
+        -$2422 kaybettirdi, take_profit çıkışları sadece +$130 kazandırdı —
+        oran, RiskTargetStage'in kurduğu 1:4 hedef/stop oranının tam
+        tersi. stop_loss_price açılışta bir kez set edilip hiç
+        değişmiyordu (bkz. update_stop_loss_price docstring) — kârlı
+        açılıp geri dönen pozisyonlar tam stop mesafesini yiyordu.
+
+        Klasik "1R kâra ulaşınca stopu girişe çek" kuralı: fiyat, ilk
+        risk mesafesi (|entry-stop|) kadar LEHTE hareket ettiyse stop
+        girişe (başabaş) çekilir. SADECE bir kez tetiklenir (stop zaten
+        girişe eşitse tekrar işlem yapmaz) ve SADECE sıkılaştırır, asla
+        gevşetmez — riski hiçbir zaman artırmıyor."""
+        entry_price = pos.get("entry_price")
+        stop_loss_price = pos.get("stop_loss_price")
+        direction = (pos.get("direction") or "").upper()
+        if entry_price is None or stop_loss_price is None or direction not in ("LONG", "SHORT"):
+            return stop_loss_price
+
+        if direction == "LONG":
+            risk = entry_price - stop_loss_price
+            if risk <= 0:
+                return stop_loss_price  # stop zaten girişte/üstünde
+            if current_price >= entry_price + risk:
+                decision_repo.update_stop_loss_price(str(pos["id"]), entry_price)
+                return entry_price
+        else:
+            risk = stop_loss_price - entry_price
+            if risk <= 0:
+                return stop_loss_price
+            if current_price <= entry_price - risk:
+                decision_repo.update_stop_loss_price(str(pos["id"]), entry_price)
+                return entry_price
+
+        return stop_loss_price
+
     def close_due_positions(self, decision_repo: DecisionPersistor, timeframe: str = "1m") -> list[dict]:
         """Açık pozisyonları gerçek güncel fiyatla kontrol eder: fiyat gerçek
         stop-loss/take-profit seviyesine ulaştıysa kapatır. Başka HİÇBİR
@@ -346,6 +386,8 @@ class PositionCloser:
                 )
                 continue
 
+            pos["stop_loss_price"] = self._apply_breakeven_stop(pos, current_price, decision_repo)
+
             # Faz 255: kullanıcı isteği — kaldıraç desteği. Kaldıraçlı bir
             # pozisyon (leverage>1) gerçek likidasyon fiyatına ulaşırsa,
             # bu stop-loss'tan ÖNCE kontrol edilir — gerçek bir kaldıraçlı
@@ -367,6 +409,13 @@ class PositionCloser:
                 if exit_reason is None:
                     continue
                 exit_price = current_price
+                # Başabaşa çekilmiş bir stop'a takılmak normal bir stop_loss
+                # değil — kullanıcının istediği "tam zarar yerine nötr çık"
+                # senaryosunun gerçekleştiği an. Ayrı etiketle, "stop_loss"
+                # istatistiğiyle karışmasın (analiz/Transactions'ta ayırt
+                # edilebilsin).
+                if exit_reason == "stop_loss" and abs(pos["stop_loss_price"] - entry_price) < max(1e-9, abs(entry_price) * 1e-9):
+                    exit_reason = "breakeven_stop"
 
             if direction == "LONG":
                 gross_pnl = (exit_price - entry_price) * quantity

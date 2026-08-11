@@ -20,6 +20,7 @@ type Position = {
   leverage: number | null;
   liquidation_price: number | null;
   timeframe: string | null;
+  pairs_trade: string | null;
   exit_reason: string | null;
   opened_at: string | null;
   closed_at: string | null;
@@ -38,6 +39,10 @@ const PARTIAL_CLOSE_OPTIONS: { label: string; fraction: number }[] = [
 const EXIT_REASON_LABELS: Record<string, string> = {
   take_profit: "Hedefe ulaştı",
   stop_loss: "Stop oldu",
+  // Faz 268ae — kullanıcı isteği: kârlı gidip tersine dönen pozisyonlarda
+  // stop girişe (başabaşa) çekiliyor; buna takılmak normal stop_loss'tan
+  // (tam zarar) ayrı, "kayıptan kaçınıldı" anlamına geliyor.
+  breakeven_stop: "Başabaşa çekildi",
   time_expired: "Vadesi doldu",
   liquidation: "Likidasyon",
 };
@@ -46,6 +51,35 @@ const EXIT_REASON_LABELS: Record<string, string> = {
 // kullanıyor (4h/1d) — dashboard'da hangi pozisyonun hangi katmandan
 // geldiğini ayırt edebilmek için.
 const MEDIUM_TERM_TIMEFRAMES = new Set(["4h", "1d"]);
+
+// Faz 268ad: kullanıcı isteği — "orta vadeli" etiketinin aynısı diğer
+// işlem türleri için de (scalp/swing) yapılsın, ayrıca hedge işlemler de
+// görünür olsun. Kısa-vadeli katmanın SİNYAL zaman dilimi hep "5m" (trade_
+// horizon ayarından etkilenmiyor) — o yüzden Scalp/Gün içi/Swing ayrımı
+// timeframe alanından çıkarılamıyor. Bunun yerine pozisyonun GERÇEK stop
+// mesafesinden (|entry - stop| / entry) sınıflandırılıyor — bu, açılış
+// anında hangi risk tabanının (1h/4h/1d ATR) kullanıldığını doğrudan
+// yansıtıyor ve trade_horizon ayarı sonradan değişse bile geçmiş
+// pozisyonların etiketi bozulmuyor. Eşikler (%4.5 / %9) gerçek kapanmış
+// işlem verisindeki kümelerden kalibre edildi (~%4 scalp, ~%5-8 gün içi,
+// ~%14 swing kümeleri net ayrışıyor).
+function tradeTypeBadge(
+  p: Pick<Position, "timeframe" | "entry_price" | "stop_loss_price" | "pairs_trade">
+): { label: string; tone: "accent" | "warn" | "neutral"; title?: string } | null {
+  if (p.pairs_trade) {
+    return { label: "hedge", tone: "warn", title: `Pairs trade: ${p.pairs_trade}` };
+  }
+  if (p.timeframe && MEDIUM_TERM_TIMEFRAMES.has(p.timeframe)) {
+    return { label: "orta vadeli", tone: "accent" };
+  }
+  if (p.entry_price != null && p.stop_loss_price != null && p.entry_price !== 0) {
+    const pct = (Math.abs(p.entry_price - p.stop_loss_price) / p.entry_price) * 100;
+    if (pct < 4.5) return { label: "scalp", tone: "neutral" };
+    if (pct < 9) return { label: "gün içi", tone: "neutral" };
+    return { label: "swing", tone: "neutral" };
+  }
+  return null;
+}
 
 function fmt(n: number | null | undefined, digits = 2) {
   return n === null || n === undefined ? "—" : n.toFixed(digits);
@@ -257,7 +291,9 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
               </tr>
             </thead>
             <tbody>
-              {open.map((p) => (
+              {open.map((p) => {
+                const badge = tradeTypeBadge(p);
+                return (
                 <tr key={p.id} className="border-t border-line-soft">
                   <td className="py-2 pr-4 font-mono text-ink">
                     {onSelectSymbol ? (
@@ -271,8 +307,8 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
                     ) : (
                       p.symbol
                     )}
-                    {p.timeframe && MEDIUM_TERM_TIMEFRAMES.has(p.timeframe) && (
-                      <span className="ml-1"><Badge tone="accent">orta vadeli</Badge></span>
+                    {badge && (
+                      <span className="ml-1" title={badge.title}><Badge tone={badge.tone}>{badge.label}</Badge></span>
                     )}
                     {/* Faz 268p — kullanıcı isteği: "pozisyon o an karda mı
                         zararda mı göremiyorum, sembol adının altında pnl
@@ -331,7 +367,8 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
                     )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -412,7 +449,9 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
               </tr>
             </thead>
             <tbody>
-              {filteredTrades.map((t) => (
+              {filteredTrades.map((t) => {
+                const badge = tradeTypeBadge(t);
+                return (
                 <tr key={t.id} className="border-t border-line-soft">
                   <td className="py-2 pr-4 font-mono text-ink">
                     {onSelectSymbol ? (
@@ -426,8 +465,8 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
                     ) : (
                       t.symbol
                     )}
-                    {t.timeframe && MEDIUM_TERM_TIMEFRAMES.has(t.timeframe) && (
-                      <span className="ml-1"><Badge tone="accent">orta vadeli</Badge></span>
+                    {badge && (
+                      <span className="ml-1" title={badge.title}><Badge tone={badge.tone}>{badge.label}</Badge></span>
                     )}
                   </td>
                   <td className="py-2 pr-4">
@@ -461,7 +500,8 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
                   </td>
                   <td className="py-2 pr-4 text-ink-faint">{t.closed_at ? new Date(t.closed_at).toLocaleString() : "—"}</td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

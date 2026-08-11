@@ -381,6 +381,19 @@ class DecisionPersistor:
 
         return {"remaining_quantity": new_qty, "realized_pnl": realized_pnl}
 
+    def update_stop_loss_price(self, decision_id: str, new_stop_loss_price: float) -> None:
+        """Faz 268ae — kullanıcı isteği: "pozisyon kârlı gidiyor ama tersine
+        döndü, stop yükseltilse tam zarar yerine nötr/az zararla çıkabilir."
+        Açık bir pozisyonun stop_loss_price'ını sonradan güncellemek için —
+        önceden decisions.stop_loss_price sadece açılışta bir kez yazılıyor,
+        hiçbir kod onu sonradan değiştirmiyordu (bkz. PositionCloser.
+        _apply_breakeven_stop)."""
+        self.session.execute(
+            text("UPDATE decisions SET stop_loss_price = :stop WHERE id = :id AND status = 'open'"),
+            {"id": decision_id, "stop": new_stop_loss_price},
+        )
+        self.session.commit()
+
     def update_outcome(
         self,
         decision_id: str,

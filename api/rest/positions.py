@@ -17,6 +17,23 @@ from services.position_closer import PositionCloser
 router = APIRouter(tags=["positions"])
 
 
+def _extract_pairs_trade(row: dict) -> str | None:
+    """Faz 268ad — kullanıcı: "sistem hedge işlem hiç denemiyor galiba."
+    Gerçek: services/pairs_trader.py düzenli (5 dakikada bir, celery beat)
+    çalışıyor ve GERÇEK iki-bacaklı (LONG+SHORT) hedge pozisyonları açıyor
+    (doğrulandı: son 5 günde 20 bacak, BTCUSDT/ETHUSDT + GC=F/SI=F). Sorun
+    kullanıcının algıladığı gibi "hiç çalışmıyor" değil — hiçbir yerde
+    görünür değil, normal yönlü işlemlerden ayırt edilemiyor. `decisions`
+    tablosunda ayrı bir sütun yok ama pair etiketi zaten agent_contributions
+    JSONB'sindeki market_snapshot.raw_snapshot.pairs_trade içinde duruyor
+    (bkz. PairsTrader._open_leg) — burada geri okunuyor."""
+    for item in row.get("agent_contributions") or []:
+        if isinstance(item, dict) and item.get("type") == "market_snapshot":
+            raw_snapshot = (item.get("data") or {}).get("raw_snapshot") or {}
+            return raw_snapshot.get("pairs_trade")
+    return None
+
+
 def _serialize(row: dict, current_price: float | None = None, net_unrealized_pnl: float | None = None) -> dict:
     outcome = row.get("outcome") or {}
     return {
@@ -34,6 +51,7 @@ def _serialize(row: dict, current_price: float | None = None, net_unrealized_pnl
         "leverage": row.get("leverage"),
         "liquidation_price": row.get("liquidation_price"),
         "timeframe": row.get("timeframe"),
+        "pairs_trade": _extract_pairs_trade(row),
         "exit_reason": outcome.get("exit_reason"),
         "realized_pnl": outcome.get("realized_pnl"),
         # Faz 268p — kullanıcı isteği: "pozisyon o an karda mı zararda mı

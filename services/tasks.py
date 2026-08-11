@@ -2,6 +2,34 @@
 from services.celery_app import celery_app
 
 
+def _real_market_data_source_or_none() -> str | None:
+    """Faz 268af — gerçek olay: 6 Ağustos 21:27-21:46 arası, MARKET_DATA_
+    SOURCE'un .env'den yüklenemediği bir anda (muhtemelen bir celery
+    worker restart sırasında) sistem sessizce config/settings.py'nin
+    varsayılanı olan "mock" (deterministik, sahte, seed=42) veriyle 4
+    sembolde (ADAUSDT/XAUTUSDT/XRPUSDT/PAXGUSDT) GERÇEK pozisyon açtı —
+    hepsi aynı anlamsız ~$32.375 fiyattan, toplam ~$1845 gerçek dışı
+    kayıp. Hata FIRLATMADI, sessizce devam etti — bu projenin baştan beri
+    benimsediği "fail-fake yerine fail-closed" ilkesine tam ters.
+
+    Canlı işlem açan/kapatan task'lar artık başta bunu kontrol ediyor:
+    MARKET_DATA_SOURCE gerçekten "binance" değilse (herhangi bir sebeple
+    .env yanlış/eksik yüklenmişse) o döngüyü sessizce mock veriyle
+    yürütmek yerine hiç çalıştırmıyor, sadece kritik seviyede loglayıp
+    atlıyor."""
+    from config import get_settings
+
+    settings = get_settings()
+    if settings.MARKET_DATA_SOURCE != "binance":
+        import structlog
+        structlog.get_logger().critical(
+            "live_trading_task_blocked_non_binance_market_data_source",
+            market_data_source=settings.MARKET_DATA_SOURCE,
+        )
+        return None
+    return settings.MARKET_DATA_SOURCE
+
+
 @celery_app.task(name="run_trading_cycle_task")
 def run_trading_cycle_task(symbol: str | None = None) -> dict:
     """Faz 190/194: "gerçek işlem alıyormuş gibi" — AI'ın sadece birisi
@@ -17,6 +45,9 @@ def run_trading_cycle_task(symbol: str | None = None) -> dict:
     from market_data.ingestion.data_provider import RoutingProvider, get_provider_for_symbol
     from market_data.market_hours import is_market_open
     from services.orchestrator import CognitiveOrchestrator
+
+    if _real_market_data_source_or_none() is None:
+        return {"skipped": "non_binance_market_data_source"}
 
     with SessionFactory.get_session() as session:
         settings_repo = AppSettingsRepository(session)
@@ -76,6 +107,9 @@ def run_medium_term_cycle_task() -> dict:
     from market_data.ingestion.data_provider import RoutingProvider
     from market_data.market_hours import is_market_open
     from services.orchestrator import CognitiveOrchestrator
+
+    if _real_market_data_source_or_none() is None:
+        return {"skipped": "non_binance_market_data_source"}
 
     with SessionFactory.get_session() as session:
         settings_repo = AppSettingsRepository(session)
@@ -266,6 +300,9 @@ def run_pairs_trading_task() -> dict:
     ilişkiler olduğu için trading cycle'dan (90sn) daha seyrek çalışıyor."""
     from services.pairs_trader import PairsTrader
 
+    if _real_market_data_source_or_none() is None:
+        return {"skipped": "non_binance_market_data_source"}
+
     results = PairsTrader().check_and_trade_pairs()
     return {"pairs": results}
 
@@ -282,6 +319,9 @@ def close_due_positions_task() -> dict:
     from database.session_factory import SessionFactory
     from market_data.ingestion.data_provider import RoutingProvider
     from services.position_closer import PositionCloser
+
+    if _real_market_data_source_or_none() is None:
+        return {"skipped": "non_binance_market_data_source"}
 
     # Faz 194: açık pozisyonlar artık farklı varlık sınıflarında olabilir
     # (kripto + hisse/endeks/emtia) — RoutingProvider her pozisyonu kendi
