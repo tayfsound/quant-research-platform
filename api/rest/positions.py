@@ -174,6 +174,7 @@ async def list_closed_trades(limit: int = 100, user: AuthContext = Depends(get_c
                 "total_pnl": summary["total_pnl"],
                 "tp_count": summary["tp_count"],
                 "sl_count": summary["sl_count"],
+                "manual_count": summary["manual_count"],
             },
         }
 
@@ -268,6 +269,7 @@ async def performance_summary(user: AuthContext = Depends(get_current_user)):
                 "excluded_dirty_trades_count": summary["excluded_count"],
                 "tp_count": summary["tp_count"],
                 "sl_count": summary["sl_count"],
+                "manual_count": summary["manual_count"],
             },
             "daily": daily,
             "weekly": weekly,

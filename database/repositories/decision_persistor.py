@@ -268,7 +268,13 @@ class DecisionPersistor:
                 "sum(pnl) AS total_pnl, "
                 "sum(entry_price * quantity / COALESCE(NULLIF(leverage, 0), 1)) AS deployed_notional, "
                 "sum(CASE WHEN outcome ->> 'exit_reason' = 'take_profit' THEN 1 ELSE 0 END) AS tp_count, "
-                "sum(CASE WHEN outcome ->> 'exit_reason' = 'stop_loss' THEN 1 ELSE 0 END) AS sl_count "
+                "sum(CASE WHEN outcome ->> 'exit_reason' = 'stop_loss' THEN 1 ELSE 0 END) AS sl_count, "
+                # Faz 268: manuel kapanışların TEK gerçek işareti budur —
+                # close_position_partial'ın "manual_partial" etiketi SADECE
+                # status='open' kalan (miktarı azaltılmış) satırlarda
+                # görülür, status='closed' olan son dilim her zaman
+                # "manual_full" ile yazılıyor (bkz. position_closer.py).
+                "sum(CASE WHEN outcome ->> 'exit_reason' = 'manual_full' THEN 1 ELSE 0 END) AS manual_count "
                 "FROM decisions WHERE status = 'closed' AND excluded_from_stats = false"
             )
         ).mappings().one()
@@ -284,6 +290,7 @@ class DecisionPersistor:
             "excluded_count": excluded_count or 0,
             "tp_count": row["tp_count"] or 0,
             "sl_count": row["sl_count"] or 0,
+            "manual_count": row["manual_count"] or 0,
         }
 
     def performance_by_period(self, period: str, limit: int = 200) -> list[dict]:
