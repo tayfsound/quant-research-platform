@@ -1,5 +1,8 @@
 """End-to-end cognitive loop orchestrator — v1.1 trusted paper cycle."""
+from datetime import UTC, datetime
 from typing import Any
+
+from observability.metrics import decision_pipeline_latency_seconds
 from database.repositories.app_settings_repository import TRADE_HORIZON_TO_RISK_TIMEFRAME
 from database.repositories.risk_limit_repository import load_active_limits
 from services.risk_state import load_position_risk_state
@@ -39,6 +42,17 @@ import time
 _RISK_BARS_CACHE: dict[tuple[str, str], tuple[float, list]] = {}
 _RISK_BARS_CACHE_TTL_SECONDS = 900
 _RISK_BARS_CACHE_LOCK = threading.Lock()
+
+
+def _observe_decision_latency(symbol: str, last_bar_timestamp: datetime) -> None:
+    """Faz 268-sonrası: Latency Monitoring — bkz. observability/metrics.py::
+    decision_pipeline_latency_seconds'ın modül docstring'i. Negatif bir
+    değer (saat kayması, ileri tarihli sentetik veri) gerçek bir gecikme
+    değil — Prometheus histogramını bozmasın diye sessizce atlanıyor."""
+    ts = last_bar_timestamp if last_bar_timestamp.tzinfo is not None else last_bar_timestamp.replace(tzinfo=UTC)
+    latency = (datetime.now(UTC) - ts).total_seconds()
+    if latency >= 0:
+        decision_pipeline_latency_seconds.labels(symbol=symbol).observe(latency)
 
 
 def _get_risk_bars_cached(data_provider, symbol: str, timeframe: str = "1d", limit: int = 30) -> list:
@@ -320,6 +334,7 @@ class CognitiveOrchestrator:
             exclude_timeframe=medium_term_timeframe if medium_term_enabled else None,
         )
         ctx = self.engine.run(ctx, persist=False)
+        _observe_decision_latency(symbol, data[-1].timestamp)
 
         market_price = data[-1].close
         direction = ctx.decision.proposed_direction if ctx.decision.proposed_direction else "NEUTRAL"
@@ -415,6 +430,7 @@ class CognitiveOrchestrator:
             "data": {"per_timeframe": timeframe_beliefs, **combined},
         })
         ctx = self.engine.run(ctx, persist=False)
+        _observe_decision_latency(symbol, data[-1].timestamp)
 
         market_price = data[-1].close
         direction = ctx.decision.proposed_direction if ctx.decision.proposed_direction else "NEUTRAL"
@@ -477,6 +493,7 @@ class CognitiveOrchestrator:
             max_concurrent_override=max_concurrent,
         )
         ctx = self.engine.run(ctx, persist=False)
+        _observe_decision_latency(symbol, data[-1].timestamp)
 
         market_price = data[-1].close
         direction = ctx.decision.proposed_direction if ctx.decision.proposed_direction else "NEUTRAL"

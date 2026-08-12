@@ -82,6 +82,20 @@ db_query_latency_seconds = Histogram(
     "db_query_latency_seconds", "DB query/persist latency", ["operation"]
 )
 
+# Faz 268-sonrası: Latency Monitoring — "ingestion→karar süresi". Council'in
+# kararı üretmek için kullandığı EN SON mumun zaman damgasından, kararın
+# gerçekten üretildiği ana kadar geçen süre — ağ/veri gecikmesini VE
+# CognitiveEngine'in kendi işlem süresini TEK, doğrudan eyleme
+# dönüştürülebilir bir sayıda birleştiriyor: "şu an üretilen kararlar ne
+# kadar bayat veriye dayanıyor." SADECE gerçek canlı üretim çağrılarında
+# (services/orchestrator.py::propose*/run_portfolio_aware_cycle) ölçülüyor
+# — backtest/red-team gibi engine.run()'ı doğrudan çağıran yollar bu
+# metriği hiç görmüyor (aksi halde toplu backtest koşuları canlı gecikme
+# sinyalini anlamsız gürültüyle boğardı).
+decision_pipeline_latency_seconds = Histogram(
+    "decision_pipeline_latency_seconds", "Ingestion (last candle) to decision latency", ["symbol"]
+)
+
 # Sağlık durumu
 health_status = Gauge(
     "health_status", "System health (1=healthy, 0=unhealthy)"

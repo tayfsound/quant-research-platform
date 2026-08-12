@@ -124,6 +124,25 @@ def test_db_persist_records_latency_observation():
     assert after == before + 1
 
 
+def test_propose_records_decision_pipeline_latency():
+    """Faz 268-sonrası: Latency Monitoring — services/orchestrator.py::
+    propose() (GERÇEKTEN açılan pozisyonların geldiği birincil yol) her
+    çağrıda decision_pipeline_latency_seconds'ı gözlemlemeli. transformers
+    KASITLI OLARAK mock'lanmıyor — propose() ctx.market.features'ı GERÇEKTEN
+    dolduruyor, bu da gerçek embedding modelini tetikliyor (bkz. backtest/
+    real_historical_backtest.py'nin test dosyasındaki AYNI not)."""
+    from services.orchestrator import CognitiveOrchestrator
+
+    before = _histogram_count("decision_pipeline_latency_seconds", {"symbol": "BTCUSDT"})
+
+    orch = CognitiveOrchestrator()
+    proposal = orch.propose("BTCUSDT")
+    assert proposal is not None
+
+    after = _histogram_count("decision_pipeline_latency_seconds", {"symbol": "BTCUSDT"})
+    assert after == before + 1
+
+
 def test_cpu_and_memory_gauges_are_real_nonzero_values_after_scrape():
     get_metrics()  # scrape triggers the psutil measurement
     cpu = _metric_value("cpu_usage_percent", {})
