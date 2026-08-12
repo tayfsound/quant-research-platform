@@ -59,3 +59,12 @@ class RiskContext(BaseModel):
     # açılmaz, mevcut açık pozisyonlar (PositionCloser, ayrı bir yol)
     # bundan etkilenmez.
     ai_enabled: bool = True
+    # Kill switch — gerçek olay (2026-08-12): 24 saatte 102 ardışık
+    # stop-loss, hiçbir otomatik durdurma mekanizması yoktu, sadece manuel
+    # Start/Stop vardı. consecutive_losses: en son kapanmış işlemlerden
+    # (tüm semboller, kronolojik) geriye doğru, İLK kazançtan önceki
+    # ardışık kayıp sayısı. kill_switch_consecutive_losses <= 0 ise
+    # devre dışı (fail-closed varsayılan DEĞİL — kullanıcı açıkça bir eşik
+    # belirlemeli, icat edilmiş bir sayı dayatılmıyor).
+    consecutive_losses: int = 0
+    kill_switch_consecutive_losses: int = 0

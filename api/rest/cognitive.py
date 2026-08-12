@@ -61,6 +61,8 @@ async def run_cognitive_cycle(
         ctx.risk.seconds_since_last_trade = risk_state["seconds_since_last_trade"]
         ctx.risk.min_seconds_between_trades = risk_state["min_seconds_between_trades"]
         ctx.risk.ai_enabled = risk_state["ai_enabled"]
+        ctx.risk.consecutive_losses = risk_state["consecutive_losses"]
+        ctx.risk.kill_switch_consecutive_losses = risk_state["kill_switch_consecutive_losses"]
     else:
         # Faz 262/265: risk ölçeklendirmesi için trade_horizon'a göre
         # seçilen bar aralığı — bkz. services/orchestrator.py::propose

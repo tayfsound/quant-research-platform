@@ -46,6 +46,17 @@ DEFAULTS: dict[str, str] = {
     # bağımsız çalışmaya devam eder — hedefine ulaşan/vadesi dolan pozisyon
     # yine kapanır. Varsayılan "true" (önceki davranışla aynı, regresyon yok).
     "ai_enabled": "true",
+    # Kill switch — gerçek olay (2026-08-12): 24 saatte 102 ardışık
+    # stop-loss (donmuş bir ağırlık snapshot'ının kök nedeniyle), hiçbir
+    # otomatik durdurma mekanizması yoktu. Bu eşiğe ulaşınca (tüm
+    # semboller genelinde, en son kapanmış işlemlerden geriye doğru
+    # ardışık kayıp sayısı) RiskEngine ai_enabled'ı GERÇEKTEN false'a
+    # çeker — dashboard'daki manuel Start/Stop düğmesiyle AYNI kalıcı
+    # etki, insan tekrar açana kadar sürer. "0" = devre dışı (icat
+    # edilmiş bir varsayılan eşik dayatılmıyor, kullanıcı açıkça
+    # belirlemeli) — ama gerçek olayın hemen ardından makul, muhafazakâr
+    # bir varsayılan olarak 10 seçildi.
+    "kill_switch_consecutive_losses": "10",
     # Faz 194: AI'ın sürekli izlediği/işlem yapabildiği enstrümanlar —
     # kripto (Binance) + endeks/emtia/hisse (Yahoo Finance). Nasdaq/S&P500
     # ayrıca crypto sembollerine korelasyon sinyali olarak da besleniyor

@@ -73,6 +73,68 @@ def test_risk_factor_cannot_exceed_one():
     result = engine.execute(ctx)
     assert result.decision.risk_adjusted_size == 0.5
 
+def test_kill_switch_disabled_by_default_zero_threshold():
+    """kill_switch_consecutive_losses=0 (varsayılan davranış, icat edilmiş
+    bir eşik dayatılmıyor) — consecutive_losses ne olursa olsun devreye
+    girmemeli."""
+    ctx = CognitiveCycleContext(
+        risk={
+            "limits": {"max_position_size": RiskLimitEntry(value=1.0)},
+            "consecutive_losses": 999,
+            "kill_switch_consecutive_losses": 0,
+        },
+        decision={"proposed_size": 0.5, "proposed_direction": "LONG"},
+    )
+    engine = RiskEngine()
+    result = engine.execute(ctx)
+    assert result.risk.evaluation.verdict == "approved"
+
+
+def test_kill_switch_trips_at_threshold(monkeypatch):
+    """Faz 268-sonrası — gerçek olay (2026-08-12): 24 saatte 102 ardışık
+    stop-loss, hiçbir otomatik durdurma yoktu. Eşiğe ulaşınca ai_enabled
+    GERÇEKTEN false'a çekilmeli (sadece bu cycle'ı reddetmek değil)."""
+    captured = {}
+
+    def fake_set(self, key, value, updated_by):
+        captured[key] = value
+
+    monkeypatch.setattr(
+        "database.repositories.app_settings_repository.AppSettingsRepository.set", fake_set,
+    )
+
+    ctx = CognitiveCycleContext(
+        risk={
+            "limits": {"max_position_size": RiskLimitEntry(value=1.0)},
+            "ai_enabled": True,
+            "consecutive_losses": 10,
+            "kill_switch_consecutive_losses": 10,
+        },
+        decision={"proposed_size": 0.5, "proposed_direction": "LONG"},
+    )
+    engine = RiskEngine()
+    result = engine.execute(ctx)
+
+    assert result.risk.evaluation.verdict == "rejected"
+    assert any(r.code == "CIRCUIT_BREAKER_CONSECUTIVE_LOSSES" for r in result.risk.evaluation.reasons)
+    assert result.risk.ai_enabled is False
+    assert captured.get("ai_enabled") == "false"
+
+
+def test_kill_switch_does_not_trip_below_threshold():
+    ctx = CognitiveCycleContext(
+        risk={
+            "limits": {"max_position_size": RiskLimitEntry(value=1.0)},
+            "consecutive_losses": 9,
+            "kill_switch_consecutive_losses": 10,
+        },
+        decision={"proposed_size": 0.5, "proposed_direction": "LONG"},
+    )
+    engine = RiskEngine()
+    result = engine.execute(ctx)
+    assert result.risk.evaluation.verdict == "approved"
+
+
 def test_modified_value_invalidates_hash():
     """AI limit değerini değiştirirse hash geçersiz olur."""
     import hashlib

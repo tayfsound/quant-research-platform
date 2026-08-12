@@ -40,8 +40,24 @@ def load_position_risk_state(
         starting_capital = float(settings_repo.get("starting_capital"))
         min_seconds_between_trades = int(settings_repo.get("min_seconds_between_trades"))
         ai_enabled = settings_repo.get("ai_enabled") == "true"
+        kill_switch_consecutive_losses = int(settings_repo.get("kill_switch_consecutive_losses"))
 
         decision_repo = DecisionPersistor(session)
+
+        # Kill switch: en son kapanmış işlemlerden (tüm semboller,
+        # kronolojik olarak en yeniden en eskiye) geriye doğru, İLK
+        # kazançtan önceki ardışık kayıp sayısı. Eşiğin en az birkaç
+        # fazlası kadar kayıt çekiliyor ki gerçek bir seri varsa asla
+        # limit sınırında yanlışlıkla kesilmesin.
+        consecutive_losses = 0
+        recent_closed = decision_repo.list_closed_trades(
+            limit=max(50, kill_switch_consecutive_losses * 2)
+        )
+        for trade in recent_closed:
+            if (trade.get("pnl") or 0.0) > 0:
+                break
+            consecutive_losses += 1
+
         open_positions = decision_repo.list_open_positions(limit=1000)
         if timeframe_filter is not None:
             open_positions = [p for p in open_positions if p.get("timeframe") == timeframe_filter]
@@ -74,4 +90,6 @@ def load_position_risk_state(
         "seconds_since_last_trade": seconds_since_last_trade,
         "min_seconds_between_trades": min_seconds_between_trades,
         "ai_enabled": ai_enabled,
+        "consecutive_losses": consecutive_losses,
+        "kill_switch_consecutive_losses": kill_switch_consecutive_losses,
     }

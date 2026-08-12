@@ -8,6 +8,31 @@ class RiskEngine:
     def __init__(self, secret: str = ""):
         self.secret = secret
 
+    def _trip_kill_switch(self, consecutive_losses: int, threshold: int) -> None:
+        """ai_enabled'ı GERÇEKTEN kalıcı olarak false'a çeker (app_settings'e
+        yazar) — sadece bu cycle'ı reddetmek yeterli değil, aksi halde bir
+        sonraki cycle aynı gerçek geçmişle yeniden hesaplayıp aynı sonuca
+        varır ama arada bir insan hiç haberdar olmaz. Ayarı yazamazsa
+        (DB erişilemez vb.) sessizce geçilir — bu cycle'ın kendi reddi
+        (çağıran taraf) yine de uygulanır, fail-closed."""
+        try:
+            import structlog
+
+            from database.repositories.app_settings_repository import AppSettingsRepository
+            from database.session_factory import SessionFactory
+
+            with SessionFactory.get_session() as session:
+                AppSettingsRepository(session).set(
+                    "ai_enabled", "false", updated_by="kill_switch",
+                )
+            structlog.get_logger().error(
+                "kill_switch_tripped",
+                consecutive_losses=consecutive_losses,
+                threshold=threshold,
+            )
+        except Exception:
+            pass
+
     def execute(self, ctx: CognitiveCycleContext) -> CognitiveCycleContext:
         symbol = ctx.market.symbol or "unknown"
 
@@ -23,6 +48,34 @@ class RiskEngine:
             )]
             risk_decisions_total.labels(verdict="rejected", symbol=symbol).inc()
             risk_rejections_total.labels(reason="AI_STOPPED").inc()
+            return ctx
+
+        # Kill switch — gerçek olay (2026-08-12): 24 saatte 102 ardışık
+        # stop-loss, hiçbir otomatik durdurma yoktu, sadece manuel Start/
+        # Stop vardı. Eşik aşıldığında (0 = devre dışı) SADECE bu cycle'ı
+        # reddetmiyor — ai_enabled'ı GERÇEKTEN false'a çekip kalıcı olarak
+        # durduruyor (dashboard'daki manuel düğmeyle AYNI etki), bir insan
+        # tekrar açana kadar. Bir sonraki kazanan işlem otomatik sıfırlamaz
+        # — "birkaç kazanç görülünce kendi kendine devam et" fail-fake
+        # olurdu, gerçek bir insan gözden geçirmesi gerekiyor.
+        if (
+            ctx.risk.kill_switch_consecutive_losses > 0
+            and ctx.risk.consecutive_losses >= ctx.risk.kill_switch_consecutive_losses
+        ):
+            self._trip_kill_switch(ctx.risk.consecutive_losses, ctx.risk.kill_switch_consecutive_losses)
+            ctx.risk.ai_enabled = False
+            ctx.risk.evaluation.verdict = "rejected"
+            ctx.risk.evaluation.reasons = [RiskReason(
+                code="CIRCUIT_BREAKER_CONSECUTIVE_LOSSES",
+                message=(
+                    f"{ctx.risk.consecutive_losses} ardışık kayıp >= "
+                    f"{ctx.risk.kill_switch_consecutive_losses} eşiği — AI otomatik durduruldu, "
+                    f"dashboard'dan manuel devam ettirilmeli"
+                ),
+                severity="critical",
+            )]
+            risk_decisions_total.labels(verdict="rejected", symbol=symbol).inc()
+            risk_rejections_total.labels(reason="CIRCUIT_BREAKER_CONSECUTIVE_LOSSES").inc()
             return ctx
 
         # Faz 189: "stopsuz işlem yapmasın test modunda bile olsa" — bu

@@ -54,6 +54,12 @@ def _validate(key: str, value: str) -> None:
     elif key == "ai_enabled":
         if value not in ("true", "false"):
             raise HTTPException(400, "ai_enabled must be 'true' or 'false'")
+    elif key == "kill_switch_consecutive_losses":
+        try:
+            if int(value) < 0:
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "kill_switch_consecutive_losses must be a non-negative integer (0 = disabled)")
     elif key == "watchlist":
         symbols = [s.strip() for s in value.split(",") if s.strip()]
         if not symbols:

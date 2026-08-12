@@ -60,6 +60,11 @@ def test_pair_with_extreme_divergence_opens_both_legs():
             # doğruluyor, o yüzden sınırı kasıtlı olarak çok bol tutuyoruz.
             AppSettingsRepository(session).set("max_capital_pct", "1000000", updated_by="test")
             AppSettingsRepository(session).set("max_concurrent_positions", "100000", updated_by="test")
+            # Kill switch (2026-08-12) — AYNI paylaşılan-DB-kirlenmesi
+            # gerekçesi: bu oturumda biriken gerçek kapanmış kayıp
+            # işlemler, kointegrasyon mantığıyla ilgisi olmayan bu testte
+            # devre kesiciyi tetikleyebilir. Devre dışı bırakılıyor.
+            AppSettingsRepository(session).set("kill_switch_consecutive_losses", "0", updated_by="test")
 
         trader = PairsTrader(data_provider=provider)
         try:
