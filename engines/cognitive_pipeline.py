@@ -66,6 +66,7 @@ class CouncilStage:
             AgentDomain.ORDER_FLOW: self.adapter.to_order_flow(ctx),
             AgentDomain.TIME: self.adapter.to_time(ctx),
             AgentDomain.EPISTEMOLOGY: self.adapter.to_epistemology(ctx),
+            AgentDomain.RELATIVE_STRENGTH: self.adapter.to_relative_strength(ctx),
         }
 
         # Faz 268b — Regime-Aware Learning: PositionCloser._record_agent_

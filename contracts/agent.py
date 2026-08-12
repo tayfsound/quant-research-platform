@@ -25,6 +25,7 @@ class AgentDomain(StrEnum):
     EPISTEMOLOGY = "epistemology"
     TIME = "time"
     PATTERN = "pattern"
+    RELATIVE_STRENGTH = "relative_strength"
 
 # Faz 229: kritik bulgu — 9 oy-veren ajanın gerçek listesi (bkz. "Agent
 # kalitesi turu 2", CURRENT_STATE.md). AgentDomain enum'daki diğer roller
@@ -36,10 +37,14 @@ class AgentDomain(StrEnum):
 # get("domain", "unknown")` gibi sessiz fallback'lerle AgentMemory'ye/
 # WeightOptimizer'a sahte bir "unknown" ajan domain'i sızdırıyordu — gerçek
 # ağırlık önerilerini ve insan onayına giden diff tablosunu kirletiyordu.
+#
+# Faz 242-243: 10. oy-veren ajan eklendi (Relative Strength — bkz.
+# agents/relative_strength_agent.py).
 VOTING_AGENT_DOMAINS = frozenset({
     AgentDomain.TECHNICAL, AgentDomain.MACRO, AgentDomain.ONCHAIN,
     AgentDomain.SENTIMENT, AgentDomain.PATTERN, AgentDomain.QUANT,
     AgentDomain.ORDER_FLOW, AgentDomain.TIME, AgentDomain.EPISTEMOLOGY,
+    AgentDomain.RELATIVE_STRENGTH,
 })
 
 class AgentOpinion(BaseModel):

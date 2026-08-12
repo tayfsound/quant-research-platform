@@ -54,6 +54,12 @@ class InformationGraph:
         self.add_node("macro_agent", SourceType.EXPERT_OPINION, NodeType.AGENT, "Macro Economics", parents=["macro_data"])
         self.add_node("onchain_agent", SourceType.EXPERT_OPINION, NodeType.AGENT, "On-chain", parents=["onchain_data"])
         self.add_node("sentiment_agent", SourceType.EXPERT_OPINION, NodeType.AGENT, "Sentiment", parents=["social_media"])
+        # Faz 242-243: göreli güç de nihayetinde ham fiyattan türüyor (bu
+        # sembol + watchlist'teki diğerlerinin kapanışları) — technical/
+        # quant ile AYNI kök kaynağı paylaşıyor, kendi başına bağımsız bir
+        # kaynak değil (crowding/diversity hesaplarının bunu doğru
+        # yansıtması için).
+        self.add_node("relative_strength_agent", SourceType.RAW_PRICE, NodeType.AGENT, "Relative Strength", parents=["raw_price"])
 
     def add_node(self, id: str, source_type: SourceType, node_type: NodeType = NodeType.TRANSFORMATION, description: str = "", parents: list[str] = None):
         self.nodes[id] = GraphNode(

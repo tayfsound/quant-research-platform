@@ -8,6 +8,7 @@ from contracts.onchain import OnChainContext
 from contracts.order_flow import OrderFlowContext
 from contracts.pattern import PatternContext
 from contracts.quant import QuantContext
+from contracts.relative_strength import RelativeStrengthContext
 from contracts.sentiment import SentimentContext
 from contracts.technical import TechnicalContext
 from contracts.time_context import TimeContext
@@ -351,6 +352,60 @@ class ContextAdapter:
             day_of_week=self._get(ctx, "day_of_week", now.strftime("%A")),
             hours_to_funding=self._get(ctx, "hours_to_funding", round(hours_to_funding, 2)),
             is_weekend=self._get(ctx, "is_weekend", now.weekday() >= 5),
+        )
+
+    def to_relative_strength(self, ctx: CognitiveCycleContext) -> RelativeStrengthContext:
+        """Faz 242-243: bu sembolün son dönem getirisini, watchlist'teki
+        DİĞER sembollerin ortalama getirisiyle karşılaştırır — EK bir ağ
+        isteği YOK, zaten ingest_candles_task'ın (services/tasks.py) her
+        60 saniyede bir doldurduğu market_snapshots tablosundan okunuyor.
+
+        Gerçek kısıt: market_snapshots şu an SADECE Binance (kripto)
+        sembolleri için doluyor (ingest_candles_task'ın kendi belgelenmiş
+        sınırı — kripto olmayanlar için "ayrı bir iş"). Kripto olmayan bir
+        sembol için (ya da yeterli peer verisi yoksa) basket_size düşük
+        kalır, ajan dürüstçe WAIT der — icat edilmiş bir karşılaştırma
+        yapılmaz."""
+        symbol = ctx.market.symbol or ""
+        if not symbol:
+            return RelativeStrengthContext()
+
+        from contracts.market_data import DataSource, Resolution
+        from database.repositories.app_settings_repository import AppSettingsRepository
+        from database.repositories.market_data_repository import MarketDataRepository
+        from database.session_factory import SessionFactory
+        from market_data.ingestion.data_provider import looks_like_binance_pair
+
+        def _recent_return(repo: MarketDataRepository, sym: str) -> float | None:
+            snapshots = repo.get_latest_snapshots(DataSource.BINANCE, sym, Resolution.M1, limit=60)
+            if len(snapshots) < 2:
+                return None
+            first_close, last_close = snapshots[0].close, snapshots[-1].close
+            if not first_close:
+                return None
+            return (last_close - first_close) / first_close
+
+        with SessionFactory.get_session() as session:
+            watchlist = [
+                s.strip() for s in AppSettingsRepository(session).get("watchlist").split(",") if s.strip()
+            ]
+            repo = MarketDataRepository(session)
+
+            symbol_return = _recent_return(repo, symbol) if looks_like_binance_pair(symbol) else None
+            peer_symbols = [s for s in watchlist if s != symbol and looks_like_binance_pair(s)]
+            peer_returns = [
+                r for s in peer_symbols if (r := _recent_return(repo, s)) is not None
+            ]
+
+        if symbol_return is None or len(peer_returns) < 3:
+            return RelativeStrengthContext(basket_size=len(peer_returns))
+
+        basket_mean = sum(peer_returns) / len(peer_returns)
+        return RelativeStrengthContext(
+            symbol_return_pct=symbol_return,
+            basket_mean_return_pct=basket_mean,
+            basket_size=len(peer_returns),
+            relative_strength_pct=symbol_return - basket_mean,
         )
 
     def to_epistemology(self, ctx: CognitiveCycleContext) -> EpistemologyContext:

@@ -20,6 +20,7 @@ _DESCRIPTIONS: dict[AgentDomain, str] = {
     AgentDomain.ORDER_FLOW: "Gerçek order book: bid/ask dengesizliği, spread, agresif alış/satış oranı.",
     AgentDomain.TIME: "Funding saati, hafta sonu, seans — yön tahmini yapmaz, sadece risk işaretler.",
     AgentDomain.EPISTEMOLOGY: "Veri tamlığı/tazeliği — council'in genel güvenini dengeler.",
+    AgentDomain.RELATIVE_STRENGTH: "Bu sembolün getirisi, watchlist'teki diğer sembollerin ortalamasına göre daha mı güçlü/zayıf.",
 }
 
 _ROLE: dict[AgentDomain, str] = {d: "vote" for d in _DESCRIPTIONS}

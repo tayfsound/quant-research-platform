@@ -8,8 +8,17 @@ from services.weight_optimizer import WeightOptimizer
 from services.weight_repository import WeightRepository
 
 
-def test_weight_optimizer_with_memory():
-    memory = AgentMemory()
+def test_weight_optimizer_with_memory(tmp_path):
+    """Faz 242: kritik bulgu — AgentMemory() (storage_path override'sız)
+    CANLI, paylaşılan agent_memory_history/agent_memory.json dosyasını
+    okuyup yazıyordu (test_kelly_sizing.py/test_real_historical_backtest.py
+    gibi diğer testlerin zaten izole ettiği AYNI kalıp burada eksikti).
+    Gerçek üretimde artık binlerce gerçek kayıt birikmiş durumda — testin
+    eklediği 20 taze kayıt, o gerçek geçmişin yanında anlamsızlaşıyor ve
+    assertion artık GERÇEK üretim verisine (technical'ın yakın dönemde
+    macro'dan daha kötü performans göstermesine) bağlı hale geliyor,
+    testin kendi senaryosuna değil. tmp_path ile izole edildi."""
+    memory = AgentMemory(storage_path=str(tmp_path / "agent_memory_history"))
     # Technical: 18/20 doğru
     for _ in range(18):
         memory.record(AgentPerformanceRecord(agent_domain="technical", direction="LONG", confidence=0.8, was_correct=True))
@@ -22,7 +31,8 @@ def test_weight_optimizer_with_memory():
     for _ in range(12):
         memory.record(AgentPerformanceRecord(agent_domain="macro", direction="LONG", confidence=0.7, was_correct=False))
 
-    optimizer = WeightOptimizer(memory, prior_strength=5)
+    weight_repo = WeightRepository(storage_path=str(tmp_path / "weight_history"))
+    optimizer = WeightOptimizer(memory, weight_repository=weight_repo, prior_strength=5)
     snapshot = optimizer.propose_weights(evaluation_window=20)
 
     assert snapshot.weights["technical"] > snapshot.weights["macro"]
