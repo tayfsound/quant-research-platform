@@ -194,21 +194,116 @@ def get_domain_calibration_curves(force_refresh: bool = False) -> dict[str, list
 # güven, daha azsa orantılı" gibi en basit, açıklanabilir kural.
 _FULL_TRUST_EVIDENCE_COUNT = 3
 
+# Faz 247 — kullanıcının getirdiği rapor gerçek veriyle doğrulandı: yukarıdaki
+# domain eğrileri TÜM sembolleri birleştiriyor, ve watchlist'teki hacim
+# ezici çoğunlukla kripto (BTC/ETH/SOL/...) — technical_agent'ın PAXGUSDT/
+# XAUTUSDT (altın-destekli token, çok farklı volatilite/rejim karakteri)
+# için kalibre edilen ham ~0.27 güveni, TÜM geçmişten (ağırlıklı BTC)
+# hesaplanan eğriyle ~0.79'a şişiyordu — gerçek 8 kayıplı işlemde doğrulandı.
+# Çözüm: WeightRepository.get_latest(regime=X)'in fail-closed fallback
+# deseniyle AYNI — sembolü kaba bir varlık sınıfına göre grupla (tek sembol
+# başına ayrı eğri, örneklemi anlamsız derecede seyreltirdi), o sınıf için
+# yeterli veri varsa (>= _DOMAIN_MIN_BUCKET_SAMPLES/kova) ONU kullan, yoksa
+# global domain eğrisine düş.
+_ASSET_CLASS_SYMBOLS: dict[str, tuple[str, ...]] = {
+    "gold_backed": ("PAXGUSDT", "XAUTUSDT"),
+    "precious_metal_future": ("GC=F", "SI=F"),
+    "equity_index": ("^IXIC", "^GSPC"),
+    "equity": ("AAPL", "NVDA", "MSFT"),
+}
+_CRYPTO_QUOTE_SUFFIXES = ("USDT", "BUSD", "USDC", "FDUSD")
+
+
+def _asset_class_of_symbol(symbol: str) -> str:
+    s = (symbol or "").upper()
+    for asset_class, symbols in _ASSET_CLASS_SYMBOLS.items():
+        if s in symbols:
+            return asset_class
+    if s.endswith(_CRYPTO_QUOTE_SUFFIXES):
+        return "crypto"
+    return "other"
+
+
+def compute_asset_class_calibration_curves(memory=None) -> dict[str, list[tuple[float, float]]]:
+    """compute_domain_calibration_curves() ile AYNI mantık, sadece domain
+    yerine (domain, asset_class) çiftine göre kovalıyor. Anahtar formatı
+    "{domain}:{asset_class}" — get_domain_calibration_curves()'ın dict'iyle
+    aynı şekilde tüketilebilsin diye."""
+    from collections import defaultdict
+
+    from services.agent_memory import AgentMemory
+
+    memory = memory or AgentMemory()
+    curves: dict[str, list[tuple[float, float]]] = {}
+
+    for domain in memory.domains():
+        buckets: dict[tuple[str, float], list[float]] = defaultdict(list)
+        for record in memory._records.get(domain, []):
+            if record.direction.upper() not in ("LONG", "SHORT"):
+                continue
+            asset_class = _asset_class_of_symbol(record.symbol)
+            bucket = round(record.confidence, 1)
+            buckets[(asset_class, bucket)].append(1.0 if record.was_correct else 0.0)
+
+        by_class: dict[str, list[tuple[float, float]]] = defaultdict(list)
+        for (asset_class, bucket), outcomes in sorted(buckets.items()):
+            if len(outcomes) < _DOMAIN_MIN_BUCKET_SAMPLES:
+                continue
+            by_class[asset_class].append((bucket, sum(outcomes) / len(outcomes)))
+
+        for asset_class, curve in by_class.items():
+            if curve:
+                curves[f"{domain}:{asset_class}"] = curve
+
+    return curves
+
+
+_asset_class_cache: dict = {"curves": None, "computed_at": 0.0}
+
+
+def get_asset_class_calibration_curves(force_refresh: bool = False) -> dict[str, list[tuple[float, float]]]:
+    now = time.time()
+    if (
+        force_refresh
+        or _asset_class_cache["curves"] is None
+        or (now - _asset_class_cache["computed_at"]) > _CACHE_TTL_SECONDS
+    ):
+        try:
+            _asset_class_cache["curves"] = compute_asset_class_calibration_curves()
+        except Exception:
+            _asset_class_cache["curves"] = {}
+        _asset_class_cache["computed_at"] = now
+    return _asset_class_cache["curves"]
+
+
+def _calibration_curve_for(domain: str, symbol: str | None) -> list[tuple[float, float]] | None:
+    if symbol:
+        asset_class = _asset_class_of_symbol(symbol)
+        asset_curve = get_asset_class_calibration_curves().get(f"{domain}:{asset_class}")
+        if asset_curve:
+            return asset_curve
+    return get_domain_calibration_curves().get(domain)
+
 
 def calibrate_domain_confidence(
-    domain: str, raw_confidence: float, evidence_count: int | None = None
+    domain: str, raw_confidence: float, evidence_count: int | None = None, symbol: str | None = None,
 ) -> float:
     """Bir ajanın KENDİ domain'ine ait ampirik eğrisinden geçirir —
     calibrate_confidence()'ın üst/alt uç mantığı (fail-closed alt uç,
     en-son-gözleme-sabitleme üst uç) burada da aynen geçerli. O domain
     için yeterli veri yoksa ham değeri değiştirmeden döner.
 
+    symbol verilirse (Faz 247), önce o sembolün kaba varlık sınıfına özel
+    eğriye bakılır (yeterli örneklem varsa); yoksa (ya da symbol
+    verilmezse) TÜM sembollerin birleşik (global) domain eğrisine düşülür
+    — eski davranışla birebir uyumlu, fail-closed.
+
     evidence_count verilirse (bkz. AgentOpinion.evidence — o kararın kaç
     ayrı sinyale dayandığı), kalibrasyonun ham değerden ne kadar
     uzaklaştığı bu sayıya göre yumuşatılır — 3+ kanıtta tam kalibrasyon,
     daha azında orantılı olarak daha az. evidence_count verilmezse
     (varsayılan None) eski davranış aynen korunur — tam kalibrasyon."""
-    curve = get_domain_calibration_curves().get(domain)
+    curve = _calibration_curve_for(domain, symbol)
     if not curve:
         return raw_confidence
     calibrated = calibrate_confidence(raw_confidence, curve=curve)

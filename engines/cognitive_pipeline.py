@@ -77,7 +77,9 @@ class CouncilStage:
         trend = features.get("trend", "unknown")
         current_regime = f"{trend}_{features.get('volatility_regime', 'normal')}" if trend != "unknown" else None
 
-        belief, opinions = self.orchestrator.deliberate(contexts, regime=current_regime)
+        belief, opinions = self.orchestrator.deliberate(
+            contexts, regime=current_regime, symbol=ctx.market.symbol or None,
+        )
 
         ctx.cognition.relevant_knowledge.append({
             "type": "weight_snapshot",

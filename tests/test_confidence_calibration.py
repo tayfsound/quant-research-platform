@@ -133,3 +133,105 @@ def test_calibrate_domain_confidence_with_three_plus_evidence_gets_full_trust(mo
     result_5 = cc.calibrate_domain_confidence("quant", 0.25, evidence_count=5)
     assert result_3 == 0.9
     assert result_5 == 0.9  # 3'ten fazlası ekstra güven eklemiyor, tavan zaten 3'te
+
+
+def test_asset_class_of_symbol_groups_gold_backed_tokens_together():
+    """Faz 247: kullanıcının getirdiği PAXG/XAUTUSDT raporu — bu ikisi
+    'kripto' değil, ayrı bir varlık sınıfında gruplanmalı."""
+    from services.confidence_calibration import _asset_class_of_symbol
+
+    assert _asset_class_of_symbol("PAXGUSDT") == "gold_backed"
+    assert _asset_class_of_symbol("XAUTUSDT") == "gold_backed"
+    assert _asset_class_of_symbol("BTCUSDT") == "crypto"
+    assert _asset_class_of_symbol("AAPL") == "equity"
+    assert _asset_class_of_symbol("^IXIC") == "equity_index"
+    assert _asset_class_of_symbol("GC=F") == "precious_metal_future"
+    assert _asset_class_of_symbol("SOMETHING_UNKNOWN") == "other"
+
+
+def test_compute_asset_class_calibration_curves_separates_by_asset_class(tmp_path):
+    """Faz 247 — kullanıcının getirdiği rapor gerçek veriyle doğrulandı:
+    technical_agent'ın PAXG/XAUTUSDT'deki gerçek doğruluğu (%40, kötü),
+    BTC ağırlıklı genel geçmişinden (%85, iyi) ÇOK farklı olabiliyor —
+    asset-class eğrisi bunu ayrı tutmalı, birbirine karıştırmamalı."""
+    from contracts.agent_performance import AgentPerformanceRecord
+    from services.agent_memory import AgentMemory
+    from services.confidence_calibration import compute_asset_class_calibration_curves
+
+    memory = AgentMemory(storage_path=str(tmp_path / "agent_memory"))
+
+    # gold_backed (PAXGUSDT): 0.3 kovasında 25 kayıt, sadece %40 doğru.
+    for i in range(25):
+        memory.record(AgentPerformanceRecord(
+            agent_domain="technical", direction="SHORT", confidence=0.3,
+            was_correct=(i < 10), symbol="PAXGUSDT",
+        ))
+    # crypto (BTCUSDT): AYNI kova (0.3), 25 kayıt, %84 doğru.
+    for i in range(25):
+        memory.record(AgentPerformanceRecord(
+            agent_domain="technical", direction="SHORT", confidence=0.3,
+            was_correct=(i < 21), symbol="BTCUSDT",
+        ))
+
+    curves = compute_asset_class_calibration_curves(memory=memory)
+
+    assert curves["technical:gold_backed"] == [(0.3, 0.4)]
+    assert curves["technical:crypto"] == [(0.3, 0.84)]
+
+
+def test_compute_asset_class_calibration_curves_skips_thin_asset_class_samples(tmp_path):
+    from contracts.agent_performance import AgentPerformanceRecord
+    from services.agent_memory import AgentMemory
+    from services.confidence_calibration import compute_asset_class_calibration_curves
+
+    memory = AgentMemory(storage_path=str(tmp_path / "agent_memory"))
+    # gold_backed: sadece 5 kayıt — eşiğin (20) altında.
+    for i in range(5):
+        memory.record(AgentPerformanceRecord(
+            agent_domain="technical", direction="SHORT", confidence=0.3,
+            was_correct=True, symbol="PAXGUSDT",
+        ))
+
+    curves = compute_asset_class_calibration_curves(memory=memory)
+    assert "technical:gold_backed" not in curves
+
+
+def test_calibrate_domain_confidence_prefers_asset_class_curve_over_global(monkeypatch):
+    """Faz 247: symbol verilirse ve o varlık sınıfı için yeterli veri
+    varsa, GLOBAL (tüm sembol) eğrisi yerine asset-class eğrisi
+    kullanılmalı — global eğri (0.9) ile asset-class eğrisi (0.4)
+    kasıtlı olarak ÇOK farklı, hangisinin gerçekten kullanıldığını
+    ayırt edebilmek için."""
+    from services import confidence_calibration as cc
+
+    monkeypatch.setattr(cc, "get_domain_calibration_curves", lambda: {"technical": [(0.3, 0.9)]})
+    monkeypatch.setattr(
+        cc, "get_asset_class_calibration_curves",
+        lambda: {"technical:gold_backed": [(0.3, 0.4)]},
+    )
+
+    result = cc.calibrate_domain_confidence("technical", 0.3, symbol="PAXGUSDT")
+    assert result == 0.4
+
+
+def test_calibrate_domain_confidence_falls_back_to_global_without_asset_class_data(monkeypatch):
+    """Faz 247: symbol verilir ama o varlık sınıfı için (fail-closed)
+    yeterli veri yoksa, mevcut global domain eğrisine düşülmeli — eski
+    davranış hiç bozulmamalı."""
+    from services import confidence_calibration as cc
+
+    monkeypatch.setattr(cc, "get_domain_calibration_curves", lambda: {"technical": [(0.3, 0.9)]})
+    monkeypatch.setattr(cc, "get_asset_class_calibration_curves", lambda: {})
+
+    result = cc.calibrate_domain_confidence("technical", 0.3, symbol="PAXGUSDT")
+    assert result == 0.9
+
+
+def test_calibrate_domain_confidence_without_symbol_uses_global_curve_unchanged(monkeypatch):
+    """symbol verilmezse (varsayılan None) davranış eskisiyle birebir
+    aynı kalmalı — geriye dönük uyumluluk."""
+    from services import confidence_calibration as cc
+
+    monkeypatch.setattr(cc, "get_domain_calibration_curves", lambda: {"technical": [(0.3, 0.9)]})
+    result = cc.calibrate_domain_confidence("technical", 0.3)
+    assert result == 0.9

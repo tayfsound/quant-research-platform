@@ -59,7 +59,8 @@ def test_domain_confidence_calibration_is_applied_before_recalculate(monkeypatch
     import services.council_orchestrator as co_module
 
     monkeypatch.setattr(
-        co_module, "calibrate_domain_confidence", lambda domain, raw, evidence_count=None: 0.01
+        co_module, "calibrate_domain_confidence",
+        lambda domain, raw, evidence_count=None, symbol=None: 0.01,
     )
 
     registry = AgentRegistry.create_default()
@@ -92,7 +93,7 @@ def test_deliberate_passes_each_opinions_real_evidence_count_to_calibration(monk
 
     captured: dict[str, int] = {}
 
-    def spy_calibrate(domain, raw, evidence_count=None):
+    def spy_calibrate(domain, raw, evidence_count=None, symbol=None):
         captured[domain] = evidence_count
         return raw
 
@@ -110,6 +111,30 @@ def test_deliberate_passes_each_opinions_real_evidence_count_to_calibration(monk
 
     assert captured["technical"] == len(technical.evidence)
     assert captured["technical"] > 0  # bullish+strengthening+higher_highs en az birkaç kanıt üretir
+
+
+def test_deliberate_passes_the_real_symbol_to_calibration_for_asset_class_awareness(monkeypatch):
+    """Faz 247 — kullanıcının getirdiği PAXG/XAUTUSDT raporu: kalibrasyon
+    sembolü bilmeden global (BTC ağırlıklı) eğriyi her sembole aynen
+    uyguluyordu. deliberate(symbol=...) artık bunu calibrate_domain_
+    confidence'a iletmeli."""
+    import services.council_orchestrator as co_module
+
+    captured: dict[str, str | None] = {}
+
+    def spy_calibrate(domain, raw, evidence_count=None, symbol=None):
+        captured[domain] = symbol
+        return raw
+
+    monkeypatch.setattr(co_module, "calibrate_domain_confidence", spy_calibrate)
+
+    registry = AgentRegistry.create_default()
+    orchestrator = CouncilOrchestrator(registry)
+    ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs")
+
+    orchestrator.deliberate({AgentDomain.TECHNICAL: ctx}, symbol="PAXGUSDT")
+
+    assert captured["technical"] == "PAXGUSDT"
 
 
 def test_deliberate_uses_the_regime_specific_snapshot_when_one_exists(tmp_path):
@@ -157,9 +182,9 @@ def test_council_stage_derives_regime_from_market_features_and_forwards_it(monke
     captured = {}
     original_deliberate = co_module.CouncilOrchestrator.deliberate
 
-    def spy_deliberate(self, contexts, regime=None):
+    def spy_deliberate(self, contexts, regime=None, symbol=None):
         captured["regime"] = regime
-        return original_deliberate(self, contexts, regime=regime)
+        return original_deliberate(self, contexts, regime=regime, symbol=symbol)
 
     monkeypatch.setattr(co_module.CouncilOrchestrator, "deliberate", spy_deliberate)
 

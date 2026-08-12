@@ -55,6 +55,7 @@ class CouncilOrchestrator:
         self,
         contexts: dict[AgentDomain, object],
         regime: str | None = None,
+        symbol: str | None = None,
     ) -> tuple[Belief, list[AgentOpinion]]:
 
         opinions: list[AgentOpinion] = []
@@ -127,8 +128,16 @@ class CouncilOrchestrator:
             # güçle yükseltiyordu. evidence_count ile bu düzeltme kanıt
             # sayısına göre yumuşatılıyor (bkz. calibrate_domain_
             # confidence docstring'i).
+            #
+            # Faz 247 — kullanıcının getirdiği PAXG/XAUTUSDT raporu gerçek
+            # veriyle doğrulandı: yukarıdaki (TÜM sembolleri birleştiren)
+            # eğri, watchlist'in ağırlıklı kripto (BTC/ETH/...) geçmişini
+            # altın-destekli token'lara aynen uyguluyordu. symbol
+            # verilirse artık önce o sembolün varlık sınıfına özel eğriye
+            # bakılır (yeterli örneklem varsa), yoksa global eğriye düşülür.
             opinion.confidence = calibrate_domain_confidence(
-                opinion.domain.value, opinion.confidence, evidence_count=len(opinion.evidence)
+                opinion.domain.value, opinion.confidence,
+                evidence_count=len(opinion.evidence), symbol=symbol,
             )
             opinion.source_reliability = info["source_reliability"]
             if info.get("benched"):
