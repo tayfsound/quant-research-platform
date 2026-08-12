@@ -110,3 +110,45 @@ def test_no_external_signal_means_no_extra_evidence_or_caveat():
     opinion = agent.analyze(ctx)
     assert not any("TradingView" in e for e in opinion.evidence)
     assert not any("TradingView" in c for c in opinion.caveats)
+
+
+def test_feature_contributions_sum_to_the_implied_raw_score():
+    """Faz 268-sonrası: Feature Importance — feature_contributions her
+    zaman GERÇEK score'a (confidence = min(|score|/5.0, 0.85)) eşit
+    toplanmalı, tıpkı QuantAgent'ta olduğu gibi."""
+    agent = TechnicalAgent()
+    opinion = agent.analyze(TechnicalContext(
+        trend="bullish", momentum="strengthening", market_structure="higher_highs",
+        ema_alignment="bullish_aligned", adx=10.0,
+    ))
+    implied_score = sum(opinion.feature_contributions.values())
+    assert abs(abs(implied_score) - opinion.confidence * 5.0) < 1e-6
+
+
+def test_feature_contributions_are_empty_when_no_signal_fires():
+    agent = TechnicalAgent()
+    opinion = agent.analyze(TechnicalContext())  # tüm varsayılanlar -> hiçbir dal tetiklenmez
+    assert opinion.feature_contributions == {}
+
+
+def test_feature_contributions_names_the_active_signals():
+    agent = TechnicalAgent()
+    opinion = agent.analyze(TechnicalContext(
+        trend="bullish", momentum="strengthening", market_structure="higher_highs",
+        ema_alignment="bullish_aligned", adx=30.0, di_plus=30.0, di_minus=10.0,
+    ))
+    assert opinion.feature_contributions["trend"] > 0
+    assert opinion.feature_contributions["momentum"] > 0
+    assert opinion.feature_contributions["market_structure"] > 0
+    assert opinion.feature_contributions["ema_alignment"] > 0
+    assert opinion.feature_contributions["adx_strong_confirm"] > 0
+
+
+def test_feature_contributions_reflect_the_adx_weak_discount():
+    """ADX<20 iken scale_all(adx_weak_discount) O ANA KADAR birikmiş TÜM
+    katkılara uygulanmalı — orijinal `score *= c.adx_weak_discount` ile
+    birebir aynı sıralama/etki."""
+    agent = TechnicalAgent()
+    no_discount = agent.analyze(TechnicalContext(trend="bullish", adx=22.0))
+    with_discount = agent.analyze(TechnicalContext(trend="bullish", adx=10.0))
+    assert abs(with_discount.feature_contributions["trend"] - no_discount.feature_contributions["trend"] * 0.7) < 1e-6

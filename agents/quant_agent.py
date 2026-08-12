@@ -10,7 +10,17 @@ class QuantAgent:
     def analyze(self, context: QuantContext) -> AgentOpinion:
         evidence = []
         caveats = []
-        score = 0.0
+        # Faz 268-sonrası: Feature Importance — SHAP gibi bir YAKLAŞIK
+        # yöntem değil, bu skorlama zaten kesin/katkısal bir fonksiyon.
+        # Her isimli sinyalin score'a GERÇEK sayısal katkısı burada
+        # tutuluyor; çarpımsal indirimler (volatilite, Hurst ölü bölge)
+        # TÜM katkılara aynı oranda uygulanıyor ki toplam her zaman
+        # gerçek score'a eşit kalsın.
+        contributions: dict[str, float] = {}
+
+        def scale_all(factor: float) -> None:
+            for key in contributions:
+                contributions[key] *= factor
 
         # Hurst exponent rejimi belirler: <0.5 mean-reverting, >0.5 trending
         mean_reverting_regime = context.hurst_exponent < 0.45
@@ -21,19 +31,19 @@ class QuantAgent:
             evidence.append(f"Hurst exponent {context.hurst_exponent:.2f} — mean-reverting regime")
             # Mean-reversion rejiminde z-score'un TERSİNE bahis
             if context.zscore <= -2.0:
-                score += 2.0
+                contributions["zscore_mean_reversion"] = 2.0
                 evidence.append(f"Z-score {context.zscore:.2f} — statistically oversold")
             elif context.zscore >= 2.0:
-                score -= 2.0
+                contributions["zscore_mean_reversion"] = -2.0
                 evidence.append(f"Z-score {context.zscore:.2f} — statistically overbought")
         elif trending_regime:
             evidence.append(f"Hurst exponent {context.hurst_exponent:.2f} — trending regime")
             # Trend rejiminde otokorelasyonun YÖNÜNDE bahis (momentum devam eder varsayımı)
             if context.autocorrelation > 0.3:
-                score += 1.5
+                contributions["autocorrelation_momentum"] = 1.5
                 evidence.append(f"Positive autocorrelation {context.autocorrelation:.2f} — momentum continuation")
             elif context.autocorrelation < -0.3:
-                score -= 1.5
+                contributions["autocorrelation_momentum"] = -1.5
                 evidence.append(f"Negative autocorrelation {context.autocorrelation:.2f} — momentum continuation")
         else:
             caveats.append(f"Hurst exponent {context.hurst_exponent:.2f} — near random walk, no statistical edge")
@@ -43,12 +53,11 @@ class QuantAgent:
         # kısa-vadeli istatistiksel karakterden (trending mi mean-reverting mi)
         # bağımsız, ayrı bir kanıt: fiyat gerçekten uzun vadede yükseliş/düşüş
         # trendinde mi. candle_lookback yeterince derinse (>=220 bar) hesaplanır.
-        long_term_contribution = 0.0
         if context.long_term_trend_regime == "bull_trend":
-            long_term_contribution = 1.0
+            contributions["long_term_trend_regime"] = 1.0
             evidence.append("Long-term regime (real 200-EMA, 220+ bar lookback): bull trend")
         elif context.long_term_trend_regime == "bear_trend":
-            long_term_contribution = -1.0
+            contributions["long_term_trend_regime"] = -1.0
             evidence.append("Long-term regime (real 200-EMA, 220+ bar lookback): bear trend")
         elif context.long_term_trend_regime == "insufficient_data":
             caveats.append("Long-term trend regime unavailable — candle_lookback < 220 bars")
@@ -64,19 +73,17 @@ class QuantAgent:
         # getirisinin bu rejimin yönüne ters, anlamlı bir kayma
         # gösterdiğini tespit ederse, SADECE bu sinyalin katkısı
         # (Hurst/z-score tabanlı diğer kanıtlar değil) indirime uğruyor.
-        if context.regime_changepoint_detected and long_term_contribution != 0.0:
+        if context.regime_changepoint_detected and contributions.get("long_term_trend_regime", 0.0) != 0.0:
             caveats.append(
                 "Regime changepoint detected — recent returns statistically diverge from "
                 "this (lagging) long-term regime"
             )
-            long_term_contribution *= 0.3
-
-        score += long_term_contribution
+            contributions["long_term_trend_regime"] *= 0.3
 
         # Aşırı volatilite — güveni azalt
         if context.realized_vol_percentile > 90:
             caveats.append(f"Realized volatility at {context.realized_vol_percentile:.0f}th percentile — reduced statistical reliability")
-            score *= 0.6
+            scale_all(0.6)
 
         # Faz 268e — gerçek bulgu: Hurst ölü bölgesindeyken (0.45-0.55, "ne
         # trend ne mean-reversion") bu belirsizlik SADECE bir caveat olarak
@@ -90,7 +97,9 @@ class QuantAgent:
         # istatistiksel zeminin belirsiz olduğu bir durumda güven de
         # buna göre indirilmeli.
         if hurst_dead_zone:
-            score *= 0.5
+            scale_all(0.5)
+
+        score = sum(contributions.values())
 
         if score > 0.5:
             direction = "LONG"
@@ -112,4 +121,5 @@ class QuantAgent:
             source_reliability=0.8,
             evidence=evidence,
             caveats=caveats,
+            feature_contributions={k: round(v, 4) for k, v in contributions.items()},
         ).recalculate()

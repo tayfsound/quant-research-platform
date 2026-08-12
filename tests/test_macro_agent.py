@@ -85,3 +85,30 @@ def test_empty_net_liquidity_trend_contributes_no_score():
     opinion = agent.analyze(ctx)
     assert opinion.direction == "WAIT"
     assert not any("Net liquidity" in e for e in opinion.evidence)
+
+
+def test_feature_contributions_sum_to_the_implied_raw_score():
+    agent = MacroAgent()
+    opinion = agent.analyze(MacroContext(
+        indicators=[], inflation_trend="rising", central_bank_bias="hawkish",
+    ))
+    implied_score = sum(opinion.feature_contributions.values())
+    assert abs(abs(implied_score) - opinion.confidence * 3.0) < 5e-3
+
+
+def test_feature_contributions_are_empty_when_no_signal_fires():
+    agent = MacroAgent()
+    opinion = agent.analyze(MacroContext(indicators=[]))
+    assert opinion.feature_contributions == {}
+
+
+def test_feature_contributions_names_the_active_signals():
+    agent = MacroAgent()
+    opinion = agent.analyze(MacroContext(
+        indicators=[], inflation_trend="rising", liquidity_condition="tight",
+        central_bank_bias="hawkish", employment_trend="weakening",
+    ))
+    assert opinion.feature_contributions["inflation"] < 0
+    assert opinion.feature_contributions["liquidity_condition"] < 0
+    assert opinion.feature_contributions["central_bank_bias"] < 0
+    assert opinion.feature_contributions["employment_trend"] < 0

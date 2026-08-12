@@ -61,6 +61,15 @@ class AgentOpinion(BaseModel):
     source_reliability: float = 0.8
     evidence: list[str] = Field(default_factory=list)
     caveats: list[str] = Field(default_factory=list)
+    # Faz 268-sonrası: Feature Importance — SHAP gibi bir YAKLAŞIK
+    # açıklama yöntemi değil (bu ajanların skorlama mantığı zaten kesin,
+    # katkısal/additive bir fonksiyon — kara kutu bir model değil ki
+    # yaklaşıklamak gereksin). Her ajan, kendi score'unu OLUŞTURAN her
+    # isimli sinyalin GERÇEK sayısal katkısını burada topluyor — hangi
+    # feature'ın kararı ne kadar etkilediği tahmin değil, kesin. Boş dict
+    # = bu ajan henüz enstrümante edilmedi (fail-closed, uydurulmuş bir
+    # katkı asla raporlanmaz).
+    feature_contributions: dict[str, float] = Field(default_factory=dict)
     timestamp: datetime = Field(default_factory=datetime.now)
 
     # Epistemik katmanlar: intrinsic_trust, performance_weight, effective_influence

@@ -10,29 +10,31 @@ class OnChainAgent:
     def analyze(self, context: OnChainContext) -> AgentOpinion:
         evidence = []
         caveats = []
-        score = 0.0
+        # Faz 268-sonrası: Feature Importance — bkz. agents/quant_agent.py
+        # ve agents/technical_agent.py'deki aynı desen.
+        contributions: dict[str, float] = {}
 
         # Exchange akışı
         if context.exchange_outflow_24h > context.exchange_inflow_24h * 1.5:
-            score += 1.5
+            contributions["exchange_flow"] = 1.5
             evidence.append("Strong exchange outflow — coins leaving exchanges")
         elif context.exchange_inflow_24h > context.exchange_outflow_24h * 1.5:
-            score -= 1.5
+            contributions["exchange_flow"] = -1.5
             evidence.append("Strong exchange inflow — potential selling pressure")
 
         # Balina aktivitesi
         if context.whale_accumulation and context.whale_distribution:
             caveats.append("Conflicting whale signals detected — accumulation and distribution simultaneously")
         elif context.whale_accumulation:
-            score += 1.5
+            contributions["whale_activity"] = 1.5
             evidence.append("Whale accumulation detected")
         elif context.whale_distribution:
-            score -= 1.5
+            contributions["whale_activity"] = -1.5
             evidence.append("Whale distribution detected")
 
         # Stablecoin arzı
         if context.stablecoin_mint_24h > 100_000_000:
-            score += 1.0
+            contributions["stablecoin_mint"] = 1.0
             evidence.append(f"Significant stablecoin minting (${context.stablecoin_mint_24h:,.0f}) — potential buying power")
 
         # Uyuyan coin'ler
@@ -66,20 +68,20 @@ class OnChainAgent:
 
         if context.network_activity_trend == "rising":
             if is_btc:
-                score += 0.5
+                contributions["network_activity_trend"] = 0.5
             evidence.append("Active address count rising — real network usage growing (BTC)")
         elif context.network_activity_trend == "falling":
             if is_btc:
-                score -= 0.5
+                contributions["network_activity_trend"] = -0.5
             evidence.append("Active address count falling — network usage declining (BTC)")
 
         if context.hash_rate_trend == "falling":
             if is_btc:
-                score -= 0.5
+                contributions["hash_rate_trend"] = -0.5
             evidence.append("Hash rate declining — possible miner capitulation (BTC)")
         elif context.hash_rate_trend == "rising":
             if is_btc:
-                score += 0.5
+                contributions["hash_rate_trend"] = 0.5
             evidence.append("Hash rate rising — miner conviction/network security increasing (BTC)")
 
         if not is_btc and context.network_activity_trend != "stable":
@@ -90,11 +92,13 @@ class OnChainAgent:
 
         # MVRV Z-Score
         if context.mvrv_zscore > 3.0:
-            score -= 2.0
+            contributions["mvrv_zscore"] = -2.0
             evidence.append(f"MVRV Z-Score extremely high ({context.mvrv_zscore}) — market overvalued")
         elif context.mvrv_zscore < -1.0:
-            score += 2.0
+            contributions["mvrv_zscore"] = 2.0
             evidence.append(f"MVRV Z-Score extremely low ({context.mvrv_zscore}) — market undervalued")
+
+        score = sum(contributions.values())
 
         # Faz 247: kritik bulgu — exchange_inflow/outflow, whale_accumulation/
         # distribution hâlâ hiç uygulanmıyor (Faz 196/215'in kasıtlı kararı:
@@ -133,4 +137,5 @@ class OnChainAgent:
             source_reliability=0.85,
             evidence=evidence,
             caveats=caveats,
+            feature_contributions={k: round(v, 4) for k, v in contributions.items()},
         ).recalculate()

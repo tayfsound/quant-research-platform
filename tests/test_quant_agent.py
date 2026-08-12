@@ -95,6 +95,46 @@ def test_regime_changepoint_discounts_the_long_term_trend_signal():
     assert any("changepoint" in c.lower() for c in with_changepoint.caveats)
 
 
+def test_feature_contributions_sum_to_the_implied_raw_score():
+    """Faz 268-sonrası: Feature Importance — SHAP gibi bir yaklaşık yöntem
+    DEĞİL, bu ajanın skorlaması zaten kesin/katkısal. feature_contributions
+    her zaman GERÇEK score'a (confidence = min(|score|/4.0, 0.85)) eşit
+    toplanmalı — icat edilmiş/eksik bir katkı dökümü asla üretilmemeli."""
+    agent = QuantAgent()
+    opinion = agent.analyze(QuantContext(
+        zscore=-2.5, hurst_exponent=0.3, long_term_trend_regime="bull_trend",
+    ))
+    implied_score = sum(opinion.feature_contributions.values())
+    # confidence = min(|score|/4.0, 0.85) -> |score| = confidence*4.0 (tavana çarpmadığı sürece)
+    assert abs(abs(implied_score) - opinion.confidence * 4.0) < 1e-6
+
+
+def test_feature_contributions_are_empty_when_no_signal_fires():
+    agent = QuantAgent()
+    opinion = agent.analyze(QuantContext())  # tüm varsayılanlar -> hiçbir dal tetiklenmez
+    assert opinion.feature_contributions == {}
+
+
+def test_feature_contributions_names_the_active_signals():
+    agent = QuantAgent()
+    opinion = agent.analyze(QuantContext(
+        zscore=-2.5, hurst_exponent=0.3, long_term_trend_regime="bear_trend",
+    ))
+    assert "zscore_mean_reversion" in opinion.feature_contributions
+    assert "long_term_trend_regime" in opinion.feature_contributions
+    assert opinion.feature_contributions["zscore_mean_reversion"] > 0  # oversold -> LONG bahsi
+    assert opinion.feature_contributions["long_term_trend_regime"] < 0  # bear_trend -> negatif katkı
+
+
+def test_feature_contributions_reflect_the_changepoint_discount():
+    agent = QuantAgent()
+    opinion = agent.analyze(QuantContext(
+        hurst_exponent=0.6, autocorrelation=0.0,
+        long_term_trend_regime="bull_trend", regime_changepoint_detected=True,
+    ))
+    assert abs(opinion.feature_contributions["long_term_trend_regime"] - 0.3) < 1e-6
+
+
 def test_regime_changepoint_has_no_effect_without_a_long_term_regime_signal():
     """long_term_trend_regime hiç yoksa (insufficient_data) indirilecek
     bir katkı da yok — changepoint bayrağı tek başına bir skor

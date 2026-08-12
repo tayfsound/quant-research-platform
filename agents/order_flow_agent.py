@@ -12,28 +12,36 @@ class OrderFlowAgent:
     def analyze(self, context: OrderFlowContext) -> AgentOpinion:
         evidence = []
         caveats = []
-        score = 0.0
+        # Faz 268-sonrası: Feature Importance — bkz. agents/quant_agent.py
+        # ve agents/technical_agent.py'deki aynı desen. Çarpımsal indirimler
+        # (scale_all) O ANA KADAR birikmiş katkılara uygulanıyor — orijinal
+        # `score *= X` sıralamasıyla birebir aynı.
+        contributions: dict[str, float] = {}
+
+        def scale_all(factor: float) -> None:
+            for key in contributions:
+                contributions[key] *= factor
 
         # Bid/Ask dengesizliği
         if context.bid_ask_imbalance > 0.3:
-            score += 1.5
+            contributions["bid_ask_imbalance"] = 1.5
             evidence.append(f"Bid-side imbalance {context.bid_ask_imbalance:.2f} — buying pressure")
         elif context.bid_ask_imbalance < -0.3:
-            score -= 1.5
+            contributions["bid_ask_imbalance"] = -1.5
             evidence.append(f"Ask-side imbalance {context.bid_ask_imbalance:.2f} — selling pressure")
 
         # Agresif alış/satış oranı (taker flow)
         if context.aggressive_buy_ratio > 0.65:
-            score += 1.0
+            contributions["aggressive_buy_ratio"] = 1.0
             evidence.append(f"Aggressive buy ratio {context.aggressive_buy_ratio:.2f} — taker-driven buying")
         elif context.aggressive_buy_ratio < 0.35:
-            score -= 1.0
+            contributions["aggressive_buy_ratio"] = -1.0
             evidence.append(f"Aggressive buy ratio {context.aggressive_buy_ratio:.2f} — taker-driven selling")
 
         # Geniş spread — düşük likidite, güveni azalt
         if context.spread_bps > 10:
             caveats.append(f"Wide spread ({context.spread_bps:.1f} bps) — low liquidity, reduced conviction")
-            score *= 0.5
+            scale_all(0.5)
         elif context.spread_bps == 0:
             caveats.append("No spread data available")
 
@@ -45,21 +53,24 @@ class OrderFlowAgent:
         # >0.05% endüstri genelinde "yüksek" kabul edilir.
         if context.funding_rate is not None:
             if context.funding_rate > 0.0005:
-                score -= 0.6
+                contributions["funding_rate"] = -0.6
                 evidence.append(f"Funding rate {context.funding_rate:.4%} — crowded long positioning (contrarian)")
             elif context.funding_rate < -0.0005:
-                score += 0.6
+                contributions["funding_rate"] = 0.6
                 evidence.append(f"Funding rate {context.funding_rate:.4%} — crowded short positioning (contrarian)")
 
         # Open interest trend — technical_agent'taki ADX'in rolüyle aynı
         # desen: yön belirlemiyor, mevcut yönü (yukarıdaki imbalance/
         # taker akışından gelen) teyit ediyor ya da güveni azaltıyor.
-        if context.open_interest_trend == "rising" and score != 0:
-            score += 0.3 if score > 0 else -0.3
+        current_score = sum(contributions.values())
+        if context.open_interest_trend == "rising" and current_score != 0:
+            contributions["open_interest_confirm"] = 0.3 if current_score > 0 else -0.3
             evidence.append("Open interest rising — new money confirming direction")
         elif context.open_interest_trend == "falling":
             caveats.append("Open interest falling — position unwinding, reduced conviction")
-            score *= 0.85
+            scale_all(0.85)
+
+        score = sum(contributions.values())
 
         if score > 0.5:
             direction = "LONG"
@@ -81,4 +92,5 @@ class OrderFlowAgent:
             source_reliability=0.8,
             evidence=evidence,
             caveats=caveats,
+            feature_contributions={k: round(v, 4) for k, v in contributions.items()},
         ).recalculate()

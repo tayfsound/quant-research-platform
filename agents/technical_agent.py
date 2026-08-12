@@ -61,48 +61,58 @@ class TechnicalAgent:
         c = self.coeffs
         evidence = []
         caveats = []
-        score = 0.0
+        # Faz 268-sonrası: Feature Importance — SHAP gibi bir YAKLAŞIK
+        # yöntem değil, bu skorlama zaten kesin/katkısal. adx_weak_discount
+        # gibi çarpımsal indirimler, O ANA KADAR birikmiş katkılara
+        # uygulanıyor (orijinal `score *= X` ile birebir aynı sıralama/
+        # etki) — sonradan eklenen katkılar (ör. adx_strong, obv) indirimden
+        # etkilenmez, tıpkı eski kodda olduğu gibi.
+        contributions: dict[str, float] = {}
+
+        def scale_all(factor: float) -> None:
+            for key in contributions:
+                contributions[key] *= factor
 
         # Trend
         if context.trend == "bullish":
-            score += c.trend_weight
+            contributions["trend"] = c.trend_weight
             evidence.append("Market in bullish trend")
         elif context.trend == "bearish":
-            score -= c.trend_weight
+            contributions["trend"] = -c.trend_weight
             evidence.append("Market in bearish trend")
 
         # Momentum
         if context.momentum == "strengthening" and context.trend == "bullish":
-            score += c.momentum_weight
+            contributions["momentum"] = c.momentum_weight
             evidence.append("Bullish momentum strengthening")
         elif context.momentum == "weakening" and context.trend == "bearish":
-            score -= c.momentum_weight
+            contributions["momentum"] = -c.momentum_weight
             evidence.append("Bearish momentum strengthening")
 
         # Piyasa yapısı
         if context.market_structure == "higher_highs":
-            score += c.market_structure_weight
+            contributions["market_structure"] = c.market_structure_weight
             evidence.append("Higher highs structure — bullish continuation pattern")
         elif context.market_structure == "lower_lows":
-            score -= c.market_structure_weight
+            contributions["market_structure"] = -c.market_structure_weight
             evidence.append("Lower lows structure — bearish continuation pattern")
         elif context.market_structure == "ranging":
             caveats.append("Market in consolidation — breakout needed for conviction")
 
         # EMA dizilimi
         if context.ema_alignment == "bullish_aligned":
-            score += c.ema_alignment_weight
+            contributions["ema_alignment"] = c.ema_alignment_weight
             evidence.append("EMAs bullishly aligned")
         elif context.ema_alignment == "bearish_aligned":
-            score -= c.ema_alignment_weight
+            contributions["ema_alignment"] = -c.ema_alignment_weight
             evidence.append("EMAs bearishly aligned")
 
         # RSI aşırı bölgeler
         if context.rsi_value < 25:
-            score += c.rsi_extreme_weight
+            contributions["rsi_extreme"] = c.rsi_extreme_weight
             evidence.append(f"RSI extremely oversold ({context.rsi_value})")
         elif context.rsi_value > 75:
-            score -= c.rsi_extreme_weight
+            contributions["rsi_extreme"] = -c.rsi_extreme_weight
             evidence.append(f"RSI extremely overbought ({context.rsi_value})")
 
         # Hacim teyidi
@@ -117,7 +127,7 @@ class TechnicalAgent:
         # kalacak şekilde) kalibre edildi; icat edilmiş bir katsayı değil,
         # gerçek geriye dönük ölçümün işaretiyle aynı yönde.
         if context.volume_confirmation:
-            score -= c.volume_confirmation_penalty
+            contributions["volume_confirmation"] = -c.volume_confirmation_penalty
             caveats.append(
                 "Recent volume spike (above 20-bar average) — historically correlated with "
                 "worse outcomes in this system (potential exhaustion/reversal, not confirmed continuation)"
@@ -136,19 +146,19 @@ class TechnicalAgent:
         # sinyali — trend yokken aşırı bölge yorumu QuantAgent'ın zaten
         # kapsadığı z-score'la çakışırdı).
         if context.bollinger_percent_b > 1.0 and context.trend == "bullish":
-            score += c.bollinger_confirm_weight
+            contributions["bollinger_confirm"] = c.bollinger_confirm_weight
             evidence.append(f"Price above upper Bollinger Band ({context.bollinger_percent_b:.2f}) confirming bullish trend")
         elif context.bollinger_percent_b < 0.0 and context.trend == "bearish":
-            score -= c.bollinger_confirm_weight
+            contributions["bollinger_confirm"] = -c.bollinger_confirm_weight
             evidence.append(f"Price below lower Bollinger Band ({context.bollinger_percent_b:.2f}) confirming bearish trend")
 
         # Faz 237: VWAP sapması — fiyat "adil değerin" ne kadar üstünde/
         # altında, mevcut trend'i doğrulayan yönde hafif bir kanıt.
         if context.vwap_deviation_pct > 0.01 and context.trend == "bullish":
-            score += c.vwap_confirm_weight
+            contributions["vwap_confirm"] = c.vwap_confirm_weight
             evidence.append(f"Price {context.vwap_deviation_pct:.2%} above VWAP — real buying pressure")
         elif context.vwap_deviation_pct < -0.01 and context.trend == "bearish":
-            score -= c.vwap_confirm_weight
+            contributions["vwap_confirm"] = -c.vwap_confirm_weight
             evidence.append(f"Price {context.vwap_deviation_pct:.2%} below VWAP — real selling pressure")
 
         # Faz 237: ADX — trend YÖNÜ değil GÜCÜ. Zayıf/yatay trend'te (ADX<20)
@@ -157,23 +167,25 @@ class TechnicalAgent:
         # hafifçe güçlendiriliyor.
         if context.adx < 20:
             caveats.append(f"ADX {context.adx:.1f} — weak/ranging trend, low conviction")
-            score *= c.adx_weak_discount
+            scale_all(c.adx_weak_discount)
         elif context.adx > 25:
             if context.di_plus > context.di_minus and context.trend == "bullish":
-                score += c.adx_strong_confirm_weight
+                contributions["adx_strong_confirm"] = c.adx_strong_confirm_weight
                 evidence.append(f"ADX {context.adx:.1f} — strong trend, DI+ confirms bullish direction")
             elif context.di_minus > context.di_plus and context.trend == "bearish":
-                score -= c.adx_strong_confirm_weight
+                contributions["adx_strong_confirm"] = -c.adx_strong_confirm_weight
                 evidence.append(f"ADX {context.adx:.1f} — strong trend, DI- confirms bearish direction")
 
         # Faz 237: OBV ıraksaması — gerçek hacim akışı fiyatı desteklemiyorsa
         # (klasik "zayıf rally/zayıf düşüş" uyarısı) güveni azaltıyor.
         if context.price_obv_divergence == "bearish_divergence":
             caveats.append("Price rising but OBV falling — bearish volume divergence")
-            score -= c.obv_divergence_weight
+            contributions["obv_divergence"] = -c.obv_divergence_weight
         elif context.price_obv_divergence == "bullish_divergence":
             caveats.append("Price falling but OBV rising — bullish volume divergence")
-            score += c.obv_divergence_weight
+            contributions["obv_divergence"] = c.obv_divergence_weight
+
+        score = sum(contributions.values())
 
         # Kendi hesapladığı yön ÖNCE belirleniyor — TradingView alarmı
         # sadece bir onay/uyarı notu ekliyor, kendi başına yönü belirlemiyor
@@ -223,4 +235,5 @@ class TechnicalAgent:
             source_reliability=0.75,
             evidence=evidence,
             caveats=caveats,
+            feature_contributions={k: round(v, 4) for k, v in contributions.items()},
         ).recalculate()

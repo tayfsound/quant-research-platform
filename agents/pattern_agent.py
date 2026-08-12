@@ -10,20 +10,28 @@ class PatternAgent:
     def analyze(self, context: PatternContext) -> AgentOpinion:
         evidence = []
         caveats = []
-        score = 0.0
+        # Faz 268-sonrası: Feature Importance — bkz. agents/quant_agent.py
+        # ve agents/technical_agent.py'deki aynı desen. scale_all, O ANA
+        # KADAR birikmiş katkılara uygulanıyor — orijinal `score *= X`
+        # sıralamasıyla birebir aynı.
+        contributions: dict[str, float] = {}
+
+        def scale_all(factor: float) -> None:
+            for key in contributions:
+                contributions[key] *= factor
 
         # Wyckoff fazı
         if context.structure_phase == "accumulation":
-            score += 1.5
+            contributions["structure_phase"] = 1.5
             evidence.append("Wyckoff accumulation phase detected")
         elif context.structure_phase == "distribution":
-            score -= 1.5
+            contributions["structure_phase"] = -1.5
             evidence.append("Wyckoff distribution phase detected")
         elif context.structure_phase == "markup":
-            score += 1.0
+            contributions["structure_phase"] = 1.0
             evidence.append("Markup phase — trend continuation likely")
         elif context.structure_phase == "markdown":
-            score -= 1.0
+            contributions["structure_phase"] = -1.0
             evidence.append("Markdown phase — trend continuation likely")
 
         # Faz 237: gerçek, kesin tanımlı Wyckoff olayları — structure_phase
@@ -32,55 +40,55 @@ class PatternAgent:
         # _wyckoff_event). Spring/SOS en güçlü, en klasik Wyckoff sinyalleri
         # olduğu için structure_phase'ten daha yüksek ağırlıklı.
         if context.wyckoff_event == "spring":
-            score += 2.0
+            contributions["wyckoff_event"] = 2.0
             evidence.append("Wyckoff spring — false breakdown below support, real buyers stepping in")
         elif context.wyckoff_event == "upthrust":
-            score -= 2.0
+            contributions["wyckoff_event"] = -2.0
             evidence.append("Wyckoff upthrust — false breakout above resistance, real sellers stepping in")
         elif context.wyckoff_event == "sign_of_strength":
-            score += 1.5
+            contributions["wyckoff_event"] = 1.5
             evidence.append("Wyckoff sign of strength — volume-confirmed breakout above resistance")
         elif context.wyckoff_event == "sign_of_weakness":
-            score -= 1.5
+            contributions["wyckoff_event"] = -1.5
             evidence.append("Wyckoff sign of weakness — volume-confirmed breakdown below support")
 
         # Break of Structure
         if context.break_of_structure == "bullish":
-            score += 1.5
+            contributions["break_of_structure"] = 1.5
             evidence.append("Bullish break of structure (BOS)")
         elif context.break_of_structure == "bearish":
-            score -= 1.5
+            contributions["break_of_structure"] = -1.5
             evidence.append("Bearish break of structure (BOS)")
 
         # Change of Character — trend güvenini azaltır
         if context.change_of_character:
             caveats.append("Change of character (CHoCH) detected — trend reversal risk")
-            score *= 0.6
+            scale_all(0.6)
 
         # Fair Value Gap
         if context.fair_value_gap == "bullish":
-            score += 0.5
+            contributions["fair_value_gap"] = 0.5
             evidence.append("Bullish fair value gap (FVG) unfilled")
         elif context.fair_value_gap == "bearish":
-            score -= 0.5
+            contributions["fair_value_gap"] = -0.5
             evidence.append("Bearish fair value gap (FVG) unfilled")
 
         # Swing structure
         if context.swing_structure == "higher_highs_higher_lows":
-            score += 1.0
+            contributions["swing_structure"] = 1.0
             evidence.append("Higher highs / higher lows — bullish swing structure")
         elif context.swing_structure == "lower_highs_lower_lows":
-            score -= 1.0
+            contributions["swing_structure"] = -1.0
             evidence.append("Lower highs / lower lows — bearish swing structure")
         else:
             caveats.append("Mixed swing structure — no clear directional bias")
 
         # Likidite süpürme — genellikle ters yönlü bir hareketin habercisi
         if context.liquidity_sweep == "buy_side_swept":
-            score -= 0.5
+            contributions["liquidity_sweep"] = -0.5
             evidence.append("Buy-side liquidity swept — potential reversal down")
         elif context.liquidity_sweep == "sell_side_swept":
-            score += 0.5
+            contributions["liquidity_sweep"] = 0.5
             evidence.append("Sell-side liquidity swept — potential reversal up")
 
         # Faz 223: klasik Fibonacci retracement — destek/dirençte olmak
@@ -88,18 +96,21 @@ class PatternAgent:
         # kırıp geçebilir de), bu yüzden mevcut yapısal kanıtı (BOS/swing)
         # DOĞRULAYAN yönde hafifçe güçlendiriyor, kendi başına yeni bir
         # yön açmıyor.
+        current_score = sum(contributions.values())
         if context.fibonacci_price_position == "at_support":
-            if score > 0:
-                score += 0.5
+            if current_score > 0:
+                contributions["fibonacci_confirm"] = 0.5
                 evidence.append(f"Price at Fibonacci support ({context.fibonacci_nearest_level}) — confirms bullish structure")
             else:
                 caveats.append(f"Price at Fibonacci support ({context.fibonacci_nearest_level}) but structure is bearish — mixed signal")
         elif context.fibonacci_price_position == "at_resistance":
-            if score < 0:
-                score -= 0.5
+            if current_score < 0:
+                contributions["fibonacci_confirm"] = -0.5
                 evidence.append(f"Price at Fibonacci resistance ({context.fibonacci_nearest_level}) — confirms bearish structure")
             else:
                 caveats.append(f"Price at Fibonacci resistance ({context.fibonacci_nearest_level}) but structure is bullish — mixed signal")
+
+        score = sum(contributions.values())
 
         if score > 0.5:
             direction = "LONG"
@@ -121,4 +132,5 @@ class PatternAgent:
             source_reliability=0.7,
             evidence=evidence,
             caveats=caveats,
+            feature_contributions={k: round(v, 4) for k, v in contributions.items()},
         ).recalculate()

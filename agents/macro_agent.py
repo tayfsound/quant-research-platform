@@ -10,14 +10,16 @@ class MacroAgent:
     def analyze(self, context: MacroContext) -> AgentOpinion:
         evidence = []
         caveats = []
-        score = 0.0
+        # Faz 268-sonrası: Feature Importance — bkz. agents/quant_agent.py
+        # ve agents/technical_agent.py'deki aynı desen.
+        contributions: dict[str, float] = {}
 
         # Enflasyon
         if context.inflation_trend == "rising":
-            score -= 1.0
+            contributions["inflation"] = -1.0
             evidence.append("Inflation pressure increasing")
         elif context.inflation_trend == "falling":
-            score += 1.0
+            contributions["inflation"] = 1.0
             evidence.append("Inflation cooling")
 
         # Likidite — Faz 215: gerçek bulgu — sadece "tight" cezalandırılıyordu,
@@ -25,10 +27,10 @@ class MacroAgent:
         # varlıkları için destekleyici) hiç ödüllendirilmiyordu. Asimetrik:
         # ajan likiditenin sadece kötü tarafını görebiliyordu.
         if context.liquidity_condition == "tight":
-            score -= 1.0
+            contributions["liquidity_condition"] = -1.0
             evidence.append("Liquidity conditions restrictive")
         elif context.liquidity_condition == "loose":
-            score += 1.0
+            contributions["liquidity_condition"] = 1.0
             evidence.append("Liquidity conditions expansionary")
 
         # Faz 267 — kullanıcı bulgusu: "devletler borçlarını dört yıllık
@@ -43,18 +45,18 @@ class MacroAgent:
         # bekliyor) — ağırlığı kasıtlı olarak diğer köklü sinyallerle aynı
         # (±1.0), ne fazla ne az güveniliyor.
         if context.net_liquidity_trend == "expanding":
-            score += 1.0
+            contributions["net_liquidity_trend"] = 1.0
             evidence.append("Net liquidity (Fed balance sheet - TGA - reverse repo) expanding")
         elif context.net_liquidity_trend == "contracting":
-            score -= 1.0
+            contributions["net_liquidity_trend"] = -1.0
             evidence.append("Net liquidity (Fed balance sheet - TGA - reverse repo) contracting")
 
         # Merkez bankası
         if context.central_bank_bias == "hawkish":
-            score -= 1.0
+            contributions["central_bank_bias"] = -1.0
             evidence.append("Central bank stance hawkish")
         elif context.central_bank_bias == "dovish":
-            score += 1.0
+            contributions["central_bank_bias"] = 1.0
             evidence.append("Central bank stance supportive")
 
         # İstihdam — Faz 268h kritik bulgu: Faz 215'in liquidity_condition
@@ -63,11 +65,13 @@ class MacroAgent:
         # döndürebildiği "improving" hiçbir zaman ödüllendirilmiyordu.
         # Ajan istihdamın sadece kötü tarafını görebiliyordu.
         if context.employment_trend == "weakening":
-            score -= 0.5
+            contributions["employment_trend"] = -0.5
             evidence.append("Employment trend weakening")
         elif context.employment_trend == "improving":
-            score += 0.5
+            contributions["employment_trend"] = 0.5
             evidence.append("Employment trend improving")
+
+        score = sum(contributions.values())
 
         if score > 0:
             direction = "LONG"
@@ -89,4 +93,5 @@ class MacroAgent:
             source_reliability=0.9,
             evidence=evidence,
             caveats=caveats,
+            feature_contributions={k: round(v, 4) for k, v in contributions.items()},
         ).recalculate()

@@ -104,6 +104,39 @@ def test_single_real_network_trend_signal_alone_produces_a_direction():
     assert opinion_falling.direction == "SHORT"
 
 
+def test_feature_contributions_sum_to_the_implied_raw_score():
+    agent = OnChainAgent()
+    opinion = agent.analyze(OnChainContext(whale_accumulation=True, mvrv_zscore=-1.5))
+    implied_score = sum(opinion.feature_contributions.values())
+    assert abs(abs(implied_score) - opinion.confidence * 5.0) < 1e-6
+
+
+def test_feature_contributions_are_empty_when_no_signal_fires():
+    agent = OnChainAgent()
+    opinion = agent.analyze(OnChainContext())
+    assert opinion.feature_contributions == {}
+
+
+def test_feature_contributions_names_the_active_signals():
+    agent = OnChainAgent()
+    opinion = agent.analyze(OnChainContext(
+        exchange_outflow_24h=500_000_000, exchange_inflow_24h=100_000_000,
+        whale_accumulation=True, mvrv_zscore=-1.5,
+    ))
+    assert opinion.feature_contributions["exchange_flow"] > 0
+    assert opinion.feature_contributions["whale_activity"] > 0
+    assert opinion.feature_contributions["mvrv_zscore"] > 0
+
+
+def test_feature_contributions_only_include_network_trends_for_btc():
+    """Faz 248 ile aynı ilke: ETH gibi BTC-dışı sembollerde network_
+    activity_trend/hash_rate_trend yön puanına katılmıyor — bu yüzden
+    feature_contributions'ta da hiç görünmemeli."""
+    agent = OnChainAgent()
+    opinion = agent.analyze(OnChainContext(symbol="ETHUSDT", network_activity_trend="rising"))
+    assert "network_activity_trend" not in opinion.feature_contributions
+
+
 def test_btc_trend_signal_does_not_affect_direction_for_other_symbols():
     """Faz 248: kritik bulgu — network_activity_trend/hash_rate_trend
     SADECE Bitcoin zincirinden geliyor ama önceden TÜM sembollere
