@@ -35,6 +35,12 @@ export default function BacktestRuns() {
   const [runningReal, setRunningReal] = useState(false);
   const [realStatus, setRealStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Faz 268c — kullanıcı bulgusu: localStorage tabanlı takip sadece AYNI
+  // tarayıcıda, task'ı başlatan kişi için işe yarıyordu. GET /backtest/
+  // active, celery worker'a doğrudan sorup kim/nereden başlattığından
+  // bağımsız GERÇEK aktif backtest'leri döndürüyor — sunucu gerçeği.
+  const [serverActiveTasks, setServerActiveTasks] = useState<{ task_id: string; args: unknown }[]>([]);
+  const [inspectionAvailable, setInspectionAvailable] = useState(true);
   const { format } = useCurrency();
 
   const load = () => {
@@ -43,8 +49,25 @@ export default function BacktestRuns() {
       .then((data) => setRuns(data.runs || []));
   };
 
+  const checkActive = () => {
+    fetch("/api/v1/backtest/active", { headers: authHeaders() })
+      .then((r) => r.json())
+      .then((data) => {
+        setServerActiveTasks(data.active || []);
+        setInspectionAvailable(data.inspection_available !== false);
+      })
+      .catch(() => {});
+  };
+
   useEffect(() => {
     load();
+    checkActive();
+    const activeInterval = setInterval(checkActive, 10000);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => clearInterval(activeInterval);
+  }, []);
+
+  useEffect(() => {
     fetch("/api/v1/settings/", { headers: authHeaders() })
       .then((r) => r.json())
       .then((data) => {
@@ -86,12 +109,14 @@ export default function BacktestRuns() {
             setRunningReal(false);
             setRealStatus(null);
             load();
+            checkActive();
           } else if (data.status === "FAILURE") {
             clearInterval(interval);
             localStorage.removeItem(BACKTEST_TASK_STORAGE_KEY);
             setRunningReal(false);
             setRealStatus(null);
             setError(`Backtest başarısız: ${data.error || "bilinmeyen hata"}`);
+            checkActive();
           } else {
             setRealStatus(data.status);
           }
@@ -139,10 +164,26 @@ export default function BacktestRuns() {
     <div>
       <PageHeader
         title="Backtests"
-        description="İki ayrı mod: hızlı/deterministik boru hattı testi (sahte fiyat, sadece motorun uçtan uca çalıştığını kanıtlar) ve gerçek Binance geçmiş verisiyle, gerçek 9-ajan council'iyle çalışan asıl strateji doğrulaması."
+        description="Gerçek Binance geçmiş verisiyle, gerçek 9-ajan council'iyle çalışan strateji doğrulaması."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}
+
+      {/* Faz 268c — sunucu gerçeği: bu tarayıcıda başlatılmamış olsa bile
+          arka planda GERÇEKTEN çalışan bir backtest varsa görünür. */}
+      {serverActiveTasks.length > 0 && (
+        <div className="mb-6 rounded-xl border border-accent/30 bg-accent-soft p-4">
+          <p className="text-sm font-medium text-ink">
+            Arka planda {serverActiveTasks.length} backtest çalışıyor: {" "}
+            {serverActiveTasks.map((t) => JSON.stringify(t.args)).join(", ")}
+          </p>
+        </div>
+      )}
+      {!inspectionAvailable && (
+        <p className="text-xs text-ink-faint mb-4">
+          Not: worker'a şu an ulaşılamadığı için arka plandaki backtest'ler sorgulanamıyor.
+        </p>
+      )}
 
       <Card className="mb-6">
         <h3 className="text-sm font-semibold text-ink mb-3">Gerçek veriyle backtest</h3>

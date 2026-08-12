@@ -22,6 +22,7 @@ class Metacognition:
         criticism: dict,
         contradiction: dict,
         belief_strength: float = 0.5,
+        belief_direction: str | None = None,
     ) -> dict:
         # Gerçek bulgu: model_confidence şu ana kadar SADECE hafızadan
         # geliyordu — hafıza yoksa (ki bu genç bir sistemde hemen her
@@ -45,6 +46,28 @@ class Metacognition:
             # cycle'ın çok güçlü/tutarlı bir Council konsensüsü, diğeriyle
             # seyreltilerek zayıflatılmamalı.
             model_confidence = max(model_confidence, memory_confidence)
+
+        # Faz 268c — Multi-Timeframe Cascade (yol haritası Faz C): rapor —
+        # "1m LONG + 15m LONG + 1h LONG üçlüsü, yalnızca 1m LONG'dan çok
+        # daha güçlü bir konviksiyon demektir." services/orchestrator.py::
+        # propose_multi_timeframe() üst zaman dilimlerini Bayesian
+        # birleştirip buraya "timeframe_belief" olarak enjekte ediyor.
+        # Birincil yönle UYUŞUYORSA confidence yukarı çekilir (memory_
+        # insight ile aynı "max" mantığı); ÇELİŞİYORSA aşağı çekilir —
+        # bir uyumsuzluğu sessizce yok saymak, raporun asıl hedeflediği
+        # "yanlış pozitifleri azaltma" etkisini sıfırlardı.
+        timeframe_entries = [
+            item for item in ctx.cognition.relevant_knowledge
+            if item.get("type") == "timeframe_belief"
+        ]
+        if timeframe_entries and belief_direction in ("LONG", "SHORT"):
+            tf_data = timeframe_entries[-1]["data"]
+            combined_direction = tf_data.get("combined_direction")
+            combined_confidence = tf_data.get("combined_confidence") or 0.0
+            if combined_direction == belief_direction:
+                model_confidence = max(model_confidence, combined_confidence)
+            elif combined_direction is not None:
+                model_confidence = model_confidence * (1 - combined_confidence * 0.3)
 
         risk_flags = criticism.get("risk_flags", [])
         risk_penalty = sum(RISK_WEIGHTS.get(flag, 0.1) for flag in risk_flags)

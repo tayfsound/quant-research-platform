@@ -164,6 +164,7 @@ class MetaStage:
             criticism,
             {"conflict_level": conflict_level},
             belief_strength=belief.strength,
+            belief_direction=belief.direction,
         )
 
         ctx.decision.confidence = meta["confidence"]

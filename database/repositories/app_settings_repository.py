@@ -122,6 +122,15 @@ DEFAULTS: dict[str, str] = {
     # zaman dilimi. Günlük varsayılan: en sakin/en az gürültülü sinyal.
     "medium_term_timeframe": "1d",
     "medium_term_max_concurrent": "5",
+    # Faz 268c — "İsabeti artırmanın yolu daha akıllı kullanım" yol
+    # haritasının Faz C'si (Multi-Timeframe Cascade). Kullanıcı kararı:
+    # raporun önerdiği TAM versiyon (üst zaman dilimlerinde de gerçek
+    # CognitiveEngine çalıştırılıyor, embedding dahil) — bu, canlı
+    # cycle'ı sembol başına ~3 katına çıkarabilir. Varsayılan kapalı
+    # (medium_term_enabled ile aynı opt-in desen) — kullanıcı kaynak/
+    # gecikme etkisini gördükten sonra açıp kapatabilsin.
+    "multi_timeframe_cascade_enabled": "false",
+    "multi_timeframe_cascade_timeframes": "15m,1h",
 }
 
 CANDLE_TIMEFRAMES = ("1m", "5m", "15m", "1h", "4h", "1d")

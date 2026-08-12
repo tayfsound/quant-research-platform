@@ -127,6 +127,43 @@ async def get_backtest_task(task_id: str, user: AuthContext = Depends(get_curren
     return body
 
 
+@router.get("/active")
+async def active_backtest_tasks(user: AuthContext = Depends(get_current_user)):
+    """Faz 268c — kullanıcı bulgusu: "arka planda hali hazırda çalışan
+    bir test olduğunda ben bunu göremiyorum." Önceki çözüm (dashboard'da
+    task_id'yi localStorage'a yazmak) sadece AYNI tarayıcıda, task'ı
+    BAŞLATAN kişi için işe yarıyordu — farklı bir sekme/cihaz/kullanıcı
+    hâlâ hiçbir şey göremiyordu. Bu, celery worker'a GERÇEKTEN sorup o an
+    aktif olan backtest task'larını döndürüyor — kim/nereden başlattığından
+    bağımsız, her zaman doğru (task_id hatırlamaya gerek yok)."""
+    from services.celery_app import celery_app
+
+    backtest_task_names = {
+        "run_backtest_task", "run_real_backtest_task", "run_portfolio_backtest_task",
+    }
+    try:
+        inspector = celery_app.control.inspect(timeout=2.0)
+        active = inspector.active() or {}
+    except Exception:
+        # Worker'a ulaşılamıyorsa (ör. Redis geçici olarak erişilemez):
+        # fail-closed — "kesinlikle boş" ile "sorgulanamadı"yı UI'ın
+        # karıştırmaması için ayrı bir alanla işaretleniyor.
+        return {"active": [], "inspection_available": False}
+
+    tasks = []
+    for worker, task_list in active.items():
+        for t in task_list or []:
+            if t.get("name") in backtest_task_names:
+                tasks.append({
+                    "task_id": t.get("id"),
+                    "name": t.get("name"),
+                    "args": t.get("args"),
+                    "worker": worker,
+                    "time_start": t.get("time_start"),
+                })
+    return {"active": tasks, "inspection_available": True}
+
+
 @router.get("/runs")
 async def list_runs(limit: int = 20, user: AuthContext = Depends(get_current_user)):
     with SessionFactory.get_session() as session:

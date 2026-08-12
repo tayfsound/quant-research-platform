@@ -87,7 +87,15 @@ def test_run_portfolio_aware_cycle_finalizes_every_symbol_and_applies_fusion_whe
 
         with patch.object(orch, "propose", side_effect=lambda sym: proposals.get(sym)):
             with patch("database.repositories.app_settings_repository.AppSettingsRepository.get") as mock_get:
-                mock_get.side_effect = lambda key: {"starting_capital": "1000", "max_portfolio_var_pct": "0.001"}[key]
+                # Faz 268c: run_portfolio_aware_cycle() artık başta ayrıca
+                # multi_timeframe_cascade_enabled'ı da okuyor (varsayılan
+                # "false" — propose() kullanılmaya devam etmeli, bu testin
+                # zaten mockladığı yol).
+                mock_get.side_effect = lambda key: {
+                    "starting_capital": "1000",
+                    "max_portfolio_var_pct": "0.001",
+                    "multi_timeframe_cascade_enabled": "false",
+                }[key]
                 results = orch.run_portfolio_aware_cycle(["BTCUSDT", "ETHUSDT"])
 
         assert len(results) == 2
