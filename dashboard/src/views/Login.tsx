@@ -55,7 +55,7 @@ function Login({ onLogin }: { onLogin: () => void }) {
           <p className="text-ink-soft text-sm mt-1">Cognitive Core</p>
         </div>
 
-        <div className="bg-surface/75 backdrop-blur-xl border border-line rounded-xl shadow-layer-3 p-7">
+        <div className="glass-panel border border-line rounded-xl shadow-layer-3 p-7">
           <div className="flex mb-6 bg-canvas-soft rounded-lg p-1">
             <button
               onClick={() => setMode('login')}

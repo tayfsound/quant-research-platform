@@ -237,7 +237,7 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
         description="AI'ın gerçekten açtığı ve kapattığı paper-trading işlemleri."
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
         <StatCard label="Açık pozisyon" value={openSummary?.open_count ?? open.length} />
         <StatCard label="Kapanmış işlem" value={summary?.count ?? 0} sub={summary ? `%${(summary.win_rate * 100).toFixed(0)} kazanma oranı` : undefined} />
         <StatCard label="TP ile kapanan" value={summary?.tp_count ?? 0} tone="rise" />

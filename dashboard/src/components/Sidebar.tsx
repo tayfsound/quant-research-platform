@@ -29,7 +29,7 @@ const GROUPS: { label: string; items: { key: string; label: string }[] }[] = [
 function Sidebar({ current, onChange, onLogout }: { current: string; onChange: (v: string) => void; onLogout: () => void }) {
   return (
     <nav className="w-64 shrink-0 h-screen sticky top-0 flex flex-col p-4">
-      <div className="flex-1 flex flex-col bg-surface/75 backdrop-blur-xl border border-line rounded-xl shadow-layer-2 overflow-hidden">
+      <div className="flex-1 flex flex-col glass-panel border border-line rounded-xl shadow-layer-2 overflow-hidden">
         <div className="px-5 py-5 border-b border-line-soft">
           <div className="flex items-center gap-2">
             <div className="w-2.5 h-2.5 rounded-full bg-accent" />

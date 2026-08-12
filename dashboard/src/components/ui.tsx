@@ -11,7 +11,7 @@ export function Card({
 }) {
   return (
     <div
-      className={`bg-surface/75 backdrop-blur-xl border border-line rounded-xl shadow-layer-1 hover:shadow-layer-2 min-w-0 overflow-hidden ${
+      className={`glass-panel border border-line rounded-xl shadow-layer-1 hover:shadow-layer-2 min-w-0 overflow-hidden ${
         padded ? "p-5" : ""
       } ${className}`}
     >

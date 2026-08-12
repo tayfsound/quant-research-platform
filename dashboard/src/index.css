@@ -92,6 +92,30 @@
   }
 }
 
+/* Faz 268-sonrası: kullanıcı isteği — "tüm container'ları saydam yapalım
+   ama dıştan içeri doğru tonal geçiş olsun, doğal görünsün." Önceki
+   `bg-surface/75` tekdüze/flat bir dolguydu (her yerde aynı opaklık) —
+   gerçek cam gibi görünmüyordu. Bu, merkezde neredeyse tam saydam,
+   kenarlara doğru hafifçe tonlanan radyal bir gradyan: gerçek camın
+   kenarlarda daha fazla yansıma/kırılma toplaması gibi. TEK kaynak
+   burada — Card/Sidebar/Login/StatusCard hepsi aynı `.glass-panel`
+   class'ını paylaşıyor, aralarında görsel tutarsızlık olmasın diye.
+   color-mix `--color-surface`'i kullandığı için light/dark tema
+   token'larıyla otomatik uyumlu, ayrı bir dark-mode kuralı gerekmiyor. */
+.glass-panel {
+  /* --glass-glow: isteğe bağlı, bir üst katman (ör. StatusCard'ın "açık"
+     durumdaki accent/rise parıltısı) — inline style ile bu değişken
+     set edilirse ana gradyanın ÜSTÜNE, onu değiştirmeden ekleniyor. */
+  background: var(--glass-glow, none), radial-gradient(
+    130% 130% at 50% 40%,
+    color-mix(in srgb, var(--color-surface) 16%, transparent) 0%,
+    color-mix(in srgb, var(--color-surface) 28%, transparent) 55%,
+    color-mix(in srgb, var(--color-surface) 50%, transparent) 100%
+  );
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+}
+
 html, body, #root {
   height: 100%;
 }

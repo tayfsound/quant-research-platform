@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { authHeaders } from "../api/auth";
 import { PageHeader, Button, Badge, StatCard, Card, ErrorNote, EmptyState, Spinner } from "../components/ui";
 import { useCurrency } from "../lib/currency";
@@ -78,10 +79,10 @@ function StatusCard({
   const glowColor = glow === "rise" ? "var(--color-rise)" : "var(--color-accent)";
   return (
     <div
-      className="relative overflow-hidden rounded-xl border border-line bg-surface/75 backdrop-blur-xl shadow-layer-1 hover:shadow-layer-2 p-6"
+      className="relative overflow-hidden rounded-xl border border-line glass-panel shadow-layer-1 hover:shadow-layer-2 p-6"
       style={
         isOn
-          ? { backgroundImage: `radial-gradient(120% 100% at 0% 0%, ${glowColor}14, transparent 60%)` }
+          ? ({ "--glass-glow": `radial-gradient(120% 100% at 0% 0%, ${glowColor}14, transparent 60%)` } as CSSProperties)
           : undefined
       }
     >
@@ -367,7 +368,7 @@ export default function Dashboard() {
 
       {perf && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <StatCard label="Açık pozisyon" value={openCount} />
             <StatCard label="Kapanmış işlem" value={perf.all_time.trade_count} />
             <StatCard label="Kazanma oranı" value={`%${(perf.all_time.win_rate * 100).toFixed(0)}`} />
