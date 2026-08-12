@@ -683,6 +683,23 @@ class CognitiveOrchestrator:
         returns = {s: v[-min_len:] for s, v in returns.items()}
         proposed_sizes = {s: v for s, v in proposed_sizes.items() if s in returns}
 
+        # Faz 268-sonrası — Cross-Symbol Correlation Filter: aşağıdaki VaR
+        # tabanlı fusion zaten pozisyon BÜYÜKLÜĞÜNÜ küçültüyor, ama
+        # council'in kendi CONVICTION'ı (confidence) hiç etkilenmiyordu.
+        # Aynı anda aynı yönde önerilen, birbirine yüksek korele semboller
+        # (aynı temel piyasa beta'sının yansımaları, bağımsız kanıt değil)
+        # için confidence da gerçekten indirime uğruyor — belief_engine.py'
+        # nin tek sembol içindeki crowding_penalty'siyle AYNI ilke, sembol
+        # düzeyine taşınmış hali.
+        from risk.cross_symbol_correlation import compute_same_direction_correlation_discount
+
+        directions = {sym: directional[sym]["direction"] for sym in returns}
+        conviction_multipliers = compute_same_direction_correlation_discount(returns, directions)
+        for sym, multiplier in conviction_multipliers.items():
+            if multiplier < 1.0:
+                ctx = directional[sym]["ctx"]
+                ctx.decision.confidence = round((ctx.decision.confidence or 0.0) * multiplier, 4)
+
         fusion = PortfolioFusionStage(PortfolioRiskEngine())
         result = fusion.fuse(
             proposed_sizes=proposed_sizes,
