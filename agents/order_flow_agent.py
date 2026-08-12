@@ -37,6 +37,30 @@ class OrderFlowAgent:
         elif context.spread_bps == 0:
             caveats.append("No spread data available")
 
+        # Faz 247-249: funding rate — sentiment_agent'ın positioning
+        # yorumuyla AYNI kontrarian felsefe (market_data/sentiment/
+        # positioning_provider.py). Kalabalık pozisyonlanma (aşırı pozitif
+        # funding = long'lar sıkışık) bir onay değil, bir uyarı — eşikler
+        # Binance'in normal 8 saatlik funding aralığına (~±0.01%) göre,
+        # >0.05% endüstri genelinde "yüksek" kabul edilir.
+        if context.funding_rate is not None:
+            if context.funding_rate > 0.0005:
+                score -= 0.6
+                evidence.append(f"Funding rate {context.funding_rate:.4%} — crowded long positioning (contrarian)")
+            elif context.funding_rate < -0.0005:
+                score += 0.6
+                evidence.append(f"Funding rate {context.funding_rate:.4%} — crowded short positioning (contrarian)")
+
+        # Open interest trend — technical_agent'taki ADX'in rolüyle aynı
+        # desen: yön belirlemiyor, mevcut yönü (yukarıdaki imbalance/
+        # taker akışından gelen) teyit ediyor ya da güveni azaltıyor.
+        if context.open_interest_trend == "rising" and score != 0:
+            score += 0.3 if score > 0 else -0.3
+            evidence.append("Open interest rising — new money confirming direction")
+        elif context.open_interest_trend == "falling":
+            caveats.append("Open interest falling — position unwinding, reduced conviction")
+            score *= 0.85
+
         if score > 0.5:
             direction = "LONG"
         elif score < -0.5:

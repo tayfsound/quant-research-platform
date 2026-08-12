@@ -6,7 +6,20 @@ ediyordu — hiç çalıştırılmamış olduğu için yakalanmamış bir
 `ValidationError` (aynı desen `market_data/ingestion/pipeline.py`'de
 bulunup düzeltilen bug). Ayrıca sadece event bus'a publish ediyordu —
 kalıcı subscriber yoktu, veri hiçbir zaman `market_trades`'e ulaşmıyordu.
-"""
+
+Faz 247-249 durumu: hâlâ hiçbir yerden çağrılmıyor, ama artık bunun
+gerçek bir eksiklik olduğu iddia edilemez — OrderFlowAgent'ın ihtiyaç
+duyduğu pratik sinyal (aggressive_buy_ratio, gerçek son işlemlerin
+isBuyerMaker alanından) zaten `ingest_order_book_task`'ın (services/
+tasks.py, her 20sn) REST tabanlı `fetch_recent_trades` çağrısıyla
+karşılanıyor — kalıcı bir WebSocket bağlantısı (yeniden bağlanma/
+backpressure gibi kendi risklerini taşıyan, bu kod tabanının geri
+kalanındaki periyodik-polling mimarisinden farklı bir model) açmadan.
+Bu sınıfın tek gerçek ek değeri, tam çözünürlüklü ham trade tick'lerini
+`market_trades`'e kalıcı olarak yazmak olurdu — şu an hiçbir gerçek
+kullanım senaryosu (VPIN gibi tick-seviyesi bir analiz) buna ihtiyaç
+duymuyor. Bilinçli olarak dokunulmadı — gerçek bir ihtiyaç doğarsa
+kullanılabilir durumda duruyor, ama şu an başlatılmıyor."""
 import json
 from datetime import UTC, datetime
 from typing import Iterable

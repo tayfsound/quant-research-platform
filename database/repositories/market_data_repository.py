@@ -145,13 +145,18 @@ class MarketDataRepository:
         imbalance: float,
         spread_bps: float,
         aggressive_buy_ratio: float | None = None,
+        funding_rate: float | None = None,
+        open_interest: float | None = None,
+        open_interest_trend: str | None = None,
     ) -> None:
         self.session.execute(
             text("""
                 INSERT INTO order_book_snapshots
-                    (exchange, symbol, time, best_bid, best_ask, bid_volume, ask_volume, imbalance, spread_bps, aggressive_buy_ratio)
+                    (exchange, symbol, time, best_bid, best_ask, bid_volume, ask_volume, imbalance, spread_bps,
+                     aggressive_buy_ratio, funding_rate, open_interest, open_interest_trend)
                 VALUES
-                    (:exchange, :symbol, :time, :best_bid, :best_ask, :bid_volume, :ask_volume, :imbalance, :spread_bps, :aggressive_buy_ratio)
+                    (:exchange, :symbol, :time, :best_bid, :best_ask, :bid_volume, :ask_volume, :imbalance, :spread_bps,
+                     :aggressive_buy_ratio, :funding_rate, :open_interest, :open_interest_trend)
             """),
             {
                 "exchange": exchange.value,
@@ -163,6 +168,9 @@ class MarketDataRepository:
                 "ask_volume": ask_volume,
                 "imbalance": imbalance,
                 "spread_bps": spread_bps,
+                "funding_rate": funding_rate,
+                "open_interest": open_interest,
+                "open_interest_trend": open_interest_trend,
                 "aggressive_buy_ratio": aggressive_buy_ratio,
             },
         )

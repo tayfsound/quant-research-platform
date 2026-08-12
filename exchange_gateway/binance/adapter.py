@@ -13,6 +13,14 @@ from exchange_gateway.base import BaseExchangeAdapter
 
 settings = get_settings()
 BASE_URL = "https://api.binance.com"
+# Faz 247-249 — gerçek bulgu: fetch_funding_rate/fetch_open_interest
+# /fapi/... (Binance FUTURES API) yollarını, spot'un temel URL'ine
+# (api.binance.com) bağlı paylaşılan istemciyle çağırıyordu — futures
+# uç noktaları spot alan adında yok, gerçek bir çağrı 403 Forbidden
+# döndürdü (doğrulandı). Bu iki metod hiçbir zaman gerçekten
+# çalışmamış — yazılmış ama hiç uçtan uca test edilmemiş, hiçbir
+# üretim kodu da çağırmadığı için fark edilmemiş.
+FUTURES_BASE_URL = "https://fapi.binance.com"
 
 
 class BinanceAdapter(BaseExchangeAdapter):
@@ -141,9 +149,16 @@ class BinanceAdapter(BaseExchangeAdapter):
         return [{"is_buyer_maker": bool(t["isBuyerMaker"])} for t in data]
 
     async def fetch_funding_rate(self, symbol: str) -> float:
-        data = await self._get("/fapi/v1/fundingRate", {"symbol": symbol, "limit": 1})
+        # httpx: client.get()'e MUTLAK bir URL verilirse, istemcinin kendi
+        # base_url'i (spot) yok sayılır — bu iki çağrı futures alan adına
+        # gider, self._get()'in spot-varsayılan davranışı bozulmadan.
+        resp = await self._client.get(f"{FUTURES_BASE_URL}/fapi/v1/fundingRate", params={"symbol": symbol, "limit": 1})
+        resp.raise_for_status()
+        data = resp.json()
         return float(data[0]["fundingRate"])
 
     async def fetch_open_interest(self, symbol: str) -> float:
-        data = await self._get("/fapi/v1/openInterest", {"symbol": symbol})
+        resp = await self._client.get(f"{FUTURES_BASE_URL}/fapi/v1/openInterest", params={"symbol": symbol})
+        resp.raise_for_status()
+        data = resp.json()
         return float(data["openInterest"])

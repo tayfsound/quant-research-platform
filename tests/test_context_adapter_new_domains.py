@@ -69,6 +69,36 @@ def test_to_order_flow_explicit_override_wins_over_db():
     assert result.bid_ask_imbalance == 0.9
 
 
+def test_to_order_flow_defaults_funding_rate_and_oi_trend_without_db_row():
+    ctx = CognitiveCycleContext(market={"symbol": f"NEVERINGESTED{uuid4().hex[:6]}USDT"})
+    result = ContextAdapter().to_order_flow(ctx)
+    assert result.funding_rate is None
+    assert result.open_interest_trend == "unknown"
+
+
+def test_to_order_flow_reads_real_funding_rate_and_oi_trend_from_db():
+    """Faz 247-249: gerçek DB'ye karşı — order_book_snapshots'a yazılan
+    funding_rate/open_interest_trend, to_order_flow() tarafından doğru
+    okunmalı."""
+    from contracts.market_data import DataSource
+    from database.repositories.market_data_repository import MarketDataRepository
+    from database.session_factory import SessionFactory
+
+    symbol = f"OFTEST{uuid4().hex[:6]}USDT"
+    with SessionFactory.get_session() as session:
+        MarketDataRepository(session).save_order_book_snapshot(
+            exchange=DataSource.BINANCE, symbol=symbol, time=datetime.now(UTC),
+            best_bid=100.0, best_ask=100.1, bid_volume=10.0, ask_volume=10.0,
+            imbalance=0.0, spread_bps=1.0, aggressive_buy_ratio=0.5,
+            funding_rate=0.0007, open_interest=12345.0, open_interest_trend="rising",
+        )
+
+    ctx = CognitiveCycleContext(market={"symbol": symbol})
+    result = ContextAdapter().to_order_flow(ctx)
+    assert result.funding_rate == 0.0007
+    assert result.open_interest_trend == "rising"
+
+
 def test_to_time_computes_real_wall_clock_fields():
     ctx = CognitiveCycleContext()
     result = ContextAdapter().to_time(ctx)

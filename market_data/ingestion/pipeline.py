@@ -77,6 +77,38 @@ class IngestionPipeline:
                     aggressive_buy_ratio = taker_buys / len(trades)
             except Exception:
                 pass  # gerçek veri yoksa uydurma bir sayı yazmıyoruz, None kalıyor
+
+            # Faz 247-249: funding rate + open interest — exchange_gateway/
+            # binance/adapter.py::fetch_funding_rate/fetch_open_interest
+            # zaten yazılmıştı ama yanlış temel URL'e (spot) gittiği için
+            # hiç çalışmamıştı, ayrı bir commit'te düzeltildi. Vadeli
+            # kontratı olmayan bir sembolde (fail-closed) None kalır,
+            # icat edilmiş bir sayı yazılmaz.
+            funding_rate = None
+            try:
+                funding_rate = await self.adapter.fetch_funding_rate(symbol)
+            except Exception:
+                pass
+
+            open_interest = None
+            open_interest_trend = None
+            try:
+                open_interest = await self.adapter.fetch_open_interest(symbol)
+                with SessionFactory.get_session() as session:
+                    previous = MarketDataRepository(session).get_latest_order_book_snapshot(
+                        DataSource.BINANCE, symbol,
+                    )
+                previous_oi = previous.get("open_interest") if previous else None
+                if previous_oi:
+                    pct_change = (open_interest - previous_oi) / previous_oi
+                    if pct_change > 0.02:
+                        open_interest_trend = "rising"
+                    elif pct_change < -0.02:
+                        open_interest_trend = "falling"
+                    else:
+                        open_interest_trend = "stable"
+            except Exception:
+                pass
         finally:
             await self.adapter.disconnect()
 
@@ -100,6 +132,9 @@ class IngestionPipeline:
                 imbalance=imbalance,
                 spread_bps=spread_bps,
                 aggressive_buy_ratio=aggressive_buy_ratio,
+                funding_rate=funding_rate,
+                open_interest=open_interest,
+                open_interest_trend=open_interest_trend,
             )
 
         return {
@@ -110,6 +145,9 @@ class IngestionPipeline:
             "imbalance": imbalance,
             "spread_bps": spread_bps,
             "aggressive_buy_ratio": aggressive_buy_ratio,
+            "funding_rate": funding_rate,
+            "open_interest": open_interest,
+            "open_interest_trend": open_interest_trend,
         }
 
     def _to_snapshot(self, symbol: str, timeframe: str, candle: dict) -> MarketSnapshot:

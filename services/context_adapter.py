@@ -311,6 +311,8 @@ class ContextAdapter:
 
         symbol = ctx.market.symbol or ""
         imbalance, spread_bps, aggressive_buy_ratio = 0.0, 0.0, 0.5
+        funding_rate = None
+        open_interest_trend = "unknown"
         if symbol:
             with SessionFactory.get_session() as session:
                 snapshot = MarketDataRepository(session).get_latest_order_book_snapshot(DataSource.BINANCE, symbol)
@@ -325,11 +327,19 @@ class ContextAdapter:
                     # nötr varsayılana düşüyor.
                     if snapshot.get("aggressive_buy_ratio") is not None:
                         aggressive_buy_ratio = snapshot["aggressive_buy_ratio"]
+                    # Faz 247-249: vadeli kontratı olmayan bir sembolde
+                    # (fail-closed) None/"unknown" kalır.
+                    if snapshot.get("funding_rate") is not None:
+                        funding_rate = snapshot["funding_rate"]
+                    if snapshot.get("open_interest_trend"):
+                        open_interest_trend = snapshot["open_interest_trend"]
 
         return OrderFlowContext(
             bid_ask_imbalance=self._get(ctx, "bid_ask_imbalance", imbalance),
             spread_bps=self._get(ctx, "spread_bps", spread_bps),
             aggressive_buy_ratio=self._get(ctx, "aggressive_buy_ratio", aggressive_buy_ratio),
+            funding_rate=self._get(ctx, "funding_rate", funding_rate),
+            open_interest_trend=self._get(ctx, "open_interest_trend", open_interest_trend),
         )
 
     def to_time(self, ctx: CognitiveCycleContext) -> TimeContext:

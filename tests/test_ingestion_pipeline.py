@@ -76,3 +76,40 @@ async def test_ingest_order_book_persists_real_binance_derived_metrics():
 
     assert row is not None
     assert row["best_bid"] == result["best_bid"]
+
+
+@pytest.mark.asyncio
+async def test_ingest_order_book_persists_real_funding_rate_and_open_interest():
+    """Faz 247-249: exchange_gateway/binance/adapter.py::fetch_funding_rate/
+    fetch_open_interest yanlış temel URL'e (spot) gidip hiç çalışmıyordu
+    (403 Forbidden, doğrulandı) — futures alan adına düzeltildi. Bu, gerçek
+    uçtan uca yolu kanıtlıyor: gerçek Binance Futures API -> order_book_
+    snapshots satırı."""
+    pipeline = IngestionPipeline(BinanceAdapter())
+    result = await pipeline.ingest_order_book("BTCUSDT", depth=10)
+
+    assert result["funding_rate"] is not None
+    assert -0.01 < result["funding_rate"] < 0.01  # gerçekçi bir 8 saatlik oran aralığı
+    assert result["open_interest"] is not None
+    assert result["open_interest"] > 0
+
+    with SessionFactory.get_session() as session:
+        row = MarketDataRepository(session).get_latest_order_book_snapshot(DataSource.BINANCE, "BTCUSDT")
+
+    assert row["funding_rate"] == result["funding_rate"]
+    assert row["open_interest"] == result["open_interest"]
+
+
+@pytest.mark.asyncio
+async def test_ingest_order_book_computes_open_interest_trend_from_previous_snapshot():
+    """İlk çağrıda önceki bir satır yoksa trend "unknown" kalmalı (fail-
+    closed); ikinci çağrıda gerçek OI farkına göre rising/falling/stable
+    hesaplanmalı."""
+    pipeline = IngestionPipeline(BinanceAdapter())
+
+    first = await pipeline.ingest_order_book("ETHUSDT", depth=10)
+    assert first["open_interest_trend"] in (None, "unknown", "rising", "falling", "stable")
+
+    second = await pipeline.ingest_order_book("ETHUSDT", depth=10)
+    if first["open_interest"] is not None and second["open_interest"] is not None:
+        assert second["open_interest_trend"] in ("rising", "falling", "stable")
