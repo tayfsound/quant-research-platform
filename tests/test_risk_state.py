@@ -178,6 +178,46 @@ def test_consecutive_losses_is_zero_when_the_most_recent_trade_won():
         _cleanup_symbol(symbol)
 
 
+def test_consecutive_losses_does_not_silently_truncate_at_the_initial_fetch_limit():
+    """Kritik bulgu (2026-08-12): canlıda gerçek bir seri (115 kayıp) sabit
+    bir sorgu limitinden (max(50, threshold*2)) UZUNDU — eski kod bunu
+    sessizce 50'de kesiyordu. threshold=5 iken başlangıç limiti max(50,10)=50
+    olur; burada 70 ardışık kayıp üretip GERÇEK sayının (70, 50 DEĞİL)
+    döndüğünü kanıtlıyoruz."""
+    from datetime import UTC, datetime, timedelta
+    from uuid import uuid4
+
+    from contracts.decision_event import DecisionEvent
+    from database.repositories.decision_persistor import DecisionPersistor
+
+    symbol = f"RISKSTATE{uuid4().hex[:8]}"
+    far_future = datetime.now(UTC) + timedelta(days=3650, hours=2)  # bu dosyadaki diğer testlerden bile daha yeni
+    try:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("kill_switch_consecutive_losses", "5", updated_by="test")
+
+        with SessionFactory.get_session() as session:
+            repo = DecisionPersistor(session)
+            pnls = [10.0] + [-1.0] * 70  # en eski: kazanç, sonra 70 ardışık kayıp
+            for i, pnl in enumerate(pnls):
+                event = DecisionEvent(
+                    id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+                    final_size=1.0, status="open", entry_price=100.0, quantity=1.0,
+                )
+                repo.persist(event)
+                repo.close_position(
+                    decision_id=str(event.id), exit_price=100.0, pnl=pnl,
+                    closed_at=far_future + timedelta(seconds=i),
+                )
+
+        state = load_position_risk_state()
+        assert state["consecutive_losses"] == 70
+    finally:
+        _cleanup_symbol(symbol)
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("kill_switch_consecutive_losses", "10", updated_by="test")
+
+
 def test_kill_switch_threshold_reflects_app_setting():
     with SessionFactory.get_session() as session:
         AppSettingsRepository(session).set("kill_switch_consecutive_losses", "7", updated_by="test")

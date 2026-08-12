@@ -46,17 +46,30 @@ def load_position_risk_state(
 
         # Kill switch: en son kapanmış işlemlerden (tüm semboller,
         # kronolojik olarak en yeniden en eskiye) geriye doğru, İLK
-        # kazançtan önceki ardışık kayıp sayısı. Eşiğin en az birkaç
-        # fazlası kadar kayıt çekiliyor ki gerçek bir seri varsa asla
-        # limit sınırında yanlışlıkla kesilmesin.
+        # kazançtan önceki ardışık kayıp sayısı.
+        #
+        # Kritik bulgu (2026-08-12): sabit bir limit (önceden max(50,
+        # threshold*2)) gerçek bir seri bu limitten UZUN olduğunda sessizce
+        # KESİLİYORDU — gerçek canlı olayda seri 115 iken bu sorgu sadece
+        # ilk 50'yi görüp consecutive_losses=50 döndürüyordu (kill switch
+        # yine de tetiklendi, threshold 10'du, ama sayı GERÇEĞİ yansıtmıyordu
+        # — daha yüksek bir threshold'da bu YANLIŞ NEGATİF'e dönüşebilirdi).
+        # Artık kazanca ya da gerçek geçmişin sonuna ulaşana kadar limit
+        # katlanarak büyütülüyor — asla sessizce kesilmiyor.
         consecutive_losses = 0
-        recent_closed = decision_repo.list_closed_trades(
-            limit=max(50, kill_switch_consecutive_losses * 2)
-        )
-        for trade in recent_closed:
-            if (trade.get("pnl") or 0.0) > 0:
+        fetch_limit = max(50, kill_switch_consecutive_losses * 2)
+        while True:
+            recent_closed = decision_repo.list_closed_trades(limit=fetch_limit)
+            consecutive_losses = 0
+            found_win = False
+            for trade in recent_closed:
+                if (trade.get("pnl") or 0.0) > 0:
+                    found_win = True
+                    break
+                consecutive_losses += 1
+            if found_win or len(recent_closed) < fetch_limit:
                 break
-            consecutive_losses += 1
+            fetch_limit *= 2
 
         open_positions = decision_repo.list_open_positions(limit=1000)
         if timeframe_filter is not None:
