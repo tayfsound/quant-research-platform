@@ -266,7 +266,9 @@ class DecisionPersistor:
                 "SELECT count(*) AS trade_count, "
                 "sum(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS wins, "
                 "sum(pnl) AS total_pnl, "
-                "sum(entry_price * quantity / COALESCE(NULLIF(leverage, 0), 1)) AS deployed_notional "
+                "sum(entry_price * quantity / COALESCE(NULLIF(leverage, 0), 1)) AS deployed_notional, "
+                "sum(CASE WHEN outcome ->> 'exit_reason' = 'take_profit' THEN 1 ELSE 0 END) AS tp_count, "
+                "sum(CASE WHEN outcome ->> 'exit_reason' = 'stop_loss' THEN 1 ELSE 0 END) AS sl_count "
                 "FROM decisions WHERE status = 'closed' AND excluded_from_stats = false"
             )
         ).mappings().one()
@@ -280,6 +282,8 @@ class DecisionPersistor:
             "total_pnl": float(row["total_pnl"] or 0.0),
             "deployed_notional": float(row["deployed_notional"] or 0.0),
             "excluded_count": excluded_count or 0,
+            "tp_count": row["tp_count"] or 0,
+            "sl_count": row["sl_count"] or 0,
         }
 
     def performance_by_period(self, period: str, limit: int = 200) -> list[dict]:

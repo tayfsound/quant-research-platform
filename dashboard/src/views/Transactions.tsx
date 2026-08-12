@@ -124,7 +124,7 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
   const [open, setOpen] = useState<Position[]>([]);
   const [openSummary, setOpenSummary] = useState<{ open_count: number; committed_notional: number } | null>(null);
   const [trades, setTrades] = useState<Position[]>([]);
-  const [summary, setSummary] = useState<{ count: number; win_rate: number; total_pnl: number } | null>(null);
+  const [summary, setSummary] = useState<{ count: number; win_rate: number; total_pnl: number; tp_count: number; sl_count: number } | null>(null);
   const [sinceMinutes, setSinceMinutes] = useState<number | null>(null);
   const [closingId, setClosingId] = useState<string | null>(null);
   const [closeError, setCloseError] = useState<string | null>(null);
@@ -237,9 +237,11 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
         description="AI'ın gerçekten açtığı ve kapattığı paper-trading işlemleri."
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
         <StatCard label="Açık pozisyon" value={openSummary?.open_count ?? open.length} />
         <StatCard label="Kapanmış işlem" value={summary?.count ?? 0} sub={summary ? `%${(summary.win_rate * 100).toFixed(0)} kazanma oranı` : undefined} />
+        <StatCard label="TP ile kapanan" value={summary?.tp_count ?? 0} tone="rise" />
+        <StatCard label="SL ile kapanan" value={summary?.sl_count ?? 0} tone="fall" />
         <StatCard
           label={`Toplam PnL (kapanmış, ${currency})`}
           value={summary ? format(summary.total_pnl) : "—"}

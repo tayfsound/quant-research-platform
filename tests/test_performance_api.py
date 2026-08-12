@@ -215,3 +215,41 @@ def test_trades_marked_excluded_from_stats_do_not_pollute_aggregates():
         # olmalı — kirli işlemin +99,999,999'u agregata hiç girmemiş.
         after_total = perf_body["all_time"]["total_pnl"]
         assert abs((after_total - before_total) - 10.0) < 0.01
+
+
+def test_trades_and_performance_summaries_count_tp_and_sl_closes():
+    """Dashboard'a eklenen TP/SL sayaçları — outcome jsonb'sindeki
+    exit_reason'a göre gerçek sayım, /trades ve /performance'ta AYNI
+    closed_trades_summary()'den geldiği için birebir eşleşmeli."""
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        symbol = f"TPSL{uuid4().hex[:8]}"
+        now = datetime.now(UTC)
+
+        def _closed_with_reason(pnl: float, exit_reason: str):
+            event = DecisionEvent(
+                id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+                final_size=1.0, confidence=0.6, status="open",
+                entry_price=100.0, quantity=1.0, opened_at=now,
+            )
+            with SessionFactory.get_session() as session:
+                repo = DecisionPersistor(session)
+                repo.persist(event)
+                repo.close_position(
+                    decision_id=str(event.id), exit_price=100.0, pnl=pnl, closed_at=now,
+                    outcome={"exit_reason": exit_reason},
+                )
+
+        _closed_with_reason(10.0, "take_profit")
+        _closed_with_reason(10.0, "take_profit")
+        _closed_with_reason(-5.0, "stop_loss")
+
+        client = _client()
+        trades_body = client.get(
+            "/api/v1/trades", params={"limit": 10000}, headers=make_authed_headers(Role.VIEWER)
+        ).json()
+        perf_body = client.get("/api/v1/performance", headers=make_authed_headers(Role.VIEWER)).json()
+
+        assert trades_body["summary"]["tp_count"] == perf_body["all_time"]["tp_count"]
+        assert trades_body["summary"]["sl_count"] == perf_body["all_time"]["sl_count"]
+        assert trades_body["summary"]["tp_count"] >= 2
+        assert trades_body["summary"]["sl_count"] >= 1
