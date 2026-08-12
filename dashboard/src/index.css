@@ -105,15 +105,23 @@
 .glass-panel {
   /* --glass-glow: isteğe bağlı, bir üst katman (ör. StatusCard'ın "açık"
      durumdaki accent/rise parıltısı) — inline style ile bu değişken
-     set edilirse ana gradyanın ÜSTÜNE, onu değiştirmeden ekleniyor. */
+     set edilirse ana gradyanın ÜSTÜNE, onu değiştirmeden ekleniyor.
+
+     Kritik bulgu: ilk versiyon (16%/28%/50%) açık temada GÖRÜNMÜYORDU —
+     çünkü --color-surface (#fff) ve --color-canvas (#f7f5f1) neredeyse
+     aynı renk; şeffaflık teknik olarak doğru olsa bile arkasında
+     "görülecek" belirgin bir şey yoksa göze fark etmiyor. Opaklık daha
+     da düşürüldü (8%/18%/32%) VE body'nin arkasındaki renkli lekeler
+     güçlendirildi (aşağıda) — cam etkisinin görünür olması için ikisi
+     birlikte gerekli. */
   background: var(--glass-glow, none), radial-gradient(
     130% 130% at 50% 40%,
-    color-mix(in srgb, var(--color-surface) 16%, transparent) 0%,
-    color-mix(in srgb, var(--color-surface) 28%, transparent) 55%,
-    color-mix(in srgb, var(--color-surface) 50%, transparent) 100%
+    color-mix(in srgb, var(--color-surface) 8%, transparent) 0%,
+    color-mix(in srgb, var(--color-surface) 18%, transparent) 55%,
+    color-mix(in srgb, var(--color-surface) 32%, transparent) 100%
   );
-  backdrop-filter: blur(28px) saturate(160%);
-  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
 }
 
 html, body, #root {
@@ -121,14 +129,18 @@ html, body, #root {
 }
 
 body {
-  /* Faz 268b: kullanıcı isteği — "opak glass effect." Card/Sidebar artık
-     yarı saydam + backdrop-blur; bunun görünür olması için zeminin düz
-     tek renk olmaması, hafif bir derinliği olması gerekiyor — köşelerde
-     çok belli belirsiz accent/rise renk lekeleri, sabit (scroll ile
-     kaymayan) bir arka plan. */
+  /* Faz 268b/268-sonrası: kullanıcı isteği — "opak glass effect." Card/
+     Sidebar artık yarı saydam + backdrop-blur; bunun görünür olması için
+     zeminin düz tek renk olmaması gerekiyor. İlk versiyon (9%/7% opaklık,
+     sadece iki köşe) açık temada (surface/canvas neredeyse aynı renk
+     olduğu için) fark edilmiyordu — lekeler güçlendirildi (15-18%) ve
+     üçüncü, ekranın ortasına yakın bir leke eklendi ki cam kartlar
+     nerede olursa olsun arkalarında GERÇEKTEN görülecek bir renk
+     geçişi olsun, sabit (scroll ile kaymayan) bir arka plan. */
   background:
-    radial-gradient(1100px 560px at 12% -8%, color-mix(in srgb, var(--color-accent) 9%, transparent), transparent 60%),
-    radial-gradient(900px 480px at 100% 0%, color-mix(in srgb, var(--color-rise) 7%, transparent), transparent 60%),
+    radial-gradient(1200px 640px at 10% -10%, color-mix(in srgb, var(--color-accent) 18%, transparent), transparent 60%),
+    radial-gradient(1000px 560px at 100% 0%, color-mix(in srgb, var(--color-rise) 15%, transparent), transparent 60%),
+    radial-gradient(900px 700px at 50% 90%, color-mix(in srgb, var(--color-warn) 12%, transparent), transparent 65%),
     var(--color-canvas);
   background-attachment: fixed;
   color: var(--color-ink);
