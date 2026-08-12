@@ -263,6 +263,48 @@ class PredictiveRiskStage:
         return ctx
 
 
+class DrawdownSizingStage:
+    """Faz 268-sonrası: Drawdown-Based Position Sizing (gambler's ruin
+    koruması). Kill switch'in KULLANDIĞI AYNI gerçek ardışık kayıp
+    sayacını (ctx.risk.consecutive_losses — services/risk_state.py'de
+    zaten hesaplanmış, ikinci bir hesaplama yok), kill switch'in "hep ya
+    da hiç" sert durmasından ÖNCE devreye giren kademeli bir fren olarak
+    kullanır. MetaStage'in (Kelly) ve PredictiveRiskStage'in (CPPI) EK
+    bir çarpanı — asla büyütmez, sadece küçültür."""
+
+    def execute(self, ctx: CognitiveCycleContext) -> CognitiveCycleContext:
+        if (ctx.decision.final_size or 0.0) <= 0:
+            return ctx
+
+        from database.repositories.app_settings_repository import AppSettingsRepository
+        from database.session_factory import SessionFactory
+        from risk.drawdown_sizing import drawdown_size_multiplier
+
+        with SessionFactory.get_session() as session:
+            settings_repo = AppSettingsRepository(session)
+            start_after_losses = int(settings_repo.get("drawdown_sizing_start_after_losses"))
+            full_reduction_at_losses = int(settings_repo.get("drawdown_sizing_full_reduction_at_losses"))
+
+        multiplier = drawdown_size_multiplier(
+            consecutive_losses=ctx.risk.consecutive_losses,
+            start_after_losses=start_after_losses,
+            full_reduction_at_losses=full_reduction_at_losses,
+        )
+
+        ctx.cognition.relevant_knowledge.append({
+            "type": "drawdown_sizing",
+            "data": {
+                "consecutive_losses": ctx.risk.consecutive_losses,
+                "exposure_multiplier": multiplier,
+            },
+        })
+
+        if multiplier < 1.0:
+            ctx.decision.final_size = round(ctx.decision.final_size * multiplier, 8)
+
+        return ctx
+
+
 class RiskTargetStage:
     """Faz 191 — gerçek bulgu: DecisionFusion (aşağıda) `ctx.decision.
     take_profit`/`stop_loss`'a bakıp Expected Value hesaplıyordu, ama

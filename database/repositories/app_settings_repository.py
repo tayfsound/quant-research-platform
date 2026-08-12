@@ -57,6 +57,13 @@ DEFAULTS: dict[str, str] = {
     # belirlemeli) — ama gerçek olayın hemen ardından makul, muhafazakâr
     # bir varsayılan olarak 10 seçildi.
     "kill_switch_consecutive_losses": "10",
+    # Drawdown-Based Position Sizing (gambler's ruin koruması) — kill
+    # switch'in kullandığı AYNI gerçek ardışık kayıp sayacıyla, sert
+    # durmadan ÖNCE devreye giren kademeli bir fren. 3. ardışık kayıptan
+    # itibaren, 10.'ya (kill switch'in kendi varsayılanıyla aynı, ama
+    # bağımsız ayarlanabilir) kadar doğrusal olarak boyut küçülür.
+    "drawdown_sizing_start_after_losses": "3",
+    "drawdown_sizing_full_reduction_at_losses": "10",
     # Faz 194: AI'ın sürekli izlediği/işlem yapabildiği enstrümanlar —
     # kripto (Binance) + endeks/emtia/hisse (Yahoo Finance). Nasdaq/S&P500
     # ayrıca crypto sembollerine korelasyon sinyali olarak da besleniyor

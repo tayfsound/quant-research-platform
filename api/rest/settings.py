@@ -60,6 +60,12 @@ def _validate(key: str, value: str) -> None:
                 raise ValueError
         except ValueError:
             raise HTTPException(400, "kill_switch_consecutive_losses must be a non-negative integer (0 = disabled)")
+    elif key in ("drawdown_sizing_start_after_losses", "drawdown_sizing_full_reduction_at_losses"):
+        try:
+            if int(value) < 0:
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, f"{key} must be a non-negative integer")
     elif key == "watchlist":
         symbols = [s.strip() for s in value.split(",") if s.strip()]
         if not symbols:
