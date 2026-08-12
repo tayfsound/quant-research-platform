@@ -11,6 +11,7 @@ from engines.cognitive_pipeline import (
     KnowledgeStage,
     MemoryStage,
     MetaStage,
+    PredictiveRiskStage,
     RecordingStage,
     RiskGateStage,
     RiskTargetStage,
@@ -44,6 +45,7 @@ class CognitiveEngine:
         self.binder_stage = BinderStage()
         self.council_stage = CouncilStage(registry, pinned_weight_snapshot_id=pinned_weight_snapshot_id)
         self.meta_stage = MetaStage()
+        self.predictive_risk_stage = PredictiveRiskStage()
         self.risk_target_stage = RiskTargetStage()
         self.decision_fusion = DecisionFusionStage()
         self.record_stage = RecordingStage()
@@ -77,6 +79,7 @@ class CognitiveEngine:
         ctx = self.binder_stage.execute(ctx)
         ctx, belief, opinions = self.council_stage.execute(ctx)
         ctx = self.meta_stage.execute(ctx, belief)
+        ctx = self.predictive_risk_stage.execute(ctx)
         ctx = self.risk_target_stage.execute(ctx)
         ctx = self.decision_fusion.execute(ctx, belief)
         ctx = self.risk_gate_stage.execute(ctx)

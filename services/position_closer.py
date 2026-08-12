@@ -295,6 +295,7 @@ class PositionCloser:
                     "quantity": quantity,
                     "exit_reason": "manual_full",
                 },
+                market_regime=self._extract_market_regime(pos),
             )
             self._record_agent_learning(pos, pnl)
             self._record_episodic_memory(pos, realized_pnl, "manual_full")
@@ -476,6 +477,7 @@ class PositionCloser:
             )
             pnl = gross_pnl - fee
 
+            market_regime = self._extract_market_regime(pos)
             decision_repo.close_position(
                 decision_id=str(pos["id"]),
                 exit_price=exit_price,
@@ -492,6 +494,7 @@ class PositionCloser:
                     "hold_seconds": age,
                     "exit_reason": exit_reason,
                 },
+                market_regime=market_regime,
             )
             closed.append({
                 "decision_id": str(pos["id"]), "symbol": symbol, "pnl": pnl, "win": pnl > 0,
@@ -500,7 +503,6 @@ class PositionCloser:
 
             if self._record_agent_learning(pos, pnl):
                 learned_any = True
-                market_regime = self._extract_market_regime(pos)
                 if market_regime != "unknown":
                     regimes_seen.add(market_regime)
             self._record_episodic_memory(pos, pnl, exit_reason)

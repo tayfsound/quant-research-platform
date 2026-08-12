@@ -314,7 +314,11 @@ class DecisionPersistor:
         pnl: float,
         closed_at,
         outcome: dict | None = None,
+        market_regime: str | None = None,
     ) -> None:
+        # Faz 244-246: market_regime verilmezse (ya da "unknown") sütun
+        # NULL kalır — icat edilmiş bir rejim atanmaz, Predictive Risk
+        # Monte Carlo'su sadece GERÇEKTEN etiketlenmiş kapanışları kullanır.
         self.session.execute(
             text("""
                 UPDATE decisions
@@ -323,7 +327,8 @@ class DecisionPersistor:
                     exit_price = :exit_price,
                     pnl = :pnl,
                     closed_at = :closed_at,
-                    outcome = CAST(:outcome AS jsonb)
+                    outcome = CAST(:outcome AS jsonb),
+                    market_regime = :market_regime
                 WHERE id = :id
             """),
             {
@@ -332,6 +337,7 @@ class DecisionPersistor:
                 "pnl": pnl,
                 "closed_at": closed_at,
                 "outcome": json.dumps(outcome, default=str) if outcome else None,
+                "market_regime": market_regime if market_regime and market_regime != "unknown" else None,
             },
         )
 

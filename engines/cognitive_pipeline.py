@@ -214,6 +214,53 @@ class MetaStage:
         return ctx
 
 
+class PredictiveRiskStage:
+    """Faz 244-246: Predictive Risk — Regime-Switching Monte Carlo + CPPI.
+
+    MetaStage'in (Kelly) belirlediği final_size'ı, GERÇEK geçmiş rejim-
+    koşullu getiri dağılımından bootstrap edilen bir Monte Carlo
+    simülasyonunun tahmin ettiği "yakın vadeli seri kayıp" riskine göre
+    EK olarak küçültür — RiskTargetStage'den (stop/target kurulumu)
+    ÖNCE çalışır, mevcut statik risk kapılarının (RiskGateStage) yerine
+    değil, onlara EK bir katman olarak. Yetersiz rejim verisi varsa
+    (fail-closed) final_size hiç değişmez."""
+
+    def execute(self, ctx: CognitiveCycleContext) -> CognitiveCycleContext:
+        if (ctx.decision.final_size or 0.0) <= 0:
+            return ctx
+
+        features = ctx.market.features or {}
+        trend = features.get("trend", "unknown")
+        if trend == "unknown":
+            return ctx
+        regime = f"{trend}_{features.get('volatility_regime', 'normal')}"
+
+        from risk.predictive.cppi import cppi_exposure_multiplier
+        from risk.predictive.monte_carlo import (
+            load_regime_conditioned_pnl_pct,
+            simulate_regime_drawdown_risk,
+        )
+
+        pct_returns = load_regime_conditioned_pnl_pct(regime)
+        result = simulate_regime_drawdown_risk(pct_returns)
+        multiplier = cppi_exposure_multiplier(result)
+
+        ctx.cognition.relevant_knowledge.append({
+            "type": "predictive_risk",
+            "data": {
+                "regime": regime,
+                "sample_count": result.get("sample_count"),
+                "breach_probability": result.get("breach_probability"),
+                "exposure_multiplier": multiplier,
+            },
+        })
+
+        if multiplier < 1.0:
+            ctx.decision.final_size = round(ctx.decision.final_size * multiplier, 8)
+
+        return ctx
+
+
 class RiskTargetStage:
     """Faz 191 — gerçek bulgu: DecisionFusion (aşağıda) `ctx.decision.
     take_profit`/`stop_loss`'a bakıp Expected Value hesaplıyordu, ama
