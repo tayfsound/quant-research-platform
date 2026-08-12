@@ -14,4 +14,12 @@ class QuantContext(BaseModel):
     # bar (candle_lookback pagination ile artık mümkün) gerektirir, yoksa
     # "insufficient_data".
     long_term_trend_regime: str = "insufficient_data"
+    # Faz 268-sonrası: gerçek olay (2026-08-12) — long_term_trend_regime
+    # YAVAŞ/gecikmeli (200-EMA tabanlı), fiyat aktif olarak tersine
+    # dönerken bile eski rejimi okumaya devam edebiliyor. Gerçek bir
+    # istatistiksel iki-örneklem testi (market_data/features/signal_
+    # engine.py::_regime_changepoint, Welch's t-test) son dönem
+    # getirisinin, bu rejimin yönüne ters, anlamlı bir kayma gösterip
+    # göstermediğini işaretliyor.
+    regime_changepoint_detected: bool = False
     timestamp: datetime = Field(default_factory=datetime.now)

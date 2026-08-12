@@ -298,6 +298,7 @@ class ContextAdapter:
             autocorrelation=self._get(ctx, "autocorrelation", 0.0),
             hurst_exponent=self._get(ctx, "hurst_exponent", 0.5),
             long_term_trend_regime=self._get(ctx, "long_term_trend_regime", "insufficient_data"),
+            regime_changepoint_detected=self._get(ctx, "regime_changepoint_detected", False),
         )
 
     def to_order_flow(self, ctx: CognitiveCycleContext) -> OrderFlowContext:

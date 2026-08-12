@@ -43,14 +43,35 @@ class QuantAgent:
         # kısa-vadeli istatistiksel karakterden (trending mi mean-reverting mi)
         # bağımsız, ayrı bir kanıt: fiyat gerçekten uzun vadede yükseliş/düşüş
         # trendinde mi. candle_lookback yeterince derinse (>=220 bar) hesaplanır.
+        long_term_contribution = 0.0
         if context.long_term_trend_regime == "bull_trend":
-            score += 1.0
+            long_term_contribution = 1.0
             evidence.append("Long-term regime (real 200-EMA, 220+ bar lookback): bull trend")
         elif context.long_term_trend_regime == "bear_trend":
-            score -= 1.0
+            long_term_contribution = -1.0
             evidence.append("Long-term regime (real 200-EMA, 220+ bar lookback): bear trend")
         elif context.long_term_trend_regime == "insufficient_data":
             caveats.append("Long-term trend regime unavailable — candle_lookback < 220 bars")
+
+        # Faz 268-sonrası — gerçek olay (2026-08-12): bu YAVAŞ/gecikmeli
+        # sinyal, fiyat aktif olarak tersine dönerken bile eski rejimi
+        # okumaya devam edip 50 ardışık gerçek kayba katkıda bulundu
+        # (agents/technical_agent.py de aynı yönde yanılmıştı — bu tek
+        # başına bir "council'i geçersiz kılan" bug değildi, ama bu
+        # SPESİFİK sinyalin gerçek geçmişte gösterdiği bir zaafiyet).
+        # Gerçek bir istatistiksel changepoint testi (market_data/
+        # features/signal_engine.py::_regime_changepoint) son dönem
+        # getirisinin bu rejimin yönüne ters, anlamlı bir kayma
+        # gösterdiğini tespit ederse, SADECE bu sinyalin katkısı
+        # (Hurst/z-score tabanlı diğer kanıtlar değil) indirime uğruyor.
+        if context.regime_changepoint_detected and long_term_contribution != 0.0:
+            caveats.append(
+                "Regime changepoint detected — recent returns statistically diverge from "
+                "this (lagging) long-term regime"
+            )
+            long_term_contribution *= 0.3
+
+        score += long_term_contribution
 
         # Aşırı volatilite — güveni azalt
         if context.realized_vol_percentile > 90:

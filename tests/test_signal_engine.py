@@ -141,6 +141,51 @@ def test_long_term_trend_regime_detects_a_real_sustained_downtrend():
     assert signals["long_term_trend_regime"] == "bear_trend"
 
 
+def test_regime_changepoint_not_detected_during_a_stable_sustained_trend():
+    """Faz 268-sonrası — gerçek olay (2026-08-12): long_term_trend_regime
+    YAVAŞ/gecikmeli olduğu için, aktif bir tersine dönüş sırasında bile
+    eski rejimi okumaya devam edip gerçek kayıplara katkıda bulundu.
+    Sabit, kararlı bir trendde (son 40 bar önceki 40 bar ile aynı yönde)
+    hiçbir changepoint tespit edilmemeli — yanlış pozitif olmamalı."""
+    closes = _oscillating_trend(100, 0.5, 300)
+    signals = compute_quant_signals(_bars(closes))
+    assert signals["long_term_trend_regime"] == "bull_trend"
+    assert signals["regime_changepoint_detected"] is False
+
+
+def test_regime_changepoint_detects_a_real_sharp_reversal_within_a_lagging_bull_trend():
+    """300 barlık sürdürülen bir yükseliş (200-EMA hâlâ 'bull_trend'
+    okur) sonrasında, son 40 barda GERÇEK, keskin bir tersine dönüş —
+    changepoint testi bunu yakalamalı, uzun-vade rejim hâlâ eskisini
+    okurken bile."""
+    uptrend = _oscillating_trend(100, 0.5, 300)
+    last_price = uptrend[-1]
+    # Tam olarak changepoint testinin pencere genişliği (20 bar) kadar bir
+    # dönüş: "recent" penceresi (son 20) tamamen bu dönüşü, "prior"
+    # penceresi (önceki 20) hâlâ orijinal yükselişin son barlarını görür
+    # — işaret değişimi net. 200-EMA'nın son-20-bar eğimini bozacak kadar
+    # güçlü değil (uzun-vade rejim hâlâ eskisini okusun).
+    sharp_reversal = [last_price - i * 0.8 for i in range(1, 21)]
+    closes = uptrend + sharp_reversal
+
+    signals = compute_quant_signals(_bars(closes))
+
+    assert signals["long_term_trend_regime"] == "bull_trend"  # hâlâ eski (yavaş) rejimi okuyor
+    assert signals["regime_changepoint_detected"] is True  # ama gerçek dönüş tespit edildi
+
+
+def test_regime_changepoint_ignores_acceleration_in_the_same_direction():
+    """Aynı yönde hızlanma (yön DEĞİŞMİYOR) bir changepoint sayılmamalı —
+    asıl ilgilenilen risk yön tersine dönmesi, momentum değişimi değil."""
+    uptrend = _oscillating_trend(100, 0.3, 300)
+    last_price = uptrend[-1]
+    accelerated_uptrend = [last_price + i * 3.0 for i in range(1, 41)]  # aynı yön, daha hızlı
+    closes = uptrend + accelerated_uptrend
+
+    signals = compute_quant_signals(_bars(closes))
+    assert signals["regime_changepoint_detected"] is False
+
+
 def test_fibonacci_signal_measures_support_from_the_most_recent_swing_high_in_an_uptrend():
     from market_data.features.signal_engine import _fibonacci_signal
     import numpy as np

@@ -580,6 +580,7 @@ def compute_quant_signals(data: list[OHLCV]) -> dict:
         return {
             "zscore": 0.0, "realized_vol_percentile": 50.0, "autocorrelation": 0.0,
             "hurst_exponent": 0.5, "long_term_trend_regime": "insufficient_data",
+            "regime_changepoint_detected": False,
         }
 
     closes = _closes(data)
@@ -594,6 +595,7 @@ def compute_quant_signals(data: list[OHLCV]) -> dict:
     autocorrelation = _autocorrelation(returns)
     hurst_exponent = _hurst_exponent(closes)
     long_term_trend_regime = _long_term_trend_regime(closes)
+    regime_changepoint_detected = _regime_changepoint(returns)
 
     return {
         "zscore": round(float(zscore), 3),
@@ -601,6 +603,7 @@ def compute_quant_signals(data: list[OHLCV]) -> dict:
         "autocorrelation": round(float(autocorrelation), 3),
         "hurst_exponent": round(float(hurst_exponent), 3),
         "long_term_trend_regime": long_term_trend_regime,
+        "regime_changepoint_detected": regime_changepoint_detected,
     }
 
 
@@ -630,6 +633,41 @@ def _long_term_trend_regime(closes: np.ndarray) -> str:
     if current_price < current_ema and slope < 0:
         return "bear_trend"
     return "transition"
+
+
+def _regime_changepoint(returns: np.ndarray, window: int = 20, significance_level: float = 0.05) -> bool:
+    """Faz 268-sonrası — gerçek olay (2026-08-12): long_term_trend_regime
+    (200-EMA tabanlı, YAVAŞ/gecikmeli) fiyat aktif olarak tersine
+    dönerken bile eski rejimi okumaya devam edip 50 ardışık gerçek
+    kayba katkıda bulundu (agents/quant_agent.py'nin döküman notuna
+    bkz.). Bu, icat edilmiş bir "rejim" modeli (HMM vb.) DEĞİL — son
+    `window` barın ortalama getirisini, ondan önceki `window` barınkiyle
+    Welch's t-test'iyle (services/ab_testing.py'nin zaten kullandığı AYNI
+    araç) karşılaştıran basit, açıklanabilir bir iki-örneklem testi.
+    Sadece YÖN DEĞİŞTİYSE (işaret farklıysa) True — aynı yönde
+    hızlanma/yavaşlama bir "changepoint" sayılmıyor, asıl ilgilenilen
+    risk yönün tersine dönmesi."""
+    if len(returns) < 2 * window:
+        return False
+
+    recent = returns[-window:]
+    prior = returns[-2 * window:-window]
+    recent_mean, prior_mean = float(recent.mean()), float(prior.mean())
+    if recent_mean == 0 or np.sign(recent_mean) == np.sign(prior_mean):
+        return False
+    if recent.std() == 0 and prior.std() == 0:
+        return False
+
+    from scipy import stats
+    try:
+        result = stats.ttest_ind(recent, prior, equal_var=False)
+    except Exception:
+        return False
+    p_value = float(result.pvalue)
+    if np.isnan(p_value):
+        return False
+
+    return p_value < significance_level
 
 
 def _realized_vol_percentile(returns: np.ndarray, window: int = 10) -> float:
