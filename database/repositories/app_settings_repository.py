@@ -55,7 +55,17 @@ DEFAULTS: dict[str, str] = {
     # PAXGUSDT/XAUTUSDT: gerçek altın-destekli kripto tokenlar (Binance'te
     # işlem görüyor, 24/7 — GC=F'nin CME saatleriyle sınırlı olmasının
     # tersine) — kullanıcı isteğiyle eklendi.
-    "watchlist": "BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,ADAUSDT,PAXGUSDT,XAUTUSDT,AAPL,NVDA,MSFT,GC=F,SI=F,^IXIC,^GSPC",
+    # Faz 268-sonrası: kullanıcı isteği — "shit coin olmamalı, piyasada
+    # değeri olan coinler." Gerçek Binance 24s hacim verisine göre seçildi,
+    # ama ham hacim sıralaması tek başına güvenilir bir filtre değil (yeni/
+    # spekülatif listelemeler de yüksek hacim gösterebiliyor) — sadece
+    # yıllardır var olan, gerçek kullanım/likiditesi kanıtlı, büyük
+    # borsalarda köklü projeler eklendi: DOGE (en likit meme-kökenli,
+    # geniş borsa desteği), TRX (Tron — gerçek USDT settlement hacmi),
+    # LINK (Chainlink — oracle altyapısı, DeFi'de yaygın), UNI (Uniswap —
+    # lider DEX), NEAR (Near Protocol — köklü L1), ZEC (Zcash — 2016'dan
+    # beri var, gizlilik odaklı köklü proje).
+    "watchlist": "BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,ADAUSDT,PAXGUSDT,XAUTUSDT,DOGEUSDT,TRXUSDT,LINKUSDT,UNIUSDT,NEARUSDT,ZECUSDT,AAPL,NVDA,MSFT,GC=F,SI=F,^IXIC,^GSPC",
     # Faz 199: portfolio_fusion.py'nin gerçekten bağlanması — aynı cycle'da
     # birden fazla sembol eşzamanlı yönlü öneri üretirse, gerçek kovaryans
     # matrisiyle hesaplanan portföy VaR'ı bu yüzdeyi (sermayenin) aşarsa
