@@ -23,6 +23,7 @@ class DecisionRecorder:
         debate_result=None,
         weight_snapshot_id=None,
         decision_fusion_entries=None,
+        experiment_bucket=None,
     ) -> DecisionEvent:
 
         direction = (
@@ -141,6 +142,7 @@ class DecisionRecorder:
             leverage=leverage,
             liquidation_price=liquidation_price,
             timeframe=ctx.market.timeframe,
+            experiment_bucket=experiment_bucket,
         )
 
         self.persistor.persist(event)

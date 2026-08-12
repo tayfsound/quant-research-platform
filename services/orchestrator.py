@@ -601,16 +601,37 @@ class CognitiveOrchestrator:
         Faz 268c — Multi-Timeframe Cascade varsayılan kapalı (app_settings.
         multi_timeframe_cascade_enabled) — açıksa propose() yerine
         propose_multi_timeframe() kullanılır (sembol başına ~3 kat
-        CognitiveEngine maliyeti, kullanıcı kararıyla kabul edildi)."""
+        CognitiveEngine maliyeti, kullanıcı kararıyla kabul edildi).
+
+        Faz 250 — Live A/B Testing Framework: multi_timeframe_cascade_
+        ab_test_enabled açıksa, statik açık/kapalı anahtarı yerine HER
+        sembol bağımsız olarak rastgele control (cascade kapalı)/treatment
+        (cascade açık) kovasına atanır ve kararı decisions.experiment_
+        bucket'a etiketlenir — services/ab_testing.py::evaluate_experiment
+        gerçek kapanmış işlemlerle karşılaştırabilsin diye. Varsayılan
+        kapalı, açıkken de statik ayarı GEÇERSİZ KILAR (ikisi aynı anda
+        anlamsız olurdu)."""
         from database.repositories.app_settings_repository import AppSettingsRepository
         from database.session_factory import SessionFactory
 
         with SessionFactory.get_session() as session:
-            cascade_enabled = AppSettingsRepository(session).get("multi_timeframe_cascade_enabled") == "true"
+            settings_repo = AppSettingsRepository(session)
+            cascade_enabled = settings_repo.get("multi_timeframe_cascade_enabled") == "true"
+            ab_test_enabled = settings_repo.get("multi_timeframe_cascade_ab_test_enabled") == "true"
 
         proposals: dict[str, dict] = {}
         for sym in symbols:
-            p = self.propose_multi_timeframe(sym) if cascade_enabled else self.propose(sym)
+            if ab_test_enabled:
+                from services.ab_testing import assign_bucket
+                bucket = assign_bucket()
+                p = self.propose_multi_timeframe(sym) if bucket == "treatment" else self.propose(sym)
+                if p is not None:
+                    p["ctx"].cognition.relevant_knowledge.append({
+                        "type": "experiment_bucket",
+                        "data": {"bucket": f"multi_timeframe_cascade_v1:{bucket}"},
+                    })
+            else:
+                p = self.propose_multi_timeframe(sym) if cascade_enabled else self.propose(sym)
             if p is not None:
                 proposals[sym] = p
 

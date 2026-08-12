@@ -95,6 +95,7 @@ def test_run_portfolio_aware_cycle_finalizes_every_symbol_and_applies_fusion_whe
                     "starting_capital": "1000",
                     "max_portfolio_var_pct": "0.001",
                     "multi_timeframe_cascade_enabled": "false",
+                    "multi_timeframe_cascade_ab_test_enabled": "false",
                 }[key]
                 results = orch.run_portfolio_aware_cycle(["BTCUSDT", "ETHUSDT"])
 
@@ -104,3 +105,37 @@ def test_run_portfolio_aware_cycle_finalizes_every_symbol_and_applies_fusion_whe
         # Fusion gerçekten ölçeklendirdiyse, kaydedilen size 1.0'dan küçük olmalı.
         for r in results:
             assert r["size"] < 1.0
+
+
+def test_run_portfolio_aware_cycle_tags_experiment_bucket_when_ab_test_enabled():
+    """Faz 250: multi_timeframe_cascade_ab_test_enabled açıkken, statik
+    cascade ayarı yerine her sembol bağımsız rastgele bir kovaya atanmalı
+    ve ctx.cognition.relevant_knowledge'a experiment_bucket etiketi
+    eklenmeli (RecordingStage'in okuyup decisions.experiment_bucket'a
+    yazdığı AYNI mekanizma)."""
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        orch = CognitiveOrchestrator()
+
+        proposals = {
+            "BTCUSDT": {"ctx": _fake_ctx("BTCUSDT", "LONG", 1.0), "data": _correlated_bars(seed=1), "fee": 0.0, "direction": "LONG"},
+        }
+
+        with patch.object(orch, "propose", side_effect=lambda sym: proposals.get(sym)):
+            with patch.object(orch, "propose_multi_timeframe", side_effect=lambda sym: proposals.get(sym)):
+                with patch("database.repositories.app_settings_repository.AppSettingsRepository.get") as mock_get:
+                    mock_get.side_effect = lambda key: {
+                        "starting_capital": "1000",
+                        "max_portfolio_var_pct": "0.5",
+                        "multi_timeframe_cascade_enabled": "false",
+                        "multi_timeframe_cascade_ab_test_enabled": "true",
+                    }[key]
+                    with patch("services.ab_testing.assign_bucket", return_value="treatment"):
+                        orch.run_portfolio_aware_cycle(["BTCUSDT"])
+
+        ctx = proposals["BTCUSDT"]["ctx"]
+        entries = [
+            item for item in ctx.cognition.relevant_knowledge
+            if item.get("type") == "experiment_bucket"
+        ]
+        assert len(entries) == 1
+        assert entries[0]["data"]["bucket"] == "multi_timeframe_cascade_v1:treatment"

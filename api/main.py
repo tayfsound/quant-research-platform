@@ -7,7 +7,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
-from api.rest import agents, audit, auth, backtest, cognitive, dashboard, market_data, memory, models, orchestrator, positions, risk_limits, settings, strategies, tokens, weights, webhooks, workspace
+from api.rest import agents, audit, auth, backtest, cognitive, dashboard, experiments, market_data, memory, models, orchestrator, positions, risk_limits, settings, strategies, tokens, weights, webhooks, workspace
 from config import get_settings
 from observability.health import router as health_router
 from observability.metrics import api_request_latency_seconds, api_requests_total, get_metrics
@@ -79,6 +79,7 @@ app.include_router(risk_limits.router, prefix="/api/v1")
 app.include_router(webhooks.router, prefix="/api/v1")
 app.include_router(market_data.router, prefix="/api/v1")
 app.include_router(agents.router, prefix="/api/v1")
+app.include_router(experiments.router, prefix="/api/v1")
 app.include_router(positions.router, prefix="/api/v1")
 app.include_router(settings.router, prefix="/api/v1")
 app.include_router(tokens.router, prefix="/api/v1")

@@ -381,6 +381,7 @@ class RecordingStage:
         # sorusunun cevabı DB'de hiç yoktu, her seferinde canlı kod
         # çalıştırıp yeniden üretmek gerekiyordu.
         decision_fusion_entries = []
+        experiment_bucket = None
 
         if hasattr(ctx, "cognition"):
             for item in ctx.cognition.relevant_knowledge:
@@ -394,7 +395,10 @@ class RecordingStage:
                 if item.get("type") == "weight_snapshot":
                     weight_snapshot_id = item.get("data", {}).get("id")
 
-                if debate_result and weight_snapshot_id:
+                if item.get("type") == "experiment_bucket" and experiment_bucket is None:
+                    experiment_bucket = item.get("data", {}).get("bucket")
+
+                if debate_result and weight_snapshot_id and experiment_bucket:
                     break
 
         event = self.recorder.record(
@@ -404,6 +408,7 @@ class RecordingStage:
             debate_result,
             weight_snapshot_id,
             decision_fusion_entries,
+            experiment_bucket,
         )
 
         from observability.metrics import decisions_total

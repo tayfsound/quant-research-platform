@@ -131,6 +131,14 @@ DEFAULTS: dict[str, str] = {
     # gecikme etkisini gördükten sonra açıp kapatabilsin.
     "multi_timeframe_cascade_enabled": "false",
     "multi_timeframe_cascade_timeframes": "15m,1h",
+    # Faz 250: Live A/B Testing Framework. Açıksa multi_timeframe_cascade_
+    # enabled'ın statik açık/kapalı anahtarı yerine, HER sembol/cycle
+    # bağımsız olarak rastgele control (cascade kapalı)/treatment (cascade
+    # açık) kovasına atanır ve decisions.experiment_bucket'a etiketlenir —
+    # services/ab_testing.py::evaluate_experiment gerçek kapanmış
+    # işlemlerle Welch's t-test karşılaştırması yapabilsin diye.
+    # Varsayılan kapalı — opt-in, mevcut davranış hiç değişmez.
+    "multi_timeframe_cascade_ab_test_enabled": "false",
 }
 
 CANDLE_TIMEFRAMES = ("1m", "5m", "15m", "1h", "4h", "1d")

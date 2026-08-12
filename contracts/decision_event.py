@@ -54,3 +54,7 @@ class DecisionEvent(BaseModel):
     # "1d" orta-vade swing) SQL ile sorgulanabilir kılıyor — önceden
     # sadece market_snapshot JSON'ı içinde gömülüydü.
     timeframe: str | None = None
+    # Faz 250: Live A/B Testing Framework — bu karar bir deneyin (ör.
+    # "multi_timeframe_cascade_v1") control/treatment kovasından mı
+    # geldi. Deneysel olmayan kararlarda (ezici çoğunluk) None kalır.
+    experiment_bucket: str | None = None
