@@ -21,6 +21,7 @@ from services.memory_consolidator import MemoryConsolidator
 from services.weight_optimizer import WeightOptimizer
 from services.weight_repository import WeightRepository
 from simulator.fee_engine import FeeEngine
+from simulator.funding_cost import compute_funding_cost
 
 # Faz 229: artık contracts/agent.py::VOTING_AGENT_DOMAINS — tek gerçek
 # kaynak, services/learning_loop.py ve services/weight_optimizer.py da
@@ -216,7 +217,18 @@ class PositionCloser:
         fee = self.fee_engine.calculate(entry_price * quantity) + self.fee_engine.calculate(
             current_price * quantity
         )
-        return gross_pnl - fee
+
+        funding_cost = 0.0
+        opened_at = pos.get("opened_at")
+        leverage = pos.get("leverage") or 1.0
+        if leverage > 1.0 and opened_at is not None:
+            funding_cost = compute_funding_cost(
+                symbol=pos.get("symbol", ""), direction=direction,
+                notional=entry_price * quantity,
+                opened_at=opened_at, closed_at=datetime.now(UTC),
+            )
+
+        return gross_pnl - fee - funding_cost
 
     def close_partial(
         self,
@@ -268,8 +280,19 @@ class PositionCloser:
         fee = self.fee_engine.calculate(entry_price * close_qty) + self.fee_engine.calculate(
             exit_price * close_qty
         )
-        pnl = gross_pnl - fee
         now = datetime.now(UTC)
+
+        funding_cost = 0.0
+        opened_at = pos.get("opened_at")
+        leverage = pos.get("leverage") or 1.0
+        if leverage > 1.0 and opened_at is not None:
+            funding_cost = compute_funding_cost(
+                symbol=symbol, direction=direction,
+                notional=entry_price * close_qty,
+                opened_at=opened_at, closed_at=now,
+            )
+
+        pnl = gross_pnl - fee - funding_cost
 
         # fraction'ı 1.0'a çok yakın vermek (ör. kalan miktarın tamamı)
         # gerçek bir tam kapanış — status='open' kalan, quantity'si ~0 olan
@@ -475,7 +498,22 @@ class PositionCloser:
             fee = self.fee_engine.calculate(entry_price * quantity) + self.fee_engine.calculate(
                 exit_price * quantity, is_maker=exit_is_maker
             )
-            pnl = gross_pnl - fee
+
+            # Faz 268-sonrası: funding rate maliyeti — SADECE kaldıraçlı
+            # (leverage>1, "spot değil, gerçek perpetual" — bkz. Faz 255)
+            # pozisyonlar için. Spot (leverage=1.0, bu sistemde kasıtlı
+            # olarak "kaldıraçsız" anlamına geliyor) hiçbir zaman funding
+            # ödemez/almaz — gerçek borsa mekaniğiyle tutarlı.
+            funding_cost = 0.0
+            leverage = pos.get("leverage") or 1.0
+            if leverage > 1.0:
+                funding_cost = compute_funding_cost(
+                    symbol=symbol, direction=direction,
+                    notional=entry_price * quantity,
+                    opened_at=opened_at, closed_at=now,
+                )
+
+            pnl = gross_pnl - fee - funding_cost
 
             market_regime = self._extract_market_regime(pos)
             decision_repo.close_position(
@@ -487,6 +525,7 @@ class PositionCloser:
                     "pnl": pnl,
                     "gross_pnl": gross_pnl,
                     "fee": fee,
+                    "funding_cost": funding_cost,
                     "win": pnl > 0,
                     "entry_price": entry_price,
                     "exit_price": exit_price,
