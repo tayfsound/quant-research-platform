@@ -83,7 +83,7 @@ DEFAULTS: dict[str, str] = {
     # LINK (Chainlink — oracle altyapısı, DeFi'de yaygın), UNI (Uniswap —
     # lider DEX), NEAR (Near Protocol — köklü L1), ZEC (Zcash — 2016'dan
     # beri var, gizlilik odaklı köklü proje).
-    "watchlist": "BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,ADAUSDT,PAXGUSDT,XAUTUSDT,DOGEUSDT,TRXUSDT,LINKUSDT,UNIUSDT,NEARUSDT,ZECUSDT,AAPL,NVDA,MSFT,GC=F,SI=F,^IXIC,^GSPC",
+    "watchlist": "BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,ADAUSDT,XAUTUSDT,DOGEUSDT,TRXUSDT,LINKUSDT,UNIUSDT,NEARUSDT,ZECUSDT,AAPL,NVDA,MSFT,GC=F,SI=F,^IXIC,^GSPC",
     # Faz 199: portfolio_fusion.py'nin gerçekten bağlanması — aynı cycle'da
     # birden fazla sembol eşzamanlı yönlü öneri üretirse, gerçek kovaryans
     # matrisiyle hesaplanan portföy VaR'ı bu yüzdeyi (sermayenin) aşarsa
