@@ -13,6 +13,7 @@ from services.council_orchestrator import CouncilOrchestrator
 from services.decision_context_builder import DecisionContextBuilder
 from services.decision_fusion import DecisionFusion
 from services.decision_recorder import DecisionRecorder
+from services.kelly_sizing import kelly_size_multiplier
 from services.knowledge_base import KnowledgeBase
 from services.metacognition import Metacognition
 
@@ -186,12 +187,23 @@ class MetaStage:
             # kalıyordu — DecisionRecorder.opens_position final_size>0
             # şartını hiç sağlayamıyor, "onaylanmış ACT" bile hiçbir zaman
             # gerçek pozisyon açmıyordu.
+            #
+            # Faz 268g — "İsabeti artırmanın yolu daha akıllı kullanım" yol
+            # haritasının D fazı (Signal-Strength Position Sizing). REDUCE
+            # dalı zaten confidence'a orantılı küçülüyordu ama ACT dalı
+            # confidence=0.71 ile 0.99'u AYNI (tam) büyüklükte açıyordu —
+            # hiç ayrım yoktu. Artık o confidence kovasının GERÇEK geçmiş
+            # kazanç/kayıp dağılımından (half-Kelly) bir çarpan uygulanıyor
+            # — [0,1] aralığında, sadece küçültebilir, asla büyütemez;
+            # yeterli veri yoksa (fail-closed) 1.0, mevcut davranış aynen
+            # korunur.
+            kelly_multiplier = kelly_size_multiplier(meta["confidence"])
             if belief.direction == "LONG":
                 ctx.decision.action = ActionType.ENTER_LONG
-                ctx.decision.final_size = ctx.decision.proposed_size
+                ctx.decision.final_size = ctx.decision.proposed_size * kelly_multiplier
             elif belief.direction == "SHORT":
                 ctx.decision.action = ActionType.ENTER_SHORT
-                ctx.decision.final_size = ctx.decision.proposed_size
+                ctx.decision.final_size = ctx.decision.proposed_size * kelly_multiplier
             else:
                 ctx.decision.action = ActionType.WAIT
                 ctx.decision.final_size = 0.0

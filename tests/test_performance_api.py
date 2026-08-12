@@ -86,6 +86,48 @@ def test_trades_endpoint_summary_matches_performance_all_time_even_when_table_is
         assert trades_body["summary"]["count"] >= 3
 
 
+def test_performance_endpoint_breaks_down_win_rate_and_pnl_by_trade_type():
+    """Faz 268f — kullanıcı isteği: "kısa/orta/uzun/swing/scalp gibi işlem
+    tiplerinden hangileri başarılı olmuş, dashboard'a otomatik yansısın."
+    Transactions.tsx::tradeTypeBadge() ile AYNI sınıflandırma (stop
+    mesafesi %4.5/%9 eşikleri, timeframe 4h/1d = orta_vadeli) burada da
+    uygulanıp /performance'a by_trade_type olarak ekleniyor mu?"""
+    from contracts.decision_event import DecisionEvent
+
+    now = datetime.now(UTC)
+
+    def _closed_with(symbol, pnl, entry_price=100.0, stop_loss_price=None, timeframe=None):
+        event = DecisionEvent(
+            id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+            final_size=1.0, confidence=0.6, status="open",
+            entry_price=entry_price, quantity=1.0, opened_at=now,
+            stop_loss_price=stop_loss_price, timeframe=timeframe,
+        )
+        with SessionFactory.get_session() as session:
+            repo = DecisionPersistor(session)
+            repo.persist(event)
+            repo.close_position(decision_id=str(event.id), exit_price=entry_price, pnl=pnl, closed_at=now)
+
+    scalp_symbol = f"TTSCALP{uuid4().hex[:6]}"
+    orta_symbol = f"TTORTA{uuid4().hex[:6]}"
+
+    # Scalp: |entry-stop|/entry = %2 < %4.5 eşiği. İki işlem, biri kazanç
+    # biri kayıp -> win_rate tam %50, hesabı elle doğrulanabilir.
+    _closed_with(scalp_symbol, pnl=10.0, entry_price=100.0, stop_loss_price=98.0)
+    _closed_with(scalp_symbol, pnl=-5.0, entry_price=100.0, stop_loss_price=98.0)
+    # Orta vadeli: timeframe=4h, stop mesafesinden bağımsız her zaman kazandı.
+    _closed_with(orta_symbol, pnl=20.0, entry_price=100.0, stop_loss_price=98.0, timeframe="4h")
+
+    client = _client()
+    response = client.get("/api/v1/performance", headers=make_authed_headers(Role.VIEWER))
+    assert response.status_code == 200
+    by_type = response.json()["by_trade_type"]
+
+    assert by_type["scalp"]["trade_count"] >= 2
+    assert by_type["orta_vadeli"]["trade_count"] >= 1
+    assert by_type["orta_vadeli"]["win_rate"] == 1.0
+
+
 def test_deployed_notional_reflects_real_margin_not_leveraged_notional():
     """Faz 268ah — kullanıcı bulgusu: "ROI konusunda problem olduğundan
     şüpheliyim, pozisyon büyüklükleri ilişkisi kaotik." Gerçek bug:

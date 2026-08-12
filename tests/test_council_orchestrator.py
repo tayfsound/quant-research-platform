@@ -58,7 +58,9 @@ def test_domain_confidence_calibration_is_applied_before_recalculate(monkeypatch
     değiştirdiği doğrulanıyor."""
     import services.council_orchestrator as co_module
 
-    monkeypatch.setattr(co_module, "calibrate_domain_confidence", lambda domain, raw: 0.01)
+    monkeypatch.setattr(
+        co_module, "calibrate_domain_confidence", lambda domain, raw, evidence_count=None: 0.01
+    )
 
     registry = AgentRegistry.create_default()
     orchestrator = CouncilOrchestrator(registry)
@@ -79,6 +81,35 @@ def test_domain_confidence_calibration_is_applied_before_recalculate(monkeypatch
         + technical.source_reliability * 0.20
     )
     assert abs(technical.intrinsic_trust - expected_intrinsic_trust) < 1e-9
+
+
+def test_deliberate_passes_each_opinions_real_evidence_count_to_calibration(monkeypatch):
+    """Faz 268e — gerçek bulgu: kalibrasyon TEK kanıtlı zayıf kararları da
+    tam güçle yükseltiyordu (canlıda doğrulandı, quant_agent). deliberate()
+    artık her ajanın GERÇEK evidence listesinin uzunluğunu kalibrasyona
+    iletmeli — sabit/varsayılan bir sayı değil."""
+    import services.council_orchestrator as co_module
+
+    captured: dict[str, int] = {}
+
+    def spy_calibrate(domain, raw, evidence_count=None):
+        captured[domain] = evidence_count
+        return raw
+
+    monkeypatch.setattr(co_module, "calibrate_domain_confidence", spy_calibrate)
+
+    registry = AgentRegistry.create_default()
+    orchestrator = CouncilOrchestrator(registry)
+    # Faz A/B'nin agent_confidence_model çarpanı (varsa) opinion.evidence'ı
+    # değiştirmiyor, sadece confidence'ı — bu testin gerçek amacı olan
+    # "kaç kanıt" sayımını etkilemiyor.
+    ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs")
+
+    _, opinions = orchestrator.deliberate({AgentDomain.TECHNICAL: ctx})
+    technical = next(o for o in opinions if o.domain == AgentDomain.TECHNICAL)
+
+    assert captured["technical"] == len(technical.evidence)
+    assert captured["technical"] > 0  # bullish+strengthening+higher_highs en az birkaç kanıt üretir
 
 
 def test_deliberate_uses_the_regime_specific_snapshot_when_one_exists(tmp_path):

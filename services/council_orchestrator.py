@@ -120,7 +120,16 @@ class CouncilOrchestrator:
             # için zaten yaptığı (Faz248) şeyin ajan-seviyesi eşi. Yeterli
             # veri olmayan bir domain için (fail-closed) ham değer aynen
             # kalır.
-            opinion.confidence = calibrate_domain_confidence(opinion.domain.value, opinion.confidence)
+            #
+            # Faz 268e — gerçek bulgu: kalibrasyon, TEK kanıtlı zayıf
+            # kararları da (ör. sadece "200-EMA bear trend") o kovanın
+            # ORTALAMA (genelde daha çok kanıtlı) geçmişine göre tam
+            # güçle yükseltiyordu. evidence_count ile bu düzeltme kanıt
+            # sayısına göre yumuşatılıyor (bkz. calibrate_domain_
+            # confidence docstring'i).
+            opinion.confidence = calibrate_domain_confidence(
+                opinion.domain.value, opinion.confidence, evidence_count=len(opinion.evidence)
+            )
             opinion.source_reliability = info["source_reliability"]
             if info.get("benched"):
                 # Auto-bench: bu domain art arda BENCH_AFTER kez düşük

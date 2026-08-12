@@ -86,3 +86,50 @@ def test_compute_domain_calibration_curves_builds_one_curve_per_domain(tmp_path)
     assert curves["technical"] == [(0.7, 0.8)]
     assert "quant" not in curves
     assert "time" not in curves
+
+
+def test_calibrate_domain_confidence_with_no_evidence_count_applies_full_calibration(monkeypatch):
+    """evidence_count verilmezse (varsayılan None) eski davranış aynen
+    korunmalı — tam kalibrasyon, geriye dönük uyumluluk."""
+    from services import confidence_calibration as cc
+
+    monkeypatch.setattr(cc, "get_domain_calibration_curves", lambda: {"quant": [(0.2, 0.8)]})
+    result = cc.calibrate_domain_confidence("quant", 0.2)
+    assert result == 0.8
+
+
+def test_calibrate_domain_confidence_dampens_correction_for_single_evidence_decision(monkeypatch):
+    """Faz 268e — gerçek bulgu: quant_agent'ın TEK kanıtlı (sadece
+    "200-EMA bear trend") ham %25 güvenli kararı, kalibrasyonla %77.5'e
+    şişmişti — o kovanın geçmişi muhtemelen çoğunlukla daha çok kanıtlı
+    kararlardan oluşuyordu. TEK kanıtlı bir karar artık kalibrasyonun
+    SADECE 1/3'ünü (evidence_count/_FULL_TRUST_EVIDENCE_COUNT) alıyor."""
+    from services import confidence_calibration as cc
+
+    monkeypatch.setattr(cc, "get_domain_calibration_curves", lambda: {"quant": [(0.25, 0.775)]})
+    raw = 0.25
+    full = cc.calibrate_domain_confidence("quant", raw)  # evidence_count=None -> tam
+    dampened = cc.calibrate_domain_confidence("quant", raw, evidence_count=1)
+
+    assert full == 0.775
+    expected = raw + (0.775 - raw) * (1 / 3)
+    assert abs(dampened - expected) < 1e-9
+    assert dampened < full  # tek kanıtlı karar, tam kalibrasyon kadar yükselmemeli
+
+
+def test_calibrate_domain_confidence_with_zero_evidence_stays_at_raw_value(monkeypatch):
+    from services import confidence_calibration as cc
+
+    monkeypatch.setattr(cc, "get_domain_calibration_curves", lambda: {"quant": [(0.25, 0.9)]})
+    result = cc.calibrate_domain_confidence("quant", 0.25, evidence_count=0)
+    assert result == 0.25  # hiç kanıt yoksa hiç kalibrasyon uygulanmamalı
+
+
+def test_calibrate_domain_confidence_with_three_plus_evidence_gets_full_trust(monkeypatch):
+    from services import confidence_calibration as cc
+
+    monkeypatch.setattr(cc, "get_domain_calibration_curves", lambda: {"quant": [(0.25, 0.9)]})
+    result_3 = cc.calibrate_domain_confidence("quant", 0.25, evidence_count=3)
+    result_5 = cc.calibrate_domain_confidence("quant", 0.25, evidence_count=5)
+    assert result_3 == 0.9
+    assert result_5 == 0.9  # 3'ten fazlası ekstra güven eklemiyor, tavan zaten 3'te

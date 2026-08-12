@@ -15,6 +15,7 @@ class QuantAgent:
         # Hurst exponent rejimi belirler: <0.5 mean-reverting, >0.5 trending
         mean_reverting_regime = context.hurst_exponent < 0.45
         trending_regime = context.hurst_exponent > 0.55
+        hurst_dead_zone = False
 
         if mean_reverting_regime:
             evidence.append(f"Hurst exponent {context.hurst_exponent:.2f} — mean-reverting regime")
@@ -36,6 +37,7 @@ class QuantAgent:
                 evidence.append(f"Negative autocorrelation {context.autocorrelation:.2f} — momentum continuation")
         else:
             caveats.append(f"Hurst exponent {context.hurst_exponent:.2f} — near random walk, no statistical edge")
+            hurst_dead_zone = True
 
         # Faz 222: gerçek 200 EMA'ya göre uzun-vade rejim — Hurst'ün ölçtüğü
         # kısa-vadeli istatistiksel karakterden (trending mi mean-reverting mi)
@@ -54,6 +56,20 @@ class QuantAgent:
         if context.realized_vol_percentile > 90:
             caveats.append(f"Realized volatility at {context.realized_vol_percentile:.0f}th percentile — reduced statistical reliability")
             score *= 0.6
+
+        # Faz 268e — gerçek bulgu: Hurst ölü bölgesindeyken (0.45-0.55, "ne
+        # trend ne mean-reversion") bu belirsizlik SADECE bir caveat olarak
+        # not ediliyordu, skoru hiç etkilemiyordu — ajan aynı anda "kısa/
+        # orta vadeli istatistiksel karakterden emin değilim" diyip tek
+        # başına zayıf bir uzun-vade sinyaliyle (long_term_trend_regime)
+        # yüksek görünen bir skor üretebiliyordu (canlıda doğrulandı: SI=F/
+        # GC=F/XAUTUSDT'de tekrar eden yanlış SHORT'lar — TEK kanıt "200-
+        # EMA bear trend", Hurst 0.47 ölü bölgede, yine de skor tam
+        # kullanılıyordu). Aşırı volatilite indirimiyle AYNI desen —
+        # istatistiksel zeminin belirsiz olduğu bir durumda güven de
+        # buna göre indirilmeli.
+        if hurst_dead_zone:
+            score *= 0.5
 
         if score > 0.5:
             direction = "LONG"

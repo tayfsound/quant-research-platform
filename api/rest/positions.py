@@ -34,6 +34,33 @@ def _extract_pairs_trade(row: dict) -> str | None:
     return None
 
 
+# Faz 268f — kullanıcı isteği: "kısa/orta/uzun/swing/scalp gibi işlem
+# tiplerinden hangileri başarılı olmuş, dashboard'a otomatik yansısın."
+# Transactions.tsx::tradeTypeBadge() ile AYNI sınıflandırma — tek gerçek
+# kaynak, biri backend (agregasyon) biri frontend (satır rozeti) için
+# burada tekrarlanıyor. Eşikler (%4.5 / %9) gerçek kapanmış işlem
+# dağılımından kalibre edildi (Faz 268ad).
+_SCALP_MAX_STOP_PCT = 4.5
+_GUN_ICI_MAX_STOP_PCT = 9.0
+
+
+def _classify_trade_type(row: dict) -> str | None:
+    if _extract_pairs_trade(row):
+        return "hedge"
+    if row.get("timeframe") in ("4h", "1d"):
+        return "orta_vadeli"
+    entry_price = row.get("entry_price")
+    stop_loss_price = row.get("stop_loss_price")
+    if entry_price and stop_loss_price and entry_price != 0:
+        pct = abs(entry_price - stop_loss_price) / entry_price * 100
+        if pct < _SCALP_MAX_STOP_PCT:
+            return "scalp"
+        if pct < _GUN_ICI_MAX_STOP_PCT:
+            return "gun_ici"
+        return "swing"
+    return None
+
+
 def _serialize(row: dict, current_price: float | None = None, net_unrealized_pnl: float | None = None) -> dict:
     outcome = row.get("outcome") or {}
     return {
@@ -197,6 +224,31 @@ async def performance_summary(user: AuthContext = Depends(get_current_user)):
         total_pnl = summary["total_pnl"]
         deployed_notional = summary["deployed_notional"]
 
+        # Faz 268f — kullanıcı isteği: "kısa/orta/uzun/swing/scalp gibi
+        # işlem tiplerinden hangileri başarılı olmuş, dashboard'a otomatik
+        # yansısın." limit=100_000 — sayfa boyutuyla değil, GERÇEK
+        # toplamla sınırlı (close-profitable'ın kullandığı aynı desen).
+        all_closed = persistor.list_closed_trades(limit=100_000)
+        type_buckets: dict[str, dict] = {}
+        for row in all_closed:
+            trade_type = _classify_trade_type(row)
+            if trade_type is None:
+                continue
+            bucket = type_buckets.setdefault(trade_type, {"trade_count": 0, "wins": 0, "total_pnl": 0.0})
+            pnl = float(row.get("pnl") or 0.0)
+            bucket["trade_count"] += 1
+            bucket["total_pnl"] += pnl
+            if pnl > 0:
+                bucket["wins"] += 1
+        by_trade_type = {
+            trade_type: {
+                "trade_count": b["trade_count"],
+                "win_rate": (b["wins"] / b["trade_count"]) if b["trade_count"] else 0.0,
+                "total_pnl": round(b["total_pnl"], 2),
+            }
+            for trade_type, b in type_buckets.items()
+        }
+
         return {
             "starting_capital": starting_capital,
             "all_time": {
@@ -217,6 +269,7 @@ async def performance_summary(user: AuthContext = Depends(get_current_user)):
             "weekly": weekly,
             "monthly": monthly,
             "yearly": yearly,
+            "by_trade_type": by_trade_type,
         }
 
 

@@ -149,6 +149,12 @@ type AllTime = {
   excluded_dirty_trades_count: number;
 };
 
+// Faz 268f — kullanıcı isteği: "kısa/orta/uzun swing scalp gibi işlem
+// tiplerinden hangileri başarılı olmuş, dashboard'a otomatik yansısın."
+// Transactions.tsx::tradeTypeBadge() ile AYNI sınıflandırma, backend'de
+// (api/rest/positions.py::_classify_trade_type) agregasyonu yapılıyor.
+type TradeTypeStat = { trade_count: number; win_rate: number; total_pnl: number };
+
 type PerformanceData = {
   starting_capital: number;
   all_time: AllTime;
@@ -156,6 +162,7 @@ type PerformanceData = {
   weekly: Bucket[];
   monthly: Bucket[];
   yearly: Bucket[];
+  by_trade_type: Record<string, TradeTypeStat>;
 };
 
 const PERIOD_TABS: { key: keyof Pick<PerformanceData, "daily" | "weekly" | "monthly" | "yearly">; label: string }[] = [
@@ -164,6 +171,17 @@ const PERIOD_TABS: { key: keyof Pick<PerformanceData, "daily" | "weekly" | "mont
   { key: "monthly", label: "Aylık" },
   { key: "yearly", label: "Yıllık" },
 ];
+
+const TRADE_TYPE_LABELS: Record<string, string> = {
+  scalp: "Scalp",
+  gun_ici: "Gün içi",
+  swing: "Swing",
+  orta_vadeli: "Orta vadeli",
+  hedge: "Hedge",
+};
+// En dar stoptan en genişe, sonra katman-tabanlı türler — okuma sırası
+// anlamlı olsun diye (rastgele obje key sırası değil).
+const TRADE_TYPE_ORDER = ["scalp", "gun_ici", "swing", "orta_vadeli", "hedge"];
 
 export default function Dashboard() {
   const [settings, setSettings] = useState<SettingsMap>({});
@@ -442,6 +460,51 @@ export default function Dashboard() {
               </div>
             )}
           </Card>
+
+          {Object.keys(perf.by_trade_type || {}).length > 0 && (
+            <>
+              <h3 className="text-sm font-semibold text-ink-soft uppercase tracking-wide mb-3 mt-8">
+                İşlem Tipine Göre Performans
+              </h3>
+              <p className="text-xs text-ink-faint mb-3">
+                Scalp/gün içi/swing, pozisyonun gerçek stop mesafesinden (Transactions'taki rozetlerle aynı
+                sınıflandırma) belirleniyor; orta vadeli ve hedge ayrı katman/mekanizmalar.
+              </p>
+              <Card padded={false}>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs text-ink-faint uppercase tracking-wide border-b border-line-soft">
+                        <th className="px-5 py-2 font-medium">Tür</th>
+                        <th className="px-5 py-2 font-medium">İşlem</th>
+                        <th className="px-5 py-2 font-medium">Kazanma oranı</th>
+                        <th className="px-5 py-2 font-medium">PnL</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {TRADE_TYPE_ORDER.filter((t) => perf.by_trade_type[t]).map((t) => {
+                        const stat = perf.by_trade_type[t];
+                        return (
+                          <tr key={t} className="border-b border-line-soft last:border-0">
+                            <td className="px-5 py-2.5 text-ink font-medium">{TRADE_TYPE_LABELS[t] || t}</td>
+                            <td className="px-5 py-2.5 text-ink-soft">{stat.trade_count}</td>
+                            <td className="px-5 py-2.5">
+                              <Badge tone={stat.win_rate >= 0.5 ? "rise" : "fall"}>
+                                {(stat.win_rate * 100).toFixed(0)}%
+                              </Badge>
+                            </td>
+                            <td className={`px-5 py-2.5 font-medium ${stat.total_pnl >= 0 ? "text-rise" : "text-fall"}`}>
+                              {format(stat.total_pnl)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </>
+          )}
         </>
       )}
     </div>

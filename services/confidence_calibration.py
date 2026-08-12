@@ -181,12 +181,38 @@ def get_domain_calibration_curves(force_refresh: bool = False) -> dict[str, list
     return _domain_cache["curves"]
 
 
-def calibrate_domain_confidence(domain: str, raw_confidence: float) -> float:
+# Faz 268e — gerçek bulgu: kalibrasyon eğrisi bir kova için "geçmişte bu
+# ham güveni beyan eden kararların ortalaması X kez doğru çıktı" diyor,
+# ama TEK bir kararın o ortalamayı ne kadar temsil ettiği kanıt sayısına
+# göre çok değişir. Canlıda doğrulandı: quant_agent'ın TEK kanıtlı
+# (sadece "200-EMA bear trend"), ham %25 güvenli bir SHORT kararı,
+# kalibrasyonla %77.5'e şişti — o kovadaki geçmiş kararların ÇOĞU
+# muhtemelen birden fazla kanıta dayanıyordu, ama kalibrasyon "kaç kanıt
+# var" diye hiç bakmıyordu. Artık az kanıtlı kararlarda kalibrasyonun
+# düzeltmesi (raw'dan ne kadar uzaklaştığı) kanıt sayısına göre
+# yumuşatılıyor — icat edilmiş bir ağırlık değil, "3+ kanıt varsa tam
+# güven, daha azsa orantılı" gibi en basit, açıklanabilir kural.
+_FULL_TRUST_EVIDENCE_COUNT = 3
+
+
+def calibrate_domain_confidence(
+    domain: str, raw_confidence: float, evidence_count: int | None = None
+) -> float:
     """Bir ajanın KENDİ domain'ine ait ampirik eğrisinden geçirir —
     calibrate_confidence()'ın üst/alt uç mantığı (fail-closed alt uç,
     en-son-gözleme-sabitleme üst uç) burada da aynen geçerli. O domain
-    için yeterli veri yoksa ham değeri değiştirmeden döner."""
+    için yeterli veri yoksa ham değeri değiştirmeden döner.
+
+    evidence_count verilirse (bkz. AgentOpinion.evidence — o kararın kaç
+    ayrı sinyale dayandığı), kalibrasyonun ham değerden ne kadar
+    uzaklaştığı bu sayıya göre yumuşatılır — 3+ kanıtta tam kalibrasyon,
+    daha azında orantılı olarak daha az. evidence_count verilmezse
+    (varsayılan None) eski davranış aynen korunur — tam kalibrasyon."""
     curve = get_domain_calibration_curves().get(domain)
     if not curve:
         return raw_confidence
-    return calibrate_confidence(raw_confidence, curve=curve)
+    calibrated = calibrate_confidence(raw_confidence, curve=curve)
+    if evidence_count is None:
+        return calibrated
+    trust = min(max(evidence_count, 0) / _FULL_TRUST_EVIDENCE_COUNT, 1.0)
+    return raw_confidence + (calibrated - raw_confidence) * trust
