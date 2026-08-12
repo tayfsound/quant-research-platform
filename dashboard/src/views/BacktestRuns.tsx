@@ -31,7 +31,13 @@ export default function BacktestRuns() {
   const [watchlist, setWatchlist] = useState<string[]>([]);
   const [selectedSymbols, setSelectedSymbols] = useState<string[]>([]);
   const [timeframe, setTimeframe] = useState("15m");
-  const [barsCount, setBarsCount] = useState("1000");
+  // Faz 268-sonrası: kullanıcı bulgusu — 1000 bar varsayılanı, her adımda
+  // gerçek bir CognitiveEngine.run() (gerçek embedding dahil) çalıştırdığı
+  // için dakikalarca sürüyordu; bu süre boyunca celery worker herhangi bir
+  // sebeple yeniden başlarsa (WorkerLostError) çalışan backtest sessizce
+  // kayboluyordu. 300, interaktif kullanım için çok daha hızlı tamamlanıyor
+  // — büyük bir koşu isteyen kullanıcı alanı elle değiştirebilir.
+  const [barsCount, setBarsCount] = useState("300");
   const [runningReal, setRunningReal] = useState(false);
   const [realStatus, setRealStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
