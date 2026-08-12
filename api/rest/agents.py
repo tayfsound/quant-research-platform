@@ -41,7 +41,7 @@ async def list_agents(user: AuthContext = Depends(get_current_user)):
         ],
         "critics": [
             {"domain": "risk", "role": "critic", "description": "Aşırı güven + yüksek volatilite, yön kalabalığı, düşük veri kalitesini eleştirir."},
-            {"domain": "alter_ego", "role": "critic", "description": "Herd behavior, overconfidence, confirmation bias denetimi (cognitive audit)."},
+            {"domain": "alter_ego", "role": "critic", "description": "Ajanların %75+'i aynı yönde oy verirken, ortalama güven yüksek ama kanıt zayıfken, ya da oybirliğine rağmen tartışmada hiç itiraz çıkmamışken council'i uyarır — pozisyon küçültmeyi ya da karşıt kanıt aramayı önerir."},
             {"domain": "source_reliability", "role": "annotator", "description": "Her ajanın gerçek geçmiş performansına göre güvenilirlik puanı verir."},
         ],
     }

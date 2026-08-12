@@ -1,9 +1,134 @@
-# Mevcut Durum -- v1.32.0 (Faz 228-238: öğrenme döngüsü kilidi + gerçek backtest + sinyal zenginleştirme)
+# Mevcut Durum -- v1.40.0 (Faz 268a-z + Faz 239-250: "İsabeti artırmanın yolu daha akıllı kullanım" yol haritası tamamlandı)
 
-**Tarih:** 2026-08-07
+**Tarih:** 2026-08-12
 **Branch:** main
 **Son commit (HEAD):** bkz. git log
-**Test:** 594+ passed, 1 xpassed (bilinen, non-regression flakiness: embedding-mock `TypeError`/`agent_memory.json` yarış durumu + 1 yerel Ollama'ya bağlı test — git-stash ile tekrar tekrar doğrulandı). `npx tsc -b` temiz.
+**Test:** 778 passed, 1 skipped, 1 xpassed, 1 failed (tek hata: yerel Ollama'ya bağlı gerçek bir zaman aşımı testi — ortam kaynaklı, kod regresyonu değil, tekrarlanan tam suite çalıştırmalarında doğrulandı). `npx tsc -b` temiz.
+
+## Faz 268a-z + Faz 239-250 — "İsabeti artırmanın yolu daha akıllı kullanım" yol haritası (2026-08-11 — 2026-08-12)
+
+İki ayrı yol haritası belgesi baştan sona uygulandı: önce Faz A-D (ajan-özel
+confidence kalibrasyonu, rejim-farkında öğrenme, çoklu-zaman-dilimi
+kademe, Kelly boyutlandırma), sonra Faz 239-250 (CMA-ES, Relative
+Strength Agent, Predictive Risk, Microstructure Layer, Live A/B Testing).
+Bu turun ayırt edici özelliği: her fazın yanında GERÇEK üretim
+verisiyle doğrulanmış, kod değişikliğine yol açan en az bir canlı bulgu
+var — hiçbiri sadece "yeni özellik ekleme" değil.
+
+**Faz A — Ajan-özel confidence kalibrasyonu.** Önceden SADECE fused/global
+confidence kalibre ediliyordu (`services/confidence_calibration.py::
+compute_calibration_curve`); artık her ajanın KENDİ ham confidence'ı,
+`council_orchestrator.py::deliberate()` içinde `AgentOpinion.recalculate()`
+'dan ÖNCE, o ajanın kendi domain'inin gerçek geçmiş doğruluğuna göre
+düzeltiliyor (`calibrate_domain_confidence`). Kanıt-sayısı yumuşatması
+eklendi: `evidence_count < 3` olan kararlarda düzeltmenin büyüklüğü
+`evidence_count/3` ile orantılı küçültülüyor — tek kanıtlı zayıf bir
+sinyalin kalibrasyonla yapay şekilde şişmesini önlüyor (gerçek bulgu:
+quant_agent'ın Hurst ölü bölgesindeki tek-kanıtlı bir SHORT'u %25'ten
+%77.5'e şişirmişti).
+
+**quant_agent Hurst ölü bölgesi.** Hurst exponent [0.45, 0.55] aralığında
+("ne trend ne mean-reversion") skor hiç indirim görmüyordu — artık
+volatilite indirimiyle AYNI desende `score *= 0.5`. Gerçek altın/gümüş
+SHORT kayıp serisinin kök nedeniydi; bugün (2026-08-12) gerçek kayıp
+işlem verisiyle yeniden replay edilip düzeltmenin işe yaradığı
+doğrulandı (aynı ham feature'lar artık SHORT değil WAIT üretiyor).
+
+**Faz B — Regime-Aware Learning.** `AgentWeightSnapshot`/`WeightApproval`
+artık piyasa rejimine ("trend_volatility" formatı) göre ayrı
+öğrenilebiliyor — bir rejimde iyi olan bir ajanın ağırlığı başka bir
+rejimin öğrenmesini kirletmiyor. Rejim-özel veri yoksa fail-closed
+global snapshot'a düşülüyor.
+
+**Faz C — Multi-Timeframe Cascade.** Üst zaman dilimlerinde (varsayılan
+15m/1h) TAM CognitiveEngine (embedding dahil) çalıştırılıp naive-Bayes
+bağımsız-kanıt varsayımıyla birleştiriliyor, `timeframe_belief` olarak
+ana motora enjekte ediliyor. Varsayılan kapalı (opt-in, ~3x maliyet).
+
+**Faz D — Signal-Strength Position Sizing (Kelly).** MetaStage'in ACT
+katmanı (confidence >= act_threshold) önceden confidence=0.71 ile
+confidence=0.99'a AYNI (tam) boyutu veriyordu. `services/kelly_sizing.py`
+artık o confidence kovasının GERÇEK kazanç/kayıp dağılımından half-Kelly
+çarpanı hesaplıyor — yetersiz veride 1.0 (mevcut davranış), asla
+büyütmüyor.
+
+**Kritik üretim olayı — HuggingFace Hub donması.** Embedding modeline
+giden zaman aşımsız, kimliksiz bir istek celery worker'ı (concurrency=1)
+tamamen dondurmuştu — canlı sırada 8320+ görev birikti, kullanıcının
+kendi backtest istekleri saatlerce sonuçsuz kaldı. `HF_HUB_OFFLINE=1`/
+`TRANSFORMERS_OFFLINE=1` (model zaten yerel cache'te) + kuyruk temizliği
++ servis restart ile çözüldü.
+
+**Faz 239-241 — Online Meta-Learning (CMA-ES).** `agents/technical_agent.py`
+'nin ~12 sabit skorlama katsayısı artık `TechnicalAgentCoefficients` ile
+dışarıdan verilebilir (varsayılanlar mevcut sabitlerle birebir aynı).
+`meta_optimizer/agent_tuner.py`, gerçek kapanmış işlemlerin gerçek
+feature'larını replay ederek CMA-ES ile bu katsayıları sentetik Sharpe'a
+göre arıyor; embargo'lu walk-forward doğrulama OOS Sharpe farkı >= +0.4
+şartını geçmeden bir θ insan onayına (agent_tuning_approvals, WeightApproval
+ile aynı desen) dahi sunulmuyor. Haftalık celery görevi.
+
+**Faz 242-243 — Relative Strength Agent (10. oy-veren ajan).** Bir
+sembolün getirisini AYNI anda izlenen watchlist'teki diğer sembollerin
+ortalama getirisiyle karşılaştırıyor. Ek ağ isteği yok — zaten
+`ingest_order_book_task`'ın doldurduğu `market_snapshots`'tan okunuyor.
+<3 karşılaştırma verisi varsa (ya da kripto olmayan bir sembol) dürüstçe
+WAIT.
+
+**Faz 244-246 — Predictive Risk (Regime-Switching Monte Carlo + CPPI).**
+`decisions.market_regime` eklendi (yeni sütun, sadece bundan sonraki
+kapanışlar için dolduruluyor). `risk/predictive/monte_carlo.py`, GERÇEK
+rejim-koşullu kapanmış işlem yüzde getirilerinden (icat edilmiş bir
+dağılım değil) bootstrap örneklemesiyle yakın-vadeli seri kayıp riskini
+simüle ediyor; `risk/predictive/cppi.py` bu riske göre MetaStage'in
+(Kelly) belirlediği boyutu CPPI mantığıyla EK olarak küçültüyor
+(RiskTargetStage'den önce) — [0.25, 1.0] aralığında, asla büyütmüyor.
+
+**Faz 247-249 — Microstructure Layer (funding rate + open interest).**
+Gerçek bulgu: `exchange_gateway/binance/adapter.py::fetch_funding_rate/
+fetch_open_interest` yazılmıştı ama `/fapi/...` (Binance FUTURES API)
+yollarını spot'un temel URL'ine bağlı istemciyle çağırıyordu — gerçek
+bir çağrı 403 Forbidden döndürüyordu, hiç çalışmamıştı. Mutlak URL ile
+düzeltildi. `order_flow_agent` (zaten 9. oy-veren ajan) iki yeni sinyalle
+genişletildi: funding_rate (sentiment_agent'ın positioning yorumuyla AYNI
+kontrarian felsefe) ve open_interest_trend (ADX'in technical_agent'taki
+rolüyle aynı desen — teyit/temkin, kendi başına yön belirlemiyor).
+
+**Faz 250 — Live A/B Testing Framework.** `decisions.experiment_bucket`
+(yeni sütun) bir kararın hangi deneyin control/treatment kovasından
+geldiğini etiketliyor. Faz 233'te kaldırılan `experiment_registry`
+tablosunun AKSİNE (write-only, hiç okunmayan bir denetim kaydıydı) —
+`services/ab_testing.py::evaluate_experiment` GERÇEKTEN okuyor: Welch's
+t-test ile control/treatment'ın gerçek pnl dağılımını karşılaştırıp
+promote/rollback/insufficient_data verdict'i döndürüyor.
+`multi_timeframe_cascade_ab_test_enabled` (varsayılan kapalı) açıkken
+her sembol bağımsız rastgele kovaya atanıyor.
+
+**Kritik canlı bulgu — donmuş ağırlık snapshot'ı.** `weight_history/`
+içinde technical_agent'ın ağırlığı 6 Ağustos'tan beri 1.42 (matematiksel
+olarak İMKANSIZ bir değer — gerçek formül asla 1.0'ı geçemez, eski/artık
+kullanılmayan bir güncelleme yolundan kalma) değerinde donmuş kalmıştı;
+bu değer canlı kararlara GERÇEKTEN uygulanıyordu (`belief_engine.py::
+apply_weights`). Aynı zamanda bugünkü (12 Ağustos) take_profit oranı
+tarihsel ~%20-37'den %0'a düşmüştü (102 stop_loss, 0 take_profit, 24
+saatte) — iki bulgu zaman olarak birebir örtüşüyor. Kullanıcı düzeltme
+onayını uyguladı, canlı ağırlık 1.42'den 0.776'ya düştü; etkisinin
+gözlemlenmesi (~4.7 saatlik ortalama pozisyon süresi nedeniyle) devam
+ediyor.
+
+**Metodolojik not — üçüncü taraf AI rapor doğrulama disiplini.** Bu tur
+boyunca kullanıcının yapıştırdığı birden fazla "AI inceleme raporu"
+(PAXG/altın SHORT kayıpları, "106/106 stop-loss" istatistiksel iddiası,
+confidence kalibrasyon bulguları) gerçek koda/veriye karşı doğrulandı.
+Sonuç karışıktı: bazı iddialar doğru çıktı (MacroAgent'ın gerçekten
+sistematik olarak yetersiz-güvenli çıktığı, ~%84.6 doğru ama %30 beyan
+ettiği — ama bu ZATEN Faz A'nın düzelttiği bir durum), bazıları abartılıydı
+("106/106" iddiası gerçekte 150 kapanıştan 37 kazanç/113 kayıptı, ve
+sistemin kendi 1:4 stop:hedef oranı zaten bir kayıp-ağırlıklı dağılım
+üretir — "yazı tura" varsayımı yanlıştı), bazıları tamamen yanlıştı
+(`reverse_direction` canlı kodda hiç yok; trend hesaplama ters değil).
+Prensip: her iddia gerçek sorgu/replay ile kanıtlanmadan aksiyona
+dönüşmüyor.
 
 ## Faz 228-238 — öğrenme döngüsü kilidi + gerçek backtest + sinyal zenginleştirme (2026-08-07)
 
