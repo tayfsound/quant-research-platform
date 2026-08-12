@@ -51,6 +51,9 @@ dependencies = [
     # (ADF üzerine kurulu) elle yazılmıyor, standart, iyi test edilmiş
     # statsmodels.tsa.stattools.coint kullanılıyor.
     "statsmodels>=0.14.0",
+    # Faz 239-241: ajan skorlama katsayılarının gerçek geçmiş backtest
+    # Sharpe'ına göre CMA-ES ile ayarlanması (meta_optimizer/agent_tuner.py).
+    "cma>=4.0.0",
 ]
 
 [project.optional-dependencies]

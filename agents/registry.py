@@ -39,7 +39,7 @@ class AgentRegistry:
         registry.register(AgentDomain.MACRO, MacroAgent())
         registry.register(AgentDomain.SENTIMENT, SentimentAgent())
         registry.register(AgentDomain.ONCHAIN, OnChainAgent())
-        registry.register(AgentDomain.TECHNICAL, TechnicalAgent())
+        registry.register(AgentDomain.TECHNICAL, TechnicalAgent(coefficients=cls._approved_technical_coefficients()))
         registry.register(AgentDomain.PATTERN, PatternAgent())
         registry.register(AgentDomain.QUANT, QuantAgent())
         registry.register(AgentDomain.ORDER_FLOW, OrderFlowAgent())
@@ -50,3 +50,16 @@ class AgentRegistry:
         discover_plugins(registry)
 
         return registry
+
+    @staticmethod
+    def _approved_technical_coefficients():
+        """Faz 239-241: insan onayından geçmiş (varsa) CMA-ES ile ayarlanmış
+        TechnicalAgent katsayıları — bkz. services/meta_learning_scheduler.py.
+        Onaylanmış bir θ yoksa (ya da DB henüz hazır değilse, ör. testlerde)
+        None döner, TechnicalAgent kendi sabit varsayılanına düşer
+        (fail-closed, mevcut davranış hiç bozulmaz)."""
+        try:
+            from services.meta_learning_scheduler import get_approved_technical_agent_coefficients
+            return get_approved_technical_agent_coefficients()
+        except Exception:
+            return None

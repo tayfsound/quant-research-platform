@@ -435,11 +435,21 @@ def run_real_backtest_multi(
     sayıda bar" kısıtına burada gerek yok).
 
     Faz 248: feed_agent_learning=True ise, her sembolün gerçek simüle
-    işlem sonuçları AgentMemory'ye source="backtest" ile kaydedilir."""
+    işlem sonuçları AgentMemory'ye source="backtest" ile kaydedilir.
+
+    Faz 268i — kullanıcı bulgusu: bu, önceden CANLI ile AYNI (varsayılan
+    "agent_memory_history/") dosyaya yazıyordu. source="backtest" etiketi
+    kaydı görünür/ayırt edilebilir kılıyordu ama HİÇBİR gerçek sorgu
+    (WeightOptimizer.propose_weights, AgentMemory.get_summary) bu alana
+    göre filtrelemiyordu — yani her backtest çalıştırması, oranı düşük
+    olsa da, canlı ağırlık öğrenmesine sessizce karışıyordu. Artık tamamen
+    ayrı bir dosyada (backtest_agent_memory_history/) — canlı öğrenmeyi
+    hiç etkilemiyor, ama istenirse (ör. meta_optimizer/agent_tuner.py gibi
+    offline analizler için) hâlâ ayrıca incelenebilir."""
     from services.agent_memory import AgentMemory
 
     engine = CognitiveEngine()
-    agent_memory = AgentMemory() if feed_agent_learning else None
+    agent_memory = AgentMemory(storage_path="backtest_agent_memory_history") if feed_agent_learning else None
     per_symbol = {}
     for symbol in symbols:
         per_symbol[symbol] = run_real_backtest(

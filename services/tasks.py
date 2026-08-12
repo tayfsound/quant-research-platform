@@ -213,6 +213,28 @@ def auto_reject_stale_weight_approvals_task(max_age_hours: float = 24) -> dict:
     return {"rejected_count": rejected_count, "max_age_hours": max_age_hours}
 
 
+@celery_app.task(name="propose_agent_tuning_task")
+def propose_agent_tuning_task() -> dict:
+    """Faz 239-241: Online Meta-Learning (CMA-ES). retrain_agent_confidence_
+    models_task'tan (günlük, ucuz — birkaç yüz satırlık lojistik regresyon)
+    KASITLI OLARAK ayrı ve daha SEYREK — CMA-ES her çalıştığında yüzlerce/
+    binlerce kayıt üzerinde tekrar tekrar TechnicalAgent.analyze() çağıran
+    gerçek bir arama, ucuz bir işlem değil. Fail-closed: yetersiz veri ya
+    da walk-forward geçmezse hiçbir şey oluşturmaz (bkz.
+    services/meta_learning_scheduler.py::propose_technical_agent_tuning)."""
+    from services.meta_learning_scheduler import propose_technical_agent_tuning
+
+    approval = propose_technical_agent_tuning()
+    if approval is None:
+        return {"proposed": False}
+    return {
+        "proposed": True,
+        "agent_id": approval.agent_id,
+        "sharpe_improvement": approval.sharpe_improvement,
+        "sample_count": approval.sample_count,
+    }
+
+
 @celery_app.task(name="ingest_order_book_task")
 def ingest_order_book_task() -> dict:
     """Faz 201: gerçek bulgu — market_data/ingestion/pipeline.py::

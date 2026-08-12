@@ -106,6 +106,16 @@ celery_app.conf.beat_schedule = {
         "task": "auto_reject_stale_weight_approvals_task",
         "schedule": 86400.0,
     },
+    # Faz 239-241: Online Meta-Learning (CMA-ES). retrain-agent-confidence-
+    # models-daily'den (ucuz, lojistik regresyon) KASITLI OLARAK çok daha
+    # seyrek — her çalıştığında yüzlerce/binlerce gerçek kayıt üzerinde
+    # CMA-ES araması yapıyor (services/meta_learning_scheduler.py), haftalık
+    # yeterli (ajan katsayılarının gerçek anlamda kayması günler değil
+    # haftalar sürer).
+    "propose-agent-tuning-weekly": {
+        "task": "propose_agent_tuning_task",
+        "schedule": 604800.0,
+    },
     # Faz 259: kullanıcı isteği — orta-vadeli pozisyon katmanı. Günlük/4h
     # sinyal kısa-vadeli katmandan (120sn) çok daha yavaş değişiyor —
     # 4 saatte bir kontrol yeterli (medium_term_enabled=false iken görev

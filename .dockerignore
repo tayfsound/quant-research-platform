@@ -20,6 +20,7 @@ __pycache__/
 
 # Runtime state that shouldn't be baked into an image either.
 agent_memory_history/
+backtest_agent_memory_history/
 decision_logs/
 weight_history/
 agents/plugins/*.py

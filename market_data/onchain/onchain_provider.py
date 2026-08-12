@@ -41,37 +41,66 @@ _BITCOIN_DATA_MVRV_ZSCORE_URL = "https://bitcoin-data.com/v1/mvrv-zscore/last"
 _MVRV_CACHE: dict[str, tuple[float, float | None]] = {}
 _MVRV_CACHE_TTL_SECONDS = 3600
 
+# Faz 268j — gerçek olay: bir walk-forward backtest'te (15 sembol, 5m,
+# 1000 bar) HER TEK bar için bu modüldeki 5 fonksiyon (yalnızca MVRV hariç)
+# önbelleksiz, taze bir ağ isteği atıyordu — canlı log'da bar başına ~2.2sn
+# gecikme, ~900 bar/sembol × 15 sembol'de saatler sürecek bir backtest'e
+# yol açtı (kullanıcı "yarım saat oldu bitmedi" diye fark etti). Üstelik
+# bunlar HER ZAMAN "şu an"ki gerçek zamanlı veriyi çekiyordu — geçmiş bir
+# bar'ı değerlendirirken bile bugünün gas price/hash rate/TPS'i kullanmak
+# demek, aslında o an bilinmeyen bir bilginin geçmişe sızması (look-ahead
+# bias). MVRV zaten bu kalıbı kullanıyordu (Faz 268v) — aynısı diğer 4
+# fonksiyona da uygulandı. Bu, HIZ sorununu çözer (aynı process içindeki
+# tekrarlanan barlar artık tek bir ağ isteğini paylaşır); look-ahead
+# sorununu TAM olarak çözmez (hâlâ "şu an"ın verisi, gerçek o-tarihli
+# geçmiş veri değil) — bu, ücretsiz/kimliksiz API'lerin gerçek bir
+# yapısal sınırı, icat edilmiş bir çözüm eklenmedi.
+_GENERIC_CACHE_TTL_SECONDS = 3600
+_generic_cache: dict[str, tuple[float, object]] = {}
+
+
+def _cached(key: str, fetch_fn):
+    cached = _generic_cache.get(key)
+    if cached and (time.monotonic() - cached[0]) < _GENERIC_CACHE_TTL_SECONDS:
+        return cached[1]
+    value = fetch_fn()
+    _generic_cache[key] = (time.monotonic(), value)
+    return value
+
 
 def _fetch_blockchain_info_trend(chart: str, timespan: str = "14days") -> str | None:
     """Son değeri, aynı serinin önceki (bugün hariç) ortalamasıyla
     karşılaştırıp rising/falling/stable döndürür — FRED sağlayıcısının
     (market_data/macro/fred_provider.py) kullandığı yüzde-değişim
     yöntemiyle aynı, tutarlı yaklaşım."""
-    try:
-        response = httpx.get(
-            _BLOCKCHAIN_INFO_CHARTS_URL.format(chart=chart),
-            params={"timespan": timespan, "format": "json"},
-            timeout=10,
-        )
-        response.raise_for_status()
-        values = [v["y"] for v in response.json().get("values", [])]
-        if len(values) < 5:
+    def _do_fetch() -> str | None:
+        try:
+            response = httpx.get(
+                _BLOCKCHAIN_INFO_CHARTS_URL.format(chart=chart),
+                params={"timespan": timespan, "format": "json"},
+                timeout=10,
+            )
+            response.raise_for_status()
+            values = [v["y"] for v in response.json().get("values", [])]
+            if len(values) < 5:
+                return None
+
+            current = values[-1]
+            baseline = sum(values[:-1]) / len(values[:-1])
+            if baseline == 0:
+                return None
+            pct_change = (current - baseline) / abs(baseline)
+
+            if pct_change > 0.05:
+                return "rising"
+            if pct_change < -0.05:
+                return "falling"
+            return "stable"
+        except Exception as exc:
+            logger.warning("blockchain.info chart fetch failed (%s): %s", chart, exc)
             return None
 
-        current = values[-1]
-        baseline = sum(values[:-1]) / len(values[:-1])
-        if baseline == 0:
-            return None
-        pct_change = (current - baseline) / abs(baseline)
-
-        if pct_change > 0.05:
-            return "rising"
-        if pct_change < -0.05:
-            return "falling"
-        return "stable"
-    except Exception as exc:
-        logger.warning("blockchain.info chart fetch failed (%s): %s", chart, exc)
-        return None
+    return _cached(f"blockchain_info_trend:{chart}:{timespan}", _do_fetch)
 
 
 def fetch_network_activity_trend() -> str | None:
@@ -95,25 +124,28 @@ _TOTAL_SUPPLY_SELECTOR = "0x18160ddd"
 
 
 def _infura_rpc(method: str, params: list) -> dict | None:
-    settings = get_settings()
-    url = settings.INFURA_MAINNET_URL
-    if not url:
-        return None
-    try:
-        response = httpx.post(
-            url,
-            json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params},
-            timeout=10,
-        )
-        response.raise_for_status()
-        data = response.json()
-        if "error" in data:
-            logger.warning("Infura RPC error (%s): %s", method, data["error"])
+    def _do_call() -> dict | None:
+        settings = get_settings()
+        url = settings.INFURA_MAINNET_URL
+        if not url:
             return None
-        return data
-    except Exception as exc:
-        logger.warning("Infura RPC call failed (%s): %s", method, exc)
-        return None
+        try:
+            response = httpx.post(
+                url,
+                json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params},
+                timeout=10,
+            )
+            response.raise_for_status()
+            data = response.json()
+            if "error" in data:
+                logger.warning("Infura RPC error (%s): %s", method, data["error"])
+                return None
+            return data
+        except Exception as exc:
+            logger.warning("Infura RPC call failed (%s): %s", method, exc)
+            return None
+
+    return _cached(f"infura_rpc:{method}:{params}", _do_call)
 
 
 def fetch_eth_gas_price_gwei() -> float | None:
@@ -133,27 +165,30 @@ def fetch_usdt_total_supply() -> float | None:
 
 
 def fetch_solana_tps() -> float | None:
-    settings = get_settings()
-    if not settings.HELIUS_API_KEY:
-        return None
-    url = f"https://mainnet.helius-rpc.com/?api-key={settings.HELIUS_API_KEY}"
-    try:
-        response = httpx.post(
-            url,
-            json={"jsonrpc": "2.0", "id": 1, "method": "getRecentPerformanceSamples", "params": [1]},
-            timeout=10,
-        )
-        response.raise_for_status()
-        data = response.json()
-        samples = data.get("result") or []
-        if not samples:
+    def _do_fetch() -> float | None:
+        settings = get_settings()
+        if not settings.HELIUS_API_KEY:
             return None
-        sample = samples[0]
-        period = sample.get("samplePeriodSecs") or 1
-        return sample.get("numTransactions", 0) / period
-    except Exception as exc:
-        logger.warning("Helius RPC call failed: %s", exc)
-        return None
+        url = f"https://mainnet.helius-rpc.com/?api-key={settings.HELIUS_API_KEY}"
+        try:
+            response = httpx.post(
+                url,
+                json={"jsonrpc": "2.0", "id": 1, "method": "getRecentPerformanceSamples", "params": [1]},
+                timeout=10,
+            )
+            response.raise_for_status()
+            data = response.json()
+            samples = data.get("result") or []
+            if not samples:
+                return None
+            sample = samples[0]
+            period = sample.get("samplePeriodSecs") or 1
+            return sample.get("numTransactions", 0) / period
+        except Exception as exc:
+            logger.warning("Helius RPC call failed: %s", exc)
+            return None
+
+    return _cached("solana_tps", _do_fetch)
 
 
 def fetch_mvrv_zscore() -> float | None:
