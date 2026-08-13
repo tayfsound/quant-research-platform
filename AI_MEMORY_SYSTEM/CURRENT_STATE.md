@@ -1,9 +1,70 @@
-# Mevcut Durum -- v1.40.0 (Faz 268a-z + Faz 239-250: "İsabeti artırmanın yolu daha akıllı kullanım" yol haritası tamamlandı)
+# Mevcut Durum -- v1.41.0 (Faz 251-268 devamı: Feature Importance → MAE/MFE koşullu dağılımlar)
 
-**Tarih:** 2026-08-12
+**Tarih:** 2026-08-13
 **Branch:** main
 **Son commit (HEAD):** bkz. git log
-**Test:** 778 passed, 1 skipped, 1 xpassed, 1 failed (tek hata: yerel Ollama'ya bağlı gerçek bir zaman aşımı testi — ortam kaynaklı, kod regresyonu değil, tekrarlanan tam suite çalıştırmalarında doğrulandı). `npx tsc -b` temiz.
+**Test:** targeted (tests/test_mae_mfe.py, test_ab_testing.py, test_performance_api.py, test_real_historical_backtest.py — izole çalıştırıldığında hepsi yeşil) — tam suite bu turda çalıştırılmadı (bkz. session kuralı: "tam suite sadece push öncesi"). `npx tsc -b` temiz.
+
+## Faz 251-268 devamı (2026-08-12 — 2026-08-13)
+
+v1.40.0'dan bu yana eklenenler, hepsi mevcut GERÇEK pipeline'a (backtest
+veya canlı) bağlı, ayrı/izole demo kod değil:
+
+- **Feature Importance** (7 oy-veren ajan): `contributions: dict[str, float]`
+  + `scale_all()` deseni — technical/order_flow/macro/onchain/sentiment/
+  pattern/quant ajanlarının hangi sinyalin skora ne kadar katkı verdiğini
+  gösteriyor.
+- **Adversarial Red-Team** (`backtest/red_team.py`): whipsaw/flash-crash/
+  korele çoklu-varlık çöküşü senaryoları GERÇEK CognitiveEngine/RiskEngine
+  üzerinden koşuluyor.
+- **Online Feature Selection** (`analytics/feature_ic.py`): özelliklerin
+  ham fiyat getirisiyle Information Coefficient'ı, `GET /feature-ic/`.
+- **Latency Monitoring**: `decision_pipeline_latency_seconds` histogram —
+  ingestion→karar süresi.
+- **Model Drift Detection** (`analytics/model_drift.py`): PSI + KS-test,
+  baseline vs güncel pencere, `GET /model-drift/`.
+- **Data Quality Scoring** (`market_data/features/signal_engine.py`):
+  OHLC tutarlılık + "bad print" wick-reversion imzası; epistemology_agent
+  düşük skor gördüğünde wait_confidence'ı artırıyor.
+- **Backtest'e kill switch/drawdown sizing bağlandı**: `real_historical_
+  backtest.py` artık gerçek `consecutive_losses`'ı loop seviyesinde
+  simüle ediyor (RiskEngine'in canlı DB yazan tetiğine ASLA dokunmadan),
+  `net_pnl_usd` hesaplaması Kelly/drawdown boyut küçültmesini artık
+  doğru yansıtıyor (önceki bug: kaldıraçsız `capital_per_trade` kullanıyordu).
+- **MAE/MFE ölçüm katmanı** (`analytics/mae_mfe.py`): her trade için
+  gerçek bar-path'ten Maximum Adverse/Favorable Excursion. Üzerine
+  **koşullu MAE dağılımları** (`compute_conditional_mae_distribution`):
+  rejim/volatilite/yön/güven-kovası kombinasyonlarına göre gruplanmış
+  empirical MAE quantile'ları (min_group_size=20 fail-closed). Henüz
+  gerçek SL hesaplamasına uygulanmıyor — bu adaptive-SL fikrinin
+  SADECE ölçüm dilimi.
+- **Günlük rapor zero-fill düzeltmesi**: `performance_by_period()`
+  artık `generate_series` + `LEFT JOIN` ile veri olmayan günleri de
+  0 olarak gösteriyor, tamamen atlamıyor (kullanıcı bulgusu: 12-13
+  Ağustos günleri dashboard'dan tamamen kaybolmuştu).
+- **Kill switch bildirimi**: dashboard artık `ai_enabled_updated_by`
+  ile gerçek kill-switch tetiklenmesini (updated_by='kill_switch')
+  manuel Durdur düğmesinden ayırt edip ayrı bir masaüstü bildirimi/alarm
+  gösteriyor.
+- **Settings'te kill switch eşiği kontrolü**: kullanıcı artık kaç
+  ardışık kayıpta AI'nın otomatik durması gerektiğini dashboard'dan
+  kendisi ayarlayabiliyor (backend doğrulaması zaten vardı).
+
+**Operasyonel bulgu (önemli):** Data Quality Scoring commit'inden
+sonraki birkaç commit (backtest kill-switch wiring, MAE/MFE, koşullu
+dağılımlar dahil) canlı uvicorn/celery süreçleri yeniden başlatılmadığı
+için bir süre DEPLOY EDİLMEMİŞ durumda çalıştı — kod commit edilmek
+production'da çalışmak anlamına gelmiyor. Kullanıcının yapıştırdığı bir
+review'u doğrularken (gerçek karar kayıtlarında `data_quality_score`
+alanının hiç görünmemesi) fark edildi, servisler yeniden başlatıldı.
+
+**excluded_from_stats ikilemi (bilinen, kasıtlı olarak çözülmemiş):**
+Kill switch'in `consecutive_losses` sayacı ile Performance dashboard'un
+günlük/özet istatistikleri AYNI `excluded_from_stats` bayrağını okuyor.
+Bir kayıp serisini hariç tutup kill switch'i sıfırlamak o serideki
+günleri dashboard'dan da gizliyor; geri almak kill switch'i yeniden
+tetikliyor. Kullanıcı tercihi: AI'nın çalışır durumda kalması, günlük
+raporun o günler için hariç-tutulmuş görünmesinden daha öncelikli.
 
 ## Faz 268a-z + Faz 239-250 — "İsabeti artırmanın yolu daha akıllı kullanım" yol haritası (2026-08-11 — 2026-08-12)
 
