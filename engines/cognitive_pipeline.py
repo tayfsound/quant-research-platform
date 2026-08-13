@@ -506,10 +506,18 @@ class RiskGateStage:
             )]
             return ctx
 
-        # Faz 188: test modunda hem ön hem son risk kapısı devre dışı.
-        if ctx.risk.trading_mode == "test":
-            ctx.risk.evaluation.verdict = "approved"
-            return ctx
+        # Faz 262 — kritik bulgu: bu "test modunda devre dışı" bypass'ı
+        # RiskEngine.execute() (ön kapı) için kaldırılmıştı ("kasa %15.9'a,
+        # 1074 açık pozisyona ulaşana kadar hiçbir kontrol devreye
+        # girmedi" — bkz. o dosyadaki not) ama bu SON kapı (final_size/
+        # concurrent-position/capital-% kontrolleri) gözden kaçmış,
+        # AYNI bypass burada hâlâ duruyordu. Sistem trading_mode="test"
+        # iken çalıştığı için bu, MAX_CONCURRENT_POSITIONS/MAX_CAPITAL_PCT
+        # dahil TÜM post-fusion kontrollerinin baştan beri fiilen devre
+        # dışı olduğu anlamına geliyordu — gerçek olay (2026-08-13):
+        # XAUTUSDT'de 54 SHORT pozisyon aynı anda açık kalabilmişti.
+        # Faz 262'nin kendi kararı ("test modu artık live modla AYNI
+        # kuralları uyguluyor") burada da uygulanıyor.
 
         limits = ctx.risk.limits
         final_size = getattr(ctx.decision, "final_size", 0.0)
@@ -560,6 +568,30 @@ class RiskGateStage:
                 message=f"{ctx.risk.capital_used_pct:.1%} used >= limit {ctx.risk.max_capital_pct:.1%}",
                 severity="critical",
             ))
+
+        # Faz 268-sonrası — gerçek olay: XAUTUSDT'de aynı yönde (SHORT)
+        # 54 pozisyon aynı anda açık kalabilmişti. max_concurrent_positions
+        # TOPLAM sayıya bakıyor, ENB/Cross-Symbol Correlation Filter de
+        # sadece aynı cycle'daki eşzamanlı önerilere bakıyor — hiçbiri
+        # saatler içinde AYNI sembol/yönde BİRİKEN pozisyonu görmüyor.
+        final_direction = "LONG" if ctx.decision.action == ActionType.ENTER_LONG else (
+            "SHORT" if ctx.decision.action == ActionType.ENTER_SHORT else None
+        )
+        if (
+            final_direction is not None
+            and ctx.risk.max_open_positions_per_symbol_direction is not None
+            and ctx.risk.max_open_positions_per_symbol_direction > 0
+        ):
+            existing = ctx.risk.same_direction_open_counts.get(final_direction, 0)
+            if existing >= ctx.risk.max_open_positions_per_symbol_direction:
+                reasons.append(RiskReason(
+                    code="MAX_SAME_SYMBOL_DIRECTION_POSITIONS",
+                    message=(
+                        f"{existing} {final_direction} positions already open on this symbol "
+                        f">= limit {ctx.risk.max_open_positions_per_symbol_direction}"
+                    ),
+                    severity="critical",
+                ))
 
         if reasons:
             ctx.decision.action = ActionType.WAIT

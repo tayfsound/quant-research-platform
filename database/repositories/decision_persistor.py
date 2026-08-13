@@ -197,6 +197,22 @@ class DecisionPersistor:
 
         return [dict(r) for r in rows]
 
+    def count_open_by_symbol_direction(self, symbol: str) -> dict[str, int]:
+        """Faz 268-sonrası — bkz. contracts/contexts/risk.py::
+        same_direction_open_counts. Bu SEMBOL için, yöne göre gruplanmış
+        ŞU AN açık pozisyon sayısı — RiskGateStage'in aynı sembol/yönde
+        sınırsız yığılmayı (gerçek olay: XAUTUSDT SHORT x54) engelleyen
+        kontrolü için."""
+        rows = self.session.execute(
+            text(
+                "SELECT direction, count(*) AS n FROM decisions "
+                "WHERE status = 'open' AND symbol = :symbol AND direction IN ('LONG','SHORT') "
+                "GROUP BY direction"
+            ),
+            {"symbol": symbol},
+        ).all()
+        return {row.direction: row.n for row in rows}
+
     def open_positions_summary(self) -> dict:
         """Faz 262 — Faz 224'ün kapanmış işlemler için çözdüğü AYNI bug,
         açık pozisyonlarda hâlâ vardı: GET /positions'ın döndürdüğü liste

@@ -68,3 +68,16 @@ class RiskContext(BaseModel):
     # belirlemeli, icat edilmiş bir sayı dayatılmıyor).
     consecutive_losses: int = 0
     kill_switch_consecutive_losses: int = 0
+    # Faz 268-sonrası — gerçek olay (2026-08-13): AYNI sembolde AYNI yönde
+    # onlarca pozisyon (ör. XAUTUSDT SHORT x54) art arda, önceki hiçbiri
+    # kapanmadan açılabiliyordu — max_concurrent_positions TOPLAM sayıyı
+    # sınırlıyor ama tek bir sembol/yön kombinasyonunun ne kadar
+    # yığılabileceğine hiç bakmıyordu. ENB/Cross-Symbol Correlation Filter
+    # de SADECE aynı cycle'da eşzamanlı önerilen sembollere bakıyor, saatler
+    # boyunca BİRİKEN aynı-yönlü pozisyonu görmüyor. same_direction_open_
+    # counts: {"LONG": n, "SHORT": m} — bu sembol için ŞU AN açık pozisyon
+    # sayısı, yöne göre (bkz. services/risk_state.py). max_open_positions_
+    # per_symbol_direction <=0/None ise devre dışı (icat edilmiş bir
+    # varsayılan eşik dayatılmıyor, kullanıcı açıkça belirlemeli).
+    same_direction_open_counts: dict[str, int] = Field(default_factory=dict)
+    max_open_positions_per_symbol_direction: int | None = None

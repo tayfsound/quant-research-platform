@@ -299,3 +299,51 @@ def test_capital_pct_and_max_concurrent_overrides_replace_settings_values():
 
         assert state["max_capital_pct"] == 0.1
         assert state["max_concurrent_positions"] == 5
+
+
+def test_same_direction_open_counts_reflects_real_open_positions_for_that_symbol():
+    """Faz 268-sonrası — gerçek olay: XAUTUSDT'de aynı yönde (SHORT) 54
+    pozisyon aynı anda açık kalabilmişti. Bu sayaç RiskGateStage'in yeni
+    MAX_SAME_SYMBOL_DIRECTION_POSITIONS kontrolünün tek gerçek kaynağı."""
+    symbol = f"RISKSTATE{uuid4().hex[:8]}"
+    try:
+        with SessionFactory.get_session() as session:
+            repo = DecisionPersistor(session)
+            for direction in ("SHORT", "SHORT", "SHORT", "LONG"):
+                repo.persist(DecisionEvent(
+                    id=uuid4(), symbol=symbol, proposed_direction=direction, final_action=direction,
+                    final_size=1.0, status="open", entry_price=100.0, quantity=1.0,
+                ))
+
+        state = load_position_risk_state(symbol=symbol)
+
+        assert state["same_direction_open_counts"] == {"SHORT": 3, "LONG": 1}
+    finally:
+        _cleanup_symbol(symbol)
+
+
+def test_same_direction_open_counts_empty_when_no_symbol_given():
+    state = load_position_risk_state()
+    assert state["same_direction_open_counts"] == {}
+
+
+def test_max_open_positions_per_symbol_direction_reflects_app_setting():
+    with SessionFactory.get_session() as session:
+        AppSettingsRepository(session).set("max_open_positions_per_symbol_direction", "7", updated_by="test")
+    try:
+        state = load_position_risk_state()
+        assert state["max_open_positions_per_symbol_direction"] == 7
+    finally:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("max_open_positions_per_symbol_direction", "5", updated_by="test")
+
+
+def test_max_open_positions_per_symbol_direction_none_when_setting_empty():
+    with SessionFactory.get_session() as session:
+        AppSettingsRepository(session).set("max_open_positions_per_symbol_direction", "", updated_by="test")
+    try:
+        state = load_position_risk_state()
+        assert state["max_open_positions_per_symbol_direction"] is None
+    finally:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("max_open_positions_per_symbol_direction", "5", updated_by="test")

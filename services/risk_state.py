@@ -43,8 +43,18 @@ def load_position_risk_state(
         kill_switch_consecutive_losses = int(settings_repo.get("kill_switch_consecutive_losses"))
         legacy_cutoff_raw = settings_repo.get("kill_switch_legacy_cutoff_at")
         legacy_cutoff_at = datetime.fromisoformat(legacy_cutoff_raw) if legacy_cutoff_raw else None
+        max_open_per_symbol_direction_raw = settings_repo.get("max_open_positions_per_symbol_direction")
+        max_open_per_symbol_direction = (
+            int(max_open_per_symbol_direction_raw) if max_open_per_symbol_direction_raw else None
+        )
 
         decision_repo = DecisionPersistor(session)
+
+        # Faz 268-sonrası — gerçek olay: XAUTUSDT SHORT x54. bkz.
+        # contracts/contexts/risk.py::same_direction_open_counts.
+        same_direction_open_counts: dict[str, int] = {}
+        if symbol:
+            same_direction_open_counts = decision_repo.count_open_by_symbol_direction(symbol)
 
         # Kill switch: en son kapanmış işlemlerden (tüm semboller,
         # kronolojik olarak en yeniden en eskiye) geriye doğru, İLK
@@ -114,4 +124,6 @@ def load_position_risk_state(
         "ai_enabled": ai_enabled,
         "consecutive_losses": consecutive_losses,
         "kill_switch_consecutive_losses": kill_switch_consecutive_losses,
+        "same_direction_open_counts": same_direction_open_counts,
+        "max_open_positions_per_symbol_direction": max_open_per_symbol_direction,
     }

@@ -252,6 +252,8 @@ def build_cognitive_context(
     ctx.risk.ai_enabled = risk_state["ai_enabled"]
     ctx.risk.consecutive_losses = risk_state["consecutive_losses"]
     ctx.risk.kill_switch_consecutive_losses = risk_state["kill_switch_consecutive_losses"]
+    ctx.risk.same_direction_open_counts = risk_state["same_direction_open_counts"]
+    ctx.risk.max_open_positions_per_symbol_direction = risk_state["max_open_positions_per_symbol_direction"]
 
     # Faz 211: her işlem, sermayenin (starting_capital * max_capital_pct)
     # eşit dilimlere bölünmüş (max_concurrent_positions) GERÇEK bir $

@@ -71,6 +71,15 @@ DEFAULTS: dict[str, str] = {
     # işlemler hâlâ gerçek ve hâlâ sayılıyor, sadece "AI şu an duruyor mu"
     # kararı güncel karar kalitesine bakıyor. bkz. services/risk_state.py.
     "kill_switch_legacy_cutoff_at": "",
+    # Faz 268-sonrası — gerçek olay (2026-08-13): XAUTUSDT'de aynı anda
+    # 54 tane SHORT pozisyon açık kalabilmiş — max_concurrent_positions
+    # TOPLAM sayıya bakıyor, aynı sembol/yön kombinasyonuna hiç. ENB ve
+    # Cross-Symbol Correlation Filter de sadece aynı cycle'daki eşzamanlı
+    # önerilere bakıyor, saatler içinde BİRİKEN aynı-yönlü pozisyonu
+    # görmüyor. "0"/boş = devre dışı (icat edilmiş bir varsayılan eşik
+    # dayatılmıyor) — ama gerçek olayın hemen ardından muhafazakâr bir
+    # varsayılan olarak 5 seçildi.
+    "max_open_positions_per_symbol_direction": "5",
     # Drawdown-Based Position Sizing (gambler's ruin koruması) — kill
     # switch'in kullandığı AYNI gerçek ardışık kayıp sayacıyla, sert
     # durmadan ÖNCE devreye giren kademeli bir fren. 3. ardışık kayıptan
