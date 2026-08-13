@@ -153,6 +153,71 @@ def test_apply_portfolio_fusion_does_not_discount_confidence_for_uncorrelated_sy
         assert directional["ETHUSDT"]["ctx"].decision.confidence == 0.8
 
 
+def test_apply_portfolio_fusion_discounts_confidence_when_effective_number_of_bets_is_low():
+    """Faz 268-sonrası — Effective Number of Bets (Cognitive Core 2.0/M6):
+    Cross-Symbol Correlation Filter'ın aksine (tek sembol çiftine bakar),
+    ENB PORTFÖYÜN GENELİNİ ölçer. Buradaki iki sembol birbirine düşük
+    korele (Cross-Symbol filtresi TETİKLENMEZ — max_corr <= 0.7 eşiğinin
+    altında kalacak şekilde seçildi) ama ENB doğrudan mock'lanarak düşük
+    (1.0 < MIN_EFFECTIVE_BETS=3.0) döndürülüyor — bu SADECE ENB katmanının
+    kendi indirimini izole test eder."""
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        orch = CognitiveOrchestrator()
+
+        base_returns = [0.01, -0.02, 0.03, -0.01, 0.02, 0.015, -0.005, 0.008, -0.012, 0.02]
+        low_corr_returns = [0.01, 0.02, -0.03, 0.015, -0.01, -0.005, 0.02, -0.008, 0.012, -0.02]
+        directional = {
+            "BTCUSDT": {
+                "ctx": _fake_ctx("BTCUSDT", "LONG", 0.01, confidence=0.8),
+                "data": _bars_from_returns(100.0, base_returns), "direction": "LONG",
+            },
+            "ETHUSDT": {
+                "ctx": _fake_ctx("ETHUSDT", "LONG", 0.01, confidence=0.8),
+                "data": _bars_from_returns(100.0, low_corr_returns), "direction": "LONG",
+            },
+        }
+
+        with patch("database.repositories.app_settings_repository.AppSettingsRepository.get") as mock_get:
+            mock_get.side_effect = lambda key: {"starting_capital": "1000000", "max_portfolio_var_pct": "0.5"}[key]
+            with patch(
+                "analytics.portfolio_intelligence.compute_effective_number_of_bets",
+                return_value={"effective_number_of_bets": 1.0, "position_count": 2, "diversification_ratio": 0.5},
+            ):
+                orch._apply_portfolio_fusion(directional)
+
+        assert directional["BTCUSDT"]["ctx"].decision.confidence < 0.8
+        assert directional["ETHUSDT"]["ctx"].decision.confidence < 0.8
+
+
+def test_apply_portfolio_fusion_does_not_discount_confidence_when_effective_number_of_bets_is_sufficient():
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        orch = CognitiveOrchestrator()
+
+        base_returns = [0.01, -0.02, 0.03, -0.01, 0.02, 0.015, -0.005, 0.008, -0.012, 0.02]
+        low_corr_returns = [0.01, 0.02, -0.03, 0.015, -0.01, -0.005, 0.02, -0.008, 0.012, -0.02]
+        directional = {
+            "BTCUSDT": {
+                "ctx": _fake_ctx("BTCUSDT", "LONG", 0.01, confidence=0.8),
+                "data": _bars_from_returns(100.0, base_returns), "direction": "LONG",
+            },
+            "ETHUSDT": {
+                "ctx": _fake_ctx("ETHUSDT", "LONG", 0.01, confidence=0.8),
+                "data": _bars_from_returns(100.0, low_corr_returns), "direction": "LONG",
+            },
+        }
+
+        with patch("database.repositories.app_settings_repository.AppSettingsRepository.get") as mock_get:
+            mock_get.side_effect = lambda key: {"starting_capital": "1000000", "max_portfolio_var_pct": "0.5"}[key]
+            with patch(
+                "analytics.portfolio_intelligence.compute_effective_number_of_bets",
+                return_value={"effective_number_of_bets": 5.0, "position_count": 2, "diversification_ratio": 2.5},
+            ):
+                orch._apply_portfolio_fusion(directional)
+
+        assert directional["BTCUSDT"]["ctx"].decision.confidence == 0.8
+        assert directional["ETHUSDT"]["ctx"].decision.confidence == 0.8
+
+
 def test_run_portfolio_aware_cycle_finalizes_every_symbol_and_applies_fusion_when_multiple_directional():
     with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
         orch = CognitiveOrchestrator()

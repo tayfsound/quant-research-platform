@@ -45,6 +45,12 @@ _RISK_BARS_CACHE: dict[tuple[str, str], tuple[float, list]] = {}
 _RISK_BARS_CACHE_TTL_SECONDS = 900
 _RISK_BARS_CACHE_LOCK = threading.Lock()
 
+# Faz 268-sonrası — Effective Number of Bets tabanlı portföy sıkılaştırması
+# (bkz. _apply_portfolio_fusion). analytics/portfolio_intelligence.py'nin
+# kendi MIN_SYMBOLS'ünden bağımsız, "ne zaman ek indirim uygulanır" eşiği.
+MIN_EFFECTIVE_BETS = 3.0
+MAX_ENB_DISCOUNT = 0.5  # en fazla %50 ek indirim
+
 
 def _observe_decision_latency(symbol: str, last_bar_timestamp: datetime) -> None:
     """Faz 268-sonrası: Latency Monitoring — bkz. observability/metrics.py::
@@ -730,6 +736,28 @@ class CognitiveOrchestrator:
             if multiplier < 1.0:
                 ctx = directional[sym]["ctx"]
                 ctx.decision.confidence = round((ctx.decision.confidence or 0.0) * multiplier, 4)
+
+        # Faz 268-sonrası — kullanıcının paylaştığı bir incelemeyi
+        # doğrularken bulunan gerçek bulgu: yukarıdaki aynı-yönlü
+        # korelasyon indirimi TEK bir sembolün eşlerine bakıyor, ama
+        # PORTFÖYÜN GENEL çeşitlendirme kalitesini (Effective Number of
+        # Bets — analytics/portfolio_intelligence.py, Cognitive Core 2.0/
+        # M6) hiç ölçmüyordu: 10 sembol aynı anda önerilse bile hepsi
+        # birbirine yüksek korele ise bu gerçekte ~1-2 bağımsız bahis
+        # kadar riskli olabilir. Kasıtlı olarak SADECE sıkılaştırma (AI
+        # kendi risk limitini asla genişletemez ilkesiyle tutarlı) — ENB
+        # düşükken TÜM önerilen sembollere ek bir confidence indirimi
+        # uygular, hiçbir zaman artırmaz.
+        from analytics.portfolio_intelligence import compute_effective_number_of_bets
+
+        enb_result = compute_effective_number_of_bets(proposed_sizes, returns)
+        if enb_result is not None and enb_result["effective_number_of_bets"] < MIN_EFFECTIVE_BETS:
+            shortfall = (MIN_EFFECTIVE_BETS - enb_result["effective_number_of_bets"]) / MIN_EFFECTIVE_BETS
+            shortfall = min(max(shortfall, 0.0), 1.0)
+            enb_multiplier = 1.0 - shortfall * MAX_ENB_DISCOUNT
+            for sym in returns:
+                ctx = directional[sym]["ctx"]
+                ctx.decision.confidence = round((ctx.decision.confidence or 0.0) * enb_multiplier, 4)
 
         fusion = PortfolioFusionStage(PortfolioRiskEngine())
         result = fusion.fuse(
