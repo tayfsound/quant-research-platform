@@ -1,9 +1,91 @@
-# Mevcut Durum -- v1.50.0 (Cognitive Core 2.0-11.0 tamamlandı — 25+ yeni analytics modülü)
+# Mevcut Durum -- v1.51.0 (Kill switch/RiskGate kök-neden turu + R/R yeniden kalibrasyonu + LLM Decision Critic)
 
 **Tarih:** 2026-08-13
 **Branch:** main
-**Son commit (HEAD):** bkz. git log
-**Test:** targeted (her yeni modülün kendi test dosyası — hepsi izole çalıştırıldığında yeşil) — tam suite bu turda çalıştırılmadı (bkz. session kuralı: "tam suite sadece push öncesi"). `npx tsc -b` temiz (frontend değişikliklerinde).
+**Son commit (HEAD):** bkz. git log (Faz 268q-268y)
+**Test:** targeted (her değişikliğin kendi test dosyası — hepsi izole çalıştırıldığında yeşil), `npx tsc -b` temiz. Tam suite bu bölümün SONUNDA (push öncesi) çalıştırılacak.
+
+## Faz 268q-268y — Kill switch/RiskGate kök-neden turu, R/R yeniden kalibrasyonu, LLM Decision Critic (2026-08-13)
+
+Cognitive Core 2.0-11.0 senteziyle biten önceki tur sonrası, kullanıcının
+paylaştığı dış bir "inceleme" ("sürekli SL yiyoruz") gerçek kod/veriyle
+doğrulanarak başlayan, günü kaplayan bir kök-neden ve düzeltme zinciri:
+
+**1) Kill switch — eski ağırlık kuyruğu sayacı kırmızıda tutuyordu (268q):**
+Gerçek olay: `technical_agent` ağırlığı 8 gün (1.42, aşırı ağırlıklı) sabit
+kaldıktan sonra düşürüldü, ama o eski rejimle açılmış 700+ pozisyonluk
+kuyruk günlerce kapanmaya devam etti. Ardışık-kayıp sayacı AÇILMA değil
+KAPANMA sırasına bakıyor — her manuel "Başlat" birkaç dakika içinde geri
+alınıyordu. `kill_switch_legacy_cutoff_at` ayarı: bu tarihten önce açılmış
+pozisyonlar SADECE kill switch sayacından çıkarılıyor (dashboard
+istatistikleri etkilenmiyor, Class 2 ilkesi — hiçbir satır silinmiyor).
+Doğrulama: yeni-ağırlık kohortu (131 kapanan) %86.3 kazanma, eski-ağırlık
+kohortu (1300 kapanan) %58.5 — sorun yeni kararlarda değil, eski kuyrukta.
+
+**2) ENB tabanlı portföy sıkılaştırması (268o) + aynı sembol/yön tavanı (268t):**
+Effective Number of Bets düşükken TÜM önerilen sembollere confidence
+indirimi (Cognitive Core 2.0/M6, ilk gerçek canlı bağlantısı). Ayrı, daha
+büyük bulgu: XAUTUSDT'de aynı yönde (SHORT) **54 pozisyon** aynı anda açık
+kalabilmişti — `max_concurrent_positions` TOPLAM sayıya bakıyor, ENB/
+Cross-Symbol Correlation Filter sadece AYNI cycle'daki eşzamanlı önerilere
+bakıyor, hiçbiri SAATLER içinde BİRİKEN aynı-yönlü pozisyonu görmüyordu.
+`max_open_positions_per_symbol_direction` (varsayılan 5) eklendi.
+
+**3) RiskGateStage test-modu bypass'ı (268t) — gerçek regresyon:** Faz 262
+bu bypass'ı RiskEngine.execute()'dan (ön kapı) kaldırmıştı ama RiskGateStage
+(son kapı, final_size/concurrent-position/capital-% kontrolleri) gözden
+kaçmış — sistem `trading_mode="test"` iken bu kontroller BAŞTAN BERİ fiilen
+devre dışıydı. Kaldırıldı, artık test modunda da tüm kontroller uygulanıyor.
+
+**4) DEFAULT_LOOKBACK 100→230 (268u):** `run_real_backtest`'in walk-forward
+penceresi asla büyümüyor — `_long_term_trend_regime` en az 220 bar istiyor,
+eski varsayılan bu özelliği HİÇBİR backtest'te hiç çözülemeyecek şekilde
+kilitliyordu (1512 işlemlik bir OOS koşusunda regime %100
+"insufficient_data" çıktı). Düzeltildi, canlıyı etkilemiyor (canlı zaten
+yeterli geçmişe erişiyor, doğrulandı).
+
+**5) Adaptive Barrier Engine OOS doğrulaması (268r) + R/R yeniden
+kalibrasyonu (268v):** `analytics/adaptive_barrier_oos_validation.py` —
+train/test split + embargo + Deflated Sharpe Ratio ile gerçek doğrulama.
+Sonuç: `RiskTargetStage`'in Faz 261'den beri sabit 1:4 oranı (STOP=2.5x,
+TARGET=10.0x günlük ATR) — gerçek temiz veride (1312 işlem, DEFAULT_
+LOOKBACK düzeltmesinden SONRA) test setindeki 384 işlemin TAMAMI stop_loss
+ile kapandı (ortalama MFE %0.38 ≪ ortalama |MAE| %1.28). Ampirik en iyi
+oran ~1:0.545 — TARGET_ATR_MULT 10.0'dan **1.4**'e çekildi. DSR henüz
+"genuinely_skillful" eşiğini geçmiyor (0.012, 65 örneklem) — yön güçlü,
+istatistiksel kanıt tam değil — bu yüzden STOP_ATR_MULT/TARGET_ATR_MULT
+artık sınıf sabiti değil, AppSettings'ten okunuyor (redeploy gerekmeden
+kalibre edilebilir).
+
+**6) SL sonrası fiyat geri dönüşü ölçümü (268s):** `analytics/sl_recovery_
+analysis.py::compute_post_exit_recovery` — SL'den SONRAKİ gerçek fiyat
+yoluna bakıp breakeven'a dönüp dönmediğini ölçüyor (compute_mae_mfe/
+compute_optimal_barrier'ın HİÇBİRİ kapanıştan sonrasına bakmıyordu). İlk
+gerçek sonuç (52 SL işlem, ~36-41dk pencere): 0/52 breakeven'a döndü,
+hepsi aleyhte devam etti — "stop'lar erken tetikleniyor" hipotezinin
+tersi. Örneklem küçük/kümeli (~2 bağımsız olay), tekrar bakılmalı.
+
+**7) LLM Decision Critic — NVIDIA NIM entegrasyonu (268w-268x):**
+`OllamaExplainer` (yerel Ollama, kullanıcı bulgusu: yetersiz) yerini
+`NvidiaDecisionCritic`'e bıraktı — build.nvidia.com'un ücretsiz NIM API'si
+(OpenAI-uyumlu), adversarial/eleştirmen system prompt'uyla (açıklama değil
+İTİRAZ). Gerçek A/B test (aynı gerçek karar payload'ı): `deepseek-ai/
+deepseek-v4-flash-0731` (90s) `openai/gpt-oss-20b`'den (5s) belirgin
+derecede daha derin eleştiri üretti (Hurst exponent'in rastgele-yürüyüş
+bölgesinde olduğunu yakaladı, diğeri kaçırdı); `openai/gpt-oss-120b` bu
+yükte tutarlı zaman aşımına uğradı. Varsayılan: deepseek-v4-flash (danışma
+amaçlı, canlı işlem kapısı değil — hız yerine kalite). Dashboard'da yeni
+"LLM Eleştirmen" sekmesi (serbest soru/cevap, `POST /api/v1/llm-critic/
+ask`). Kasıtlı olarak sadece danışma — hiçbir karar otomatik reddedilmiyor/
+onaylanmıyor; kod-düzenleme/otomatik-deploy YOK (proje kuralı: AI kendine
+unilateral canlıya alma yetkisi veremez).
+
+**Açık kalan iki takip maddesi:** confidence=0.663 kümelenmesinin (macro
+agent, muhtemelen sembol-bağımsız gerçek makro veriden — teyit edilmedi)
+kesin kaynağı; SL-sonrası-geri-dönüş ölçümünün daha büyük/zamana yayılmış
+örneklemle tekrarı.
+
+## Faz 268-öncesi — Cognitive Core 2.0-11.0 tamamlandı (25+ yeni analytics modülü)
 
 ## Cognitive Core 2.0-11.0 — "Predictive Decision Architecture" yol haritasının ikinci büyük dilimi (2026-08-13)
 
