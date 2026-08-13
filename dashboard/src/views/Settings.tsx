@@ -349,6 +349,28 @@ export default function Settings() {
         </Card>
 
         <Card>
+          <h3 className="text-sm font-semibold text-ink mb-1">Kill switch — ardışık kayıp eşiği</h3>
+          <p className="text-xs text-ink-soft mb-3">
+            Bu sayıya ulaşan ardışık kayıp serisinde AI kendini otomatik durdurur (dashboard'daki manuel
+            Durdur düğmesiyle AYNI etki) — bir insan gözden geçirip tekrar açana kadar kendi kendine devam
+            etmez. 0 = kill switch tamamen devre dışı.
+          </p>
+          <div className="flex gap-2">
+            <Input
+              type="number"
+              value={draft.kill_switch_consecutive_losses ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, kill_switch_consecutive_losses: v }))}
+            />
+            <Button
+              disabled={saving === "kill_switch_consecutive_losses"}
+              onClick={() => save("kill_switch_consecutive_losses", draft.kill_switch_consecutive_losses)}
+            >
+              {saved === "kill_switch_consecutive_losses" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+        </Card>
+
+        <Card>
           <h3 className="text-sm font-semibold text-ink mb-1">Stop/hedef mesafesi</h3>
           <p className="text-xs text-ink-soft mb-3">
             Pozisyonlar hiçbir zaman süre yüzünden zorla kapatılmaz — sadece gerçekten stop veya hedefe

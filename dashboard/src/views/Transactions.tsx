@@ -42,7 +42,7 @@ const EXIT_REASON_LABELS: Record<string, string> = {
   // Faz 268ae — kullanıcı isteği: kârlı gidip tersine dönen pozisyonlarda
   // stop girişe (başabaşa) çekiliyor; buna takılmak normal stop_loss'tan
   // (tam zarar) ayrı, "kayıptan kaçınıldı" anlamına geliyor.
-  breakeven_stop: "Başabaşa çekildi",
+  breakeven_stop: "Başabaş çekildi",
   time_expired: "Vadesi doldu",
   liquidation: "Likidasyon",
 };
