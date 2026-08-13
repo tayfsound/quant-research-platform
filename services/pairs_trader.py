@@ -16,15 +16,15 @@ from contracts.context import CognitiveCycleContext
 from database.repositories.app_settings_repository import AppSettingsRepository
 from database.repositories.risk_limit_repository import load_active_limits
 from database.session_factory import SessionFactory
+from config.settings import get_settings
+from engines.cognitive_pipeline import RiskTargetStage
 from engines.risk_engine import RiskEngine
-from market_data.features.signal_engine import compute_technical_signals
+from market_data.features.signal_engine import compute_daily_atr_pct
 from market_data.ingestion.data_provider import RoutingProvider
 from market_data.market_hours import is_market_open
 from services.decision_recorder import DecisionRecorder
 from services.risk_state import load_position_risk_state
 
-STOP_ATR_MULT = 1.0
-TARGET_ATR_MULT = 2.0  # RiskTargetStage'le aynı 1:2 konvansiyonu
 LEG_SIZE = 0.2  # her bacak, RiskTargetStage'inkinden bağımsız, sabit-küçük bir boyut
 
 
@@ -115,12 +115,36 @@ class PairsTrader:
         # takip eden ayrı bir mekanizma değil. Bilinçli bir sınırlama:
         # spread-farkındalıklı kapanış, PositionCloser'ın çift bacakları
         # birbirine bağlaması gerektirir — ayrı, daha büyük bir iş.
-        atr = compute_technical_signals(data).get("atr", 0.0) or 0.0
-        if atr > 0:
-            ctx.decision.stop_loss = atr * STOP_ATR_MULT
-            ctx.decision.take_profit = atr * TARGET_ATR_MULT
+        #
+        # Faz 268-sonrası — gerçek bulgu: eski kod sinyal-zaman-dilimi
+        # (1m) ATR'sini DOĞRUDAN mesafe olarak kullanıyordu — Faz 251'in
+        # RiskTargetStage için düzelttiği AYNI hata, burada hiç
+        # düzeltilmemişti. Gerçek 20 hedge işleminde ölçülen stop mesafesi
+        # %0.002-%0.069 arasındaydı (gürültü seviyesi — tek bir işlem
+        # -$9595 kaybettirdi). Artık RiskTargetStage ile AYNI, doğrulanmış
+        # mekanizma: günlük ATR yüzdesi + AppSettings'teki AYNI stop_atr_
+        # mult/target_atr_mult/min_stop_pct (ayrı, hiç doğrulanmamış bir
+        # oran icat etmek yerine).
+        current_price = data[-1].close
+        daily_bars = self.data_provider.get_ohlcv(symbol, "1d", limit=30)
+        daily_atr_pct = compute_daily_atr_pct(daily_bars) if daily_bars else None
+        if daily_atr_pct and daily_atr_pct > 0 and current_price > 0:
+            stop_mult, target_mult, min_stop_pct = RiskTargetStage()._load_multipliers()
+            stop_pct = stop_mult * daily_atr_pct
+            target_pct = target_mult * daily_atr_pct
+            if stop_pct < min_stop_pct:
+                scale = min_stop_pct / stop_pct
+                stop_pct *= scale
+                target_pct *= scale
+            ctx.decision.stop_loss = current_price * stop_pct
+            ctx.decision.take_profit = current_price * target_pct
 
-        ctx = RiskEngine().execute(ctx)
+        # Faz 268-sonrası — gerçek bulgu: burada RiskEngine() secret'sız
+        # çağrılıyordu (cognitive_engine.py/execution_router.py'nin
+        # AKSİNE), gerçek imzalı risk_limits her zaman HASH_MISMATCH ile
+        # reddediliyordu — hedge bacakları hiçbir zaman gerçekten
+        # açılamıyordu (sadece hash boşken/dev modunda çalışıyordu).
+        ctx = RiskEngine(secret=get_settings().SECRET_KEY).execute(ctx)
         if ctx.risk.evaluation.verdict != "approved":
             return False
 
