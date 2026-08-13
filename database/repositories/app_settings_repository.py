@@ -80,6 +80,25 @@ DEFAULTS: dict[str, str] = {
     # dayatılmıyor) — ama gerçek olayın hemen ardından muhafazakâr bir
     # varsayılan olarak 5 seçildi.
     "max_open_positions_per_symbol_direction": "5",
+    # Faz 268-sonrası — kritik bulgu: Faz 261'in 1:4 oranı (STOP=2.5x,
+    # TARGET=10.0x günlük ATR) kendi yorumunda "eski/gürültülü veriden,
+    # yeterli temiz veri birikince yeniden değerlendirilecek" diye
+    # işaretlenmişti. Gerçek OOS doğrulaması (2026-08-13, DEFAULT_LOOKBACK
+    # düzeltmesinden SONRA, 1312 gerçek işlem, %70/%30 train/test):
+    # test setindeki 384 işlemin TAMAMI (bull/bear/transition rejimlerinin
+    # hepsinde) stop_loss ile kapandı — ortalama MFE (%0.38) ortalama
+    # |MAE|'nin (%1.28) çok altında kaldığı için TARGET_ATR_MULT=10.0'a
+    # hiçbir zaman ulaşılamıyordu. Train'den (918 işlem) bulunan gerçek
+    # ampirik en iyi oran ~1:0.545 (sl_pct=%1.80, tp_pct=%0.98) — STOP_
+    # ATR_MULT SABİT tutulup (bilinen/kabul edilmiş risk mesafesi) SADECE
+    # TARGET_ATR_MULT bu oranla yeniden ölçeklendi: 2.5 * 0.545 ≈ 1.4.
+    # DSR henüz "genuinely_skillful" eşiğini (0.95) geçmiyor (0.012,
+    # 65 örneklem) — yön güçlü ama istatistiksel kanıt henüz tam değil,
+    # bu yüzden RiskTargetStage'e SABİT değil, AYARLANABİLİR olarak
+    # bağlandı (bkz. o dosyadaki not) — veri birikince kolayca yeniden
+    # kalibre edilebilir, redeploy gerekmez.
+    "stop_atr_mult": "2.5",
+    "target_atr_mult": "1.4",
     # Drawdown-Based Position Sizing (gambler's ruin koruması) — kill
     # switch'in kullandığı AYNI gerçek ardışık kayıp sayacıyla, sert
     # durmadan ÖNCE devreye giren kademeli bir fren. 3. ardışık kayıptan

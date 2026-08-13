@@ -49,10 +49,11 @@ def test_risk_target_stage_sets_take_profit_and_stop_loss_from_daily_atr_pct():
     ctx = RiskTargetStage().execute(ctx)
 
     assert abs(ctx.decision.stop_loss - 5.0) < 1e-9  # 100 * 2.5 * 0.02
-    # Faz 261: 1:4 oran (2.5x/10.0x) — confidence_calibration'ın gerçek
-    # ölçtüğü %21-29 kalibre güvenin, 1:2 oranın gerektirdiği %33.3
-    # breakeven'i aşamaması nedeniyle genişletildi.
-    assert abs(ctx.decision.take_profit - 20.0) < 1e-9  # 100 * 10.0 * 0.02
+    # Faz 268-sonrası: gerçek OOS doğrulaması 1:4'ün (2.5x/10.0x) tersini
+    # işaret etti — hedef, stop'tan KÜÇÜK olmalı (bkz. app_settings_
+    # repository.py::DEFAULTS["target_atr_mult"] üstündeki not).
+    # Varsayılan artık 1.4x — 100 * 1.4 * 0.02 = 2.8.
+    assert abs(ctx.decision.take_profit - 2.8) < 1e-9
 
 
 def test_risk_target_stage_leaves_targets_unset_for_wait():
@@ -78,14 +79,38 @@ def test_decision_fusion_no_longer_forces_wait_once_real_targets_are_set():
     """Bu, gerçek bulgunun kanıtı: RiskTargetStage olmadan (take_profit/
     stop_loss None) DecisionFusion HER ZAMAN ev<=0 -> WAIT üretiyordu.
     RiskTargetStage'in günlük ATR'den kurduğu hedefle, makul bir
-    confidence'ta artık pozitif EV ile onaylanabiliyor."""
-    ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0, confidence=0.6)
+    confidence'ta artık pozitif EV ile onaylanabiliyor.
+
+    Faz 268-sonrası: yeni varsayılan oran (1:0.56) breakeven için daha
+    yüksek bir kazanma olasılığı gerektiriyor (~%64, eski 1:4 oranın
+    %20'sinin tersine) — bu test artık daha yüksek bir confidence/
+    strength kullanıyor, hâlâ pozitif EV'nin gerçekten üretildiğini
+    kanıtlamak için."""
+    ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0, confidence=0.85)
     ctx = RiskTargetStage().execute(ctx)
 
-    ctx = DecisionFusion().evaluate(ctx, _belief(direction="LONG", strength=0.6))
+    ctx = DecisionFusion().evaluate(ctx, _belief(direction="LONG", strength=0.85))
 
     assert ctx.decision.action.value != "WAIT"
     assert ctx.decision.final_size > 0
+
+
+def test_multipliers_are_read_from_app_settings_not_hardcoded():
+    """Faz 268-sonrası — kritik bulgu: STOP_ATR_MULT/TARGET_ATR_MULT eskiden
+    sınıf sabitiydi, DSR henüz kanıtlanmamışken bu oranı hızla ayarlamak
+    redeploy gerektiriyordu. Artık AppSettings'ten okunuyor."""
+    from database.repositories.app_settings_repository import AppSettingsRepository
+    from database.session_factory import SessionFactory
+
+    with SessionFactory.get_session() as session:
+        AppSettingsRepository(session).set("target_atr_mult", "3.0", updated_by="test")
+    try:
+        ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
+        ctx = RiskTargetStage().execute(ctx)
+        assert abs(ctx.decision.take_profit - 6.0) < 1e-9  # 100 * 3.0 * 0.02
+    finally:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("target_atr_mult", "1.4", updated_by="test")
 
 
 def test_decision_fusion_still_forces_wait_without_risk_target_stage():

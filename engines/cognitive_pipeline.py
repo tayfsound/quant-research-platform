@@ -344,9 +344,17 @@ class RiskTargetStage:
     eğrisi şu an ağırlıklı olarak ESKİ (Faz 251 öncesi, gürültü
     seviyesinde stop'larla açılmış) kapanmış işlemlerden hesaplanıyor —
     yeni rejim altında yeterli (~30-50) gerçek kapanış birikince bu oran
-    gerçek, temiz veriyle yeniden değerlendirilecek."""
-    STOP_ATR_MULT = 2.5
-    TARGET_ATR_MULT = 10.0
+    gerçek, temiz veriyle yeniden değerlendirilecek.
+
+    Faz 268-sonrası — o yeniden değerlendirme yapıldı (bkz. app_settings_
+    repository.py::DEFAULTS["target_atr_mult"] üstündeki not): gerçek OOS
+    doğrulaması 1:4'ün tersini işaret etti (hedef, stop'tan KÜÇÜK olmalı).
+    Sabit sınıf sabitleri yerine artık AppSettings'ten okunuyor — DSR henüz
+    istatistiksel kanıt eşiğini geçmediği için (yön güçlü ama örneklem
+    küçük) bu oranın redeploy gerektirmeden hızla ayarlanabilir kalması
+    kasıtlı bir tasarım kararı."""
+    DEFAULT_STOP_ATR_MULT = 2.5
+    DEFAULT_TARGET_ATR_MULT = 1.4
 
     def execute(self, ctx: CognitiveCycleContext) -> CognitiveCycleContext:
         direction = (ctx.decision.proposed_direction or "").upper()
@@ -358,9 +366,23 @@ class RiskTargetStage:
         if not daily_atr_pct or daily_atr_pct <= 0 or not current_price or current_price <= 0:
             return ctx
 
-        ctx.decision.stop_loss = current_price * self.STOP_ATR_MULT * daily_atr_pct
-        ctx.decision.take_profit = current_price * self.TARGET_ATR_MULT * daily_atr_pct
+        stop_mult, target_mult = self._load_multipliers()
+        ctx.decision.stop_loss = current_price * stop_mult * daily_atr_pct
+        ctx.decision.take_profit = current_price * target_mult * daily_atr_pct
         return ctx
+
+    def _load_multipliers(self) -> tuple[float, float]:
+        try:
+            from database.repositories.app_settings_repository import AppSettingsRepository
+            from database.session_factory import SessionFactory
+
+            with SessionFactory.get_session() as session:
+                settings_repo = AppSettingsRepository(session)
+                stop_mult = float(settings_repo.get("stop_atr_mult") or self.DEFAULT_STOP_ATR_MULT)
+                target_mult = float(settings_repo.get("target_atr_mult") or self.DEFAULT_TARGET_ATR_MULT)
+                return stop_mult, target_mult
+        except Exception:
+            return self.DEFAULT_STOP_ATR_MULT, self.DEFAULT_TARGET_ATR_MULT
 
 
 class DecisionFusionStage:
