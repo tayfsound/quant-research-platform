@@ -19,7 +19,7 @@ export default function Strategies() {
     <div>
       <PageHeader
         title="Agents"
-        description="AgentRegistry.create_default()'ın gerçekten register ettiği council — 9 oy-veren ajan + eleştirmenler."
+        description="Ajanlar, kendi uzmanlık alanlarına göre belirli görevleri yerine getiren ya da içgörü sağlayan yapay zeka destekli modüllerdir. Süreçleri otomatikleştirmek, veri analiz etmek veya karar almaya yardımcı olmak için kullanılırlar."
       />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
