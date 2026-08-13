@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { authHeaders } from "../api/auth";
-import { PageHeader, Button, Badge, StatCard, Card, ErrorNote, EmptyState, Spinner } from "../components/ui";
+import { PageHeader, Button, Badge, StatCard, Card, ErrorNote, EmptyState, Spinner, Input } from "../components/ui";
 import { useCurrency } from "../lib/currency";
 
 type SettingsMap = Record<string, string>;
@@ -207,6 +207,13 @@ export default function Dashboard() {
   const [openCount, setOpenCount] = useState(0);
   const [perf, setPerf] = useState<PerformanceData | null>(null);
   const [periodTab, setPeriodTab] = useState<"daily" | "weekly" | "monthly" | "yearly">("daily");
+  // Faz 268f-sonrası: kullanıcı bulgusu — zero-fill düzeltmesiyle her
+  // dönem sekmesi artık veri olmasa bile onlarca boş satır döndürüyor,
+  // veri arttıkça aranan tarihi bulmak zorlaşacaktı. Basit istemci-taraflı
+  // aralık filtresi — backend'e yeni bir parametre eklemeye gerek yok,
+  // veri zaten tek seferde (limit=200 bucket) geliyor.
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [signalHealth, setSignalHealth] = useState<SignalHealth | null>(null);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | "unsupported">(
     typeof Notification === "undefined" ? "unsupported" : Notification.permission
@@ -462,12 +469,49 @@ export default function Dashboard() {
             </p>
           )}
 
+          <div className="flex items-end gap-2 mb-3">
+            <div>
+              <label className="block text-xs text-ink-faint mb-1">Başlangıç</label>
+              <Input type="date" value={dateFrom} onChange={setDateFrom} />
+            </div>
+            <div>
+              <label className="block text-xs text-ink-faint mb-1">Bitiş</label>
+              <Input type="date" value={dateTo} onChange={setDateTo} />
+            </div>
+            {(dateFrom || dateTo) && (
+              <Button
+                onClick={() => {
+                  setDateFrom("");
+                  setDateTo("");
+                }}
+              >
+                Filtreyi temizle
+              </Button>
+            )}
+          </div>
+
           <Card padded={false}>
-            {perf[periodTab].length === 0 ? (
-              <div className="p-5">
-                <EmptyState label="Bu dönem için henüz kapanmış işlem yok." />
-              </div>
-            ) : (
+            {(() => {
+              const filtered = perf[periodTab].filter((b) => {
+                const d = b.period_start.slice(0, 10);
+                if (dateFrom && d < dateFrom) return false;
+                if (dateTo && d > dateTo) return false;
+                return true;
+              });
+              if (filtered.length === 0) {
+                return (
+                  <div className="p-5">
+                    <EmptyState
+                      label={
+                        dateFrom || dateTo
+                          ? "Seçilen tarih aralığında kapanmış işlem yok."
+                          : "Bu dönem için henüz kapanmış işlem yok."
+                      }
+                    />
+                  </div>
+                );
+              }
+              return (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -480,7 +524,7 @@ export default function Dashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {perf[periodTab].map((b) => (
+                    {filtered.map((b) => (
                       <tr key={b.period_start} className="border-b border-line-soft last:border-0">
                         <td className="px-5 py-2.5 text-ink-soft text-xs">
                           {new Date(b.period_start).toLocaleDateString()}
@@ -500,7 +544,8 @@ export default function Dashboard() {
                   </tbody>
                 </table>
               </div>
-            )}
+              );
+            })()}
           </Card>
 
           {Object.keys(perf.by_trade_type || {}).length > 0 && (
