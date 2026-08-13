@@ -449,13 +449,19 @@ export default function Dashboard() {
             </p>
           )}
 
+          {/* Faz 268-sonrası — kullanıcı geri bildirimi (Transactions'taki
+              aynı desen için): tasarım bütünlüğü önceliği gereği burası da
+              AYNI şekilde düzeltildi — seçili olmayan pillerin gerçek bir
+              yüzeyi (bg-surface) var, arka planla karışmıyor. */}
           <div className="flex gap-1 mb-4">
             {PERIOD_TABS.map((t) => (
               <button
                 key={t.key}
                 onClick={() => setPeriodTab(t.key)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium ${
-                  periodTab === t.key ? "bg-accent text-white" : "bg-canvas-soft text-ink-soft hover:text-ink"
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  periodTab === t.key
+                    ? "bg-accent text-white border-accent shadow-layer-1"
+                    : "bg-surface text-ink border-line shadow-sm hover:bg-surface-soft hover:border-accent/40"
                 }`}
               >
                 {t.label}
@@ -472,7 +478,12 @@ export default function Dashboard() {
             </p>
           )}
 
-          <div className="flex items-end gap-2 mb-3">
+          {/* Faz 268-sonrası — kullanıcı geri bildirimi: tarih filtresi
+              bölümleri "sönük" görünüyordu, diğer kartlarla AYNI yüzen-
+              panel deseni (Card/.glass-panel) içine alındı — tasarım
+              bütünlüğü. */}
+          <Card className="mb-3">
+          <div className="flex items-end gap-2">
             <div>
               <label className="block text-xs text-ink-faint mb-1">Başlangıç</label>
               <Input type="date" value={dateFrom} onChange={setDateFrom} />
@@ -492,6 +503,7 @@ export default function Dashboard() {
               </Button>
             )}
           </div>
+          </Card>
 
           <Card padded={false}>
             {(() => {

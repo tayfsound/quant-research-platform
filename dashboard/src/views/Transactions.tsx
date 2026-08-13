@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { authHeaders } from "../api/auth";
-import { PageHeader, Badge, EmptyState, StatCard, Button } from "../components/ui";
+import { Card, PageHeader, Badge, EmptyState, StatCard, Button } from "../components/ui";
 import { useCurrency } from "../lib/currency";
 
 type Position = {
@@ -420,21 +420,29 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
         </p>
       )}
 
-      <div className="flex flex-wrap items-center gap-2 mb-3">
-        {SINCE_OPTIONS.map((opt) => (
-          <button
-            key={opt.label}
-            onClick={() => setSinceMinutes(opt.minutes)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-              sinceMinutes === opt.minutes
-                ? "bg-accent text-white border-accent"
-                : "bg-canvas-soft text-ink-soft border-line hover:bg-surface-soft"
-            }`}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
+      {/* Faz 268-sonrası — kullanıcı geri bildirimi: bu bölüm "sönük,
+          sanki orada yokmuş gibi" görünüyordu (gri-gri üstüne gri) —
+          diğer kartlarla (Card/.glass-panel) AYNI yüzen-panel deseni
+          içine alındı, seçili olmayan pillerin de gerçek bir yüzeyi
+          (bg-surface) var artık, arka planla karışmıyor. Tasarım
+          bütünlüğü kullanıcının en öncelikli isteği. */}
+      <Card className="mb-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {SINCE_OPTIONS.map((opt) => (
+            <button
+              key={opt.label}
+              onClick={() => setSinceMinutes(opt.minutes)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                sinceMinutes === opt.minutes
+                  ? "bg-accent text-white border-accent shadow-layer-1"
+                  : "bg-surface text-ink border-line shadow-sm hover:bg-surface-soft hover:border-accent/40"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </Card>
 
       {filteredSummary && (
         <p className="text-xs text-ink-faint mb-3">
