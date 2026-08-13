@@ -109,6 +109,7 @@ class PairsTrader:
         ctx.risk.ai_enabled = risk_state["ai_enabled"]
         ctx.risk.consecutive_losses = risk_state["consecutive_losses"]
         ctx.risk.kill_switch_consecutive_losses = risk_state["kill_switch_consecutive_losses"]
+        ctx.risk.concept_drift_reason = risk_state["concept_drift_reason"]
 
         # Not: bu, bacağın kendi ATR'sine göre standart bir stop/hedef —
         # spread'in ortalamaya dönüşünü (asıl pairs trading çıkış sinyali)

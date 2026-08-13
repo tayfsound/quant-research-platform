@@ -347,3 +347,51 @@ def test_max_open_positions_per_symbol_direction_none_when_setting_empty():
     finally:
         with SessionFactory.get_session() as session:
             AppSettingsRepository(session).set("max_open_positions_per_symbol_direction", "5", updated_by="test")
+
+
+def test_concept_drift_reason_set_when_recent_win_rate_drops_significantly_and_meaningfully():
+    """Faz 268-sonrası — gerçek regresyon (2026-08-13): bu hesaplama
+    ÖNCE RiskEngine.execute()'un içindeydi, global/sembolsüz bir sorgu
+    olduğu için BAŞKA testlerin "far future" sentetik verisiyle çakışıp
+    ilgisiz testleri kırdı. Artık burada (consecutive_losses ile AYNI
+    yer) — offset (hours=20) bu dosyadaki HERHANGİ bir başka testten
+    (en yükseği hours=4) kasıtlı olarak çok daha ileride, list_closed_
+    trades()'in (closed_at DESC) en önünde garanti bu testin kendi
+    satırları olsun diye."""
+    from datetime import UTC, datetime, timedelta
+
+    symbol = f"RISKSTATE{uuid4().hex[:8]}"
+    far_future = datetime.now(UTC) + timedelta(days=3650, hours=20)
+    try:
+        with SessionFactory.get_session() as session:
+            repo = DecisionPersistor(session)
+            # Baseline (100 kayıt, DAHA ESKİ -> daha erken closed_at): %90 kazanç.
+            for i in range(100):
+                pnl = 10.0 if i % 10 != 0 else -5.0
+                event = DecisionEvent(
+                    id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+                    final_size=1.0, status="open", entry_price=100.0, quantity=1.0,
+                )
+                repo.persist(event)
+                repo.close_position(
+                    decision_id=str(event.id), exit_price=100.0, pnl=pnl,
+                    closed_at=far_future + timedelta(seconds=i),
+                )
+            # Recent (50 kayıt, DAHA YENİ -> daha geç closed_at): %20 kazanç.
+            for i in range(50):
+                pnl = 10.0 if i % 5 == 0 else -5.0
+                event = DecisionEvent(
+                    id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+                    final_size=1.0, status="open", entry_price=100.0, quantity=1.0,
+                )
+                repo.persist(event)
+                repo.close_position(
+                    decision_id=str(event.id), exit_price=100.0, pnl=pnl,
+                    closed_at=far_future + timedelta(hours=1, seconds=i),
+                )
+
+        state = load_position_risk_state()
+        assert state["concept_drift_reason"] is not None
+        assert state["concept_drift_reason"].code == "CONCEPT_DRIFT_DEGRADATION"
+    finally:
+        _cleanup_symbol(symbol)

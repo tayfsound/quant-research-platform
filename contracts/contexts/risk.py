@@ -81,3 +81,14 @@ class RiskContext(BaseModel):
     # varsayılan eşik dayatılmıyor, kullanıcı açıkça belirlemeli).
     same_direction_open_counts: dict[str, int] = Field(default_factory=dict)
     max_open_positions_per_symbol_direction: int | None = None
+    # Faz 268-sonrası — Concept Drift gate (bkz. services/risk_state.py::
+    # load_position_risk_state, analytics/concept_drift.py). KASITLI
+    # OLARAK burada, load_position_risk_state()'te ÖNCEDEN hesaplanıyor
+    # (consecutive_losses ile AYNI desen) — RiskEngine.execute()'un
+    # KENDİ İÇİNDE bir DB sorgusu yapmaması için: gerçek bir regresyon
+    # bulundu (2026-08-13) — RiskEngine kendi içinde global, sembolsüz bir
+    # sorgu yapınca, "far future" zaman damgalı sentetik veri üreten BAŞKA
+    # testler (ör. test_risk_state.py) bu kontrolü yanlışlıkla tetikleyip
+    # ilgisiz testleri kırdı. None = ya yetersiz veri ya da gerçek bir
+    # drift tespit edilmedi (fail-closed).
+    concept_drift_reason: RiskReason | None = None

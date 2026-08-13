@@ -5,9 +5,43 @@ kasıtlı olarak ayrı: bunlar kullanıcının günlük ayarlayabildiği operasy
 tercihler (app_settings), kriptografik acil durum eşiği değil."""
 from datetime import UTC, datetime
 
+from analytics.concept_drift import compute_concept_drift
+from contracts.contexts.risk import RiskReason
 from database.repositories.app_settings_repository import AppSettingsRepository
 from database.repositories.decision_persistor import DecisionPersistor
 from database.session_factory import SessionFactory
+
+
+def _compute_concept_drift_reason(decision_repo: DecisionPersistor) -> RiskReason | None:
+    """Faz 268-sonrası — bkz. contracts/contexts/risk.py::concept_drift_
+    reason yorumu. Burada (RiskEngine.execute()'un İÇİNDE DEĞİL) hesaplanır
+    ki test çağıranlar ctx.risk.concept_drift_reason'ı doğrudan set edip
+    RiskEngine'i izole test edebilsin — gerçek bir regresyon (2026-08-13)
+    bu ayrımın neden zorunlu olduğunu kanıtladı."""
+    trades = decision_repo.list_closed_trades(limit=150)
+    if len(trades) < 100:
+        return None
+
+    recent_outcomes = [(t.get("pnl") or 0.0) > 0 for t in trades[:50]]
+    baseline_outcomes = [(t.get("pnl") or 0.0) > 0 for t in trades[50:150]]
+
+    drift = compute_concept_drift(baseline_outcomes, recent_outcomes)
+    if drift is None or not drift["drift_detected"]:
+        return None
+
+    win_rate_drop = drift["baseline_win_rate"] - drift["recent_win_rate"]
+    if win_rate_drop < 0.15:
+        return None
+
+    return RiskReason(
+        code="CONCEPT_DRIFT_DEGRADATION",
+        message=(
+            f"Kazanma oranı {drift['baseline_win_rate']:.1%}'den "
+            f"{drift['recent_win_rate']:.1%}'e düştü (p={drift['p_value']:.4f}, "
+            f"istatistiksel olarak anlamlı) — model geçerliliği sorgulanıyor"
+        ),
+        severity="warning",
+    )
 
 
 def load_position_risk_state(
@@ -49,6 +83,8 @@ def load_position_risk_state(
         )
 
         decision_repo = DecisionPersistor(session)
+
+        concept_drift_reason = _compute_concept_drift_reason(decision_repo)
 
         # Faz 268-sonrası — gerçek olay: XAUTUSDT SHORT x54. bkz.
         # contracts/contexts/risk.py::same_direction_open_counts.
@@ -126,4 +162,5 @@ def load_position_risk_state(
         "kill_switch_consecutive_losses": kill_switch_consecutive_losses,
         "same_direction_open_counts": same_direction_open_counts,
         "max_open_positions_per_symbol_direction": max_open_per_symbol_direction,
+        "concept_drift_reason": concept_drift_reason,
     }
