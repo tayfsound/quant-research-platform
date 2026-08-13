@@ -404,11 +404,19 @@ def run_real_backtest(
         # SADECE ölçüm — hiçbir SL/TP kararını burada değiştirmiyor.
         mae_mfe = compute_mae_mfe(direction, entry_price, bars[t:exit_idx + 1])
 
+        # Faz 268-sonrası: koşullu MAE/MFE dağılımları için entry ANINDA
+        # aktif olan rejim/volatilite — ctx.market.features zaten bu
+        # pencereden gerçekten hesaplanmıştı (bkz. build_cognitive_
+        # context), burada sadece okunuyor, ekstra hesaplama yok.
+        entry_features = result_ctx.market.features or {}
+
         trades.append({
             "symbol": symbol,
             "bar_index": t,
             "direction": direction,
             "confidence": result_ctx.decision.confidence or 0.0,
+            "regime": entry_features.get("long_term_trend_regime", "insufficient_data"),
+            "volatility_regime": entry_features.get("volatility_regime", "normal"),
             "entry_price": entry_price,
             "exit_price": exit_price,
             "exit_reason": exit_reason,

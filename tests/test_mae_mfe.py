@@ -1,7 +1,7 @@
 """MAE/MFE ölçüm katmanı testleri."""
 from datetime import UTC, datetime, timedelta
 
-from analytics.mae_mfe import compute_mae_mfe
+from analytics.mae_mfe import compute_conditional_mae_distribution, compute_mae_mfe
 from market_data.ingestion.ohlcv import OHLCV
 
 
@@ -67,3 +67,59 @@ def test_entry_price_zero_is_handled_fail_closed():
 def test_empty_bars_is_handled_fail_closed():
     result = compute_mae_mfe("LONG", entry_price=100.0, bars=[])
     assert result["mae_pct"] is None
+
+
+def _trade(mae_pct: float, mfe_pct: float, direction="LONG", regime="bull_trend",
+           volatility_regime="normal", confidence=0.7, win=True) -> dict:
+    return {
+        "mae_pct": mae_pct, "mfe_pct": mfe_pct, "direction": direction,
+        "regime": regime, "volatility_regime": volatility_regime,
+        "confidence": confidence, "win": win,
+    }
+
+
+def test_conditional_distribution_computes_real_empirical_quantiles():
+    """Kullanıcının kendi örneği: 50/60/70/80/90/95. yüzdelikler artan
+    sırada olmalı, gerçek |MAE| değerlerinden hesaplanmalı."""
+    trades = [_trade(mae_pct=-0.002 * i, mfe_pct=0.01) for i in range(1, 31)]  # -0.002..-0.06
+    result = compute_conditional_mae_distribution(
+        trades, group_by=("direction",), min_group_size=20,
+    )
+    key = "direction=LONG"
+    assert key in result
+    q = result[key]["mae_quantiles"]
+    assert q["p50"] < q["p70"] < q["p90"] < q["p95"]
+    assert result[key]["sample_size"] == 30
+
+
+def test_groups_below_min_size_are_excluded_fail_closed():
+    trades = [_trade(mae_pct=-0.01, mfe_pct=0.02) for _ in range(5)]
+    result = compute_conditional_mae_distribution(trades, group_by=("direction",), min_group_size=20)
+    assert result == {}
+
+
+def test_different_regimes_produce_separate_groups():
+    bull_trades = [_trade(mae_pct=-0.01, mfe_pct=0.02, regime="bull_trend") for _ in range(25)]
+    bear_trades = [_trade(mae_pct=-0.05, mfe_pct=0.01, regime="bear_trend") for _ in range(25)]
+    result = compute_conditional_mae_distribution(
+        bull_trades + bear_trades, group_by=("regime",), min_group_size=20,
+    )
+    assert "regime=bull_trend" in result
+    assert "regime=bear_trend" in result
+    assert result["regime=bull_trend"]["mae_quantiles"]["p50"] < result["regime=bear_trend"]["mae_quantiles"]["p50"]
+
+
+def test_confidence_is_automatically_bucketed():
+    trades = (
+        [_trade(mae_pct=-0.01, mfe_pct=0.02, confidence=0.55) for _ in range(20)]
+        + [_trade(mae_pct=-0.01, mfe_pct=0.02, confidence=0.85) for _ in range(20)]
+    )
+    result = compute_conditional_mae_distribution(trades, group_by=("confidence",), min_group_size=20)
+    assert "confidence=0.5-0.6" in result
+    assert "confidence=0.8-0.9" in result
+
+
+def test_trades_with_no_mae_are_skipped_without_crashing():
+    trades = [{"direction": "LONG", "mae_pct": None}] * 25
+    result = compute_conditional_mae_distribution(trades, group_by=("direction",), min_group_size=5)
+    assert result == {}
