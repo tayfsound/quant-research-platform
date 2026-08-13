@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { authHeaders } from "../api/auth";
-import { Card, PageHeader, Button, ErrorNote, EmptyState } from "../components/ui";
+import { Card, PageHeader, ErrorNote, EmptyState } from "../components/ui";
 
 // Faz 268ai — kullanıcı isteği: Predictions sayfası eskiden manuel "Run
 // Cycle" ile Direction/Risk Verdict/Simulated PnL gösteriyordu. Kullanıcı
@@ -31,13 +31,17 @@ export default function Predictions() {
       .catch(() => setWatchlist([]));
   }, []);
 
-  const fetchFeatures = () => {
+  // Faz 268-sonrası — kullanıcı isteği: manuel "Sinyalleri Getir" butonu
+  // kaldırıldı, sayfa yüklenince VE dropdown'dan sembol değişince otomatik
+  // yükleniyor.
+  useEffect(() => {
+    if (!symbol) return;
     setLoading(true);
     setError(null);
     fetch("/api/v1/orchestrator/cycle", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({ seed: Math.floor(Math.random() * 100000), symbol: symbol || undefined }),
+      body: JSON.stringify({ seed: Math.floor(Math.random() * 100000), symbol }),
     })
       .then(async (r) => {
         const data = await r.json();
@@ -47,7 +51,7 @@ export default function Predictions() {
       })
       .catch((e) => setError(String(e.message || e)))
       .finally(() => setLoading(false));
-  };
+  }, [symbol]);
 
   return (
     <div>
@@ -55,29 +59,26 @@ export default function Predictions() {
         title="Predictions"
         description="Sembolün şu anki gerçek teknik/onchain sinyal değerleri — risk/cooldown kontrolünden bağımsız, her zaman güncel."
         action={
-          <div className="flex items-center gap-2">
-            <select
-              value={symbol}
-              onChange={(e) => setSymbol(e.target.value)}
-              className="px-3 py-2 rounded-lg bg-canvas-soft border border-line text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent"
-            >
-              {watchlist.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-            <Button onClick={fetchFeatures} disabled={loading}>
-              {loading ? "Getiriliyor…" : "Sinyalleri Getir"}
-            </Button>
-          </div>
+          <select
+            value={symbol}
+            onChange={(e) => setSymbol(e.target.value)}
+            className="px-3 py-2 rounded-lg bg-canvas-soft border border-line text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent"
+          >
+            {watchlist.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
         }
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}
 
-      {!features && !error && (
-        <EmptyState label="Henüz getirilmedi — güncel sinyalleri görmek için “Sinyalleri Getir”e basın." />
+      {loading && !features && <EmptyState label="Sinyaller yükleniyor…" />}
+
+      {!features && !error && !loading && (
+        <EmptyState label="Bu sembol için henüz sinyal verisi yok." />
       )}
 
       {features && (

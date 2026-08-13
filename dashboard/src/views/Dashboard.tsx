@@ -440,35 +440,6 @@ export default function Dashboard() {
             değeridir).
           </p>
 
-          {perf.all_time.excluded_dirty_trades_count > 0 && (
-            <p className="text-xs text-ink-faint mb-4">
-              Not: {perf.all_time.excluded_dirty_trades_count} adet kirli işlem (aşırı test ayarlarından kalan
-              gerçek olmayan büyüklükteki işlemler ve geçmişte bir veri sağlayıcı hatası yüzünden gerçek dışı
-              fiyatla kapanmış işlemler) yukarıdaki istatistiklerden hariç tutuldu (silinmedi, sadece
-              istatistiklere dahil edilmedi).
-            </p>
-          )}
-
-          {/* Faz 268-sonrası — kullanıcı geri bildirimi (Transactions'taki
-              aynı desen için): tasarım bütünlüğü önceliği gereği burası da
-              AYNI şekilde düzeltildi — seçili olmayan pillerin gerçek bir
-              yüzeyi (bg-surface) var, arka planla karışmıyor. */}
-          <div className="flex gap-1 mb-4">
-            {PERIOD_TABS.map((t) => (
-              <button
-                key={t.key}
-                onClick={() => setPeriodTab(t.key)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                  periodTab === t.key
-                    ? "bg-accent text-white border-accent shadow-layer-1"
-                    : "bg-surface text-ink border-line shadow-sm hover:bg-surface-soft hover:border-accent/40"
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-
           {periodTab === "daily" && (
             <p className="text-xs text-ink-faint mb-3">
               "Günlük" burada takvim günü demek (UTC 00:00'dan itibaren) — Transactions sayfasındaki
@@ -481,38 +452,58 @@ export default function Dashboard() {
           {/* Faz 268-sonrası — kullanıcı geri bildirimi: tarih filtresi
               bölümleri "sönük" görünüyordu, diğer kartlarla AYNI yüzen-
               panel deseni (Card/.glass-panel) içine alındı — tasarım
-              bütünlüğü. */}
+              bütünlüğü. Dönem sekmeleri (günlük/haftalık/aylık/yıllık) de
+              AYNI kartın içine taşındı, ikisi tek bir filtre bloğu. */}
           <Card className="mb-3">
-          <div className="flex items-end gap-2">
-            <div>
-              <label className="block text-xs text-ink-faint mb-1">Başlangıç</label>
-              <Input type="date" value={dateFrom} onChange={setDateFrom} />
+            <div className="flex gap-1 mb-3">
+              {PERIOD_TABS.map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => setPeriodTab(t.key)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                    periodTab === t.key
+                      ? "bg-accent text-white border-accent shadow-layer-1"
+                      : "bg-surface text-ink border-line shadow-sm hover:bg-surface-soft hover:border-accent/40"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
             </div>
-            <div>
-              <label className="block text-xs text-ink-faint mb-1">Bitiş</label>
-              <Input type="date" value={dateTo} onChange={setDateTo} />
+            <div className="flex items-end gap-2">
+              <div>
+                <label className="block text-xs text-ink-faint mb-1">Başlangıç</label>
+                <Input type="date" value={dateFrom} onChange={setDateFrom} />
+              </div>
+              <div>
+                <label className="block text-xs text-ink-faint mb-1">Bitiş</label>
+                <Input type="date" value={dateTo} onChange={setDateTo} />
+              </div>
+              {(dateFrom || dateTo) && (
+                <Button
+                  onClick={() => {
+                    setDateFrom("");
+                    setDateTo("");
+                  }}
+                >
+                  Filtreyi temizle
+                </Button>
+              )}
             </div>
-            {(dateFrom || dateTo) && (
-              <Button
-                onClick={() => {
-                  setDateFrom("");
-                  setDateTo("");
-                }}
-              >
-                Filtreyi temizle
-              </Button>
-            )}
-          </div>
           </Card>
 
           <Card padded={false}>
             {(() => {
-              const filtered = perf[periodTab].filter((b) => {
+              let filtered = perf[periodTab].filter((b) => {
                 const d = b.period_start.slice(0, 10);
                 if (dateFrom && d < dateFrom) return false;
                 if (dateTo && d > dateTo) return false;
                 return true;
               });
+              // Faz 268-sonrası — kullanıcı isteği: günlük tablo sınırsız
+              // büyümesin, en güncel 15 gün gösterilsin (bucket'lar zaten
+              // en yeniden en eskiye sıralı geliyor — bkz. decision_persistor.py).
+              if (periodTab === "daily") filtered = filtered.slice(0, 15);
               if (filtered.length === 0) {
                 return (
                   <div className="p-5">
@@ -527,7 +518,7 @@ export default function Dashboard() {
                 );
               }
               return (
-              <div className="overflow-x-auto">
+              <div className={`overflow-x-auto ${periodTab === "daily" ? "max-h-96 overflow-y-auto" : ""}`}>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs text-ink-faint uppercase tracking-wide border-b border-line-soft">
