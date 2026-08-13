@@ -40,7 +40,7 @@ export default function LLMCritic() {
   return (
     <div>
       <PageHeader
-        title="LLM Eleştirmen"
+        title="Respond"
         description="NVIDIA NIM (deepseek-v4-flash) — serbest soru/cevap. Yanıt 1-2 dakika sürebilir, bu normal (danışma amaçlı, canlı işlem kapısı değil)."
       />
 

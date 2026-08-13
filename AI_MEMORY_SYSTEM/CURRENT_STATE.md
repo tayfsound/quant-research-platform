@@ -75,7 +75,7 @@ derecede daha derin eleştiri üretti (Hurst exponent'in rastgele-yürüyüş
 bölgesinde olduğunu yakaladı, diğeri kaçırdı); `openai/gpt-oss-120b` bu
 yükte tutarlı zaman aşımına uğradı. Varsayılan: deepseek-v4-flash (danışma
 amaçlı, canlı işlem kapısı değil — hız yerine kalite). Dashboard'da yeni
-"LLM Eleştirmen" sekmesi (serbest soru/cevap, `POST /api/v1/llm-critic/
+"Respond" sekmesi (serbest soru/cevap, `POST /api/v1/llm-critic/
 ask`). Kasıtlı olarak sadece danışma — hiçbir karar otomatik reddedilmiyor/
 onaylanmıyor; kod-düzenleme/otomatik-deploy YOK (proje kuralı: AI kendine
 unilateral canlıya alma yetkisi veremez).
