@@ -10,6 +10,7 @@ import Transactions from './views/Transactions';
 import PendingApprovals from './views/PendingApprovals';
 import BacktestRuns from './views/BacktestRuns';
 import ResearchWorkspace from './views/ResearchWorkspace';
+import LLMCritic from './views/LLMCritic';
 import Sidebar from './components/Sidebar';
 import { clearToken, hasToken } from './api/auth';
 
@@ -52,6 +53,7 @@ function App() {
           {view === 'approvals' && <PendingApprovals />}
           {view === 'backtest' && <BacktestRuns />}
           {view === 'workspace' && <ResearchWorkspace />}
+          {view === 'llm-critic' && <LLMCritic />}
         </div>
       </main>
     </div>

@@ -80,6 +80,59 @@ class NvidiaDecisionCritic:
 
         return get_settings().NVIDIA_API_KEY
 
+    async def ask(self, message: str, timeout_ms: int = 90000) -> str:
+        """Faz 268-sonrası — kullanıcı isteği: dashboard'da serbest metin
+        soru/cevap sekmesi. explain()'in aksine JSON şemasına ZORLAMIYOR
+        — ajanlar arası çelişki analiziyle sınırlı değil, genel bir
+        soru/cevap. Hata/zaman aşımı durumunda dürüstçe bir hata mesajı
+        döner (LLMExplanation.neutral() gibi icat edilmiş bir "yanıt"
+        DEĞİL — burada yanıtın kendisi zaten kullanıcıya gösterilecek)."""
+        api_key = self._resolve_api_key()
+        if not api_key:
+            return "NVIDIA_API_KEY ayarlanmamış — .env dosyasına eklenmeli."
+
+        llm_timeout = timeout_ms / 1000
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(self._ask_sync, message, timeout_ms, api_key),
+                timeout=llm_timeout + THREAD_GRACE_SECONDS,
+            )
+        except TimeoutError:
+            logger.warning("LLM ask timed out", extra={"timeout_ms": timeout_ms, "model": self.model})
+            return f"Zaman aşımı ({timeout_ms}ms) — model yanıt veremedi."
+        except Exception as e:
+            logger.exception("LLM ask failed", extra={"error": str(e)})
+            return f"Hata: {e}"
+
+    def _ask_sync(self, message: str, timeout_ms: int, api_key: str) -> str:
+        import httpx
+        response = httpx.post(
+            NVIDIA_API_URL,
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={
+                "model": self.model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "Bütün yanıtını SADECE TÜRKÇE yaz. Sen bir kantitatif "
+                            "trading araştırma platformunda çalışan, deneyimli bir "
+                            "kantitatif analist/risk uzmanısın. Kısa ve net cevap ver."
+                        ),
+                    },
+                    {"role": "user", "content": message},
+                ],
+                "temperature": 0.3,
+                "max_tokens": 2000,
+            },
+            timeout=timeout_ms / 1000,
+        )
+        response.raise_for_status()
+        data = response.json()
+        choices = data.get("choices") or []
+        content = (choices[0].get("message", {}).get("content") or "") if choices else ""
+        return content.strip() or "(boş yanıt)"
+
     async def explain(self, ensemble_output: dict, prompt: str | None = None, timeout_ms: int = 90000) -> LLMExplanation:
         # NVIDIA_API_KEY boşsa (kayıt yapılmadıysa) fail-closed — sessizce
         # nötr döner, aynı FRED_API_KEY/HELIUS_API_KEY konvansiyonu.

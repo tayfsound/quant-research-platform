@@ -182,6 +182,14 @@ type PerformanceData = {
   by_trade_type: Record<string, TradeTypeStat>;
 };
 
+// Faz 268-sonrası — kullanıcı isteği: günlük tablo sabit 15 satır yerine
+// içinde bulunulan ayın gerçek gün sayısı kadar göstersin (Şubat 28/29,
+// 30 günlük aylar, 31 günlük aylar — otomatik).
+function daysInMonth(date: Date): number {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+}
+const daysInCurrentMonth = daysInMonth(new Date());
+
 const PERIOD_TABS: { key: keyof Pick<PerformanceData, "daily" | "weekly" | "monthly" | "yearly">; label: string }[] = [
   { key: "daily", label: "Günlük" },
   { key: "weekly", label: "Haftalık" },
@@ -501,9 +509,11 @@ export default function Dashboard() {
                 return true;
               });
               // Faz 268-sonrası — kullanıcı isteği: günlük tablo sınırsız
-              // büyümesin, en güncel 15 gün gösterilsin (bucket'lar zaten
-              // en yeniden en eskiye sıralı geliyor — bkz. decision_persistor.py).
-              if (periodTab === "daily") filtered = filtered.slice(0, 15);
+              // büyümesin, sabit 15 yerine İÇİNDE BULUNULAN AYIN gün
+              // sayısı kadar gösterilsin (28-31 arası, aya göre otomatik
+              // — bkz. daysInCurrentMonth). bucket'lar zaten en yeniden
+              // en eskiye sıralı geliyor (decision_persistor.py).
+              if (periodTab === "daily") filtered = filtered.slice(0, daysInCurrentMonth);
               if (filtered.length === 0) {
                 return (
                   <div className="p-5">
