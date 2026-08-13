@@ -1,9 +1,69 @@
-# Mevcut Durum -- v1.41.0 (Faz 251-268 devamı: Feature Importance → MAE/MFE koşullu dağılımlar)
+# Mevcut Durum -- v1.50.0 (Cognitive Core 2.0-11.0 tamamlandı — 25+ yeni analytics modülü)
 
 **Tarih:** 2026-08-13
 **Branch:** main
 **Son commit (HEAD):** bkz. git log
-**Test:** targeted (tests/test_mae_mfe.py, test_ab_testing.py, test_performance_api.py, test_real_historical_backtest.py — izole çalıştırıldığında hepsi yeşil) — tam suite bu turda çalıştırılmadı (bkz. session kuralı: "tam suite sadece push öncesi"). `npx tsc -b` temiz.
+**Test:** targeted (her yeni modülün kendi test dosyası — hepsi izole çalıştırıldığında yeşil) — tam suite bu turda çalıştırılmadı (bkz. session kuralı: "tam suite sadece push öncesi"). `npx tsc -b` temiz (frontend değişikliklerinde).
+
+## Cognitive Core 2.0-11.0 — "Predictive Decision Architecture" yol haritasının ikinci büyük dilimi (2026-08-13)
+
+Faz 268 sonrası (Feature Importance→MAE/MFE koşullu dağılımlar) tamamlandıktan sonra,
+kullanıcının onayıyla ("makul bir noktadan başlayalım" / "sen kendi kararınla
+somutlaştır") 500-fazlık Predictive Decision Architecture / Cognitive Core yol
+haritasının BÜYÜK bir kısmı tek oturumda inşa edildi. Her madde GERÇEK, literatürde
+tanımlı bir teknikle somutlaştırıldı — hiçbiri icat edilmiş bir formül değil, hepsi
+fail-closed (yetersiz örneklemden sonuç icat edilmez) ve **hiçbiri canlı karar
+hattına (services/orchestrator.py, engines/risk_engine.py) WIRE edilmedi** — bu
+oturumun tekrarlanan teması "measure first, insan onayı olmadan hiçbir risk/pozisyon
+kararını değiştirme."
+
+**Önce ~30 küçük-orta risk/analitik modülü** (Faz 268b-273): MAE/MFE+Barrier tam
+katmanı (koşullu dağılım→competing-risk→Optimal Barrier Surface→confidence
+ayrıştırma→selection-bias), Seasonality Detection, Correlation Breakdown Detection,
+Liquidity-Adjusted VaR, Economic Calendar Integration (FOMC/CPI — GERÇEKTEN canlı
+karar hattına wire edildi, epistemology_agent'ı tightening yönünde etkiliyor, data_
+quality_score ile AYNI desen), Stablecoin/Pegged-Asset Depeg Risk.
+
+**Sonra Cognitive Core 2.0'ın 10 milestone'ı (M1-M10, Faz 269-768)** eksiksiz
+tamamlandı — 18 modül: system_events (olay günlüğü, kill switch tetiklenmesi
+GERÇEKTEN kaydediliyor) + Feature Registry (39 feature'ın kataloğu) + Piyasa rejimi
+motoru v2 + Price Structure (S/R bölge kümeleme) + Momentum/Mean-Reversion MoE Router
+(Hurst-tabanlı) + Microstructure v2 (Kyle's Lambda) + Cross-Asset Lead-Lag + Labeling
+(reddedilen fırsatların gerçek bar verisiyle backfill'i) + MAE/MFE Bilimsel Motoru
+(bootstrap güven aralıkları) + Adaptive Barrier Engine (lookup) + Direction Prediction
+v2 (Brier Score) + Probability Calibration (ECE) + Opportunity Quality/Meta-Labeling
+(ajan konsensüsü) + Entry Timing + Expected Utility (CRRA) + Portfolio Intelligence
+(Effective Number of Bets) + Backtest Doğrulama (Deflated Sharpe Ratio) + Stress
+Testing (Historical Simulation) + Concept Drift (P(Y|X) kayması, feature drift'ten
+AYRI) + Meta-Learning Effectiveness (CMA-ES turlarının gerçekten iyileşip
+iyileşmediği).
+
+**Sonra Cognitive Core 3.0-11.0'ın somut dilimleri** (kullanıcı onayıyla, her başlık
+kendi mühendislik yargımla GERÇEK bir tekniğe indirgendi): Self-Model (birden fazla
+bağımsız güvenilirlik sinyalini — ECE/DSR/kill switch/drift — TEK bir öz-değerlendirme
+anlık görüntüsünde birleştiren içgözlem), Causal Cognitive Core (Granger Causality —
+korelasyonla nedenselliği ayırt eden ilk araç), Market World Model (Moving Block
+Bootstrap — mevcut iid bootstrap'in aksine zaman-serisi bağımlılığını koruyor),
+Adversarial Intelligence (sistemin GERÇEK geçmişindeki en kötü koşulları bulan
+madencilik, sentetik red-team senaryolarından farklı), Scientific Self-Correction
+(hipotez retest — bir edge zamanla kayboldu mu, iki-oran z-testiyle dürüstçe tespit),
+Collective Research Intelligence (Condorcet Jüri Teoremi — council gerçekten en iyi
+tekil ajandan daha isabetli mi), Self-Designing Intelligence Guard (AIProposal —
+approve()'un insan kimliği zorunluluğu Python seviyesinde zorlanıyor, "ai"/"system"
+gibi kimliklerle kendi kendine onay AÇIKÇA engelleniyor).
+
+**Cognitive Core 12.0 ("General Decision Intelligence vizyonu") kasıtlı olarak bir
+koda indirgenmedi** — bu madde somut bir teknik değil, yukarıdaki tüm parçaların
+BİR ARAYA GELİŞİNİN kendisi zaten bu vizyonun karşılığı: Feature Registry NE
+bildiğimizi, system_events NE OLDUĞUNU, Self-Model NE KADAR GÜVENDİĞİMİZİ,
+Causal/Collective/Adversarial/Scientific-Self-Correction modülleri NEDEN
+güvendiğimizi sorgulayan bir katman oluşturuyor — "genel karar zekası" tek bir
+modül değil, bu senteze verilen isim.
+
+**Sonraki adım:** hiçbiri henüz canlıya wire edilmedi. Bir sonraki oturumun doğal
+işi, kullanıcıyla birlikte BU modüllerden hangilerinin (varsa) gerçek OOS
+doğrulamadan sonra insan onayıyla canlıya alınacağına karar vermek — AIProposal
+guard'ı (Self-Designing Intelligence) tam bunun için hazır.
 
 ## Faz 251-268 devamı (2026-08-12 — 2026-08-13)
 
