@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from analytics.mae_mfe import (
     compute_competing_risk_probabilities,
     compute_conditional_mae_distribution,
+    compute_confidence_decomposition,
     compute_mae_mfe,
     compute_optimal_barrier,
 )
@@ -253,3 +254,48 @@ def test_optimal_barrier_separates_groups_by_regime():
     assert "regime=bear_trend" in result
     assert result["regime=bull_trend"]["expected_value_pct"] > 0
     assert result["regime=bear_trend"]["expected_value_pct"] < 0
+
+
+def _decomp_trade(exit_reason: str, mfe_pct: float, confidence=0.7, direction="LONG",
+                   regime="bull_trend", volatility_regime="normal") -> dict:
+    return {
+        "exit_reason": exit_reason, "mfe_pct": mfe_pct, "confidence": confidence,
+        "direction": direction, "regime": regime, "volatility_regime": volatility_regime,
+    }
+
+
+def test_confidence_decomposition_matches_the_users_breakeven_stop_scenario():
+    """Kullanıcının canlı gözlemi: yön doğruydu (mfe_pct pozitif) ama
+    bariyer (TP mesafesi) kötü kalibreliydi — direction_probability yüksek,
+    barrier_probability düşük olmalı."""
+    trades = (
+        [_decomp_trade("take_profit", mfe_pct=0.04) for _ in range(6)]
+        + [_decomp_trade("breakeven_stop", mfe_pct=0.03) for _ in range(14)]
+    )
+    result = compute_confidence_decomposition(trades, group_by=("direction",), min_group_size=20)
+    r = result["direction=LONG"]
+    assert r["direction_probability"] == 1.0  # hepsi mfe_pct > eşik
+    assert abs(r["barrier_probability"] - 6 / 20) < 1e-6  # sadece 6/20 gerçekten TP'ye ulaştı
+
+
+def test_confidence_decomposition_barrier_probability_is_none_without_direction_correct_trades():
+    trades = [_decomp_trade("stop_loss", mfe_pct=0.0001) for _ in range(20)]
+    result = compute_confidence_decomposition(trades, group_by=("direction",), min_group_size=20)
+    r = result["direction=LONG"]
+    assert r["direction_probability"] == 0.0
+    assert r["barrier_probability"] is None
+
+
+def test_confidence_decomposition_below_min_group_size_is_excluded():
+    trades = [_decomp_trade("take_profit", mfe_pct=0.02) for _ in range(5)]
+    result = compute_confidence_decomposition(trades, group_by=("direction",), min_group_size=20)
+    assert result == {}
+
+
+def test_confidence_decomposition_ignores_censored_exits():
+    trades = (
+        [_decomp_trade("take_profit", mfe_pct=0.02) for _ in range(20)]
+        + [_decomp_trade("manual_full", mfe_pct=0.05) for _ in range(50)]
+    )
+    result = compute_confidence_decomposition(trades, group_by=("direction",), min_group_size=20)
+    assert result["direction=LONG"]["sample_size"] == 20

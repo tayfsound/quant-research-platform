@@ -322,3 +322,66 @@ def compute_optimal_barrier(
             best["total_sample_size"] = len(group_trades)
             results[label] = best
     return results
+
+
+# Faz 268-sonrası: confidence'ı ikiye ayırma. Tek bir "confidence" sayısı
+# İKİ farklı gerçek olasılığı karıştırıyor: (1) yön doğru muydu — fiyat
+# en azından bir an lehte anlamlı hareket etti mi (direction_probability),
+# (2) yön doğruysa GERÇEKTEN TP'ye mi ulaştı yoksa (breakeven_stop/
+# stop_loss ile) mi kayboldu (barrier_probability). Kullanıcının canlı
+# breakeven_stop gözlemi tam olarak bunun bir örneği: yön doğruydu (mfe_pct
+# pozitifti) ama bariyer (TP mesafesi) kötü kalibreliydi. Confidence
+# yüksek + barrier_probability düşük bir kova = "AI yönü doğru biliyor
+# ama SL/TP mesafeleri kötü kalibre" — actionable, farklı bir sorun.
+DIRECTION_CORRECT_MFE_THRESHOLD = 0.001  # entry+exit fee toplamından küçük — altı gürültü.
+
+
+def compute_confidence_decomposition(
+    trades: list[dict],
+    group_by: tuple[str, ...] = ("direction", "regime", "volatility_regime"),
+    direction_threshold: float = DIRECTION_CORRECT_MFE_THRESHOLD,
+    min_group_size: int = MIN_GROUP_SIZE,
+) -> dict:
+    """P(win) ≈ direction_probability × barrier_probability şeklinde
+    ayrıştırır. Sadece kararlı (take_profit/stop_loss/breakeven_stop)
+    trade'ler sayılır — yarışın sonuçlanmadığı trade'ler dahil edilmez.
+    Bir kovada hiç 'yön doğru' (mfe_pct > threshold) trade yoksa
+    barrier_probability None döner (fail-closed — sıfır örneklemden
+    oran icat edilmez)."""
+    groups: dict[tuple, list[dict]] = defaultdict(list)
+    for t in trades:
+        if t.get("mfe_pct") is None or t.get("exit_reason") not in DECISIVE_EXIT_REASONS:
+            continue
+        key_parts = []
+        for field in group_by:
+            if field == "confidence":
+                key_parts.append(_confidence_bucket(t.get("confidence") or 0.0))
+            else:
+                key_parts.append(str(t.get(field, "unknown")))
+        groups[tuple(key_parts)].append(t)
+
+    results: dict[str, dict] = {}
+    for key, group_trades in groups.items():
+        n = len(group_trades)
+        if n < min_group_size:
+            continue
+
+        direction_correct = [t for t in group_trades if t["mfe_pct"] > direction_threshold]
+        direction_probability = len(direction_correct) / n
+
+        if direction_correct:
+            tp_given_correct = sum(1 for t in direction_correct if t["exit_reason"] == "take_profit")
+            barrier_probability = round(tp_given_correct / len(direction_correct), 4)
+        else:
+            barrier_probability = None
+
+        avg_confidence = sum(t.get("confidence") or 0.0 for t in group_trades) / n
+        label = "|".join(f"{field}={value}" for field, value in zip(group_by, key))
+        results[label] = {
+            "sample_size": n,
+            "avg_reported_confidence": round(avg_confidence, 4),
+            "direction_probability": round(direction_probability, 4),
+            "direction_correct_sample_size": len(direction_correct),
+            "barrier_probability": barrier_probability,
+        }
+    return results
