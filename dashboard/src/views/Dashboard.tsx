@@ -51,6 +51,19 @@ function notifyRecovered() {
   new Notification("✓ Sistem normale döndü", { tag: "signal-health-alarm" });
 }
 
+// Faz 268-sonrası: kullanıcı isteği — "kill switch tetiklendiğinde bana
+// bildirim gelmiyor." Health-check alarmıyla AYNI kanal (ses + masaüstü
+// bildirimi), ama ayrı bir "tag" ile — ikisi birbirini ezmesin, ikisi de
+// aynı anda görünebilsin.
+function notifyKillSwitch() {
+  playAlarmBeep();
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  new Notification("⛔ Kill switch tetiklendi — AI durduruldu", {
+    body: "Ardışık kayıp eşiği aşıldı — dashboard'dan manuel gözden geçirip tekrar açman gerekiyor.",
+    tag: "kill-switch-alarm",
+  });
+}
+
 function StatusCard({
   eyebrow,
   title,
@@ -200,6 +213,11 @@ export default function Dashboard() {
   );
   const wasHealthyRef = useRef<boolean | null>(null);
   const lastAlarmAtRef = useRef<number>(0);
+  // Faz 268-sonrası: kill switch bildirimi — health alarmıyla AYNI
+  // yeniden-uyarma deseni ama ayrı bir ref/zamanlayıcı (ikisi bağımsız
+  // olaylar, birbirinin renotify penceresini sıfırlamamalı).
+  const wasKillSwitchedRef = useRef<boolean>(false);
+  const lastKillSwitchAlarmAtRef = useRef<number>(0);
   const { format, currency } = useCurrency();
 
   const handleSignalHealth = (data: SignalHealth) => {
@@ -222,10 +240,27 @@ export default function Dashboard() {
     wasHealthyRef.current = data.healthy;
   };
 
+  const handleAiEnabledStatus = (aiEnabled: string | undefined, updatedBy: string | null | undefined) => {
+    const isKillSwitched = aiEnabled === "false" && updatedBy === "kill_switch";
+    const now = Date.now();
+    if (isKillSwitched) {
+      const isNewEpisode = !wasKillSwitchedRef.current;
+      const dueForRenotify = now - lastKillSwitchAlarmAtRef.current > ALARM_RENOTIFY_MS;
+      if (isNewEpisode || dueForRenotify) {
+        notifyKillSwitch();
+        lastKillSwitchAlarmAtRef.current = now;
+      }
+    }
+    wasKillSwitchedRef.current = isKillSwitched;
+  };
+
   const load = () => {
     fetch("/api/v1/settings/", { headers: authHeaders() })
       .then((r) => r.json())
-      .then((data) => setSettings(data.settings || {}))
+      .then((data) => {
+        setSettings(data.settings || {});
+        handleAiEnabledStatus(data.settings?.ai_enabled, data.ai_enabled_updated_by);
+      })
       .catch((e) => setError(String(e)));
     fetch("/api/v1/positions", { headers: authHeaders() })
       .then((r) => r.json())

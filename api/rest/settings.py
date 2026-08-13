@@ -159,7 +159,14 @@ def _validate(key: str, value: str) -> None:
 @router.get("/")
 async def get_settings_(user: AuthContext = Depends(get_current_user)):
     with SessionFactory.get_session() as session:
-        return {"settings": AppSettingsRepository(session).get_all()}
+        repo = AppSettingsRepository(session)
+        # Faz 268-sonrası: kullanıcı isteği — dashboard'un kill switch'in
+        # GERÇEKTEN tetiklendiğini (updated_by='kill_switch') manuel
+        # Durdur düğmesinden ayırt edip bildirim gösterebilmesi için.
+        return {
+            "settings": repo.get_all(),
+            "ai_enabled_updated_by": repo.get_updated_by("ai_enabled"),
+        }
 
 
 @router.get("/defaults")

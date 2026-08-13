@@ -217,6 +217,15 @@ class AppSettingsRepository:
         rows = {r.key: r.value for r in self.session.query(AppSettingModel).all()}
         return {**DEFAULTS, **rows}
 
+    def get_updated_by(self, key: str) -> str | None:
+        """Faz 268-sonrası: kullanıcı isteği — dashboard'un kill switch'in
+        GERÇEKTEN tetiklendiğini (updated_by='kill_switch') manuel Durdur
+        düğmesinden ayırt edip bildirim gösterebilmesi için. Satır hiç
+        yoksa (hiç değiştirilmemiş varsayılan) None — icat edilmiş bir
+        kaynak uydurulmaz."""
+        row = self.session.query(AppSettingModel).filter_by(key=key).first()
+        return row.updated_by if row is not None else None
+
     def set(self, key: str, value: str, updated_by: str) -> None:
         row = self.session.query(AppSettingModel).filter_by(key=key).first()
         now = datetime.now(UTC)
