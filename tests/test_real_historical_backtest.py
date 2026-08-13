@@ -130,6 +130,29 @@ def test_reverse_direction_flips_long_to_short_and_stop_target_follow():
     assert all(t["direction"] == "SHORT" for t in reversed_trades)
 
 
+def test_real_backtest_records_real_mae_mfe_per_trade():
+    """Faz 268-sonrası — kullanıcı önerisi: sadece entry/exit/pnl yetmez,
+    işlem boyunca fiyatın GERÇEK maksimum olumlu/olumsuz hareketini de
+    (MAE/MFE) ölçmeliyiz. Dar bir stop (gerçek piyasa gürültüsü hemen
+    aşar) + asla ulaşılamayacak bir target -> her işlem birkaç bar içinde
+    stop_loss'a gider, MAE gerçek bir negatif değer, MFE >= 0 olmalı."""
+    engine = _FixedDirectionEngine(direction="LONG", stop=0.01, target=1_000_000.0)
+    result = run_real_backtest(
+        "BTCUSDT", timeframe="15m", bars_count=120, lookback=100, max_forward_bars=5,
+        capital_per_trade=1000.0, engine=engine,
+    )
+    trades = result.get("trades", [])
+    if not trades:
+        return  # bu dönemde hiç işlem tetiklenmediyse test anlamsız, atla
+    for t in trades:
+        assert t["mae_pct"] is not None
+        assert t["mfe_pct"] is not None
+        assert t["mae_pct"] <= 0.0
+        assert t["mfe_pct"] >= 0.0
+        assert t["time_to_mae_seconds"] >= 0.0
+        assert t["time_to_mfe_seconds"] >= 0.0
+
+
 def test_real_backtest_applies_slippage_to_entries():
     """Faz 268n: kritik bulgu — backtest entry_price = bars[t].close (tam
     kapanış fiyatı) kullanıyordu. Gerçek bir dolum hiçbir zaman tam o
@@ -148,6 +171,94 @@ def test_real_backtest_applies_slippage_to_entries():
     for t in trades:
         raw_close = bars[t["bar_index"]].close
         assert t["entry_price"] != raw_close  # HER giriş kaymalı olmalı
+
+
+class _RecordingEngine:
+    """Faz 268-sonrası: ctx.risk.consecutive_losses'ın gerçekten döngü
+    tarafından besleniyor olduğunu (DrawdownSizingStage'in okuyacağı
+    GERÇEK değer) doğrulamak için — her çağrıdaki değeri kaydeder, sabit
+    bir LONG/dar-stop kararı verir."""
+    def __init__(self, stop: float, target: float):
+        self.stop = stop
+        self.target = target
+        self.seen_consecutive_losses: list[int] = []
+
+    def run(self, ctx, persist=False):
+        self.seen_consecutive_losses.append(ctx.risk.consecutive_losses)
+        ctx.decision.proposed_direction = "LONG"
+        ctx.decision.final_size = 1.0
+        ctx.decision.confidence = 0.6
+        ctx.decision.stop_loss = self.stop
+        ctx.decision.take_profit = self.target
+        return ctx
+
+
+def test_consecutive_losses_is_fed_into_risk_context_for_drawdown_sizing_to_read():
+    """Faz 268-sonrası — kullanıcı bulgusu: bir backtest'te canlı sistemin
+    GERÇEKTEN sahip olduğu kill switch/drawdown sizing korumaları hiç
+    devrede değildi (_build_backtest_context consecutive_losses'ı hiç set
+    etmiyordu). Çok dar bir stop (gerçek piyasa gürültüsü neredeyse her
+    zaman aşar) + asla ulaşılamayacak bir target -> neredeyse her işlem
+    stop_loss, gerçek bir ardışık kayıp serisi garanti."""
+    engine = _RecordingEngine(stop=0.01, target=1_000_000.0)
+    run_real_backtest(
+        "BTCUSDT", timeframe="15m", bars_count=150, lookback=100, max_forward_bars=5,
+        capital_per_trade=1000.0, engine=engine,
+    )
+    assert max(engine.seen_consecutive_losses) >= 2
+
+
+def test_kill_switch_halts_new_positions_after_the_real_configured_threshold():
+    """Kill switch'in ETKİSİ (gerçek eşiğe ulaşınca yeni pozisyon açmayı
+    durdurma) walk-forward döngüsünün kendi seviyesinde simüle ediliyor —
+    bkz. run_real_backtest'in modül notundaki güvenlik açıklaması."""
+    from database.repositories.app_settings_repository import AppSettingsRepository
+    from database.session_factory import SessionFactory
+
+    with SessionFactory.get_session() as session:
+        AppSettingsRepository(session).set("kill_switch_consecutive_losses", "3", updated_by="test")
+    try:
+        engine = _FixedDirectionEngine(direction="LONG", stop=0.01, target=1_000_000.0)
+        result = run_real_backtest(
+            "BTCUSDT", timeframe="15m", bars_count=150, lookback=100, max_forward_bars=5,
+            capital_per_trade=1000.0, engine=engine,
+        )
+        if result["trade_count"] < 3:
+            return  # bu dönemde yeterli işlem tetiklenmediyse test anlamsız, atla
+        assert result["kill_switch_tripped_at_bar"] is not None
+        trip_bar = result["kill_switch_tripped_at_bar"]
+        assert all(t["bar_index"] < trip_bar for t in result["trades"])
+    finally:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("kill_switch_consecutive_losses", "10", updated_by="test")
+
+
+def test_never_triggers_the_real_risk_engine_kill_switch_db_write():
+    """GÜVENLİK — kritik: bu fonksiyon canlı dashboard'dan (/run-real-async)
+    tetiklenebiliyor. RiskEngine._trip_kill_switch()'in GERÇEK
+    app_settings.ai_enabled yazması, ne kadar çok ardışık kayıp simüle
+    edilirse edilsin ASLA tetiklenmemeli — etki sadece bu döngünün kendi
+    seviyesinde (ctx.risk.kill_switch_consecutive_losses hep 0/devre dışı
+    kalır) simüle ediliyor."""
+    from database.repositories.app_settings_repository import AppSettingsRepository
+    from database.session_factory import SessionFactory
+
+    with SessionFactory.get_session() as session:
+        repo = AppSettingsRepository(session)
+        repo.set("kill_switch_consecutive_losses", "3", updated_by="test")
+        before_ai_enabled = repo.get("ai_enabled")
+    try:
+        engine = _FixedDirectionEngine(direction="LONG", stop=0.01, target=1_000_000.0)
+        run_real_backtest(
+            "BTCUSDT", timeframe="15m", bars_count=150, lookback=100, max_forward_bars=5,
+            capital_per_trade=1000.0, engine=engine,
+        )
+        with SessionFactory.get_session() as session:
+            after_ai_enabled = AppSettingsRepository(session).get("ai_enabled")
+        assert after_ai_enabled == before_ai_enabled
+    finally:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("kill_switch_consecutive_losses", "10", updated_by="test")
 
 
 def test_real_backtest_feeds_agent_memory_when_requested(tmp_path):

@@ -27,9 +27,12 @@ fonksiyonlarını kullanıyoruz — "iki beyin" riski sinyal hesaplamasında
 yok, sadece risk-context kurulumunda kasıtlı bir ayrım var)."""
 from datetime import timedelta
 
+from analytics.mae_mfe import compute_mae_mfe
 from contracts.agent import VOTING_AGENT_DOMAINS
 from contracts.context import CognitiveCycleContext
 from contracts.contexts.risk import RiskLimitEntry
+from database.repositories.app_settings_repository import AppSettingsRepository
+from database.session_factory import SessionFactory
 from exchange_gateway.binance.adapter import BinanceAdapter
 # Faz 236: kritik bulgu — asyncio.run() zaten çalışan bir event loop
 # içinden (ör. bu backtest'i tetikleyen async FastAPI endpoint'i, ya da
@@ -252,8 +255,39 @@ def run_real_backtest(
     hacminin çok yavaş büyüdüğü örneklem boyutunu, gerçek geçmiş veriyle
     hızla büyütmek için. UYARI: aynı geçmiş pencereyi tekrar tekrar
     backtest etmek aynı işlemleri TEKRAR kaydeder (dedup yok) — bilinçli
-    bir sınır, çağıran taraf ne sıklıkla besleyeceğine karar vermeli."""
+    bir sınır, çağıran taraf ne sıklıkla besleyeceğine karar vermeli.
+
+    Faz 268-sonrası — kullanıcı bulgusu: bir backtest 392 işlemde %0
+    kazanma oranı gösterdi ("bu ne kadar olası ki"). Kök sebep: council
+    bu pencerede %90 LONG çağırmış ama fiyat gerçekten düşüyordu (canlıdaki
+    AYNI gecikmeli-trend-rejimi olayının bir başka örneği) — ama ayrıca
+    şu da doğrulandı: bu backtest'in sonuçları canlı sistemin GERÇEKTEN
+    sahip olduğu kill switch/drawdown sizing korumaları OLMADAN
+    üretiliyordu (_build_backtest_context hiçbir zaman consecutive_losses
+    set etmiyordu). Artık walk-forward döngüsü kendi GERÇEK ardışık kayıp
+    sayacını tutuyor — ctx.risk.consecutive_losses her adımda beslendiği
+    için DrawdownSizingStage (final_size'ı gerçekten küçültüyor) artık
+    burada da devrede. Kill switch'in KENDİSİ (GÜVENLİK: bkz. aşağıdaki
+    not) RiskEngine üzerinden DEĞİL, bu döngünün kendi seviyesinde simüle
+    ediliyor."""
     engine = engine or CognitiveEngine()
+
+    # GÜVENLİK — kritik, dikkatli okunmalı: RiskEngine._trip_kill_switch()
+    # eşiğe ulaşınca app_settings.ai_enabled=false'ı GERÇEKTEN DB'ye yazıyor
+    # (persist=False ile atlanmıyor). Bu fonksiyon canlı dashboard'dan
+    # (POST /api/v1/backtest/run-real-async) tetiklenebiliyor — ctx.risk.
+    # kill_switch_consecutive_losses'a GERÇEK eşiği vermek, bir backtest
+    # koşusunun CANLI ai_enabled'ı yanlışlıkla kapatmasına yol açardı.
+    # Bunun yerine: gerçek eşik SADECE okunuyor, kill switch'in ETKİSİ
+    # (eşiğe ulaşınca yeni pozisyon açmayı durdurma) bu döngünün kendi
+    # seviyesinde simüle ediliyor — ctx.risk.kill_switch_consecutive_losses
+    # hep varsayılan (0/devre dışı) kalıyor, RiskEngine'in gerçek kill
+    # switch dalına asla girilmiyor.
+    with SessionFactory.get_session() as session:
+        kill_switch_threshold = int(AppSettingsRepository(session).get("kill_switch_consecutive_losses"))
+
+    consecutive_losses = 0
+    kill_switch_tripped_at_bar: int | None = None
     bars = _run_coroutine_sync(fetch_real_history(symbol, timeframe, bars_count))
     fee_engine = FeeEngine()
     # Faz 268n — kullanıcı isteği: backtest motoru rötuşu, "slippage
@@ -282,9 +316,15 @@ def run_real_backtest(
     open_positions_never_closed = 0
 
     for t in range(lookback, len(bars) - 1):
+        if kill_switch_threshold > 0 and consecutive_losses >= kill_switch_threshold:
+            if kill_switch_tripped_at_bar is None:
+                kill_switch_tripped_at_bar = t
+            continue  # gerçek kill switch tetiklenseydi AI dururdu — yeni pozisyon açılmıyor
+
         window = bars[max(0, t - lookback): t + 1]
         daily_atr_pct = _risk_atr_pct_asof(risk_bars, bars[t].timestamp, risk_bar_duration)
         ctx = _build_backtest_context(symbol, timeframe, window, capital_per_trade, daily_atr_pct=daily_atr_pct)
+        ctx.risk.consecutive_losses = consecutive_losses
         result_ctx = engine.run(ctx, persist=False)
 
         direction = result_ctx.decision.proposed_direction or "WAIT"
@@ -340,11 +380,29 @@ def run_real_backtest(
         entry_fee_pct = fee_engine.config.taker_rate
         exit_fee_pct = fee_engine.config.maker_rate if exit_is_maker else fee_engine.config.taker_rate
         net_pnl_pct = gross_pnl_pct - entry_fee_pct - exit_fee_pct
-        net_pnl_usd = net_pnl_pct * capital_per_trade
+        # Faz 268-sonrası — kritik bulgu: bu ÖNCEDEN her zaman sabit
+        # capital_per_trade ile çarpıyordu — MetaStage'in Kelly çarpanı ve
+        # (bu turda eklenen) DrawdownSizingStage'in küçültmesi `size`
+        # (final_size, GERÇEKTEN kaç birim al) üzerinde çalışıyordu ama bu
+        # küçültmenin dolar PnL'e HİÇBİR etkisi yoktu — kayıp serisinde
+        # boyut küçülse bile backtest hep TAM capital_per_trade riske
+        # girmiş gibi hesaplıyordu. Artık gerçekten dolduruma giren
+        # notional (size*entry_price) kullanılıyor.
+        net_pnl_usd = net_pnl_pct * size * entry_price
+
+        consecutive_losses = consecutive_losses + 1 if net_pnl_pct <= 0 else 0
 
         if agent_memory is not None:
             opinions = result_ctx.__dict__.get("_last_opinions") or []
             _record_backtest_agent_learning(agent_memory, opinions, symbol, direction, net_pnl_usd)
+
+        # Faz 268-sonrası — kullanıcı önerisi: sadece entry/exit/pnl yetmez,
+        # işlem boyunca fiyatın GERÇEK maksimum olumlu/olumsuz hareketini
+        # (MAE/MFE) de ölçmeliyiz — "SL çok mu dardı yoksa entry mi
+        # kötüydü" ayrımının ilk adımı. bars[t:exit_idx+1] zaten bellekte
+        # olan GERÇEK fiyat yolu — ekstra ağ isteği yok. Kasıtlı olarak
+        # SADECE ölçüm — hiçbir SL/TP kararını burada değiştirmiyor.
+        mae_mfe = compute_mae_mfe(direction, entry_price, bars[t:exit_idx + 1])
 
         trades.append({
             "symbol": symbol,
@@ -356,18 +414,26 @@ def run_real_backtest(
             "exit_reason": exit_reason,
             "net_return_pct": net_pnl_pct,
             "net_pnl_usd": net_pnl_usd,
+            "mae_pct": mae_mfe["mae_pct"],
+            "mfe_pct": mae_mfe["mfe_pct"],
+            "time_to_mae_seconds": mae_mfe["time_to_mae_seconds"],
+            "time_to_mfe_seconds": mae_mfe["time_to_mfe_seconds"],
             "win": net_pnl_pct > 0,
             "bars_held": exit_idx - t,
             "entry_time": bars[t].timestamp.isoformat(),
             "exit_time": bars[exit_idx].timestamp.isoformat(),
         })
 
-    return _summarize(symbol, timeframe, bars, trades, open_positions_never_closed, capital_per_trade)
+    return _summarize(
+        symbol, timeframe, bars, trades, open_positions_never_closed, capital_per_trade,
+        kill_switch_tripped_at_bar=kill_switch_tripped_at_bar,
+    )
 
 
 def _summarize(
     symbol: str, timeframe: str, bars: list[OHLCV], trades: list[dict],
     open_positions_never_closed: int, capital_per_trade: float,
+    kill_switch_tripped_at_bar: int | None = None,
 ) -> dict:
     from collections import Counter
 
@@ -383,6 +449,7 @@ def _summarize(
             "total_pnl_usd": 0.0,
             "metrics": {},
             "equity_curve": [capital_per_trade],
+            "kill_switch_tripped_at_bar": kill_switch_tripped_at_bar,
         }
 
     wins = sum(1 for t in trades if t["win"])
@@ -404,6 +471,7 @@ def _summarize(
         "avg_bars_held": sum(t["bars_held"] for t in trades) / len(trades),
         "exit_reason_distribution": dict(Counter(t["exit_reason"] for t in trades)),
         "open_positions_never_closed": open_positions_never_closed,
+        "kill_switch_tripped_at_bar": kill_switch_tripped_at_bar,
     }
 
     return {
@@ -416,6 +484,7 @@ def _summarize(
         "metrics": metrics,
         "equity_curve": equity,
         "trades": trades,
+        "kill_switch_tripped_at_bar": kill_switch_tripped_at_bar,
     }
 
 
