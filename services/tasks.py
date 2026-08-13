@@ -160,6 +160,23 @@ def optimize_thresholds_task() -> dict:
     return suggestion
 
 
+@celery_app.task(name="refresh_llm_news_sentiment_task")
+def refresh_llm_news_sentiment_task() -> dict:
+    """Faz 268-sonrası — kullanıcı isteği: Reddit sentiment (Devvit
+    politikası nedeniyle) kapalıydı, yerine gerçek RSS başlıklarını
+    NVIDIA LLM'e özetleten/puanlayan yeni kaynak (bkz. market_data/
+    sentiment/llm_news_sentiment_provider.py). refresh() gerçek bir LLM
+    çağrısı yaptığı için (~90s'ye kadar) SADECE bu periyodik görevden
+    çağrılmalı, canlı karar döngüsünden değil — orası sadece get_cached()
+    okur."""
+    from market_data.sentiment.llm_news_sentiment_provider import refresh
+
+    score, summary = refresh()
+    if score is None:
+        return {"skipped": "no_score"}
+    return {"sentiment_score": score, "summary": summary}
+
+
 @celery_app.task(name="retrain_agent_confidence_models_task")
 def retrain_agent_confidence_models_task() -> dict:
     """Faz 264: kullanıcı isteği — ajan içi özellik ağırlıkları (RSI/trend/

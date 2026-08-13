@@ -76,13 +76,20 @@ class ContextAdapter:
         from market_data.sentiment.news_tone_provider import fetch_news_tone
         real_news_tone = fetch_news_tone()
 
-        # Faz 230: kullanıcı isteği — sosyal medya sentiment hâlâ dürüstçe
-        # yapılmamıştı (Reddit'in kimliksiz API'si 403 veriyor). Kullanıcı
-        # kendi ücretsiz Reddit "script" uygulama kaydını yaptıysa
-        # (REDDIT_CLIENT_ID/SECRET) gerçek veri; yapmadıysa None -> 0.0
-        # (nötr) varsayılana düşer, uydurulmaz.
+        # Faz 230: Reddit kapandı — Devvit politikası AI kullanımını
+        # yasaklıyor (bkz. reddit_provider.py'nin docstring'i, kalıcı
+        # olarak kapalı). Faz 268-sonrası: gerçek yerine geçen kaynak —
+        # gerçek CoinDesk/CoinTelegraph RSS başlıkları + NVIDIA LLM
+        # analizi (bkz. llm_news_sentiment_provider.py). SADECE önbelleği
+        # okuyor (asla burada LLM çağırmıyor — ayrı bir Celery görevi
+        # periyodik tazeliyor), hiç tazelenmemişse None -> 0.0 (nötr),
+        # uydurulmuz. reddit_provider.py hâlâ dursun (REDDIT_CLIENT_ID/
+        # SECRET'ı olan biri için hâlâ çalışır) — ikisi aynı anda gerçek
+        # veri döndürürse LLM tabanlı olan (daha zengin sinyal) tercih edilir.
+        from market_data.sentiment.llm_news_sentiment_provider import get_cached as get_cached_llm_sentiment
         from market_data.sentiment.reddit_provider import fetch_social_sentiment
-        real_social_sentiment = fetch_social_sentiment()
+        llm_news_sentiment, _ = get_cached_llm_sentiment()
+        real_social_sentiment = llm_news_sentiment if llm_news_sentiment is not None else fetch_social_sentiment()
 
         return SentimentContext(
             fear_greed_index=self._get(ctx, "fear_greed_index", real_fgi if real_fgi is not None else 50.0),

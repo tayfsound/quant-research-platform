@@ -124,4 +124,13 @@ celery_app.conf.beat_schedule = {
         "task": "run_medium_term_cycle_task",
         "schedule": 14400.0,
     },
+    # Faz 268-sonrası: LLM tabanlı haber sentiment'i — provider'ın
+    # _CACHE_TTL_SECONDS'ı (1800s/30dk) ile senkron ama biraz daha sık
+    # (1500s/25dk) çalıştırılıyor ki önbellek süresi dolmadan bir sonraki
+    # tazeleme zaten tamamlanmış olsun — canlı karar döngüsü hiçbir zaman
+    # boş (None) bir önbellekle karşılaşmasın.
+    "refresh-llm-news-sentiment": {
+        "task": "refresh_llm_news_sentiment_task",
+        "schedule": 1500.0,
+    },
 }

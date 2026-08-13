@@ -32,6 +32,34 @@ def test_backtest_task_runs_synchronously_in_eager_mode_and_persists():
                 celery_app.conf.task_always_eager = False
 
 
+def test_refresh_llm_news_sentiment_task_runs_in_eager_mode_and_returns_score():
+    """Faz 268-sonrası: Reddit yerine LLM tabanlı gerçek haber sentiment'i
+    — gerçek RSS/LLM ağ çağrısı yapmadan (mock'lanmış refresh()) görevin
+    celery_app'e doğru kayıtlı olduğunu ve dönüş sözleşmesini doğrular."""
+    from services.celery_app import celery_app
+    from services.tasks import refresh_llm_news_sentiment_task
+
+    celery_app.conf.task_always_eager = True
+    celery_app.conf.task_eager_propagates = True
+    try:
+        with patch(
+            "market_data.sentiment.llm_news_sentiment_provider.refresh",
+            return_value=(0.25, "Piyasa hafif olumlu."),
+        ):
+            async_result = refresh_llm_news_sentiment_task.delay()
+            assert async_result.successful()
+            assert async_result.result == {"sentiment_score": 0.25, "summary": "Piyasa hafif olumlu."}
+    finally:
+        celery_app.conf.task_always_eager = False
+
+
+def test_refresh_llm_news_sentiment_task_is_in_beat_schedule():
+    from services.celery_app import celery_app
+
+    entry = celery_app.conf.beat_schedule["refresh-llm-news-sentiment"]
+    assert entry["task"] == "refresh_llm_news_sentiment_task"
+
+
 def test_auto_reject_stale_weight_approvals_task_rejects_only_old_pending_rows():
     """Faz 229: kritik bulgu — canlı üretimde WeightApproval kuyruğu
     (dedup kontrolü olmadan) 7000'den fazla bekleyen satır biriktirmişti,

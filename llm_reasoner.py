@@ -80,21 +80,32 @@ class NvidiaDecisionCritic:
 
         return get_settings().NVIDIA_API_KEY
 
-    async def ask(self, message: str, timeout_ms: int = 120000) -> str:
+    _DEFAULT_ASK_SYSTEM_PROMPT = (
+        "Bütün yanıtını SADECE TÜRKÇE yaz. Sen bir kantitatif "
+        "trading araştırma platformunda çalışan, deneyimli bir "
+        "kantitatif analist/risk uzmanısın. Kısa ve net cevap ver."
+    )
+
+    async def ask(self, message: str, timeout_ms: int = 120000, system_prompt: str | None = None) -> str:
         """Faz 268-sonrası — kullanıcı isteği: dashboard'da serbest metin
         soru/cevap sekmesi. explain()'in aksine JSON şemasına ZORLAMIYOR
         — ajanlar arası çelişki analiziyle sınırlı değil, genel bir
         soru/cevap. Hata/zaman aşımı durumunda dürüstçe bir hata mesajı
         döner (LLMExplanation.neutral() gibi icat edilmiş bir "yanıt"
-        DEĞİL — burada yanıtın kendisi zaten kullanıcıya gösterilecek)."""
+        DEĞİL — burada yanıtın kendisi zaten kullanıcıya gösterilecek).
+
+        system_prompt: None ise varsayılan genel-amaçlı asistan rolü;
+        verilirse (ör. llm_news_sentiment_provider.py'nin JSON-yapılı
+        haber özeti isteği) onun yerine geçer."""
         api_key = self._resolve_api_key()
         if not api_key:
             return "NVIDIA_API_KEY ayarlanmamış — .env dosyasına eklenmeli."
 
+        used_prompt = system_prompt or self._DEFAULT_ASK_SYSTEM_PROMPT
         llm_timeout = timeout_ms / 1000
         try:
             return await asyncio.wait_for(
-                asyncio.to_thread(self._ask_sync, message, timeout_ms, api_key),
+                asyncio.to_thread(self._ask_sync, message, timeout_ms, api_key, used_prompt),
                 timeout=llm_timeout + THREAD_GRACE_SECONDS,
             )
         except TimeoutError:
@@ -104,7 +115,7 @@ class NvidiaDecisionCritic:
             logger.exception("LLM ask failed", extra={"error": str(e)})
             return f"Hata: {e}"
 
-    def _ask_sync(self, message: str, timeout_ms: int, api_key: str) -> str:
+    def _ask_sync(self, message: str, timeout_ms: int, api_key: str, system_prompt: str) -> str:
         import httpx
         response = httpx.post(
             NVIDIA_API_URL,
@@ -112,14 +123,7 @@ class NvidiaDecisionCritic:
             json={
                 "model": self.model,
                 "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Bütün yanıtını SADECE TÜRKÇE yaz. Sen bir kantitatif "
-                            "trading araştırma platformunda çalışan, deneyimli bir "
-                            "kantitatif analist/risk uzmanısın. Kısa ve net cevap ver."
-                        ),
-                    },
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": message},
                 ],
                 "temperature": 0.3,
