@@ -60,7 +60,19 @@ from simulator.slippage_model import SlippageModel
 # mantığıyla çalışıyor — sadece sonuçlar hiçbir yere kaydedilmiyordu.
 _VALID_AGENT_DOMAINS = VOTING_AGENT_DOMAINS
 
-DEFAULT_LOOKBACK = 100
+
+# Faz 268-sonrası — kritik bulgu (2026-08-13): lookback her walk-forward
+# adımında SABİT bir pencere (bkz. aşağıdaki `bars[max(0, t-lookback):t+1]`)
+# — asla büyümüyor, `t` ne kadar ilerlerse ilerlesin özellik motoruna HER
+# ZAMAN en fazla `lookback` bar veriliyor. market_data/features/
+# signal_engine.py::_long_term_trend_regime en az 220 bar istiyor (gerçek
+# 200-EMA + yakınsama tamponu); eski varsayılan (100) bu özelliği HİÇBİR
+# backtest çalıştırmasında asla çözülmeyecek şekilde kilitliyordu —
+# 1512 işlemlik gerçek bir OOS koşusunda regime %100 "insufficient_data"
+# çıktı, QuantAgent'ın uzun-vade rejim kanıtı sürekli eksikti. Var olan
+# testlerin TAMAMI lookback'i açıkça kendi geçiyor (bu varsayılanı hiç
+# kullanmıyor) — değişiklik onları etkilemiyor.
+DEFAULT_LOOKBACK = 230
 DEFAULT_MAX_FORWARD_BARS = 200
 
 # Faz 268d — kritik bulgu: son 3 backtest çalıştırması (15m, iki tekli
