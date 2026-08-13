@@ -293,28 +293,56 @@ class DecisionPersistor:
             "manual_count": row["manual_count"] or 0,
         }
 
+    # Faz 268-sonrası: kullanıcı bulgusu — bir gün için hiç GERÇEK (excluded_
+    # from_stats=false) kapanış yoksa (o gün hiç işlem olmadığı için ya da
+    # o günün tamamı hariç tutulduğu için) date_trunc/GROUP BY o kovayı hiç
+    # ÜRETMİYORDU — gün sessizce listeden düşüyordu, "0 işlem" olarak değil.
+    # Kullanıcının kendi sözü: "Veri yoksa o gün veri yok olarak görünmesi
+    # lazım, gün atlaması normal değil." generate_series ile bugünden geriye
+    # doğru KESİKSİZ bir kova serisi kuruluyor, gerçek veri LEFT JOIN'le
+    # üstüne biniyor — veri olmayan kovalar artık 0 ile açıkça görünüyor.
+    _PERIOD_TO_INTERVAL = {"day": "1 day", "week": "1 week", "month": "1 month", "year": "1 year"}
+
     def performance_by_period(self, period: str, limit: int = 200) -> list[dict]:
         """Faz 215: kullanıcı isteği — "dün ne kadar ROI yapmış, haftalık/
         aylık/yıllık ne olmuş" dashboard'da hiç görünmüyordu. period:
         Postgres date_trunc'ın kabul ettiği bir değer (day/week/month/year).
         Her kova için gerçek kapanmış işlemlerden pnl toplamı/işlem
-        sayısı/win rate — icat edilmiş bir sayı değil."""
+        sayısı/win rate — icat edilmiş bir sayı değil. Veri olmayan kovalar
+        da (yukarıdaki not) artık kesiksiz döner, sessizce atlanmaz."""
         if period not in ("day", "week", "month", "year"):
             raise ValueError(f"invalid period: {period}")
+        interval = self._PERIOD_TO_INTERVAL[period]
 
         rows = self.session.execute(
             text(f"""
+                WITH real_data AS (
+                    SELECT
+                        date_trunc('{period}', closed_at) AS bucket,
+                        count(*) AS trade_count,
+                        sum(pnl) AS total_pnl,
+                        sum(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS wins,
+                        sum(entry_price * quantity / COALESCE(NULLIF(leverage, 0), 1)) AS deployed_notional
+                    FROM decisions
+                    WHERE status = 'closed' AND closed_at IS NOT NULL AND excluded_from_stats = false
+                    GROUP BY bucket
+                ),
+                buckets AS (
+                    SELECT generate_series(
+                        date_trunc('{period}', now()) - (:limit - 1) * interval '{interval}',
+                        date_trunc('{period}', now()),
+                        interval '{interval}'
+                    ) AS bucket
+                )
                 SELECT
-                    date_trunc('{period}', closed_at) AS bucket,
-                    count(*) AS trade_count,
-                    sum(pnl) AS total_pnl,
-                    sum(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS wins,
-                    sum(entry_price * quantity / COALESCE(NULLIF(leverage, 0), 1)) AS deployed_notional
-                FROM decisions
-                WHERE status = 'closed' AND closed_at IS NOT NULL AND excluded_from_stats = false
-                GROUP BY bucket
-                ORDER BY bucket DESC
-                LIMIT :limit
+                    b.bucket AS bucket,
+                    COALESCE(r.trade_count, 0) AS trade_count,
+                    COALESCE(r.total_pnl, 0) AS total_pnl,
+                    COALESCE(r.wins, 0) AS wins,
+                    COALESCE(r.deployed_notional, 0) AS deployed_notional
+                FROM buckets b
+                LEFT JOIN real_data r ON r.bucket = b.bucket
+                ORDER BY b.bucket DESC
             """),
             {"limit": limit},
         ).mappings().all()
