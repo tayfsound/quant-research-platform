@@ -162,6 +162,109 @@ def test_kill_switch_does_not_trip_below_threshold():
     assert result.risk.evaluation.verdict == "approved"
 
 
+def test_concept_drift_rejects_when_recent_win_rate_drops_significantly_and_meaningfully():
+    """Faz 268-sonrası — Concept Drift gate: iki GERÇEK zaman penceresi
+    arasında kazanma oranı hem istatistiksel olarak anlamlı (p<0.05) HEM
+    DE büyük (>=15 puan) düşerse reddedilmeli. "far future" zaman damgası
+    kullanılıyor (test_risk_state.py'deki AYNI desen) — bu satırlar
+    list_closed_trades()'in (closed_at DESC) en önünde garanti çıksın,
+    paylaşılan test DB'sindeki başka gerçek kayıtlarla karışmasın."""
+    from datetime import UTC, datetime, timedelta
+    from uuid import uuid4
+
+    from contracts.decision_event import DecisionEvent
+    from database.repositories.decision_persistor import DecisionPersistor
+    from database.session_factory import SessionFactory
+
+    symbol = f"RISKENGINE{uuid4().hex[:8]}"
+    far_future = datetime.now(UTC) + timedelta(days=3650, hours=5)
+    try:
+        with SessionFactory.get_session() as session:
+            repo = DecisionPersistor(session)
+            # Baseline (100 kayıt, DAHA ESKİ -> daha erken closed_at): %90 kazanç.
+            for i in range(100):
+                pnl = 10.0 if i % 10 != 0 else -5.0  # %90 kazanç
+                event = DecisionEvent(
+                    id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+                    final_size=1.0, status="open", entry_price=100.0, quantity=1.0,
+                )
+                repo.persist(event)
+                repo.close_position(
+                    decision_id=str(event.id), exit_price=100.0, pnl=pnl,
+                    closed_at=far_future + timedelta(seconds=i),
+                )
+            # Recent (50 kayıt, DAHA YENİ -> daha geç closed_at): %20 kazanç.
+            for i in range(50):
+                pnl = 10.0 if i % 5 == 0 else -5.0  # %20 kazanç
+                event = DecisionEvent(
+                    id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+                    final_size=1.0, status="open", entry_price=100.0, quantity=1.0,
+                )
+                repo.persist(event)
+                repo.close_position(
+                    decision_id=str(event.id), exit_price=100.0, pnl=pnl,
+                    closed_at=far_future + timedelta(hours=1, seconds=i),
+                )
+
+        ctx = CognitiveCycleContext(
+            risk={"limits": {"max_position_size": RiskLimitEntry(value=1.0)}},
+            decision={"proposed_size": 0.5, "proposed_direction": "LONG"},
+        )
+        result = RiskEngine().execute(ctx)
+
+        assert result.risk.evaluation.verdict == "rejected"
+        assert any(r.code == "CONCEPT_DRIFT_DEGRADATION" for r in result.risk.evaluation.reasons)
+    finally:
+        with SessionFactory.get_session() as session:
+            session.execute(
+                __import__("sqlalchemy").text("DELETE FROM decisions WHERE symbol LIKE :p"),
+                {"p": f"{symbol}%"},
+            )
+            session.commit()
+
+
+def test_concept_drift_does_not_reject_when_recent_win_rate_stays_similar():
+    from datetime import UTC, datetime, timedelta
+    from uuid import uuid4
+
+    from contracts.decision_event import DecisionEvent
+    from database.repositories.decision_persistor import DecisionPersistor
+    from database.session_factory import SessionFactory
+
+    symbol = f"RISKENGINE{uuid4().hex[:8]}"
+    far_future = datetime.now(UTC) + timedelta(days=3650, hours=6)
+    try:
+        with SessionFactory.get_session() as session:
+            repo = DecisionPersistor(session)
+            # Baseline VE recent AYNI (~%60 kazanç) -> gerçek bir drift yok.
+            for i in range(150):
+                pnl = 10.0 if i % 5 < 3 else -5.0  # %60 kazanç
+                event = DecisionEvent(
+                    id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+                    final_size=1.0, status="open", entry_price=100.0, quantity=1.0,
+                )
+                repo.persist(event)
+                repo.close_position(
+                    decision_id=str(event.id), exit_price=100.0, pnl=pnl,
+                    closed_at=far_future + timedelta(seconds=i),
+                )
+
+        ctx = CognitiveCycleContext(
+            risk={"limits": {"max_position_size": RiskLimitEntry(value=1.0)}},
+            decision={"proposed_size": 0.5, "proposed_direction": "LONG"},
+        )
+        result = RiskEngine().execute(ctx)
+
+        assert result.risk.evaluation.verdict == "approved"
+    finally:
+        with SessionFactory.get_session() as session:
+            session.execute(
+                __import__("sqlalchemy").text("DELETE FROM decisions WHERE symbol LIKE :p"),
+                {"p": f"{symbol}%"},
+            )
+            session.commit()
+
+
 def test_modified_value_invalidates_hash():
     """AI limit değerini değiştirirse hash geçersiz olur."""
     import hashlib

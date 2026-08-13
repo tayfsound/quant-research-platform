@@ -8,6 +8,61 @@ class RiskEngine:
     def __init__(self, secret: str = ""):
         self.secret = secret
 
+    def _check_concept_drift(self) -> RiskReason | None:
+        """Faz 268-sonrası — "ölçüm laboratuvarını fabrikaya bağla" paketinin
+        SADECE gerçekten anlamlı ayrımcılık sağlayan parçası (bkz. commit
+        mesajı: DSR'yi sürekli-çalışan bir canlı kapı yapmak reddedildi —
+        gerçekçi canlı örneklem boyutlarında (20-100 işlem) DSR neredeyse
+        HER ZAMAN düşük çıkıyor, yani hiçbir ayrım yapmadan sürekli tetiklenir).
+
+        analytics/concept_drift.py::compute_concept_drift, iki GERÇEK
+        zaman penceresi (eski/yeni) arasında sistemin gerçek kazanma
+        oranının istatistiksel olarak anlamlı şekilde DEĞİŞİP değişmediğini
+        (2x2 ki-kare) ölçüyor — DSR'nin aksine "şans mı" değil "değişti mi"
+        sorusu, ve tekrarlı-test riskini azaltmak için SADECE anlamlı BİR
+        p-değeri değil, aynı zamanda GERÇEK bir etki büyüklüğü (>=15 puan
+        kazanma oranı düşüşü) arıyor — tek başına p<0.05, sürekli
+        çalıştırıldığında yanlış-pozitiflerle dolup taşardı.
+
+        Sadece TESPİT/SIKILAŞTIRMA — asla büyütmüyor, hiçbir kararı
+        otomatik ONAYLAMIYOR. Yetersiz veri (fail-closed) -> None (kontrol
+        atlanır, sessizce reddedilmez)."""
+        try:
+            from analytics.concept_drift import compute_concept_drift
+            from database.repositories.decision_persistor import DecisionPersistor
+            from database.session_factory import SessionFactory
+
+            with SessionFactory.get_session() as session:
+                trades = DecisionPersistor(session).list_closed_trades(limit=150)
+        except Exception:
+            return None
+
+        if len(trades) < 100:
+            return None
+
+        recent = trades[:50]
+        baseline = trades[50:150]
+        recent_outcomes = [(t.get("pnl") or 0.0) > 0 for t in recent]
+        baseline_outcomes = [(t.get("pnl") or 0.0) > 0 for t in baseline]
+
+        drift = compute_concept_drift(baseline_outcomes, recent_outcomes)
+        if drift is None or not drift["drift_detected"]:
+            return None
+
+        win_rate_drop = drift["baseline_win_rate"] - drift["recent_win_rate"]
+        if win_rate_drop < 0.15:
+            return None
+
+        return RiskReason(
+            code="CONCEPT_DRIFT_DEGRADATION",
+            message=(
+                f"Kazanma oranı {drift['baseline_win_rate']:.1%}'den "
+                f"{drift['recent_win_rate']:.1%}'e düştü (p={drift['p_value']:.4f}, "
+                f"istatistiksel olarak anlamlı) — model geçerliliği sorgulanıyor"
+            ),
+            severity="warning",
+        )
+
     def _trip_kill_switch(self, consecutive_losses: int, threshold: int) -> None:
         """ai_enabled'ı GERÇEKTEN kalıcı olarak false'a çeker (app_settings'e
         yazar) — sadece bu cycle'ı reddetmek yeterli değil, aksi halde bir
@@ -184,6 +239,14 @@ class RiskEngine:
                 message=f"{ctx.risk.capital_used_pct:.1%} used >= limit {ctx.risk.max_capital_pct:.1%}",
                 severity="critical",
             ))
+
+        # 7. Concept Drift — sistemin gerçek yakın-geçmiş kazanma oranı,
+        # daha eski bir referans pencereye göre istatistiksel olarak
+        # anlamlı VE büyük (>=15 puan) şekilde düştü mü? (bkz. _check_
+        # concept_drift docstring'i — DSR'nin aksine bu ayrımcı bir sinyal.)
+        drift_reason = self._check_concept_drift()
+        if drift_reason is not None:
+            reasons.append(drift_reason)
 
         if reasons:
             ctx.risk.evaluation.verdict = "rejected"
