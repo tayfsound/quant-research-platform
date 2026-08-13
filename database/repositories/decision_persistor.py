@@ -219,19 +219,27 @@ class DecisionPersistor:
             "committed_notional": float(row["committed_notional"] or 0.0),
         }
 
-    def list_closed_trades(self, limit: int = 200):
+    def list_closed_trades(self, limit: int = 200, min_opened_at=None):
         # Faz 238: kullanıcı isteği — "kirli geçmiş veriyi temizle."
         # excluded_from_stats=true işaretli satırlar (aşırı capital
         # testlerinden kalan, gerçek olmayan notional'lı işlemler)
         # varsayılan olarak dışarıda bırakılıyor — silinmiyor, sadece
         # normal görünümden hariç tutuluyor.
-        rows = self.session.execute(
-            text(
-                "SELECT * FROM decisions WHERE status = 'closed' AND excluded_from_stats = false "
-                "ORDER BY closed_at DESC LIMIT :limit"
-            ),
-            {"limit": limit},
-        ).mappings().all()
+        #
+        # Faz 268-sonrası: min_opened_at — SADECE kill switch'in ardışık-
+        # kayıp sayacı (bkz. services/risk_state.py) kullanıyor, dashboard
+        # istatistikleri (closed_trades_summary) bu parametreyi hiç
+        # geçmiyor. opened_at NULL olan (çok eski, bu alan eklenmeden
+        # önceki) satırlar filtre aktifken YOK sayılır — yaşı
+        # doğrulanamayan bir işlem "taze" varsayılmaz (fail-closed).
+        query = "SELECT * FROM decisions WHERE status = 'closed' AND excluded_from_stats = false"
+        params: dict = {"limit": limit}
+        if min_opened_at is not None:
+            query += " AND opened_at IS NOT NULL AND opened_at >= :min_opened_at"
+            params["min_opened_at"] = min_opened_at
+        query += " ORDER BY closed_at DESC LIMIT :limit"
+
+        rows = self.session.execute(text(query), params).mappings().all()
 
         return [dict(r) for r in rows]
 

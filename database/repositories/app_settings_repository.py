@@ -57,6 +57,20 @@ DEFAULTS: dict[str, str] = {
     # belirlemeli) — ama gerçek olayın hemen ardından makul, muhafazakâr
     # bir varsayılan olarak 10 seçildi.
     "kill_switch_consecutive_losses": "10",
+    # Faz 268-sonrası: gerçek olay (2026-08-13) — bir ağırlık rejimi
+    # (technical_agent=1.42, 8 gün boyunca sabit) DEĞİŞTİRİLDİKTEN sonra
+    # bile, o eski rejimle açılmış 700+ pozisyonluk bir kuyruk günler
+    # boyunca kapanmaya devam etti. Ardışık-kayıp sayacı KAPANMA sırasına
+    # bakıyor, AÇILMA zamanına değil — yani manuel "Başlat" her
+    # basıldığında, kırılmamış eski seri (44) bir sonraki döngüde anında
+    # tekrar tetikliyordu; kullanıcının "çalıştır dediğimde çalışması
+    # lazım" bulgusu tam olarak buydu. Bu ayar (ISO datetime string, boş="
+    # devre dışı") set edildiğinde, SADECE kill switch'in ardışık-kayıp
+    # sayacı bu tarihten ÖNCE açılmış pozisyonları YOK sayıyor — dashboard
+    # istatistikleri (win rate/PnL/TP-SL sayıları) ETKİLENMİYOR, o eski
+    # işlemler hâlâ gerçek ve hâlâ sayılıyor, sadece "AI şu an duruyor mu"
+    # kararı güncel karar kalitesine bakıyor. bkz. services/risk_state.py.
+    "kill_switch_legacy_cutoff_at": "",
     # Drawdown-Based Position Sizing (gambler's ruin koruması) — kill
     # switch'in kullandığı AYNI gerçek ardışık kayıp sayacıyla, sert
     # durmadan ÖNCE devreye giren kademeli bir fren. 3. ardışık kayıptan

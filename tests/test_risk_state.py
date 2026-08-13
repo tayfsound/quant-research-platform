@@ -229,6 +229,70 @@ def test_kill_switch_threshold_reflects_app_setting():
             AppSettingsRepository(session).set("kill_switch_consecutive_losses", "10", updated_by="test")
 
 
+def test_legacy_cutoff_ignores_pre_cutoff_positions_even_when_they_are_the_most_recent_closes():
+    """Gerçek canlı senaryo: eski (cutoff'tan önce açılmış) pozisyonlar
+    ŞU AN kapanıyor (en yeni kapanışlar onlar), yeni (cutoff'tan sonra
+    açılmış) bir kazanç ise DAHA ÖNCE kapanmış olabilir. Cutoff olmadan
+    sayaç eski kayıplarla büyümeye devam eder; cutoff'la o eski kayıplar
+    sorgudan hiç dönmemeli, sayaç 0 kalmalı (kazanç zaten görülebilir tek
+    kayıt)."""
+    from datetime import UTC, datetime, timedelta
+    from uuid import uuid4
+
+    from contracts.decision_event import DecisionEvent
+    from database.repositories.decision_persistor import DecisionPersistor
+
+    symbol = f"RISKSTATE{uuid4().hex[:8]}"
+    far_future = datetime.now(UTC) + timedelta(days=3650, hours=4)
+    cutoff = far_future
+    try:
+        with SessionFactory.get_session() as session:
+            repo = DecisionPersistor(session)
+            # Cutoff'tan SONRA açılmış kazanç — ÖNCE kapanıyor (daha eski closed_at).
+            win_event = DecisionEvent(
+                id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+                final_size=1.0, status="open", entry_price=100.0, quantity=1.0,
+                opened_at=cutoff + timedelta(minutes=1),
+            )
+            repo.persist(win_event)
+            repo.close_position(
+                decision_id=str(win_event.id), exit_price=105.0, pnl=5.0,
+                closed_at=far_future,
+            )
+            # Cutoff'tan ÖNCE açılmış eski kayıplar — sonradan (daha yeni) kapanıyor.
+            for i in range(15):
+                event = DecisionEvent(
+                    id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+                    final_size=1.0, status="open", entry_price=100.0, quantity=1.0,
+                    opened_at=cutoff - timedelta(hours=1),
+                )
+                repo.persist(event)
+                repo.close_position(
+                    decision_id=str(event.id), exit_price=100.0, pnl=-1.0,
+                    closed_at=far_future + timedelta(minutes=1, seconds=i),
+                )
+
+        # Cutoff KAPALIYKEN: en yeni 15 kapanış hepsi eski-kuyruk kaybı,
+        # sayaç gerçekten 15 olmalı (bu, aşağıdaki cutoff'un asıl fark
+        # yarattığını kanıtlayan referans nokta).
+        state_before = load_position_risk_state()
+        assert state_before["consecutive_losses"] == 15
+
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set(
+                "kill_switch_legacy_cutoff_at", cutoff.isoformat(), updated_by="test",
+            )
+
+        # Cutoff AÇIKKEN: o 15 kayıt sorguya hiç girmez, geriye SADECE
+        # cutoff-sonrası kazanç kalır -> sayaç 0.
+        state_after = load_position_risk_state()
+        assert state_after["consecutive_losses"] == 0
+    finally:
+        _cleanup_symbol(symbol)
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("kill_switch_legacy_cutoff_at", "", updated_by="test")
+
+
 def test_capital_pct_and_max_concurrent_overrides_replace_settings_values():
     with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
         state = load_position_risk_state(capital_pct_override=0.1, max_concurrent_override=5)

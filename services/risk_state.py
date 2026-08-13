@@ -41,6 +41,8 @@ def load_position_risk_state(
         min_seconds_between_trades = int(settings_repo.get("min_seconds_between_trades"))
         ai_enabled = settings_repo.get("ai_enabled") == "true"
         kill_switch_consecutive_losses = int(settings_repo.get("kill_switch_consecutive_losses"))
+        legacy_cutoff_raw = settings_repo.get("kill_switch_legacy_cutoff_at")
+        legacy_cutoff_at = datetime.fromisoformat(legacy_cutoff_raw) if legacy_cutoff_raw else None
 
         decision_repo = DecisionPersistor(session)
 
@@ -56,10 +58,17 @@ def load_position_risk_state(
         # — daha yüksek bir threshold'da bu YANLIŞ NEGATİF'e dönüşebilirdi).
         # Artık kazanca ya da gerçek geçmişin sonuna ulaşana kadar limit
         # katlanarak büyütülüyor — asla sessizce kesilmiyor.
+        #
+        # Faz 268-sonrası: legacy_cutoff_at set edilmişse (kill_switch_
+        # legacy_cutoff_at ayarı), bu tarihten ÖNCE AÇILMIŞ pozisyonlar
+        # sayaca hiç girmiyor — bkz. list_closed_trades'in min_opened_at
+        # yorumu. Filtre SQL'de uygulandığı için döngünün sonlanma koşulu
+        # (len(recent_closed) < fetch_limit) hâlâ doğru çalışıyor: eski
+        # kayıtlar zaten sorgudan hiç dönmüyor.
         consecutive_losses = 0
         fetch_limit = max(50, kill_switch_consecutive_losses * 2)
         while True:
-            recent_closed = decision_repo.list_closed_trades(limit=fetch_limit)
+            recent_closed = decision_repo.list_closed_trades(limit=fetch_limit, min_opened_at=legacy_cutoff_at)
             consecutive_losses = 0
             found_win = False
             for trade in recent_closed:
