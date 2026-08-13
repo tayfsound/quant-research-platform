@@ -139,3 +139,74 @@ def compute_conditional_mae_distribution(
             "win_rate": round(sum(1 for t in group_trades if t["win"]) / len(group_trades), 4),
         }
     return results
+
+
+# Faz 268-sonrası: kullanıcının canlı gözlemi — son 24 saatte 8 işlemin
+# 5'i "breakeven_stop" (kâra geçip stop girişe çekildikten sonra tersine
+# dönüp başabaşa yakın kapanmış), 3'ü gerçek stop_loss. Bu, klasik ikili
+# "TP mi SL mi önce vurulur" yarışının EKSİK bir modeli olduğunu gösterdi:
+# breakeven_stop de yarışın GERÇEKTEN sonuçlandığı üçüncü bir durum — "kâra
+# geçti ama TP'ye ulaşamadan geri döndü." take_profit/stop_loss/
+# breakeven_stop üçü de KARARLI (decisive) sonuç; manual_full/time_expired/
+# liquidation gibi diğerleri CENSORED (yarış sonuçlanmadan kapandı, hangi
+# bariyerin önce vurulacağı bilinmiyor, icat edilmiyor).
+#
+# ÖNEMLİ SINIRLAMA: real_historical_backtest.py'nin _simulate_real_exit'i
+# ŞU AN breakeven-stop mekanizmasını simüle ETMİYOR (sadece stop_loss/
+# take_profit) — yani bu fonksiyon backtest trade'leriyle çağrılırsa
+# breakeven_stop hiç görünmez, SADECE gerçek (live) decisions.outcome
+# verisiyle çağrıldığında anlamlı. Backtest'e bu mekanizmayı eklemek ayrı
+# bir iş (henüz yapılmadı).
+DECISIVE_EXIT_REASONS = ("take_profit", "stop_loss", "breakeven_stop")
+
+
+def compute_competing_risk_probabilities(
+    trades: list[dict],
+    group_by: tuple[str, ...] = ("direction", "regime", "volatility_regime"),
+    min_group_size: int = MIN_GROUP_SIZE,
+) -> dict:
+    """Her koşul kovası için take_profit/stop_loss/breakeven_stop'un
+    GERÇEKTEN hangi sıklıkla gerçekleştiğini (competing risks) hesaplar.
+    trades'in exit_reason alanı olmalı (decisions.outcome->>'exit_reason'
+    ile aynı sözlük). min_group_size altındaki kovalar fail-closed
+    dışlanır. Sadece kararlı sonuçlar sayılır — censored (manual/
+    time_expired/liquidation/vb.) trade'ler p hesabına DAHİL edilmez ama
+    şeffaflık için censored_count olarak ayrıca raporlanır."""
+    decisive_groups: dict[tuple, list[dict]] = defaultdict(list)
+    censored_counts: dict[tuple, int] = defaultdict(int)
+
+    for t in trades:
+        key_parts = []
+        for field in group_by:
+            if field == "confidence":
+                key_parts.append(_confidence_bucket(t.get("confidence") or 0.0))
+            else:
+                key_parts.append(str(t.get(field, "unknown")))
+        key = tuple(key_parts)
+
+        if t.get("exit_reason") in DECISIVE_EXIT_REASONS:
+            decisive_groups[key].append(t)
+        else:
+            censored_counts[key] += 1
+
+    results: dict[str, dict] = {}
+    for key in set(decisive_groups) | set(censored_counts):
+        decisive = decisive_groups.get(key, [])
+        if len(decisive) < min_group_size:
+            continue
+        n = len(decisive)
+        tp_count = sum(1 for t in decisive if t["exit_reason"] == "take_profit")
+        sl_count = sum(1 for t in decisive if t["exit_reason"] == "stop_loss")
+        breakeven_count = sum(1 for t in decisive if t["exit_reason"] == "breakeven_stop")
+        label = "|".join(f"{field}={value}" for field, value in zip(group_by, key))
+        results[label] = {
+            "decisive_sample_size": n,
+            "censored_count": censored_counts.get(key, 0),
+            "tp_count": tp_count,
+            "sl_count": sl_count,
+            "breakeven_stop_count": breakeven_count,
+            "p_take_profit": round(tp_count / n, 4),
+            "p_stop_loss": round(sl_count / n, 4),
+            "p_breakeven_stop": round(breakeven_count / n, 4),
+        }
+    return results

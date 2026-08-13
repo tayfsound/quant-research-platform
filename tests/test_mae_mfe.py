@@ -1,7 +1,11 @@
 """MAE/MFE ölçüm katmanı testleri."""
 from datetime import UTC, datetime, timedelta
 
-from analytics.mae_mfe import compute_conditional_mae_distribution, compute_mae_mfe
+from analytics.mae_mfe import (
+    compute_competing_risk_probabilities,
+    compute_conditional_mae_distribution,
+    compute_mae_mfe,
+)
 from market_data.ingestion.ohlcv import OHLCV
 
 
@@ -123,3 +127,63 @@ def test_trades_with_no_mae_are_skipped_without_crashing():
     trades = [{"direction": "LONG", "mae_pct": None}] * 25
     result = compute_conditional_mae_distribution(trades, group_by=("direction",), min_group_size=5)
     assert result == {}
+
+
+def _outcome_trade(exit_reason: str | None, direction="LONG", regime="bull_trend",
+                    volatility_regime="normal", confidence=0.7) -> dict:
+    return {
+        "exit_reason": exit_reason, "direction": direction, "regime": regime,
+        "volatility_regime": volatility_regime, "confidence": confidence,
+    }
+
+
+def test_competing_risk_computes_real_empirical_probabilities():
+    """Kullanıcının kendi canlı gözlemi: son 24 saatte 8 kararlı işlemin
+    3'ü stop_loss, 5'i breakeven_stop — bu üçünün de gerçek sıklığını
+    yansıtan bir olasılık dağılımı hesaplanmalı."""
+    trades = (
+        [_outcome_trade("take_profit") for _ in range(10)]
+        + [_outcome_trade("stop_loss") for _ in range(6)]
+        + [_outcome_trade("breakeven_stop") for _ in range(10)]
+    )
+    result = compute_competing_risk_probabilities(trades, group_by=("direction",), min_group_size=20)
+    key = "direction=LONG"
+    assert key in result
+    r = result[key]
+    assert r["decisive_sample_size"] == 26
+    assert r["tp_count"] == 10 and r["sl_count"] == 6 and r["breakeven_stop_count"] == 10
+    assert abs(r["p_take_profit"] - 10 / 26) < 1e-4
+    assert abs(r["p_breakeven_stop"] - 10 / 26) < 1e-4
+
+
+def test_competing_risk_excludes_censored_outcomes_from_probability():
+    """manual_full/time_expired gibi yarışın sonuçlanmadığı çıkışlar
+    p hesabına dahil edilmemeli — ama censored_count'ta görünmeli."""
+    trades = (
+        [_outcome_trade("take_profit") for _ in range(15)]
+        + [_outcome_trade("stop_loss") for _ in range(10)]
+        + [_outcome_trade("manual_full") for _ in range(50)]
+        + [_outcome_trade("time_expired") for _ in range(50)]
+    )
+    result = compute_competing_risk_probabilities(trades, group_by=("direction",), min_group_size=20)
+    r = result["direction=LONG"]
+    assert r["decisive_sample_size"] == 25
+    assert r["censored_count"] == 100
+    assert abs(r["p_take_profit"] - 15 / 25) < 1e-6
+
+
+def test_competing_risk_groups_below_min_size_are_excluded_fail_closed():
+    trades = [_outcome_trade("take_profit") for _ in range(5)] + [_outcome_trade("stop_loss") for _ in range(5)]
+    result = compute_competing_risk_probabilities(trades, group_by=("direction",), min_group_size=20)
+    assert result == {}
+
+
+def test_competing_risk_separates_groups_by_condition():
+    bull = [_outcome_trade("take_profit", regime="bull_trend") for _ in range(20)] + [
+        _outcome_trade("stop_loss", regime="bull_trend") for _ in range(5)
+    ]
+    bear = [_outcome_trade("stop_loss", regime="bear_trend") for _ in range(20)] + [
+        _outcome_trade("take_profit", regime="bear_trend") for _ in range(5)
+    ]
+    result = compute_competing_risk_probabilities(bull + bear, group_by=("regime",), min_group_size=20)
+    assert result["regime=bull_trend"]["p_take_profit"] > result["regime=bear_trend"]["p_take_profit"]
