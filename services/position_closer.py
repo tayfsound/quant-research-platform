@@ -30,6 +30,22 @@ _VALID_AGENT_DOMAINS = VOTING_AGENT_DOMAINS
 
 logger = structlog.get_logger()
 
+# Faz 268-sonrası — kullanıcının bir dış inceleme üzerinden gelen gerçek
+# bulgusu: analytics/mae_mfe.py::compute_mae_mfe backtest'te var olup
+# CANLI pozisyon kapanışlarında hiç çağrılmıyordu — "kayıp işlemlerin
+# çoğunda MFE≥|MAE|" (fiyat lehte hareket etmiş ama stop'a takılmış)
+# iddiası bu yüzden GERÇEK canlı veriyle doğrulanamıyordu (mae_pct/
+# mfe_pct hiçbir zaman kaydedilmemişti). Bu, sadece hold süresi boyunca
+# GERÇEK bar geçmişini (bir kerelik, SADECE pozisyon fiilen kapanırken —
+# her açık pozisyon için her check cycle'ında DEĞİL, performans/rate-
+# limit riskini önlemek için) çekip mae_pct/mfe_pct'yi outcome'a ekliyor.
+_MAE_MFE_TIMEFRAME_SECONDS = {
+    "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
+    "1h": 3600, "2h": 7200, "4h": 14400, "1d": 86400,
+}
+_MAE_MFE_BAR_TIMEFRAME = "1m"
+_MAE_MFE_MAX_BARS = 1000  # Binance'in gerçek tek-istek tavanı
+
 
 class PositionCloser:
     def __init__(
@@ -59,6 +75,30 @@ class PositionCloser:
         if opened_at.tzinfo is None:
             return (now.replace(tzinfo=None) - opened_at).total_seconds()
         return (now - opened_at).total_seconds()
+
+    def _compute_live_mae_mfe(self, symbol: str, direction: str, entry_price: float, age_seconds: float) -> dict:
+        """Pozisyonun GERÇEKTEN açık kaldığı süre boyunca GERÇEK 1 dakikalık
+        bar geçmişini çekip compute_mae_mfe ile (backtest'in kullandığı AYNI,
+        zaten doğrulanmış fonksiyon) MAE/MFE hesaplar. Fetch başarısız
+        olursa ya da eski bir pozisyon 1000 bar tavanını aşan bir hold
+        süresine sahipse (Binance'in gerçek tek-istek tavanı) SADECE en son
+        1000 dakikayı kapsar — bu durumda gerçek MAE daha erken oluşmuşsa
+        eksik/düşük tahmin edilebilir, ama icat edilmiş bir sayı üretmekten
+        iyidir. Herhangi bir hata GERÇEK kapanış işlemini ASLA engellemez
+        (fail-closed DEĞİL, sessiz-başarısız — EventLogRepository.record()
+        ile AYNI felsefe)."""
+        try:
+            from analytics.mae_mfe import compute_mae_mfe
+
+            bar_seconds = _MAE_MFE_TIMEFRAME_SECONDS.get(_MAE_MFE_BAR_TIMEFRAME, 60)
+            bars_needed = min(_MAE_MFE_MAX_BARS, max(2, int(age_seconds / bar_seconds) + 5))
+            bars = self.data_provider.get_ohlcv(symbol, _MAE_MFE_BAR_TIMEFRAME, limit=bars_needed)
+            if not bars:
+                return {"mae_pct": None, "mfe_pct": None, "time_to_mae_seconds": None, "time_to_mfe_seconds": None}
+            return compute_mae_mfe(direction, entry_price, bars)
+        except Exception:
+            logger.warning("live_mae_mfe_computation_failed", symbol=symbol)
+            return {"mae_pct": None, "mfe_pct": None, "time_to_mae_seconds": None, "time_to_mfe_seconds": None}
 
     def _exit_reason(self, direction: str, current_price: float, stop_loss_price, take_profit_price) -> str | None:
         """Faz 192: gerçek fiyat, gerçek stop/target seviyesine ulaştı mı?
@@ -515,6 +555,11 @@ class PositionCloser:
 
             pnl = gross_pnl - fee - funding_cost
 
+            # Faz 268-sonrası: SADECE burada (pozisyon fiilen kapanırken,
+            # her check cycle'ında değil) gerçek MAE/MFE hesaplanıyor —
+            # backtest'in zaten kullandığı AYNI fonksiyon, canlı ilk kez.
+            mae_mfe = self._compute_live_mae_mfe(symbol, direction, entry_price, age)
+
             market_regime = self._extract_market_regime(pos)
             decision_repo.close_position(
                 decision_id=str(pos["id"]),
@@ -532,6 +577,10 @@ class PositionCloser:
                     "quantity": quantity,
                     "hold_seconds": age,
                     "exit_reason": exit_reason,
+                    "mae_pct": mae_mfe["mae_pct"],
+                    "mfe_pct": mae_mfe["mfe_pct"],
+                    "time_to_mae_seconds": mae_mfe["time_to_mae_seconds"],
+                    "time_to_mfe_seconds": mae_mfe["time_to_mfe_seconds"],
                 },
                 market_regime=market_regime,
             )
