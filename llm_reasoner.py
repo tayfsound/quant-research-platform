@@ -80,7 +80,7 @@ class NvidiaDecisionCritic:
 
         return get_settings().NVIDIA_API_KEY
 
-    async def ask(self, message: str, timeout_ms: int = 90000) -> str:
+    async def ask(self, message: str, timeout_ms: int = 120000) -> str:
         """Faz 268-sonrası — kullanıcı isteği: dashboard'da serbest metin
         soru/cevap sekmesi. explain()'in aksine JSON şemasına ZORLAMIYOR
         — ajanlar arası çelişki analiziyle sınırlı değil, genel bir
@@ -133,7 +133,7 @@ class NvidiaDecisionCritic:
         content = (choices[0].get("message", {}).get("content") or "") if choices else ""
         return content.strip() or "(boş yanıt)"
 
-    async def explain(self, ensemble_output: dict, prompt: str | None = None, timeout_ms: int = 90000) -> LLMExplanation:
+    async def explain(self, ensemble_output: dict, prompt: str | None = None, timeout_ms: int = 120000) -> LLMExplanation:
         # NVIDIA_API_KEY boşsa (kayıt yapılmadıysa) fail-closed — sessizce
         # nötr döner, aynı FRED_API_KEY/HELIUS_API_KEY konvansiyonu.
         api_key = self._resolve_api_key()
@@ -246,7 +246,7 @@ class NvidiaDecisionCritic:
             "best_trades": sorted(wins, key=lambda trade_log: trade_log.get("outcome", {}).get("pnl", 0), reverse=True)[:5],
             "worst_trades": sorted(losses, key=lambda trade_log: trade_log.get("outcome", {}).get("pnl", 0))[:5],
         }
-        return await self._call_and_parse_json(summary, current_prompt, timeout_ms=90000)
+        return await self._call_and_parse_json(summary, current_prompt, timeout_ms=120000)
 
     async def _call_and_parse_json(self, ensemble_output: dict, prompt: str, timeout_ms: int) -> dict:
         api_key = self._resolve_api_key()
