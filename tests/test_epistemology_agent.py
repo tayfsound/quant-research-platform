@@ -32,3 +32,23 @@ def test_data_quality_reflects_completeness():
     agent = EpistemologyAgent()
     opinion = agent.analyze(EpistemologyContext(feature_completeness=0.6))
     assert opinion.data_quality == 0.6
+
+
+def test_suspected_price_spike_manipulation_raises_confidence_and_warns():
+    """Faz 268-sonrası: Data Quality Scoring — signal_engine.compute_
+    data_quality_score'un tespit ettiği kötü print/fitil manipülasyonu
+    şüphesi, data_age_seconds ile AYNI desende güveni artırmalı."""
+    agent = EpistemologyAgent()
+    clean = agent.analyze(EpistemologyContext(feature_completeness=0.9, data_quality_score=1.0))
+    suspect = agent.analyze(EpistemologyContext(feature_completeness=0.9, data_quality_score=0.6))
+    assert suspect.confidence > clean.confidence
+    assert any("data quality" in c.lower() for c in suspect.caveats)
+
+
+def test_data_quality_field_is_the_more_pessimistic_of_the_two_signals():
+    """feature_completeness ve data_quality_score BAĞIMSIZ iki sinyal —
+    biri iyi görünürken diğerinin gerçek bir sorunu maskelemesi
+    (ortalamayla yumuşatılması) fail-fake olurdu, min alınmalı."""
+    agent = EpistemologyAgent()
+    opinion = agent.analyze(EpistemologyContext(feature_completeness=0.95, data_quality_score=0.5))
+    assert opinion.data_quality == 0.5

@@ -9,6 +9,7 @@ from services.risk_state import load_position_risk_state
 from market_data.ingestion.data_provider import get_ohlcv_provider, OHLCVProvider
 from market_data.features.signal_engine import (
     compute_daily_atr_pct,
+    compute_data_quality_score,
     compute_pattern_signals,
     compute_quant_signals,
     compute_technical_signals,
@@ -156,6 +157,11 @@ def build_cognitive_context(
     quant_signals = compute_quant_signals(data)
 
     ctx.market.features = {**technical_signals, **quant_signals}
+    # Faz 268-sonrası: Data Quality Scoring — fiyat spike/wick manipülasyonu
+    # tespiti (bkz. signal_engine.compute_data_quality_score'un modül
+    # notu). EpistemologyAgent bunu okuyup şüpheli veri varken council'in
+    # genel güvenini WAIT'e doğru dengeliyor.
+    ctx.market.features["data_quality_score"] = compute_data_quality_score(data)["data_quality_score"]
     # Faz 251: kullanıcı kararı — risk (stop/target) ölçeklendirmesi sinyal
     # zaman diliminden (genelde 1m, gürültü seviyesinde ATR) bağımsız,
     # daha yavaş bir bar setinden türetiliyor (bkz. signal_engine.

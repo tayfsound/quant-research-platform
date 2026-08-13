@@ -144,6 +144,18 @@ def test_to_epistemology_data_age_reflects_ctx_timestamp():
     assert result.data_age_seconds >= 100
 
 
+def test_to_epistemology_reads_real_data_quality_score_from_features():
+    ctx = CognitiveCycleContext(market={"features": {"data_quality_score": 0.72}})
+    result = ContextAdapter().to_epistemology(ctx)
+    assert result.data_quality_score == 0.72
+
+
+def test_to_epistemology_defaults_data_quality_score_to_clean_when_absent():
+    ctx = CognitiveCycleContext(market={"features": {}})
+    result = ContextAdapter().to_epistemology(ctx)
+    assert result.data_quality_score == 1.0
+
+
 def test_to_relative_strength_waits_when_symbol_never_ingested():
     """Hedefin KENDİ verisi hiç yoksa (peer'ler watchlist'te veri
     biriktirmiş olsa bile — paylaşılan test DB'sinde başka testlerden

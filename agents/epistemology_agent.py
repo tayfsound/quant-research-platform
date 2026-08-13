@@ -34,7 +34,21 @@ class EpistemologyAgent:
             caveats.append(f"Data is {context.data_age_seconds:.0f}s old — may be stale")
             wait_confidence = min(wait_confidence + 0.2, 0.9)
 
-        data_quality = context.feature_completeness
+        # Faz 268-sonrası: Data Quality Scoring — signal_engine.compute_
+        # data_quality_score'un tespit ettiği fiyat spike/wick manipülasyonu
+        # (kötü print) şüphesi. data_age_seconds ile AYNI desen: veri
+        # şüpheliyken güveni artırıyor, kendi başına bir yön belirlemiyor.
+        if context.data_quality_score < 0.9:
+            caveats.append(
+                f"Data quality score {context.data_quality_score:.0%} — possible price spike/wick "
+                "manipulation detected in recent bars"
+            )
+            wait_confidence = min(wait_confidence + 0.2, 0.9)
+
+        # data_quality alanı iki BAĞIMSIZ sinyalin daha kötümser olanı —
+        # biri iyi görünürken diğerinin gerçek bir sorunu maskelemesini
+        # önlemek için ortalama değil min.
+        data_quality = min(context.feature_completeness, context.data_quality_score)
 
         return AgentOpinion(
             agent_id=self.agent_id,

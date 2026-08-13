@@ -728,3 +728,71 @@ def _hurst_exponent(closes: np.ndarray) -> float:
     if math.isnan(hurst) or math.isinf(hurst):
         return 0.5
     return float(np.clip(hurst, 0.0, 1.0))
+
+
+# Faz 268-sonrası: Data Quality Scoring — fiyat spike/wick manipülasyonu
+# tespiti. Bir fitilin "gerçek" (ör. gerçek bir flash crash) mi yoksa
+# "kötü print" (borsa/veri sağlayıcı hatası, tek bir anormal trade) mi
+# olduğunu ayırt eden klasik işaret: gerçek bir hareketin bir miktar
+# devamı olur, kötü bir print BİR SONRAKİ bar'da neredeyse tamamen
+# tersine döner (fiyat sanki hiç oraya gitmemiş gibi geri gelir).
+_WICK_BODY_RATIO_THRESHOLD = 4.0
+_WICK_RANGE_FRACTION_THRESHOLD = 0.6
+_REVERSION_FRACTION_THRESHOLD = 0.3
+
+
+def compute_data_quality_score(data: list[OHLCV]) -> dict:
+    """OHLC iç tutarlılığı (high<low, open/close aralık dışı, negatif
+    hacim gibi kesin hatalar) VE aşırı fitil + hemen sonraki bar'da tam
+    tersine dönüş (kötü print şüphesi, aşağıdaki modül notuna bkz.)
+    kontrol ediyor. data_quality_score = 1.0 - (anomali sayısı / bar
+    sayısı) — 1.0 tamamen temiz, düşük değer şüpheli veri oranı yüksek
+    demek. <5 bar'da (istatistiksel olarak anlamsız) dürüstçe temiz
+    varsayılıyor (fail-open — icat edilmiş bir şüphe uydurulmaz)."""
+    if len(data) < 5:
+        return {"data_quality_score": 1.0, "anomaly_count": 0, "anomalies": []}
+
+    anomalies: list[str] = []
+    for i, bar in enumerate(data):
+        # 1. OHLC iç tutarlılığı — kesin, tartışmasız hatalar.
+        if bar.high < bar.low:
+            anomalies.append(f"bar {i}: high < low")
+            continue
+        if bar.high < max(bar.open, bar.close) or bar.low > min(bar.open, bar.close):
+            anomalies.append(f"bar {i}: open/close, high-low aralığının dışında")
+            continue
+        if bar.volume < 0:
+            anomalies.append(f"bar {i}: negatif hacim")
+
+        # 2. Aşırı fitil + hemen sonraki bar'da tam tersine dönüş.
+        full_range = bar.high - bar.low
+        if full_range <= 0:
+            continue
+        body = abs(bar.close - bar.open)
+        upper_wick = bar.high - max(bar.open, bar.close)
+        lower_wick = min(bar.open, bar.close) - bar.low
+        max_wick = max(upper_wick, lower_wick)
+        if body <= 0 or max_wick <= _WICK_BODY_RATIO_THRESHOLD * body:
+            continue
+        if max_wick <= full_range * _WICK_RANGE_FRACTION_THRESHOLD:
+            continue
+        if i + 1 >= len(data):
+            continue
+        extreme_price = bar.high if upper_wick > lower_wick else bar.low
+        next_close = data[i + 1].close
+        wick_excursion = abs(extreme_price - bar.close)
+        if wick_excursion <= 0:
+            continue
+        reverted = abs(next_close - bar.close) < wick_excursion * _REVERSION_FRACTION_THRESHOLD
+        if reverted:
+            anomalies.append(
+                f"bar {i}: aşırı fitil (gövdenin {max_wick / body:.1f}x'i), "
+                "bir sonraki bar'da neredeyse tam tersine dönüyor — kötü print şüphesi"
+            )
+
+    score = max(0.0, 1.0 - len(anomalies) / len(data))
+    return {
+        "data_quality_score": round(score, 4),
+        "anomaly_count": len(anomalies),
+        "anomalies": anomalies[:20],
+    }

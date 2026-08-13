@@ -428,4 +428,5 @@ class ContextAdapter:
             feature_completeness=round(completeness, 3),
             data_age_seconds=age_seconds,
             known_unknown_count=len(_EXPECTED_FEATURES) - present,
+            data_quality_score=self._get(ctx, "data_quality_score", 1.0),
         )
