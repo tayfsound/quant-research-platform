@@ -102,7 +102,7 @@ async def token_risk_profile(symbol: str, user: AuthContext = Depends(get_curren
     # Faz 268-sonrası: STOP_ATR_MULT artık sınıf sabiti değil, AppSettings'ten
     # okunuyor (bkz. RiskTargetStage._load_multipliers) — gerçek güncel değeri
     # kullanmak için.
-    stop_atr_mult, _ = RiskTargetStage()._load_multipliers()
+    stop_atr_mult, _, _ = RiskTargetStage()._load_multipliers()
     stop_distance_pct = (
         stop_atr_mult * daily_atr_pct if daily_atr_pct else None
     )
