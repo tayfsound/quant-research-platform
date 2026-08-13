@@ -99,6 +99,13 @@ DEFAULTS: dict[str, str] = {
     # kalibre edilebilir, redeploy gerekmez.
     "stop_atr_mult": "2.5",
     "target_atr_mult": "1.4",
+    # Faz 268-sonrası — gerçek bulgu: trade_type'a göre ayrılmış kapanmış
+    # işlemlerde "scalp" (stop < %4.5, api/rest/positions.py::_SCALP_MAX_
+    # STOP_PCT ile AYNI eşik) TEK BAŞINA toplam zararın %92'siydi (-$1954/
+    # -$2129), diğer türlerin (gün_içi/swing/orta_vadeli) hepsi kârdaydı.
+    # RiskTargetStage artık hesaplanan stop bu tabanın altına düşerse SL/
+    # TP'yi ORANI KORUYARAK genişletiyor (asla daraltmıyor).
+    "min_stop_pct": "0.045",
     # Drawdown-Based Position Sizing (gambler's ruin koruması) — kill
     # switch'in kullandığı AYNI gerçek ardışık kayıp sayacıyla, sert
     # durmadan ÖNCE devreye giren kademeli bir fren. 3. ardışık kayıptan

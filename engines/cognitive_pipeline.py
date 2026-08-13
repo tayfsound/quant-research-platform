@@ -355,6 +355,16 @@ class RiskTargetStage:
     kasıtlı bir tasarım kararı."""
     DEFAULT_STOP_ATR_MULT = 2.5
     DEFAULT_TARGET_ATR_MULT = 1.4
+    # Faz 268-sonrası — gerçek bulgu: kapanmış işlemleri "scalp" (stop <
+    # %4.5, bkz. api/rest/positions.py::_SCALP_MAX_STOP_PCT) / gün_içi /
+    # swing türüne göre ayırınca, scalp TEK BAŞINA toplam zararın %92'sini
+    # oluşturuyordu (-$1954 / -$2129), diğer türlerin hepsi kârdaydı.
+    # Mekanizma: düşük volatilite anlarında ATR-tabanlı stop doğal olarak
+    # çok dar çıkıyor — dar stop, normal piyasa gürültüsüyle bile kolayca
+    # tetikleniyor (Faz 251'deki AYNI mekanizma). MIN_STOP_PCT, hesaplanan
+    # stop bu tabanın altına düşerse SL/TP'yi ORANI KORUYARAK genişletir
+    # — asla daraltmaz, sadece "scalp" bölgesine hiç girilmesini engeller.
+    DEFAULT_MIN_STOP_PCT = 0.045
 
     def execute(self, ctx: CognitiveCycleContext) -> CognitiveCycleContext:
         direction = (ctx.decision.proposed_direction or "").upper()
@@ -366,12 +376,19 @@ class RiskTargetStage:
         if not daily_atr_pct or daily_atr_pct <= 0 or not current_price or current_price <= 0:
             return ctx
 
-        stop_mult, target_mult = self._load_multipliers()
-        ctx.decision.stop_loss = current_price * stop_mult * daily_atr_pct
-        ctx.decision.take_profit = current_price * target_mult * daily_atr_pct
+        stop_mult, target_mult, min_stop_pct = self._load_multipliers()
+        stop_pct = stop_mult * daily_atr_pct
+        target_pct = target_mult * daily_atr_pct
+        if stop_pct < min_stop_pct:
+            scale = min_stop_pct / stop_pct
+            stop_pct *= scale
+            target_pct *= scale
+
+        ctx.decision.stop_loss = current_price * stop_pct
+        ctx.decision.take_profit = current_price * target_pct
         return ctx
 
-    def _load_multipliers(self) -> tuple[float, float]:
+    def _load_multipliers(self) -> tuple[float, float, float]:
         try:
             from database.repositories.app_settings_repository import AppSettingsRepository
             from database.session_factory import SessionFactory
@@ -380,9 +397,10 @@ class RiskTargetStage:
                 settings_repo = AppSettingsRepository(session)
                 stop_mult = float(settings_repo.get("stop_atr_mult") or self.DEFAULT_STOP_ATR_MULT)
                 target_mult = float(settings_repo.get("target_atr_mult") or self.DEFAULT_TARGET_ATR_MULT)
-                return stop_mult, target_mult
+                min_stop_pct = float(settings_repo.get("min_stop_pct") or self.DEFAULT_MIN_STOP_PCT)
+                return stop_mult, target_mult, min_stop_pct
         except Exception:
-            return self.DEFAULT_STOP_ATR_MULT, self.DEFAULT_TARGET_ATR_MULT
+            return self.DEFAULT_STOP_ATR_MULT, self.DEFAULT_TARGET_ATR_MULT, self.DEFAULT_MIN_STOP_PCT
 
 
 class DecisionFusionStage:

@@ -56,6 +56,23 @@ def test_risk_target_stage_sets_take_profit_and_stop_loss_from_daily_atr_pct():
     assert abs(ctx.decision.take_profit - 2.8) < 1e-9
 
 
+def test_risk_target_stage_widens_stop_to_the_min_floor_preserving_the_ratio():
+    """Faz 268-sonrası — gerçek bulgu: trade_type'a göre ayrılmış kapanmış
+    işlemlerde "scalp" (stop < %4.5) tek başına toplam zararın %92'siydi.
+    Düşük daily_atr_pct'te ham stop %4.5 tabanının altına düşerse, SL/TP
+    ORANI KORUNARAK genişletilmeli — asla daraltılmamalı."""
+    ctx = _ctx(direction="LONG", daily_atr_pct=0.01, current_price=100.0)
+    ctx = RiskTargetStage().execute(ctx)
+
+    # Ham: stop=2.5*0.01=%2.5 (taban %4.5'in altında) -> 1.8x ölçeklenir.
+    assert abs(ctx.decision.stop_loss - 4.5) < 1e-9  # 100 * %4.5 taban
+    assert abs(ctx.decision.take_profit - 2.52) < 1e-9  # 100 * 1.4*0.01*1.8
+    # Oran korunmalı: taban öncesi (1.4/2.5) ile taban sonrası aynı.
+    ratio_before = (1.4 * 0.01) / (2.5 * 0.01)
+    ratio_after = ctx.decision.take_profit / ctx.decision.stop_loss
+    assert abs(ratio_before - ratio_after) < 1e-9
+
+
 def test_risk_target_stage_leaves_targets_unset_for_wait():
     ctx = _ctx(direction="WAIT", daily_atr_pct=0.02)
     ctx = RiskTargetStage().execute(ctx)
