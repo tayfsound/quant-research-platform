@@ -1,4 +1,17 @@
-"""Ollama tabanlı LLM explainer — nihai sürüm."""
+"""NVIDIA NIM tabanlı LLM Decision Critic — nihai sürüm.
+
+Faz 268-sonrası — kullanıcı isteği: yerel Ollama (mistral:7b-instruct)
+tabanlı OllamaExplainer'ın yerini, NVIDIA'nın ücretsiz NIM API'si
+(build.nvidia.com, OpenAI-uyumlu) üzerinden erişilen çok daha güçlü bir
+modelin aldığı bir "eleştirmen." Amaç sadece kararı AÇIKLAMAK değil,
+gerçekten İTİRAZ ETMEK — ajanlar arası çelişkileri, gözden kaçan
+riskleri, zayıf gerekçeleri arayan bir ikinci göz.
+
+Kasıtlı olarak SADECE danışma/ölçüm — hiçbir kararı burada otomatik
+REDDETMİYOR ya da ONAYLAMIYOR (risk_adjustment_factor mevcut sözleşmenin
+[0.5, 1.0] aralığında kalıyor, ama bunu gerçekten UYGULAMAK ayrı, insan
+onaylı bir karar — bkz. proje kuralı: AI kendi kararlarına unilateral
+otorite veremez)."""
 import asyncio
 import hashlib
 import json
@@ -9,23 +22,31 @@ from contracts.llm import LLMExplanation
 
 logger = logging.getLogger(__name__)
 
+NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
+
 SYSTEM_PROMPT = """ÖNEMLİ: Bütün yanıtını SADECE TÜRKÇE yaz. İngilizce tek bir cümle bile yazma.
 (IMPORTANT: Write your entire response ONLY IN TURKISH. Do not write a single sentence in English.)
 
-You are a world-class quantitative hedge fund analyst with 20 years of experience.
-Your job is to explain trading decisions made by an AI ensemble system, writing
-your explanation in Turkish.
+You are a skeptical, adversarial senior risk reviewer at a quantitative hedge
+fund — your job is NOT to explain why a trading decision looks reasonable,
+it is to actively try to TEAR IT APART, in Turkish.
 Rules:
-- Explain WHY the decision was made based on the data provided.
-- Point out any inconsistencies or risks you see.
+- Look for CONTRADICTIONS between the voting agents (e.g. one agent says
+  LONG citing momentum while another says SHORT citing the same data).
+- Look for evidence that is weak, stale, or contradicted by other evidence
+  in the payload.
+- Look for risks the ensemble may have missed (regime uncertainty, thin
+  data, overconfidence).
+- Do NOT be diplomatic — if the decision looks bad, say so bluntly.
+- If you genuinely find nothing wrong after a real adversarial attempt,
+  say so honestly instead of inventing a fake objection.
 - Use precise financial terminology (RSI, MACD, LONG/SHORT etc. may stay as-is).
-- Be concise: maximum 5 sentences.
-- If the decision looks dangerous, say so clearly.
+- Be concise: maximum 6 sentences.
 - "explanation", every item in "risks", and "confidence_comment" MUST be
   written in Turkish — this is mandatory, not optional.
 - Output ONLY valid JSON in this format:
-{"explanation": "(Türkçe açıklama)", "risks": ["(Türkçe risk 1)", "(Türkçe risk 2)"], "confidence_comment": "(Türkçe yorum)", "risk_adjustment_factor": 0.85}
-- risk_adjustment_factor must be between 0.5 and 1.0.
+{"explanation": "(Türkçe itiraz/eleştiri)", "risks": ["(Türkçe risk 1)", "(Türkçe risk 2)"], "confidence_comment": "(Türkçe yorum)", "risk_adjustment_factor": 0.85}
+- risk_adjustment_factor must be between 0.5 and 1.0 (1.0 = itirazım yok, 0.5 = ciddi itirazım var).
 
 Hatırlatma: Yanıtının tamamı Türkçe olmalı.
 """
@@ -35,25 +56,43 @@ THREAD_GRACE_SECONDS = 0.5
 def hash_prompt(prompt: str) -> str:
     return hashlib.sha256(prompt.encode()).hexdigest()[:12]
 
-class OllamaExplainer:
-    def __init__(self, model: str = "mistral:7b-instruct-v0.3-q4_K_M"):
+class NvidiaDecisionCritic:
+    # Faz 268-sonrası — gerçek A/B testi (aynı gerçek karar payload'ıyla):
+    # deepseek-ai/deepseek-v4-flash-0731 (90s) openai/gpt-oss-20b'den (5s)
+    # gözle görülür derecede daha derin eleştiri üretti (ör. Hurst
+    # exponent'in "rastgele yürüyüş" bölgesinde olduğunu fark etti —
+    # gpt-oss-20b bunu kaçırdı). openai/gpt-oss-120b bu yük altında
+    # tutarlı biçimde zaman aşımına uğradı, kullanılamaz. Bu bir canlı
+    # işlem kapısı DEĞİL (danışma amaçlı, senkron olmayan bir çağrı) —
+    # hız yerine kalite tercih edildi.
+    def __init__(self, model: str = "deepseek-ai/deepseek-v4-flash-0731", api_key: str | None = None):
         self.model = model
+        self._api_key = api_key
 
-    async def explain(self, ensemble_output: dict, prompt: str | None = None, timeout_ms: int = 15000) -> LLMExplanation:
-        # Gerçek bulgu: eski varsayılan (500ms) yerel Ollama üzerinde
-        # gerçek bir çağrının aldığı süreden (ölçüldü: ~7s, mistral:7b-instruct
-        # ile tam sistem prompt'u + JSON çıktı isteğiyle) 10 kattan fazla
-        # kısaydı — yani HER gerçek çağrı zaman aşımına uğrar, sessizce
-        # LLMExplanation.neutral() ("LLM unavailable...") dönerdi. Dashboard'da
-        # "LLM unavailable" hep görünmesinin sebebi buydu; Ollama'nın kendisi
-        # sorunsuz çalışıyordu. 15000ms, analyze_logs()'un zaten kullandığı
-        # (doğru) varsayılanla aynı.
+    def _resolve_api_key(self) -> str:
+        # None -> constructor'da hiç verilmemiş, AppSettings'e düş.
+        # "" (boş string) -> ÇAĞIRAN TARAF bilinçli olarak "anahtar yok"
+        # demek istiyor (ör. test) — AppSettings'teki gerçek anahtara
+        # sessizce düşülmemeli.
+        if self._api_key is not None:
+            return self._api_key
+        from config.settings import get_settings
+
+        return get_settings().NVIDIA_API_KEY
+
+    async def explain(self, ensemble_output: dict, prompt: str | None = None, timeout_ms: int = 90000) -> LLMExplanation:
+        # NVIDIA_API_KEY boşsa (kayıt yapılmadıysa) fail-closed — sessizce
+        # nötr döner, aynı FRED_API_KEY/HELIUS_API_KEY konvansiyonu.
+        api_key = self._resolve_api_key()
+        if not api_key:
+            return LLMExplanation.neutral()
+
         used_prompt = prompt or SYSTEM_PROMPT
         prompt_hash_val = hash_prompt(used_prompt)
         llm_timeout = timeout_ms / 1000
         try:
             return await asyncio.wait_for(
-                asyncio.to_thread(self._call_llm_sync, ensemble_output, used_prompt, timeout_ms),
+                asyncio.to_thread(self._call_llm_sync, ensemble_output, used_prompt, timeout_ms, api_key),
                 timeout=llm_timeout + THREAD_GRACE_SECONDS,
             )
         except TimeoutError:
@@ -73,25 +112,32 @@ class OllamaExplainer:
             })
             return LLMExplanation.neutral()
 
-    def _call_llm_sync(self, ensemble_output: dict, prompt: str, timeout_ms: int) -> LLMExplanation:
+    def _call_llm_sync(self, ensemble_output: dict, prompt: str, timeout_ms: int, api_key: str) -> LLMExplanation:
         import httpx
         user_prompt = json.dumps(ensemble_output, indent=2, default=str)
-        input_text = f"{prompt}\n\nUser: {user_prompt}\n\nAssistant: "
         symbol = ensemble_output.get("symbol", "unknown")
         try:
             response = httpx.post(
-                "http://localhost:11434/api/generate",
+                NVIDIA_API_URL,
+                headers={"Authorization": f"Bearer {api_key}"},
                 json={
                     "model": self.model,
-                    "prompt": input_text,
-                    "stream": False,
-                    "options": {"temperature": 0.3},
+                    "messages": [
+                        {"role": "system", "content": prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    "temperature": 0.3,
+                    # gpt-oss/reasoning modelleri düşünme adımlarını da
+                    # completion token bütçesinden harcıyor — düşük bir
+                    # max_tokens gerçek içeriği boş bırakabiliyor (ölçüldü).
+                    "max_tokens": 1500,
                 },
                 timeout=timeout_ms / 1000,
             )
             response.raise_for_status()
             data = response.json()
-            raw = data.get("response", "")
+            choices = data.get("choices") or []
+            raw = (choices[0].get("message", {}).get("content") or "") if choices else ""
             if not raw or not raw.strip():
                 logger.warning("LLM returned empty response", extra={"symbol": symbol})
                 return LLMExplanation.neutral()
@@ -147,12 +193,15 @@ class OllamaExplainer:
             "best_trades": sorted(wins, key=lambda trade_log: trade_log.get("outcome", {}).get("pnl", 0), reverse=True)[:5],
             "worst_trades": sorted(losses, key=lambda trade_log: trade_log.get("outcome", {}).get("pnl", 0))[:5],
         }
-        return await self._call_and_parse_json(summary, current_prompt, timeout_ms=15000)
+        return await self._call_and_parse_json(summary, current_prompt, timeout_ms=90000)
 
     async def _call_and_parse_json(self, ensemble_output: dict, prompt: str, timeout_ms: int) -> dict:
+        api_key = self._resolve_api_key()
+        if not api_key:
+            return {"analysis": "NVIDIA_API_KEY not set", "new_system_prompt": prompt}
         try:
             result = await asyncio.wait_for(
-                asyncio.to_thread(self._call_llm_sync, ensemble_output, prompt, timeout_ms),
+                asyncio.to_thread(self._call_llm_sync, ensemble_output, prompt, timeout_ms, api_key),
                 timeout=timeout_ms / 1000 + THREAD_GRACE_SECONDS,
             )
             decoder = json.JSONDecoder()

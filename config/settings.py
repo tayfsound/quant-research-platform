@@ -96,6 +96,13 @@ class Settings(BaseSettings):
     # doğrulama atlanır — aynı SECRET_KEY/ADMIN_SETUP_TOKEN konvansiyonu.
     TRADINGVIEW_WEBHOOK_SECRET: str = ""
 
+    # Faz 268-sonrası — kullanıcı isteği: NVIDIA NIM (build.nvidia.com)
+    # üzerinden ücretsiz erişilen güçlü bir modelle (Kimi K2), yerel
+    # Ollama tabanlı OllamaExplainer'ın yerini alan bir "Decision Critic."
+    # Boşsa (kayıt yapılmadıysa) critic None döner — fail-closed, aynı
+    # FRED_API_KEY/HELIUS_API_KEY konvansiyonu.
+    NVIDIA_API_KEY: str = ""
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings()

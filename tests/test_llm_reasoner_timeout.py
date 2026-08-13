@@ -1,35 +1,27 @@
-"""Real bug found live in the dashboard: AIReasoning.tsx always showed
-"LLM unavailable - proceeding with neutral adjustment" — not because Ollama
-was down, but because OllamaExplainer.explain()'s default timeout_ms was
-500, and a real local mistral:7b-instruct call (full system prompt + JSON
-output) measured ~6.8s. Every real call timed out by more than 10x,
-silently falling back to LLMExplanation.neutral() (which never raises, so
-nothing ever surfaced this as an error — just a permanently "neutral"
-explanation with no indication anything was wrong).
+"""Faz 268-sonrası: yerel Ollama tabanlı OllamaExplainer, NVIDIA NIM
+(build.nvidia.com) tabanlı NvidiaDecisionCritic ile değiştirildi —
+kullanıcı bulgusu: yerel Ollama modeliyle sonuç yetersizdi.
 
-Needs a real local Ollama instance with the configured model — skips if
-unavailable (this dev machine has it; CI does not, matching the existing
-convention for other environment-dependent tests in this repo)."""
-import httpx
+Gerçek bir NVIDIA_API_KEY gerektiriyor — set edilmemişse atlanır (CI'da
+ve bu anahtara sahip olmayan geliştirme makinelerinde, diğer ortam
+bağımlı testlerle (INFURA/HELIUS/FRED) aynı konvansiyon)."""
 import pytest
+
+from config.settings import get_settings
 
 pytestmark = pytest.mark.asyncio
 
 
-def _ollama_available() -> bool:
-    try:
-        httpx.get("http://localhost:11434/api/tags", timeout=2)
-        return True
-    except Exception:
-        return False
+def _nvidia_key_available() -> bool:
+    return bool(get_settings().NVIDIA_API_KEY)
 
 
-@pytest.mark.skipif(not _ollama_available(), reason="requires a local Ollama instance")
+@pytest.mark.skipif(not _nvidia_key_available(), reason="requires a real NVIDIA_API_KEY")
 async def test_real_explain_call_succeeds_within_default_timeout():
-    from llm_reasoner import OllamaExplainer
+    from llm_reasoner import NvidiaDecisionCritic
 
-    explainer = OllamaExplainer()
-    result = await explainer.explain({
+    critic = NvidiaDecisionCritic()
+    result = await critic.explain({
         "symbol": "BTCUSDT",
         "direction": "LONG",
         "confidence": 0.82,
