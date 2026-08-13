@@ -22,9 +22,16 @@ function WeightDiffRows({ proposed, previous }: { proposed: Record<string, numbe
   const domains = Array.from(new Set([...Object.keys(previous), ...Object.keys(proposed)]));
   const rows = domains
     .map((domain) => {
+      // Faz 268-sonrası kullanıcı bulgusu: bir ajanın bu rejimde HİÇ
+      // önceki ağırlığı yoksa (0.000 değil, tamamen kayıtsız), "0.000 →
+      // X" olarak göstermek yanıltıcı — bu bir "büyük değişiklik" değil,
+      // ilk kez değer alması (cold start). isNew ile ayırt ediyoruz;
+      // delta sıralaması hâlâ gerçek sayısal farka göre ama satırda
+      // görünür şekilde işaretleniyor.
+      const isNew = !(domain in previous);
       const before = previous[domain] ?? 0;
       const after = proposed[domain] ?? 0;
-      return { domain, before, after, delta: after - before };
+      return { domain, before, after, delta: after - before, isNew };
     })
     .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
 
@@ -43,11 +50,12 @@ function WeightDiffRows({ proposed, previous }: { proposed: Record<string, numbe
           {rows.map((r) => (
             <tr key={r.domain} className="border-b border-line-soft last:border-0">
               <td className="py-1.5 pr-4 text-ink font-medium">{r.domain}</td>
-              <td className="py-1.5 pr-4 text-ink-soft font-mono">{r.before.toFixed(3)}</td>
+              <td className="py-1.5 pr-4 text-ink-soft font-mono">
+                {r.isNew ? "— (yeni)" : r.before.toFixed(3)}
+              </td>
               <td className="py-1.5 pr-4 text-ink font-mono">{r.after.toFixed(3)}</td>
-              <td className={`py-1.5 pr-4 font-mono ${r.delta > 0 ? "text-rise" : r.delta < 0 ? "text-fall" : "text-ink-faint"}`}>
-                {r.delta > 0 ? "+" : ""}
-                {r.delta.toFixed(3)}
+              <td className={`py-1.5 pr-4 font-mono ${r.isNew ? "text-ink-faint" : r.delta > 0 ? "text-rise" : r.delta < 0 ? "text-fall" : "text-ink-faint"}`}>
+                {r.isNew ? "ilk değer" : `${r.delta > 0 ? "+" : ""}${r.delta.toFixed(3)}`}
               </td>
             </tr>
           ))}
@@ -108,7 +116,13 @@ export default function PendingApprovals() {
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-ink font-medium font-mono text-xs">{a.id.slice(0, 8)}…</span>
-                    <Badge tone="neutral">izin verilen max değişim: ±{a.max_delta.toFixed(2)}</Badge>
+                    {/* Faz 268-sonrası kullanıcı bulgusu: bu SAYI bir tavan
+                        DEĞİL — propose_weights() önerilen değeri buna göre
+                        hiç kırpmıyor, sadece bunu AŞARSA onay isteniyor.
+                        Eski etiket ("izin verilen max değişim") tam tersini
+                        ima ediyordu; aşağıdaki tablodaki değişim bundan
+                        çok daha büyük olabilir. */}
+                    <Badge tone="neutral">onay eşiği (bunun üstünde olduğu için soruluyor): ±{a.max_delta.toFixed(2)}</Badge>
                     {/* Faz 268b — Regime-Aware Learning: bu öneri global mi
                         (rejimden bağımsız, tüm geçmiş) yoksa belirli bir
                         piyasa rejimi için mi (ör. bullish_high) — insan
