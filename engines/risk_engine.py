@@ -25,6 +25,18 @@ class RiskEngine:
                 AppSettingsRepository(session).set(
                     "ai_enabled", "false", updated_by="kill_switch",
                 )
+                # Faz 269 (Cognitive Core 2.0 / M1) — Veri ve olay altyapısı:
+                # bu olay şu ana kadar SADECE app_settings.updated_by
+                # üzerinden dolaylı görülebiliyordu ("son değeri kim/ne
+                # yazdı" — NE ZAMAN tetiklendiği, kaç kayıpla, bir önceki
+                # tetiklenmeyle arada ne kadar geçtiği sorgulanamıyordu).
+                from database.repositories.event_log_repository import EventLogRepository
+
+                EventLogRepository(session).record(
+                    event_type="kill_switch_tripped",
+                    entity_type="risk",
+                    payload={"consecutive_losses": consecutive_losses, "threshold": threshold},
+                )
             structlog.get_logger().error(
                 "kill_switch_tripped",
                 consecutive_losses=consecutive_losses,

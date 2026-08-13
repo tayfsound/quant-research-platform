@@ -121,6 +121,33 @@ def test_kill_switch_trips_at_threshold(monkeypatch):
     assert captured.get("ai_enabled") == "false"
 
 
+def test_kill_switch_trip_is_recorded_as_a_real_system_event():
+    """Faz 269 (Cognitive Core 2.0 / M1) — Veri ve olay altyapısı: bu olay
+    şu ana kadar SADECE app_settings.updated_by üzerinden dolaylı
+    görülebiliyordu, artık system_events'te sorgulanabilir bir zaman
+    çizelgesi girdisi var."""
+    from database.repositories.event_log_repository import EventLogRepository
+    from database.session_factory import SessionFactory
+
+    ctx = CognitiveCycleContext(
+        risk={
+            "limits": {"max_position_size": RiskLimitEntry(value=1.0)},
+            "ai_enabled": True,
+            "consecutive_losses": 17,
+            "kill_switch_consecutive_losses": 10,
+        },
+        decision={"proposed_size": 0.5, "proposed_direction": "LONG"},
+    )
+    engine = RiskEngine()
+    engine.execute(ctx)
+
+    with SessionFactory.get_session() as session:
+        events = EventLogRepository(session).list_events(event_type="kill_switch_tripped", limit=5)
+    assert len(events) >= 1
+    assert events[0]["payload"]["consecutive_losses"] == 17
+    assert events[0]["payload"]["threshold"] == 10
+
+
 def test_kill_switch_does_not_trip_below_threshold():
     ctx = CognitiveCycleContext(
         risk={
