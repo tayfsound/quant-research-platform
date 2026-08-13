@@ -47,6 +47,18 @@ const EXIT_REASON_LABELS: Record<string, string> = {
   liquidation: "Likidasyon",
 };
 
+// Faz 268-sonrası — kullanıcı isteği: manuel kapatılan (exit_reason=
+// "manual_full") işlemler ayrı bir "manuel" kovasında gösterilmesin,
+// GERÇEK sonuçlarına göre (kârlıysa TP gibi, zarardaysa SL gibi)
+// görüntülensin — kapanış mekanizması değil, gerçek kâr/zarar önemli.
+// closed_trades_summary()'deki (backend) AYNI sınıflandırma mantığı.
+function effectiveExitReason(exitReason: string | null, pnl: number | null): string | null {
+  if (exitReason === "manual_full") {
+    return (pnl ?? 0) > 0 ? "take_profit" : "stop_loss";
+  }
+  return exitReason;
+}
+
 // Faz 259: orta-vadeli katman kısa-vadeliden ayrı bir sinyal zaman dilimi
 // kullanıyor (4h/1d) — dashboard'da hangi pozisyonun hangi katmandan
 // geldiğini ayırt edebilmek için.
@@ -494,11 +506,15 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
                     {format(t.pnl)}
                   </td>
                   <td className="py-2 pr-4">
-                    {t.exit_reason && (
-                      <Badge tone={t.exit_reason === "take_profit" ? "rise" : (t.exit_reason === "stop_loss" || t.exit_reason === "liquidation") ? "fall" : "neutral"}>
-                        {EXIT_REASON_LABELS[t.exit_reason] || t.exit_reason}
-                      </Badge>
-                    )}
+                    {(() => {
+                      const reason = effectiveExitReason(t.exit_reason, t.pnl);
+                      if (!reason) return null;
+                      return (
+                        <Badge tone={reason === "take_profit" ? "rise" : (reason === "stop_loss" || reason === "liquidation") ? "fall" : "neutral"}>
+                          {EXIT_REASON_LABELS[reason] || reason}
+                        </Badge>
+                      );
+                    })()}
                   </td>
                   <td className="py-2 pr-4 text-ink-faint">{t.closed_at ? new Date(t.closed_at).toLocaleString() : "—"}</td>
                 </tr>

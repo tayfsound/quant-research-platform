@@ -255,32 +255,41 @@ def test_trades_and_performance_summaries_count_tp_and_sl_closes():
         assert trades_body["summary"]["sl_count"] >= 1
 
 
-def test_trades_and_performance_summaries_count_manual_closes():
-    """Manuel kapanışların TEK gerçek işareti exit_reason='manual_full'
-    (close_position_partial'ın 'manual_partial' etiketi SADECE status=
-    'open' kalan satırlarda görülür, bkz. position_closer.py)."""
+def test_manual_closes_are_counted_as_tp_or_sl_by_real_outcome_not_a_separate_bucket():
+    """Faz 268-sonrası — kullanıcı isteği: manuel kapatılan (exit_reason=
+    'manual_full') işlemler ayrı bir 'manuel' kovasında değil, GERÇEK
+    sonuçlarına göre (kârlıysa TP gibi, zarardaysa SL gibi) sayılmalı —
+    kapanış mekanizması değil, gerçek kâr/zarar önemli."""
     with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
-        symbol = f"MANUALCLOSE{uuid4().hex[:8]}"
         now = datetime.now(UTC)
 
-        event = DecisionEvent(
-            id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
-            final_size=1.0, confidence=0.6, status="open",
-            entry_price=100.0, quantity=1.0, opened_at=now,
-        )
-        with SessionFactory.get_session() as session:
-            repo = DecisionPersistor(session)
-            repo.persist(event)
-            repo.close_position(
-                decision_id=str(event.id), exit_price=101.0, pnl=1.0, closed_at=now,
-                outcome={"exit_reason": "manual_full"},
+        def _open_and_manually_close(pnl: float) -> None:
+            symbol = f"MANUALCLOSE{uuid4().hex[:8]}"
+            event = DecisionEvent(
+                id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+                final_size=1.0, confidence=0.6, status="open",
+                entry_price=100.0, quantity=1.0, opened_at=now,
             )
+            with SessionFactory.get_session() as session:
+                repo = DecisionPersistor(session)
+                repo.persist(event)
+                repo.close_position(
+                    decision_id=str(event.id), exit_price=100.0 + pnl, pnl=pnl, closed_at=now,
+                    outcome={"exit_reason": "manual_full"},
+                )
 
         client = _client()
+        before = client.get("/api/v1/performance", headers=make_authed_headers(Role.VIEWER)).json()["all_time"]
+
+        _open_and_manually_close(pnl=1.0)   # kârlı manuel kapanış -> TP gibi sayılmalı
+        _open_and_manually_close(pnl=-1.0)  # zararlı manuel kapanış -> SL gibi sayılmalı
+
         trades_body = client.get(
             "/api/v1/trades", params={"limit": 10000}, headers=make_authed_headers(Role.VIEWER)
         ).json()
         perf_body = client.get("/api/v1/performance", headers=make_authed_headers(Role.VIEWER)).json()
 
-        assert trades_body["summary"]["manual_count"] == perf_body["all_time"]["manual_count"]
-        assert trades_body["summary"]["manual_count"] >= 1
+        assert trades_body["summary"]["tp_count"] == perf_body["all_time"]["tp_count"]
+        assert trades_body["summary"]["sl_count"] == perf_body["all_time"]["sl_count"]
+        assert perf_body["all_time"]["tp_count"] == before["tp_count"] + 1
+        assert perf_body["all_time"]["sl_count"] == before["sl_count"] + 1

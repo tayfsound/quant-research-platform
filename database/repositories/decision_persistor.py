@@ -267,14 +267,21 @@ class DecisionPersistor:
                 "sum(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS wins, "
                 "sum(pnl) AS total_pnl, "
                 "sum(entry_price * quantity / COALESCE(NULLIF(leverage, 0), 1)) AS deployed_notional, "
-                "sum(CASE WHEN outcome ->> 'exit_reason' = 'take_profit' THEN 1 ELSE 0 END) AS tp_count, "
-                "sum(CASE WHEN outcome ->> 'exit_reason' = 'stop_loss' THEN 1 ELSE 0 END) AS sl_count, "
-                # Faz 268: manuel kapanışların TEK gerçek işareti budur —
-                # close_position_partial'ın "manual_partial" etiketi SADECE
-                # status='open' kalan (miktarı azaltılmış) satırlarda
-                # görülür, status='closed' olan son dilim her zaman
-                # "manual_full" ile yazılıyor (bkz. position_closer.py).
-                "sum(CASE WHEN outcome ->> 'exit_reason' = 'manual_full' THEN 1 ELSE 0 END) AS manual_count "
+                # Faz 268-sonrası — kullanıcı isteği: manuel kapatılan
+                # işlemler (exit_reason='manual_full' — genelde sinyal
+                # tersine döndüğü için sistemin erken kapattığı işlemler)
+                # ayrı bir "manuel" kovasında gösterilmesin, kârlıysa TP
+                # gibi, zarardaysa SL gibi sayılsın — kapanış MEKANİZMASI
+                # değil, GERÇEK sonuç (kâr/zarar) önemli.
+                "sum(CASE WHEN outcome ->> 'exit_reason' = 'take_profit' "
+                "OR (outcome ->> 'exit_reason' = 'manual_full' AND pnl > 0) THEN 1 ELSE 0 END) AS tp_count, "
+                "sum(CASE WHEN outcome ->> 'exit_reason' = 'stop_loss' "
+                "OR (outcome ->> 'exit_reason' = 'manual_full' AND pnl <= 0) THEN 1 ELSE 0 END) AS sl_count, "
+                # manual_partial SADECE status='open' kalan (miktarı
+                # azaltılmış) satırlarda görülür — closed satırlarda hiç
+                # oluşmaz, bu yüzden closed özetinde manual_count her
+                # zaman 0'a yakınsar (bkz. position_closer.py).
+                "sum(CASE WHEN outcome ->> 'exit_reason' = 'manual_partial' THEN 1 ELSE 0 END) AS manual_count "
                 "FROM decisions WHERE status = 'closed' AND excluded_from_stats = false"
             )
         ).mappings().one()

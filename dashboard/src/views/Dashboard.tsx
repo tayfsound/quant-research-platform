@@ -414,9 +414,12 @@ export default function Dashboard() {
             <StatCard label="Açık pozisyon" value={openCount} />
             <StatCard label="Kapanmış işlem" value={perf.all_time.trade_count} />
             <StatCard label="Kazanma oranı" value={`%${(perf.all_time.win_rate * 100).toFixed(0)}`} />
+            {/* Faz 268-sonrası — kullanıcı isteği: manuel kapanışlar artık
+                ayrı bir kova olarak gösterilmiyor, gerçek sonuçlarına göre
+                (kârlıysa TP, zarardaysa SL) yukarıdaki iki karta dahil
+                ediliyor (bkz. decision_persistor.py::closed_trades_summary). */}
             <StatCard label="TP ile kapanan" value={perf.all_time.tp_count} tone="rise" />
             <StatCard label="SL ile kapanan" value={perf.all_time.sl_count} tone="fall" />
-            <StatCard label="Manuel kapanan" value={perf.all_time.manual_count} />
             <StatCard
               label={`Toplam PnL (${currency})`}
               value={format(perf.all_time.total_pnl)}
