@@ -156,6 +156,18 @@ def test_to_epistemology_defaults_data_quality_score_to_clean_when_absent():
     assert result.data_quality_score == 1.0
 
 
+def test_to_epistemology_reads_real_high_impact_event_imminent_from_features():
+    ctx = CognitiveCycleContext(market={"features": {"high_impact_event_imminent": True}})
+    result = ContextAdapter().to_epistemology(ctx)
+    assert result.high_impact_event_imminent is True
+
+
+def test_to_epistemology_defaults_high_impact_event_imminent_to_false_when_absent():
+    ctx = CognitiveCycleContext(market={"features": {}})
+    result = ContextAdapter().to_epistemology(ctx)
+    assert result.high_impact_event_imminent is False
+
+
 def test_to_relative_strength_waits_when_symbol_never_ingested():
     """Hedefin KENDİ verisi hiç yoksa (peer'ler watchlist'te veri
     biriktirmiş olsa bile — paylaşılan test DB'sinde başka testlerden

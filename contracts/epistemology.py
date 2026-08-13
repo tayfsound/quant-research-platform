@@ -15,4 +15,9 @@ class EpistemologyContext(BaseModel):
     # quality_score'un ürettiği, fiyat spike/wick manipülasyonu/kötü print
     # şüphesi oranı (1.0=temiz, düşük=şüpheli veri oranı yüksek).
     data_quality_score: float = 1.0
+    # Faz 271-sonrası: Economic Calendar Integration — market_data/macro/
+    # economic_calendar.py::compute_event_proximity'nin ürettiği, FOMC/CPI
+    # gibi yüksek etkili bir yayının yakında (HIGH_IMPACT_WINDOW_HOURS
+    # içinde) olup olmadığı.
+    high_impact_event_imminent: bool = False
     timestamp: datetime = Field(default_factory=datetime.now)

@@ -45,6 +45,15 @@ class EpistemologyAgent:
             )
             wait_confidence = min(wait_confidence + 0.2, 0.9)
 
+        # Faz 271-sonrası: Economic Calendar Integration — FOMC/CPI gibi
+        # yüksek etkili bir makro yayın yakında. data_quality_score ile
+        # AYNI desen: olay yaklaşırken güveni artırıyor, kendi başına bir
+        # yön belirlemiyor. Kurumsal risk yönetiminde standart bir
+        # uygulama (event risk) — yeni bir strateji değil.
+        if context.high_impact_event_imminent:
+            caveats.append("High-impact economic release (FOMC/CPI) imminent — event risk elevated")
+            wait_confidence = min(wait_confidence + 0.2, 0.9)
+
         # data_quality alanı iki BAĞIMSIZ sinyalin daha kötümser olanı —
         # biri iyi görünürken diğerinin gerçek bir sorunu maskelemesini
         # önlemek için ortalama değil min.

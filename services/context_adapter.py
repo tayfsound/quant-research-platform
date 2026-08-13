@@ -429,4 +429,5 @@ class ContextAdapter:
             data_age_seconds=age_seconds,
             known_unknown_count=len(_EXPECTED_FEATURES) - present,
             data_quality_score=self._get(ctx, "data_quality_score", 1.0),
+            high_impact_event_imminent=bool(self._get(ctx, "high_impact_event_imminent", False)),
         )

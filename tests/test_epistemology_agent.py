@@ -52,3 +52,14 @@ def test_data_quality_field_is_the_more_pessimistic_of_the_two_signals():
     agent = EpistemologyAgent()
     opinion = agent.analyze(EpistemologyContext(feature_completeness=0.95, data_quality_score=0.5))
     assert opinion.data_quality == 0.5
+
+
+def test_imminent_high_impact_event_raises_confidence_and_warns():
+    """Faz 271-sonrası: Economic Calendar Integration — FOMC/CPI gibi
+    yüksek etkili bir yayın yakınken, data_quality_score ile AYNI desende
+    güveni artırmalı."""
+    agent = EpistemologyAgent()
+    calm = agent.analyze(EpistemologyContext(feature_completeness=0.9, high_impact_event_imminent=False))
+    imminent = agent.analyze(EpistemologyContext(feature_completeness=0.9, high_impact_event_imminent=True))
+    assert imminent.confidence > calm.confidence
+    assert any("fomc" in c.lower() or "cpi" in c.lower() for c in imminent.caveats)

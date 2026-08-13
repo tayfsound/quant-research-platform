@@ -7,6 +7,7 @@ from database.repositories.app_settings_repository import TRADE_HORIZON_TO_RISK_
 from database.repositories.risk_limit_repository import load_active_limits
 from services.risk_state import load_position_risk_state
 from market_data.ingestion.data_provider import get_ohlcv_provider, OHLCVProvider
+from market_data.macro.economic_calendar import compute_event_proximity
 from market_data.features.signal_engine import (
     compute_daily_atr_pct,
     compute_data_quality_score,
@@ -162,6 +163,13 @@ def build_cognitive_context(
     # notu). EpistemologyAgent bunu okuyup şüpheli veri varken council'in
     # genel güvenini WAIT'e doğru dengeliyor.
     ctx.market.features["data_quality_score"] = compute_data_quality_score(data)["data_quality_score"]
+    # Faz 271-sonrası: Economic Calendar Integration — FOMC/CPI gibi yüksek
+    # etkili bir makro yayın yakında (HIGH_IMPACT_WINDOW_HOURS içinde) mi.
+    # data_quality_score ile AYNI desen: EpistemologyAgent bunu okuyup
+    # olay yakınken council'in genel güvenini WAIT'e doğru dengeliyor.
+    ctx.market.features["high_impact_event_imminent"] = compute_event_proximity(
+        datetime.now(UTC)
+    )["high_impact_event_imminent"]
     # Faz 251: kullanıcı kararı — risk (stop/target) ölçeklendirmesi sinyal
     # zaman diliminden (genelde 1m, gürültü seviyesinde ATR) bağımsız,
     # daha yavaş bir bar setinden türetiliyor (bkz. signal_engine.
