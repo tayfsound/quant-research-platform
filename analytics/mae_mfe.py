@@ -385,3 +385,69 @@ def compute_confidence_decomposition(
             "barrier_probability": barrier_probability,
         }
     return results
+
+
+def _group_trades(trades: list[dict], group_by: tuple[str, ...]) -> dict[tuple, list[dict]]:
+    groups: dict[tuple, list[dict]] = defaultdict(list)
+    for t in trades:
+        key_parts = []
+        for field in group_by:
+            if field == "confidence":
+                key_parts.append(_confidence_bucket(t.get("confidence") or 0.0))
+            else:
+                key_parts.append(str(t.get(field, "unknown")))
+        groups[tuple(key_parts)].append(t)
+    return groups
+
+
+def compute_selection_bias_correction(
+    taken_trades: list[dict],
+    rejected_trades: list[dict],
+    group_by: tuple[str, ...] = ("direction", "regime", "volatility_regime"),
+    min_group_size: int = MIN_GROUP_SIZE,
+) -> dict:
+    """AI'nin GERÇEKTEN aldığı işlemlerin MAE/MFE'sini, ALMADIĞI ama yönlü
+    bir çağrı yaptığı (decisions.status='no_trade', direction IN
+    (LONG, SHORT)) fırsatların HİPOTETİK MAE/MFE'siyle karşılaştırır —
+    execution filtresinin (act_threshold, risk kapıları) gerçekten kötü
+    fırsatları eleyip elemediğini ölçmek için. taken_trades AVANTAJLI
+    olmalı (daha yüksek MFE, daha düşük |MAE|) — aksi halde seçim gerçek
+    bir değer katmıyor, gürültüyü eliyor gibi görünüp aslında rastgele
+    davranıyor olabilir.
+
+    ÖNEMLİ SINIRLAMA: bu fonksiyon SADECE karşılaştırmayı yapar.
+    rejected_trades'in mae_pct/mfe_pct'sini doldurmak ayrı, henüz
+    yapılmamış bir backfill işi — no_trade kararlarının entry_price'ı
+    kayıtlı değil (622 LONG + 437 SHORT gerçek yönlü-ama-reddedilmiş karar
+    var, DB'de doğrulandı), sembol+timestamp'ten GERÇEK geçmiş bar
+    verisiyle yeniden inşa edilmesi gerekiyor."""
+    taken_groups = _group_trades(
+        [t for t in taken_trades if t.get("mae_pct") is not None], group_by,
+    )
+    rejected_groups = _group_trades(
+        [t for t in rejected_trades if t.get("mae_pct") is not None], group_by,
+    )
+
+    results: dict[str, dict] = {}
+    for key in set(taken_groups) | set(rejected_groups):
+        taken = taken_groups.get(key, [])
+        rejected = rejected_groups.get(key, [])
+        if len(taken) < min_group_size or len(rejected) < min_group_size:
+            continue
+
+        taken_mfe = float(np.median([t["mfe_pct"] for t in taken]))
+        rejected_mfe = float(np.median([t["mfe_pct"] for t in rejected]))
+        taken_mae = float(np.median([abs(t["mae_pct"]) for t in taken]))
+        rejected_mae = float(np.median([abs(t["mae_pct"]) for t in rejected]))
+
+        label = "|".join(f"{field}={value}" for field, value in zip(group_by, key))
+        results[label] = {
+            "taken_sample_size": len(taken),
+            "rejected_sample_size": len(rejected),
+            "taken_mfe_median": round(taken_mfe, 6),
+            "rejected_mfe_median": round(rejected_mfe, 6),
+            "taken_mae_median": round(taken_mae, 6),
+            "rejected_mae_median": round(rejected_mae, 6),
+            "selection_adds_value": bool(taken_mfe > rejected_mfe and taken_mae < rejected_mae),
+        }
+    return results

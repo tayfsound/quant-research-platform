@@ -7,6 +7,7 @@ from analytics.mae_mfe import (
     compute_confidence_decomposition,
     compute_mae_mfe,
     compute_optimal_barrier,
+    compute_selection_bias_correction,
 )
 from market_data.ingestion.ohlcv import OHLCV
 
@@ -299,3 +300,46 @@ def test_confidence_decomposition_ignores_censored_exits():
     )
     result = compute_confidence_decomposition(trades, group_by=("direction",), min_group_size=20)
     assert result["direction=LONG"]["sample_size"] == 20
+
+
+def _selection_trade(mae_pct, mfe_pct, direction="LONG", regime="bull_trend", volatility_regime="normal") -> dict:
+    return {"mae_pct": mae_pct, "mfe_pct": mfe_pct, "direction": direction, "regime": regime,
+            "volatility_regime": volatility_regime}
+
+
+def test_selection_bias_correction_detects_that_taken_trades_are_better():
+    taken = [_selection_trade(mae_pct=-0.01, mfe_pct=0.04) for _ in range(25)]
+    rejected = [_selection_trade(mae_pct=-0.03, mfe_pct=0.01) for _ in range(25)]
+    result = compute_selection_bias_correction(taken, rejected, group_by=("direction",), min_group_size=20)
+    r = result["direction=LONG"]
+    assert r["selection_adds_value"] is True
+    assert r["taken_mfe_median"] > r["rejected_mfe_median"]
+    assert r["taken_mae_median"] < r["rejected_mae_median"]
+
+
+def test_selection_bias_correction_detects_that_selection_is_not_helping():
+    """Reddedilen fırsatlar ALINAN işlemlerden daha iyi ya da eşitse,
+    seçim gerçek bir değer katmıyor demektir — bu da tespit edilmeli."""
+    taken = [_selection_trade(mae_pct=-0.03, mfe_pct=0.01) for _ in range(25)]
+    rejected = [_selection_trade(mae_pct=-0.01, mfe_pct=0.04) for _ in range(25)]
+    result = compute_selection_bias_correction(taken, rejected, group_by=("direction",), min_group_size=20)
+    assert result["direction=LONG"]["selection_adds_value"] is False
+
+
+def test_selection_bias_correction_requires_min_size_on_both_sides():
+    taken = [_selection_trade(mae_pct=-0.01, mfe_pct=0.04) for _ in range(25)]
+    rejected = [_selection_trade(mae_pct=-0.03, mfe_pct=0.01) for _ in range(5)]
+    result = compute_selection_bias_correction(taken, rejected, group_by=("direction",), min_group_size=20)
+    assert result == {}
+
+
+def test_selection_bias_correction_separates_groups_by_regime():
+    taken_bull = [_selection_trade(mae_pct=-0.01, mfe_pct=0.04, regime="bull_trend") for _ in range(20)]
+    rejected_bull = [_selection_trade(mae_pct=-0.03, mfe_pct=0.01, regime="bull_trend") for _ in range(20)]
+    taken_bear = [_selection_trade(mae_pct=-0.03, mfe_pct=0.01, regime="bear_trend") for _ in range(20)]
+    rejected_bear = [_selection_trade(mae_pct=-0.01, mfe_pct=0.04, regime="bear_trend") for _ in range(20)]
+    result = compute_selection_bias_correction(
+        taken_bull + taken_bear, rejected_bull + rejected_bear, group_by=("regime",), min_group_size=20,
+    )
+    assert result["regime=bull_trend"]["selection_adds_value"] is True
+    assert result["regime=bear_trend"]["selection_adds_value"] is False
