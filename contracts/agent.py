@@ -77,6 +77,22 @@ class AgentOpinion(BaseModel):
     performance_weight: float = 1.0
     effective_influence: float = 0.0
 
+    # Faz 268-sonrası — "olasılıksal mimari" vizyonunun EN UCUZ, bağlayıcı
+    # olmayan hazırlık adımı (kullanıcı onayıyla, kasıtlı olarak SADECE bu
+    # kadarı: opsiyonel/geriye-uyumlu alanlar, HİÇBİR ajan/karar mantığı
+    # henüz bunları OKUMUYOR — "yeni karmaşıklık kendi edge'ini
+    # kanıtlamalı" ilkesi gereği). Amaç: bir ajan tek bir skaler confidence
+    # yerine, isterse fiyatın öngörülen dağılımını (predictive_mu/sigma —
+    # log-getiri uzayında ortalama/belirsizlik) raporlayabilsin. None =
+    # bu ajan henüz bunu üretmiyor (fail-closed, uydurulmuş bir dağılım
+    # asla varsayılmaz). calibration_factor de aynı şekilde opsiyonel —
+    # services/confidence_calibration.py'nin ZATEN yaptığı ampirik
+    # kalibrasyonun yerini almıyor, gelecekte bir ajanın KENDİ
+    # hesapladığı bir kalibrasyon sinyali için ayrılmış bir alan.
+    predictive_mu: float | None = None
+    predictive_sigma: float | None = None
+    calibration_factor: float | None = None
+
     def recalculate(self) -> "AgentOpinion":
         """Kontrollü yeniden hesaplama — tam determinizm."""
         self.intrinsic_trust = (
