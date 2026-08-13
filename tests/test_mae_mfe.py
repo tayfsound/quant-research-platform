@@ -5,6 +5,7 @@ from analytics.mae_mfe import (
     compute_competing_risk_probabilities,
     compute_conditional_mae_distribution,
     compute_mae_mfe,
+    compute_optimal_barrier,
 )
 from market_data.ingestion.ohlcv import OHLCV
 
@@ -187,3 +188,68 @@ def test_competing_risk_separates_groups_by_condition():
     ]
     result = compute_competing_risk_probabilities(bull + bear, group_by=("regime",), min_group_size=20)
     assert result["regime=bull_trend"]["p_take_profit"] > result["regime=bear_trend"]["p_take_profit"]
+
+
+def _barrier_trade(mae_pct, mfe_pct, time_to_mae=100.0, time_to_mfe=50.0, direction="LONG",
+                    regime="bull_trend", volatility_regime="normal", confidence=0.7) -> dict:
+    return {
+        "mae_pct": mae_pct, "mfe_pct": mfe_pct,
+        "time_to_mae_seconds": time_to_mae, "time_to_mfe_seconds": time_to_mfe,
+        "direction": direction, "regime": regime,
+        "volatility_regime": volatility_regime, "confidence": confidence,
+    }
+
+
+def test_optimal_barrier_computes_real_ev_for_constant_trades():
+    """Tüm trade'ler aynı mae/mfe/zamanlamaya sahipse yüzdelikler hep aynı
+    değere düşer, tek aday çift kalır — EV hesabı (gerçek maker/taker fee
+    dahil) doğru olmalı."""
+    trades = [_barrier_trade(mae_pct=-0.01, mfe_pct=0.03, time_to_mae=100.0, time_to_mfe=50.0) for _ in range(30)]
+    result = compute_optimal_barrier(trades, group_by=("direction",), min_group_size=20, min_decisive_count=20)
+    key = "direction=LONG"
+    assert key in result
+    r = result[key]
+    assert abs(r["sl_pct"] - 0.01) < 1e-9
+    assert abs(r["tp_pct"] - 0.03) < 1e-9
+    assert r["decisive_sample_size"] == 30
+    assert r["decisive_fraction"] == 1.0
+    expected_ev = 0.03 - 0.0005 - 0.0002
+    assert abs(r["expected_value_pct"] - expected_ev) < 1e-6
+
+
+def test_optimal_barrier_below_min_group_size_is_excluded():
+    trades = [_barrier_trade(mae_pct=-0.01, mfe_pct=0.03) for _ in range(5)]
+    result = compute_optimal_barrier(trades, group_by=("direction",), min_group_size=20)
+    assert result == {}
+
+
+def test_optimal_barrier_censors_trades_that_hit_neither_barrier():
+    """Bazı trade'ler ne aday SL'ye ne aday TP'ye ulaşmıyorsa (ekstremumları
+    çok küçük) o çift için decisive_sample_size küçülmeli — 40'ın tamamı
+    asla sayılmamalı, censored olan hiç sayılmamalı (icat edilmemeli)."""
+    reaching = [_barrier_trade(mae_pct=-0.02, mfe_pct=0.05) for _ in range(20)]
+    barely_moving = [_barrier_trade(mae_pct=-0.001, mfe_pct=0.001) for _ in range(20)]
+    result = compute_optimal_barrier(
+        reaching + barely_moving, group_by=("direction",), min_group_size=20, min_decisive_count=15,
+    )
+    key = "direction=LONG"
+    assert key in result
+    assert result[key]["decisive_sample_size"] < 40
+
+
+def test_optimal_barrier_separates_groups_by_regime():
+    """bull: MFE'ye erken ulaşılıyor (TP kazanır) → pozitif EV. bear: MAE'ye
+    ÖNCE ulaşılıyor (SL kazanır) → negatif EV. İki grup ayrı hesaplanmalı."""
+    bull = [
+        _barrier_trade(mae_pct=-0.01, mfe_pct=0.04, time_to_mae=100.0, time_to_mfe=50.0, regime="bull_trend")
+        for _ in range(25)
+    ]
+    bear = [
+        _barrier_trade(mae_pct=-0.03, mfe_pct=0.01, time_to_mae=50.0, time_to_mfe=200.0, regime="bear_trend")
+        for _ in range(25)
+    ]
+    result = compute_optimal_barrier(bull + bear, group_by=("regime",), min_group_size=20, min_decisive_count=20)
+    assert "regime=bull_trend" in result
+    assert "regime=bear_trend" in result
+    assert result["regime=bull_trend"]["expected_value_pct"] > 0
+    assert result["regime=bear_trend"]["expected_value_pct"] < 0

@@ -210,3 +210,115 @@ def compute_competing_risk_probabilities(
             "p_breakeven_stop": round(breakeven_count / n, 4),
         }
     return results
+
+
+# Faz 268-sonrası: EV-tabanlı SL/TP ortak optimizasyonu — "Optimal Barrier
+# Surface." simulator/fee_engine.py'deki GERÇEK maker/taker oranları
+# (icat edilmiş değil).
+ENTRY_FEE_PCT = 0.0005   # taker (giriş her zaman taker — market emri)
+TP_EXIT_FEE_PCT = 0.0002  # maker
+SL_EXIT_FEE_PCT = 0.0005  # taker
+_BARRIER_QUANTILE_LEVELS = (0.5, 0.6, 0.7, 0.8, 0.9)
+
+
+def _counterfactual_barrier_outcome(trade: dict, sl_pct: float, tp_pct: float) -> str:
+    """Bu trade'in GERÇEKTEN ölçülmüş mae_pct/mfe_pct'sine (ve hangi
+    ekstremuma ÖNCE ulaşıldığına — time_to_mae/time_to_mfe) bakarak, aday
+    bir (sl_pct, tp_pct) çiftiyle hangi bariyerin önce vurulacağını yeniden
+    türetir. Bu, finansal ML literatüründeki 'path relabeling/meta-
+    labeling' tekniği — icat edilmiş bir fiyat yolu değil, zaten ölçülmüş
+    gerçek ekstremum DEĞER ve ZAMANLARI kullanılıyor. mae_pct/mfe_pct
+    None ise 'unknown' (fail-closed, sayılmaz)."""
+    mae = trade.get("mae_pct")
+    mfe = trade.get("mfe_pct")
+    if mae is None or mfe is None:
+        return "unknown"
+    hit_sl = abs(mae) >= sl_pct
+    hit_tp = mfe >= tp_pct
+    if hit_sl and hit_tp:
+        t_mae = trade.get("time_to_mae_seconds") or 0.0
+        t_mfe = trade.get("time_to_mfe_seconds") or 0.0
+        return "stop_loss" if t_mae <= t_mfe else "take_profit"
+    if hit_sl:
+        return "stop_loss"
+    if hit_tp:
+        return "take_profit"
+    return "neither"
+
+
+def compute_optimal_barrier(
+    trades: list[dict],
+    group_by: tuple[str, ...] = ("direction", "regime", "volatility_regime"),
+    quantile_levels: tuple[float, ...] = _BARRIER_QUANTILE_LEVELS,
+    min_group_size: int = MIN_GROUP_SIZE,
+    min_decisive_count: int = MIN_GROUP_SIZE,
+) -> dict:
+    """Her koşul kovası için, o kovanın GERÇEK MAE/MFE dağılımından türetilen
+    aday SL/TP mesafeleri (empirik yüzdelikler — quantile_levels) üzerinde
+    ızgara taraması yapıp, gerçek trade'lerin path-relabeling ile yeniden
+    türetilmiş sonuçlarına göre en yüksek beklenen değeri (EV, fee dahil)
+    veren çifti döndürür.
+
+    'neither' (ne SL ne TP'ye ulaşılan) trade'ler EV hesabına DAHİL
+    edilmiyor (censored, fail-closed) — ama decisive_fraction ile şeffaf
+    raporlanıyor. Bir (sl,tp) çifti için karar sayısı min_decisive_count
+    altındaysa o çift değerlendirilmiyor (küçük örneklemden EV icat
+    edilmiyor). Hiçbir aday çift bu eşiği geçemezse kova sonuç
+    döndürmüyor.
+
+    Kasıtlı olarak SADECE öneri/rapor — hiçbir SL/TP kararını burada
+    UYGULAMIYOR, gerçek pozisyonlara otomatik yansımıyor."""
+    groups: dict[tuple, list[dict]] = defaultdict(list)
+    for t in trades:
+        if t.get("mae_pct") is None or t.get("mfe_pct") is None:
+            continue
+        key_parts = []
+        for field in group_by:
+            if field == "confidence":
+                key_parts.append(_confidence_bucket(t.get("confidence") or 0.0))
+            else:
+                key_parts.append(str(t.get(field, "unknown")))
+        groups[tuple(key_parts)].append(t)
+
+    results: dict[str, dict] = {}
+    for key, group_trades in groups.items():
+        if len(group_trades) < min_group_size:
+            continue
+
+        mae_abs = np.array([abs(t["mae_pct"]) for t in group_trades])
+        mfe_vals = np.array([t["mfe_pct"] for t in group_trades])
+        sl_candidates = sorted({round(float(np.quantile(mae_abs, q)), 6) for q in quantile_levels})
+        tp_candidates = sorted({round(float(np.quantile(mfe_vals, q)), 6) for q in quantile_levels})
+
+        best = None
+        for sl_pct in sl_candidates:
+            if sl_pct <= 0:
+                continue
+            for tp_pct in tp_candidates:
+                if tp_pct <= 0:
+                    continue
+                pnls = []
+                for t in group_trades:
+                    outcome = _counterfactual_barrier_outcome(t, sl_pct, tp_pct)
+                    if outcome == "take_profit":
+                        pnls.append(tp_pct - ENTRY_FEE_PCT - TP_EXIT_FEE_PCT)
+                    elif outcome == "stop_loss":
+                        pnls.append(-sl_pct - ENTRY_FEE_PCT - SL_EXIT_FEE_PCT)
+                    # "neither"/"unknown" -> censored, EV hesabına girmiyor.
+                if len(pnls) < min_decisive_count:
+                    continue
+                ev = sum(pnls) / len(pnls)
+                if best is None or ev > best["expected_value_pct"]:
+                    best = {
+                        "sl_pct": sl_pct,
+                        "tp_pct": tp_pct,
+                        "expected_value_pct": round(ev, 6),
+                        "decisive_sample_size": len(pnls),
+                        "decisive_fraction": round(len(pnls) / len(group_trades), 4),
+                    }
+
+        if best is not None:
+            label = "|".join(f"{field}={value}" for field, value in zip(group_by, key))
+            best["total_sample_size"] = len(group_trades)
+            results[label] = best
+    return results
