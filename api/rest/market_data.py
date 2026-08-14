@@ -70,6 +70,22 @@ async def get_ohlcv(
     }
 
 
+@router.get("/news-sentiment")
+async def get_news_sentiment(user: AuthContext = Depends(get_current_user)):
+    """Faz 268-sonrası: Reddit'in yerine geçen LLM tabanlı gerçek haber
+    sentiment'i (bkz. market_data/sentiment/llm_news_sentiment_provider.py).
+    SADECE önbelleği okur (asla burada LLM çağırmaz) — periyodik Celery
+    görevi (refresh_llm_news_sentiment_task) ayrı olarak tazeler.
+    Hiç tazelenmemişse/süresi dolmuşsa available=False, uydurulmuş bir
+    skor/özet asla döndürülmez."""
+    from market_data.sentiment.llm_news_sentiment_provider import get_cached
+
+    score, summary = get_cached()
+    if score is None:
+        return {"available": False}
+    return {"available": True, "sentiment_score": score, "summary": summary}
+
+
 @router.get("/order-book")
 async def get_order_book_snapshot(
     symbol: str = "BTCUSDT",
