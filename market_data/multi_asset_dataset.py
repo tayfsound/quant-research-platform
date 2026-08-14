@@ -1,7 +1,18 @@
 """Sprint 7: deterministic multi-asset OHLCV generation, spanning multiple
-asset classes at once. Feeds directly into backtest/cognitive_backtest_runner.py
-and risk/limits/portfolio.py — same {symbol: [OHLCV,...]} shape used
-everywhere else in this codebase, no new parallel data format."""
+asset classes at once — same {symbol: [OHLCV,...]} shape used everywhere
+else in this codebase, no new parallel data format.
+
+Faz 268-sonrası düzeltme: docstring önceden "backtest/cognitive_backtest_
+runner.py ve risk/limits/portfolio.py'ye besleniyor" diyordu — bu artık
+doğru değil, hiçbiri bu modülü import etmiyor. Gerçek, TEK canlı tüketici:
+tests/test_portfolio_fusion.py::test_three_plus_asset_classes_paper_
+traded_with_portfolio_var_enforced (Faz 171 kapısı — 3+ varlık sınıfı aynı
+anda, portföy VaR limiti gerçekten uygulanıyor mu). Canlı karar akışının
+BİR PARÇASI DEĞİL, sadece o testin sentetik çok-varlık-sınıflı veri
+ihtiyacı için var — market_data/asset_class.py'deki AssetClass/
+SYMBOL_ASSET_CLASS de aynı şekilde sadece bu amaçla kullanılıyor (gerçek
+watchlist sembolleriyle hiç çağrılmıyor, o yüzden az kapsamlı hardcoded
+sözlüğü canlıda risk oluşturmuyor)."""
 from market_data.asset_class import AssetClass, asset_class_of
 from market_data.ingestion.mock_adapter import MockOHLCVAdapter
 from market_data.ingestion.ohlcv import OHLCV
