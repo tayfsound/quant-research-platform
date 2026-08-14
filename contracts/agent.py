@@ -143,6 +143,16 @@ class DebateResult(BaseModel):
     final_direction: str
     final_confidence: float
     reasoning: str
+    # Faz 268-sonrası — kritik bulgu (üçüncü taraf mimari incelemesi +
+    # gerçek kod doğrulaması): production'da hiçbir ResponderAgent kayıtlı
+    # değil, yani RiskChallenger'ın ürettiği itirazlar hiçbir zaman
+    # cevaplanmıyor ama önceden de hiçbir etkileri olmuyordu — sadece
+    # explainability zincirine (debate_result) yazılıyorlardı, gerçek oy
+    # ağırlığına (BeliefEngine.apply_weights) hiç dokunmuyorlardı. Bu alan,
+    # domain başına "cevapsız itiraz çarpanı" (0, 1] taşıyor —
+    # CouncilOrchestrator.deliberate() bunu gerçek opinion.performance_
+    # weight'e uyguluyor (benching ile AYNI mekanizma).
+    unanswered_challenge_penalties: dict[str, float] = Field(default_factory=dict)
 
 class BaseAgent(Protocol):
     @abstractmethod

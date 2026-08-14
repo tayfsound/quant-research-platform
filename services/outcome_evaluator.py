@@ -28,8 +28,25 @@ class OutcomeEvaluator:
                 decision_score = 0.5
 
         else:
-            r_multiple = outcome.pnl / 100.0
-            decision_score = max(-1.0, min(1.0, r_multiple))
+            # Faz 268-sonrası — kritik bulgu (üçüncü taraf mimari
+            # incelemesi + gerçek kod doğrulaması): burası pnl'i sabit
+            # $100 riskle böleniyordu — pozisyon büyüklüğü ne olursa olsun
+            # AYNI bölen kullanılıyordu. $1000'lik bir pozisyonda $50
+            # kayıp, r_multiple=+0.5 (POZİTİF!) çıkıyordu, tamamen yanlış.
+            # Doğrusu: r_multiple = pnl / GERÇEK risk miktarı
+            # (|entry-stop|*quantity, DecisionEvent'te zaten mevcut).
+            # Bu üçü yoksa (fail-closed) sabit bir $ büyüklüğü UYDURMAK
+            # yerine (fail-fake) sadece yönü kullanıyoruz — yanlış
+            # kesinlikte bir sayı üretmek, hiç üretmemekten kötü.
+            risk_amount = None
+            if event.entry_price is not None and event.stop_loss_price is not None and event.quantity:
+                risk_amount = abs(event.entry_price - event.stop_loss_price) * event.quantity
+
+            if risk_amount and risk_amount > 0:
+                r_multiple = outcome.pnl / risk_amount
+                decision_score = max(-1.0, min(1.0, r_multiple))
+            else:
+                decision_score = 1.0 if outcome.win else (-1.0 if outcome.pnl < 0 else 0.0)
 
         confidence_error = round(
             decision_score - original_confidence,

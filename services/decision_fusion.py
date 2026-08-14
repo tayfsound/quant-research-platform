@@ -23,6 +23,21 @@ class DecisionFusion:
         # eğrisinden geçirilmiş halini kullanıyor — yeterli veri yoksa
         # (fail-closed) ham değer değişmeden kalıyor.
         confidence = calibrate_confidence(raw_confidence)
+
+        # Faz 268-sonrası — kritik bulgu (üçüncü taraf inceleme + kod
+        # doğrulaması): InnerCritic instantiate ediliyordu ama .review()
+        # hiç çağrılmıyordu — ürettiği risk_flags/objections tamamen ölü
+        # koddu. Artık gerçekten çağrılıyor ve iki sayısal çıktısı
+        # (bkz. inner_critic.py) confidence/final_size'ı GERÇEKTEN
+        # etkiliyor, sadece açıklanabilirlik için loglanmıyor.
+        critique = self.critic.review(ctx)
+        if critique["risk_flags"] or critique["objections"]:
+            ctx.cognition.relevant_knowledge.append({
+                "type": "inner_critic",
+                "data": critique,
+            })
+        confidence *= critique["confidence_multiplier"]
+
         win = ctx.decision.take_profit or 0.0
         loss = abs(ctx.decision.stop_loss or 0.0)
         ev = confidence * win - (1 - confidence) * loss
@@ -65,6 +80,17 @@ class DecisionFusion:
                     },
                 })
                 return ctx
+
+        if critique["size_multiplier"] < 1.0:
+            ctx.decision.final_size *= critique["size_multiplier"]
+            ctx.cognition.relevant_knowledge.append({
+                "type": "decision_fusion",
+                "data": {
+                    "adjustment": "InnerCritic size reduction",
+                    "size_multiplier": critique["size_multiplier"],
+                    "risk_flags": critique["risk_flags"],
+                },
+            })
 
         if loss > 0 and win / loss < 0.5:
             ctx.decision.final_size *= 0.5

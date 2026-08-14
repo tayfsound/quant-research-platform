@@ -162,6 +162,24 @@ class CouncilOrchestrator:
             self._build_debate_context(contexts, opinions),
         )
 
+        # Faz 268-sonrası — kritik bulgu: debate'in ürettiği itirazlar
+        # şimdiye kadar SADECE explainability zincirine (ctx.cognition.
+        # relevant_knowledge -> "debate_result") yazılıyordu, gerçek
+        # opinions listesine (belief_engine.apply_weights'in okuduğu AYNI
+        # liste) hiç yansımıyordu — yani "risk itiraz etti" ile nihai oy
+        # arasında sıfır bağlantı vardı. Artık AYNI benching mekanizmasıyla
+        # (performance_weight çarpımı + recalculate) gerçek oy ağırlığına
+        # işleniyor.
+        for opinion in opinions:
+            penalty = self.last_debate_result.unanswered_challenge_penalties.get(opinion.domain.value)
+            if penalty is not None and penalty < 1.0:
+                opinion.performance_weight = round(opinion.performance_weight * penalty, 4)
+                opinion.caveats.append(
+                    f"Unanswered risk challenge reduced {opinion.domain.value} vote weight by "
+                    f"{round((1 - penalty) * 100, 1)}% (no responder registered to defend it)."
+                )
+                opinion.recalculate()
+
         if self.pinned_weight_snapshot_id is not None:
             # Backtest determinizmi: pinned bir snapshot her zaman TAM
             # olarak istenen ID'yi kullanır, rejime göre farklı bir
@@ -210,9 +228,17 @@ class CouncilOrchestrator:
             regime = getattr(technical_ctx, "volatility_regime", "normal")
             volatility = self._VOLATILITY_REGIME_TO_SCORE.get(regime, 0.4)
 
+        # Faz 268-sonrası — kritik bulgu (RiskChallenger'ın itirazlarını
+        # gerçek oy ağırlığına bağlarken tam test suite'i çalıştırınca
+        # ortaya çıktı): tek bir yönlü ajan varken (kısmi council, ör.
+        # sadece TECHNICAL) crowding_risk = 1/1 = 1.0 oluyordu — "kalabalık/
+        # sürü davranışı" tanım gereği ANLAMSIZ, çünkü tek bir ajan kendi
+        # kendisiyle "kalabalık" oluşturamaz. En az 3 bağımsız yönlü görüş
+        # olmadan bu kontrol hiç değerlendirilmiyor.
+        _MIN_DIRECTIONAL_FOR_CROWDING = 3
         crowding_risk = 0.0
         directional = [o for o in opinions if o.direction != "WAIT"]
-        if directional:
+        if len(directional) >= _MIN_DIRECTIONAL_FOR_CROWDING:
             counts: dict[str, int] = {}
             for o in directional:
                 counts[o.direction] = counts.get(o.direction, 0) + 1

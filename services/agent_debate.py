@@ -71,6 +71,39 @@ class AgentDebate:
         # Cognitive Audit (Alter Ego)
         audit = self._run_cognitive_audit(opinions, rounds)
 
+        # Faz 268-sonrası — kritik bulgu: production'da hiçbir responder
+        # kayıtlı değil, yani yukarıdaki "Responder'lar cevap verir" bloğu
+        # hiç çalışmıyor — itirazlar hep cevapsız kalıyor ama önceden bunun
+        # HİÇBİR etkisi yoktu (bkz. DebateResult.unanswered_challenge_
+        # penalties docstring'i). Cevapsız kalan her BENZERSİZ itiraz
+        # (aynı hedef+gerekçe ikinci turda tekrar etse bile TEK sayılır —
+        # aksi halde max_rounds sabit bir uygulama detayı yapay olarak
+        # cezayı katlardı), itirazın kendi confidence*evidence_strength'i
+        # ile orantılı ama tek başına asla %30'dan fazla olmayan bir
+        # ağırlık indirimine dönüşür; birden fazla farklı itiraz çarpımsal
+        # birleşir (asla tam sıfıra inmez — tek bir sinyal oyu tamamen
+        # susturmamalı).
+        unanswered_penalties: dict[str, float] = {}
+        seen_reasons: dict[str, set[str]] = {}
+        for debate_round in rounds:
+            answered_keys = {
+                (resp.original_challenge.target_domain.value, resp.original_challenge.reason)
+                for resp in debate_round.responses
+            }
+            for challenge in debate_round.challenges:
+                key = (challenge.target_domain.value, challenge.reason)
+                if key in answered_keys:
+                    continue
+                domain = challenge.target_domain.value
+                domain_seen = seen_reasons.setdefault(domain, set())
+                if challenge.reason in domain_seen:
+                    continue
+                domain_seen.add(challenge.reason)
+                per_challenge_penalty = min(0.3, challenge.confidence * challenge.evidence_strength)
+                unanswered_penalties[domain] = unanswered_penalties.get(domain, 1.0) * (1 - per_challenge_penalty)
+                if domain in adjusted_confidence:
+                    adjusted_confidence[domain] = max(0.1, adjusted_confidence[domain] * (1 - per_challenge_penalty))
+
         # Sentez
         final = self._synthesize(opinions, adjusted_confidence)
 
@@ -81,6 +114,7 @@ class AgentDebate:
             final_direction=final.direction,
             final_confidence=final.confidence,
             reasoning=self._generate_reasoning(opinions, rounds, audit, final),
+            unanswered_challenge_penalties=unanswered_penalties,
         )
 
     def _run_cognitive_audit(

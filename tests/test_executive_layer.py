@@ -30,7 +30,7 @@ def test_critic_produces_output():
     )
     result = critic.review(ctx)
     # En az bir anahtar dolu olmalı
-    assert len(result.get("challenges", [])) + len(result.get("risk_flags", [])) + len(result.get("improvements", [])) >= 1
+    assert len(result.get("objections", [])) + len(result.get("risk_flags", [])) + len(result.get("improvements", [])) >= 1
 
 def test_fusion_returns_action_type():
     fusion = DecisionFusion()

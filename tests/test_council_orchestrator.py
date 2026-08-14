@@ -199,6 +199,60 @@ def test_council_stage_derives_regime_from_market_features_and_forwards_it(monke
     assert captured["regime"] == "bullish_high"
 
 
+def test_unanswered_risk_challenge_reduces_real_vote_weight_end_to_end():
+    """Faz 268-sonrası — kritik bulgu (üçüncü taraf mimari incelemesi +
+    gerçek kod doğrulaması): RiskChallenger üretimde gerçekten itiraz
+    üretiyordu (yüksek confidence + yüksek volatilite) ama hiçbir
+    responder kayıtlı olmadığı için bu itirazın nihai oy ağırlığına SIFIR
+    etkisi vardı — sadece explainability zincirine yazılıyordu. Bu test,
+    uçtan uca gerçek CouncilOrchestrator.deliberate() ile, itirazın artık
+    gerçekten opinion.performance_weight'i düşürdüğünü doğruluyor."""
+    registry = AgentRegistry.create_default()
+    orchestrator = CouncilOrchestrator(registry)
+    # score = trend(1.0) + momentum(1.0) + market_structure(1.5) +
+    # ema_alignment(0.5) + rsi_extreme(1.0) = 5.0 -> confidence=min(1.0,0.85)=0.85 (>0.75).
+    # adx>25 ile di_plus>di_minus (aksi halde varsayılan adx=0.0<20, "zayıf
+    # trend" indirimi TÜM katkıları 0.7 ile çarpıp confidence'ı 0.75 eşiğinin
+    # ALTINA düşürürdü — bu testin ilk halinde fark edilmeyen bir kurulum hatasıydı).
+    # volatility_regime="high" -> _VOLATILITY_REGIME_TO_SCORE["high"]=0.8 (>0.7).
+    # RiskChallenger'ın "Aşırı güven + yüksek volatilite" kontrolü tetiklenmeli.
+    ctx = TechnicalContext(
+        trend="bullish", momentum="strengthening", market_structure="higher_highs",
+        ema_alignment="bullish_aligned", rsi_value=20.0, volatility_regime="high",
+        adx=30.0, di_plus=30.0, di_minus=10.0,
+    )
+
+    _, opinions = orchestrator.deliberate({AgentDomain.TECHNICAL: ctx})
+    technical = next(o for o in opinions if o.domain == AgentDomain.TECHNICAL)
+
+    assert orchestrator.last_debate_result.unanswered_challenge_penalties.get("technical") is not None
+    assert technical.performance_weight < 1.0
+    assert any("Unanswered risk challenge" in c for c in technical.caveats)
+
+
+def test_single_agent_directional_agreement_is_not_flagged_as_crowding():
+    """Faz 268-sonrası — kritik bulgu (tam test suite'i, RiskChallenger
+    itiraz-etkisi düzeltmesi wire edilince ortaya çıktı): tek bir yönlü
+    ajan varken (kısmi council) crowding_risk = 1/1 = 1.0 hesaplanıyordu —
+    "sürü davranışı" tanım gereği tek bir ajanla anlamsız. En az 3
+    bağımsız yönlü görüş olmadan bu kontrol hiç tetiklenmemeli, yani tek
+    başına yüksek volatilite olmadan bench edilmemiş bir ajanın oy
+    ağırlığı 1.0 kalmalı."""
+    registry = AgentRegistry.create_default()
+    orchestrator = CouncilOrchestrator(registry)
+    ctx = TechnicalContext(
+        trend="bullish", momentum="strengthening", market_structure="higher_highs",
+        ema_alignment="bullish_aligned", volume_confirmation=True,
+        volatility_regime="normal",
+    )
+
+    _, opinions = orchestrator.deliberate({AgentDomain.TECHNICAL: ctx})
+    technical = next(o for o in opinions if o.domain == AgentDomain.TECHNICAL)
+
+    assert technical.performance_weight == 1.0
+    assert orchestrator.last_debate_result.unanswered_challenge_penalties == {}
+
+
 def test_technical_confidence_model_adjusts_opinion_confidence_when_saved():
     """Faz 264: ajan içi güven kalibrasyonu — kaydedilmiş bir model varsa
     technical ajanının confidence'ı gerçek geçmiş doğruluğa göre
