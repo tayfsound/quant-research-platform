@@ -60,6 +60,37 @@ def test_refresh_llm_news_sentiment_task_is_in_beat_schedule():
     assert entry["task"] == "refresh_llm_news_sentiment_task"
 
 
+def test_llm_system_audit_task_runs_in_eager_mode_and_persists(tmp_path):
+    """Faz 271 — kullanıcı isteği: LLM'i periyodik olarak devreye sokan
+    görev. Gerçek NVIDIA çağrısı mock'lanıyor, sadece görevin celery_app'e
+    doğru kayıtlı olduğu ve services/llm_system_audit.py::run_system_audit
+    döngüsünü gerçekten çalıştırdığı doğrulanıyor."""
+    from unittest.mock import AsyncMock
+
+    from services.celery_app import celery_app
+    from services.tasks import llm_system_audit_task
+
+    celery_app.conf.task_always_eager = True
+    celery_app.conf.task_eager_propagates = True
+    try:
+        mock_result = {"response": "Sorun yok.", "tool_calls": []}
+        with patch("services.llm_system_audit.NvidiaDecisionCritic.ask_with_tools", new=AsyncMock(return_value=mock_result)):
+            async_result = llm_system_audit_task.delay()
+            assert async_result.successful()
+            body = async_result.result
+            assert body["response"] == "Sorun yok."
+            assert body["proposals_created"] == 0
+    finally:
+        celery_app.conf.task_always_eager = False
+
+
+def test_llm_system_audit_task_is_in_beat_schedule():
+    from services.celery_app import celery_app
+
+    entry = celery_app.conf.beat_schedule["llm-system-audit-every-6h"]
+    assert entry["task"] == "llm_system_audit_task"
+
+
 def test_refresh_barrier_table_task_runs_in_eager_mode_and_returns_skip_when_insufficient(tmp_path):
     """Faz 268-sonrası: Adaptive Barrier tablosu — gerçek DB'ye karşı
     çalışıyor, testin çalıştığı ortamda genelde yeterli örneklem

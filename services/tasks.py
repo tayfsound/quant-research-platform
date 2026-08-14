@@ -177,6 +177,21 @@ def refresh_llm_news_sentiment_task() -> dict:
     return {"sentiment_score": score, "summary": summary}
 
 
+@celery_app.task(name="llm_system_audit_task")
+def llm_system_audit_task() -> dict:
+    """Faz 271 — kullanıcı isteği: "LLM'i her pozisyonda devreye sokmak
+    lazım... onay panelimi anlamlı kılmak için." Gerçek zamanlı bir
+    işlem kapısı DEĞİL (kullanıcının kendi tercihi: mekanik sistem daha
+    iyi kalibre edilirse daha iyi sonuç verir, LLM denetleyici rolünde
+    kalsın) — periyodik olarak son dönem karar geçmişini toplu gözden
+    geçirip, bulduğu somut sorunları code_change_proposals kuyruğuna
+    (insan onaylı) düşürür. Gerçek bir LLM çağrısı yaptığı için (~1-2dk)
+    SADECE bu periyodik görevden çağrılmalı, canlı karar döngüsünden değil."""
+    from services.llm_system_audit import run_system_audit
+
+    return run_system_audit()
+
+
 @celery_app.task(name="retrain_agent_confidence_models_task")
 def retrain_agent_confidence_models_task() -> dict:
     """Faz 264: kullanıcı isteği — ajan içi özellik ağırlıkları (RSI/trend/

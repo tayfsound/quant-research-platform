@@ -30,6 +30,14 @@ type Proposal = {
   status: string;
 };
 
+type AuditRun = {
+  id: string;
+  created_at: string;
+  response: string;
+  tool_calls: ToolCall[];
+  proposals_created: number;
+};
+
 function ToolCallTrace({ calls }: { calls: ToolCall[] }) {
   if (calls.length === 0) return null;
   return (
@@ -48,6 +56,60 @@ function ToolCallTrace({ calls }: { calls: ToolCall[] }) {
         ))}
       </div>
     </details>
+  );
+}
+
+// Faz 271 — kullanıcı isteği: "LLM'i her pozisyonda devreye sokmak
+// lazım... onay panelimi anlamlı kılmak için." Gerçek zamanlı bir işlem
+// kapısı değil (kullanıcının kendi tercihi: mekanik sistem daha iyi
+// kalibre edilirse daha iyi sonuç verir, LLM denetleyici rolünde
+// kalsın) — LLM her 6 saatte bir (services/celery_app.py) son dönem
+// karar geçmişini toplu gözden geçiriyor. Burada o denetimlerin
+// GEÇMİŞİ gösteriliyor — "hiçbir şey bulamadım" dahil, aksi halde
+// çalıştığına dair hiçbir iz görünmezdi.
+function AuditHistory() {
+  const [runs, setRuns] = useState<AuditRun[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = () => {
+    fetch("/api/v1/llm-critic/audit-runs", { headers: authHeaders() })
+      .then((r) => r.json())
+      .then((data) => setRuns(data.runs || []))
+      .catch((e) => setError(String(e.message || e)));
+  };
+
+  useEffect(() => {
+    load();
+    const interval = setInterval(load, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="mt-8">
+      <h3 className="text-sm font-semibold text-ink mb-2">LLM Denetim Geçmişi</h3>
+      <p className="text-xs text-ink-faint mb-3">
+        LLM her 6 saatte bir son dönem karar geçmişini kendiliğinden gözden geçirir — burada ne bulduğu (veya bulmadığı) şeffaf şekilde görünür.
+      </p>
+      {error && <ErrorNote>{error}</ErrorNote>}
+      {runs.length === 0 ? (
+        <EmptyState label="Henüz bir denetim çalışmadı." />
+      ) : (
+        <div className="space-y-3">
+          {runs.map((run) => (
+            <Card key={run.id}>
+              <div className="flex items-start justify-between gap-4 mb-2">
+                <p className="text-xs text-ink-faint">{new Date(run.created_at).toLocaleString()}</p>
+                {run.proposals_created > 0 && (
+                  <Badge tone="accent">{run.proposals_created} öneri oluşturdu</Badge>
+                )}
+              </div>
+              <p className="text-sm text-ink-soft whitespace-pre-wrap">{run.response}</p>
+              <ToolCallTrace calls={run.tool_calls} />
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -217,6 +279,7 @@ export default function LLMCritic() {
         </div>
       </Card>
 
+      <AuditHistory />
       <ProposalQueue />
     </div>
   );

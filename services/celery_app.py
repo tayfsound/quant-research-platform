@@ -141,4 +141,15 @@ celery_app.conf.beat_schedule = {
         "task": "refresh_llm_news_sentiment_task",
         "schedule": 1500.0,
     },
+    # Faz 271 — kullanıcı isteği: "LLM'i her pozisyonda devreye sokmak
+    # lazım... onay panelimi anlamlı kılmak için." Gerçek zamanlı bir
+    # işlem kapısı değil (kullanıcının kendi tercihi: mekanik sistem
+    # denetleyici LLM'den daha güvenilir bir karar verici) — periyodik
+    # toplu denetim. 6 saatte bir: her gün 4 kez, gerçek bir LLM
+    # çağrısı (~1-2dk, tool-calling ile 6 araca kadar) olduğu için
+    # refresh-llm-news-sentiment'ten (ucuz) çok daha seyrek.
+    "llm-system-audit-every-6h": {
+        "task": "llm_system_audit_task",
+        "schedule": 21600.0,
+    },
 }

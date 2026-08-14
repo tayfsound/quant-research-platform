@@ -45,6 +45,35 @@ def test_ask_uses_tool_calling_and_returns_tool_call_trace():
         assert body["tool_calls"][0]["tool"] == "get_recent_performance_summary"
 
 
+def test_list_audit_runs_requires_auth():
+    client = _client()
+    response = client.get("/api/v1/llm-critic/audit-runs")
+    assert response.status_code in (401, 403)
+
+
+def test_list_audit_runs_returns_real_saved_row():
+    """Faz 271 — kullanıcı isteği: LLM'in periyodik denetiminin (services/
+    llm_system_audit.py) geçmişi panelde görünmeli, "hiçbir şey bulamadım"
+    dahil."""
+    from contracts.llm_audit_run import LLMAuditRun
+    from database.repositories.llm_audit_run_repository import LLMAuditRunRepository
+    from database.session_factory import SessionFactory
+
+    run = LLMAuditRun(
+        response="Test denetim yanıtı.",
+        tool_calls=[{"tool": "get_recent_performance_summary", "arguments": {}, "result": {}}],
+        proposals_created=0,
+    )
+    with SessionFactory.get_session() as session:
+        LLMAuditRunRepository(session).save(run)
+
+    client = _client()
+    response = client.get("/api/v1/llm-critic/audit-runs", headers=make_authed_headers(Role.VIEWER))
+    assert response.status_code == 200
+    ids = [r["id"] for r in response.json()["runs"]]
+    assert str(run.id) in ids
+
+
 def test_list_proposals_requires_auth():
     client = _client()
     response = client.get("/api/v1/llm-critic/proposals")

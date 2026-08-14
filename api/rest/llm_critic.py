@@ -32,6 +32,20 @@ async def ask(body: AskRequest, user: AuthContext = Depends(get_current_user)):
     return {"response": result["response"], "tool_calls": result["tool_calls"], "model": critic.model}
 
 
+@router.get("/audit-runs")
+async def list_audit_runs(limit: int = 20, user: AuthContext = Depends(get_current_user)):
+    """Faz 271 — kullanıcı isteği: LLM'in periyodik sistem denetiminin
+    (services/llm_system_audit.py, her 6 saatte bir) GEÇMİŞİNİ göster —
+    "hiçbir şey bulamadım" dahil, çünkü aksi halde denetimin gerçekten
+    çalıştığına dair hiçbir iz kullanıcıya görünmezdi."""
+    from database.repositories.llm_audit_run_repository import LLMAuditRunRepository
+    from database.session_factory import SessionFactory
+
+    with SessionFactory.get_session() as session:
+        runs = LLMAuditRunRepository(session).get_recent(limit=limit)
+    return {"runs": runs}
+
+
 @router.get("/proposals")
 async def list_proposals(status: str | None = None, limit: int = 50, user: AuthContext = Depends(get_current_user)):
     from database.repositories.code_change_proposal_repository import CodeChangeProposalRepository
