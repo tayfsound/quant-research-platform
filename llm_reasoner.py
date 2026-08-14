@@ -137,6 +137,125 @@ class NvidiaDecisionCritic:
         content = (choices[0].get("message", {}).get("content") or "") if choices else ""
         return content.strip() or "(boş yanıt)"
 
+    _TOOLS_SYSTEM_PROMPT = (
+        "Bütün yanıtını SADECE TÜRKÇE yaz. Sen bir kantitatif trading "
+        "araştırma platformunda çalışan, deneyimli bir kantitatif "
+        "analist/risk uzmanısın. Sana bu sistemin GERÇEK koduna ve "
+        "veritabanına erişen araçlar verildi. KURALLAR:\n"
+        "- Bir soruyu cevaplamak için gerçek veri/kod gerekiyorsa "
+        "(kazanma oranı, bir dosyanın içeriği, bir fonksiyonun nerede "
+        "olduğu vb.) MUTLAKA ilgili aracı çağır — kendi eğitim "
+        "verinden veya genel bilgiden bir sayı/kod parçası UYDURMA. "
+        "Bu kritik: geçmişte bunu yapmadığın için yanlış/uydurma "
+        "istatistikler ürettiğin tespit edildi.\n"
+        "- Araç sonucu boşsa/hata döndürüyorsa dürüstçe 'bu veriyi "
+        "bulamadım' de, asla telafi etmek için bir sayı icat etme.\n"
+        "- Gerçek bir sorun bulup somut bir düzeltme önerebiliyorsan "
+        "propose_code_change aracını kullan. Bunun DIŞINDA hiçbir "
+        "zaman koda dokunamazsın — sadece kullanıcının onayını "
+        "bekleyen bir öneri kuyruğuna eklersin."
+    )
+    _MAX_TOOL_ITERATIONS = 5
+
+    async def ask_with_tools(self, message: str, timeout_ms: int = 120000, max_iterations: int = _MAX_TOOL_ITERATIONS) -> dict:
+        """Faz 270 — kullanıcı isteği: Respond sekmesindeki LLM'in artık
+        GERÇEKTEN kodu/DB'yi görebilmesi (bkz. llm_tools.py). ask()'ın
+        aksine gerçek OpenAI-uyumlu function-calling döngüsü çalıştırır —
+        model bir araç çağırmak isterse gerçek Python fonksiyonu
+        çalıştırılır, sonucu modele geri verilir, model nihai bir metin
+        cevabı üretene kadar (ya da max_iterations'a ulaşılana kadar)
+        tekrarlanır. Döner: {"response": str, "tool_calls": [...]} —
+        tool_calls, dashboard'da "LLM şunu kontrol etti" şeffaflığı için."""
+        api_key = self._resolve_api_key()
+        if not api_key:
+            return {"response": "NVIDIA_API_KEY ayarlanmamış — .env dosyasına eklenmeli.", "tool_calls": []}
+
+        llm_timeout = timeout_ms / 1000
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(self._ask_with_tools_sync, message, timeout_ms, api_key, max_iterations),
+                timeout=llm_timeout * max_iterations + THREAD_GRACE_SECONDS,
+            )
+        except TimeoutError:
+            logger.warning("LLM ask_with_tools timed out", extra={"timeout_ms": timeout_ms, "model": self.model})
+            return {"response": f"Zaman aşımı ({timeout_ms}ms) — model yanıt veremedi.", "tool_calls": []}
+        except Exception as e:
+            logger.exception("LLM ask_with_tools failed", extra={"error": str(e)})
+            return {"response": f"Hata: {e}", "tool_calls": []}
+
+    def _ask_with_tools_sync(self, message: str, timeout_ms: int, api_key: str, max_iterations: int) -> dict:
+        import httpx
+
+        import llm_tools
+        from llm_tools import TOOL_FUNCTIONS, TOOL_SCHEMAS
+
+        messages: list[dict] = [
+            {"role": "system", "content": self._TOOLS_SYSTEM_PROMPT},
+            {"role": "user", "content": message},
+        ]
+        tool_call_log: list[dict] = []
+
+        for _ in range(max_iterations):
+            response = httpx.post(
+                NVIDIA_API_URL,
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "model": self.model,
+                    "messages": messages,
+                    "tools": TOOL_SCHEMAS,
+                    "tool_choice": "auto",
+                    "temperature": 0.2,
+                    "max_tokens": 1500,
+                },
+                timeout=timeout_ms / 1000,
+            )
+            response.raise_for_status()
+            data = response.json()
+            choices = data.get("choices") or []
+            assistant_message = choices[0].get("message", {}) if choices else {}
+            tool_calls = assistant_message.get("tool_calls") or []
+
+            if not tool_calls:
+                content = (assistant_message.get("content") or "").strip()
+                return {"response": content or "(boş yanıt)", "tool_calls": tool_call_log}
+
+            messages.append(assistant_message)
+            for call in tool_calls:
+                function_name = call.get("function", {}).get("name", "")
+                raw_arguments = call.get("function", {}).get("arguments") or "{}"
+                try:
+                    arguments = json.loads(raw_arguments)
+                except json.JSONDecodeError:
+                    arguments = {}
+
+                # function_name TOOL_FUNCTIONS'da (izin verilen araç
+                # listesi) var mı diye doğrulanıyor, ama gerçek çağrılan
+                # callable modül üzerinden TAZE okunuyor (getattr) — testte
+                # llm_tools.<fonksiyon>'u monkeypatch'lemek gerçekten
+                # etkili olsun diye (TOOL_FUNCTIONS sabit bir dict olsaydı
+                # eski referansı tutardı).
+                if function_name not in TOOL_FUNCTIONS:
+                    result = {"error": f"unknown_tool: {function_name}"}
+                else:
+                    tool_fn = getattr(llm_tools, function_name)
+                    try:
+                        result = tool_fn(**arguments)
+                    except Exception as exc:
+                        logger.warning("LLM tool call failed", extra={"tool": function_name, "error": str(exc)})
+                        result = {"error": str(exc)}
+
+                tool_call_log.append({"tool": function_name, "arguments": arguments, "result": result})
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": call.get("id", ""),
+                    "content": json.dumps(result, default=str)[:4000],
+                })
+
+        return {
+            "response": "Araç çağrı döngüsü sınırına ulaşıldı, net bir cevap üretemedim.",
+            "tool_calls": tool_call_log,
+        }
+
     async def explain(self, ensemble_output: dict, prompt: str | None = None, timeout_ms: int = 120000) -> LLMExplanation:
         # NVIDIA_API_KEY boşsa (kayıt yapılmadıysa) fail-closed — sessizce
         # nötr döner, aynı FRED_API_KEY/HELIUS_API_KEY konvansiyonu.

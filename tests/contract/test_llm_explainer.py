@@ -68,6 +68,98 @@ async def test_ask_returns_error_message_on_timeout():
 
 
 @pytest.mark.asyncio
+async def test_ask_with_tools_returns_message_when_no_api_key():
+    critic = NvidiaDecisionCritic(api_key="")
+    result = await critic.ask_with_tools("merhaba")
+    assert "NVIDIA_API_KEY" in result["response"]
+    assert result["tool_calls"] == []
+
+
+@pytest.mark.asyncio
+async def test_ask_with_tools_returns_content_directly_when_no_tool_call_requested():
+    critic = NvidiaDecisionCritic(api_key="fake-key")
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"choices": [{"message": {"content": "Genel bir cevap."}}]}
+    with patch("httpx.post", return_value=mock_response):
+        result = await critic.ask_with_tools("merhaba")
+    assert result["response"] == "Genel bir cevap."
+    assert result["tool_calls"] == []
+
+
+@pytest.mark.asyncio
+async def test_ask_with_tools_executes_real_tool_function_and_feeds_result_back():
+    """Model önce bir araç çağrısı istiyor (get_recent_performance_summary),
+    gerçek Python fonksiyonu çalıştırılıp sonucu modele geri veriliyor,
+    model ikinci turda nihai bir metin döndürüyor."""
+    critic = NvidiaDecisionCritic(api_key="fake-key")
+
+    tool_call_response = MagicMock()
+    tool_call_response.json.return_value = {
+        "choices": [{"message": {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{
+                "id": "call_1",
+                "function": {"name": "get_recent_performance_summary", "arguments": "{\"hours\": 24}"},
+            }],
+        }}]
+    }
+    final_response = MagicMock()
+    final_response.json.return_value = {
+        "choices": [{"message": {"content": "Gerçek verilere göre analiz tamamlandı."}}]
+    }
+
+    fake_summary = {"window_hours": 24, "ai_automatic_win_rate": 0.19}
+    with patch("httpx.post", side_effect=[tool_call_response, final_response]), \
+            patch("llm_tools.get_recent_performance_summary", return_value=fake_summary) as mock_tool:
+        result = await critic.ask_with_tools("Kazanma oranı nedir?")
+
+    mock_tool.assert_called_once_with(hours=24)
+    assert result["response"] == "Gerçek verilere göre analiz tamamlandı."
+    assert len(result["tool_calls"]) == 1
+    assert result["tool_calls"][0]["tool"] == "get_recent_performance_summary"
+    assert result["tool_calls"][0]["result"] == fake_summary
+
+
+@pytest.mark.asyncio
+async def test_ask_with_tools_stops_after_max_iterations_without_crashing():
+    critic = NvidiaDecisionCritic(api_key="fake-key")
+    looping_response = MagicMock()
+    looping_response.json.return_value = {
+        "choices": [{"message": {
+            "role": "assistant", "content": None,
+            "tool_calls": [{"id": "call_x", "function": {"name": "search_code", "arguments": "{\"query\": \"x\"}"}}],
+        }}]
+    }
+    with patch("httpx.post", return_value=looping_response), \
+            patch("llm_tools.search_code", return_value={"query": "x", "matches": [], "truncated": False}):
+        result = await critic.ask_with_tools("sonsuz döngü testi", max_iterations=2)
+
+    assert "sınırına ulaşıldı" in result["response"]
+    assert len(result["tool_calls"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_ask_with_tools_handles_unknown_tool_gracefully():
+    critic = NvidiaDecisionCritic(api_key="fake-key")
+    unknown_tool_response = MagicMock()
+    unknown_tool_response.json.return_value = {
+        "choices": [{"message": {
+            "role": "assistant", "content": None,
+            "tool_calls": [{"id": "call_y", "function": {"name": "delete_everything", "arguments": "{}"}}],
+        }}]
+    }
+    final_response = MagicMock()
+    final_response.json.return_value = {"choices": [{"message": {"content": "O aracı kullanamam."}}]}
+
+    with patch("httpx.post", side_effect=[unknown_tool_response, final_response]):
+        result = await critic.ask_with_tools("var olmayan bir araç dene")
+
+    assert result["tool_calls"][0]["result"]["error"].startswith("unknown_tool")
+    assert result["response"] == "O aracı kullanamam."
+
+
+@pytest.mark.asyncio
 async def test_valid_response_parsed():
     """Gecerli JSON response (OpenAI-uyumlu choices[].message.content) parse edilmeli."""
     critic = NvidiaDecisionCritic(api_key="fake-key")
