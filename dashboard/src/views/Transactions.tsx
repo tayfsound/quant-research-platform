@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { authHeaders } from "../api/auth";
-import { Card, PageHeader, Badge, EmptyState, StatCard, Button } from "../components/ui";
+import { Card, PageHeader, Badge, EmptyState, StatCard, Button, ErrorNote, Spinner } from "../components/ui";
 import { useCurrency } from "../lib/currency";
 
 type Position = {
@@ -97,6 +97,162 @@ function fmt(n: number | null | undefined, digits = 2) {
   return n === null || n === undefined ? "—" : n.toFixed(digits);
 }
 
+// Faz 268-sonrası — kullanıcı isteği: "hangi ajandan ne karar geldiğini
+// gösteren açıklayan bir fonksiyon." decisions.agent_contributions'ta
+// zaten kayıtlı olan veriyi GET /positions/{id}/explain ayrıştırıp
+// döndürüyor — burada Tokens.tsx'in kaldıraç modalıyla AYNI overlay
+// deseni (fixed inset-0 + Card) kullanılıyor, tasarım tutarlılığı için.
+type ExplainVote = {
+  domain: string;
+  direction: string;
+  confidence: number;
+  effective_influence: number | null;
+  performance_weight: number | null;
+  evidence: string[];
+  caveats: string[];
+};
+
+type ExplainData = {
+  id: string;
+  symbol: string;
+  final_direction: string;
+  final_confidence: number | null;
+  agent_votes: ExplainVote[];
+  council_belief: Record<string, unknown> | null;
+  debate_result: Record<string, unknown> | null;
+  inner_critic: { risk_flags?: string[]; objections?: string[] } | null;
+  decision_fusion: Record<string, unknown>[];
+  weight_snapshot_id: string | null;
+};
+
+function ExplainModal({ decisionId, onClose }: { decisionId: string; onClose: () => void }) {
+  const [data, setData] = useState<ExplainData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    fetch(`/api/v1/positions/${decisionId}/explain`, { headers: authHeaders() })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then(setData)
+      .catch((e) => setError(String(e.message || e)))
+      .finally(() => setLoading(false));
+  }, [decisionId]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-2xl max-h-[85vh] overflow-y-auto">
+        <Card>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-ink">
+              {data ? `${data.symbol} — karar açıklaması` : "Karar açıklaması"}
+            </h3>
+            <button onClick={onClose} className="text-ink-faint hover:text-ink text-lg leading-none px-1">×</button>
+          </div>
+
+          {loading && (
+            <div className="flex items-center gap-2 text-sm text-ink-soft py-4">
+              <Spinner /> Yükleniyor…
+            </div>
+          )}
+          {error && <ErrorNote>{error}</ErrorNote>}
+
+          {data && !loading && (
+            <div className="space-y-4">
+              <div>
+                <p className="text-xs text-ink-faint mb-1">Nihai karar</p>
+                <div className="flex items-center gap-2">
+                  <Badge tone={data.final_direction === "LONG" ? "rise" : data.final_direction === "SHORT" ? "fall" : "neutral"}>
+                    {data.final_direction}
+                  </Badge>
+                  {data.final_confidence != null && (
+                    <span className="text-xs text-ink-soft">güven: {(data.final_confidence * 100).toFixed(1)}%</span>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs text-ink-faint mb-2">Ajan oyları ({data.agent_votes.length})</p>
+                {data.agent_votes.length === 0 ? (
+                  <p className="text-xs text-ink-faint">Kayıtlı ajan oyu yok.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-left text-ink-faint uppercase tracking-wide">
+                          <th className="py-1 pr-3">Ajan</th>
+                          <th className="py-1 pr-3">Yön</th>
+                          <th className="py-1 pr-3">Güven</th>
+                          <th className="py-1 pr-3">Etki</th>
+                          <th className="py-1 pr-3">Kanıt / Not</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.agent_votes.map((v, i) => (
+                          <tr key={i} className="border-t border-line-soft align-top">
+                            <td className="py-1.5 pr-3 font-medium text-ink whitespace-nowrap">{v.domain}</td>
+                            <td className="py-1.5 pr-3">
+                              <Badge tone={v.direction === "LONG" ? "rise" : v.direction === "SHORT" ? "fall" : "neutral"}>
+                                {v.direction}
+                              </Badge>
+                            </td>
+                            <td className="py-1.5 pr-3 font-mono text-ink-soft">{(v.confidence * 100).toFixed(0)}%</td>
+                            <td className="py-1.5 pr-3 font-mono text-ink-soft">
+                              {v.effective_influence != null ? v.effective_influence.toFixed(3) : "—"}
+                            </td>
+                            <td className="py-1.5 pr-3 text-ink-soft">
+                              {v.evidence?.map((e, j) => <div key={`e${j}`}>{e}</div>)}
+                              {v.caveats?.map((c, j) => <div key={`c${j}`} className="text-ink-faint">⚠ {c}</div>)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {data.inner_critic && ((data.inner_critic.risk_flags?.length ?? 0) > 0 || (data.inner_critic.objections?.length ?? 0) > 0) && (
+                <div>
+                  <p className="text-xs text-ink-faint mb-1">İç eleştiri (InnerCritic)</p>
+                  <div className="flex flex-wrap gap-1 mb-1">
+                    {data.inner_critic.risk_flags?.map((f, i) => <Badge key={i} tone="warn">{f}</Badge>)}
+                  </div>
+                  {data.inner_critic.objections?.map((o, i) => (
+                    <p key={i} className="text-xs text-ink-soft">{o}</p>
+                  ))}
+                </div>
+              )}
+
+              {data.decision_fusion.length > 0 && (
+                <div>
+                  <p className="text-xs text-ink-faint mb-1">Karar sentezi notları</p>
+                  {data.decision_fusion.map((entry, i) => (
+                    <p key={i} className="text-xs text-ink-soft font-mono break-all">{JSON.stringify(entry)}</p>
+                  ))}
+                </div>
+              )}
+
+              {data.debate_result && (
+                <div>
+                  <p className="text-xs text-ink-faint mb-1">Tartışma sonucu</p>
+                  <p className="text-xs text-ink-soft">
+                    {String((data.debate_result as { reasoning?: string }).reasoning ?? JSON.stringify(data.debate_result))}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 // Gerçek bulgu (Faz 260): risk/ATR formülü her değiştiğinde, dashboard'da
 // görünen "son N işlem" bir süre eski formülle açılmış pozisyonlardan
 // oluşmaya devam ediyor — kullanıcı her seferinde bunu YENİ formülün
@@ -142,6 +298,7 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
   const [closeError, setCloseError] = useState<string | null>(null);
   const [closingProfitable, setClosingProfitable] = useState(false);
   const [closeProfitableResult, setCloseProfitableResult] = useState<string | null>(null);
+  const [explainId, setExplainId] = useState<string | null>(null);
   const { format, currency } = useCurrency();
 
   // Faz 268y — kullanıcı bulgusu: "ilk 98 işleme baktım... diğerlerini
@@ -468,6 +625,7 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
                 <th className="py-2 pr-4">PnL</th>
                 <th className="py-2 pr-4">Nasıl Kapandı</th>
                 <th className="py-2 pr-4">Kapandı</th>
+                <th className="py-2 pr-4"></th>
               </tr>
             </thead>
             <tbody>
@@ -525,6 +683,14 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
                     })()}
                   </td>
                   <td className="py-2 pr-4 text-ink-faint">{t.closed_at ? new Date(t.closed_at).toLocaleString() : "—"}</td>
+                  <td className="py-2 pr-4">
+                    <button
+                      onClick={() => setExplainId(t.id)}
+                      className="text-xs text-accent hover:underline"
+                    >
+                      Açıkla
+                    </button>
+                  </td>
                 </tr>
                 );
               })}
@@ -532,6 +698,8 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
           </table>
         </div>
       )}
+
+      {explainId && <ExplainModal decisionId={explainId} onClose={() => setExplainId(null)} />}
     </div>
   );
 }

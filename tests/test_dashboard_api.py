@@ -14,3 +14,27 @@ def test_dashboard_health():
     r = client.get("/api/v1/dashboard/health", headers=make_authed_headers(Role.VIEWER))
     assert r.status_code == 200
     assert r.json()["status"] == "ok"
+
+
+def test_concept_drift_status_requires_auth():
+    r = client.get("/api/v1/dashboard/concept-drift-status")
+    assert r.status_code in (401, 403)
+
+
+def test_concept_drift_status_returns_real_shape():
+    """Faz 268-sonrası — kullanıcı isteği: "Concept Drift aktif olduğunda
+    panelden göreyim." Paylaşılan test DB'sinin gerçek durumuna bağlı
+    (available true/false ikisi de olabilir) — burada sadece sözleşmenin
+    şekli doğrulanıyor, RiskEngine'in kendi mantığı zaten test_risk_state.
+    py'de ayrıca doğrulanmış."""
+    r = client.get("/api/v1/dashboard/concept-drift-status", headers=make_authed_headers(Role.VIEWER))
+    assert r.status_code == 200
+    body = r.json()
+    assert "available" in body
+    if body["available"]:
+        assert "active" in body
+        assert "baseline_win_rate" in body
+        assert "recent_win_rate" in body
+        assert "p_value" in body
+    else:
+        assert "sample_size" in body

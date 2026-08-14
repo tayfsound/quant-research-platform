@@ -12,32 +12,54 @@ from database.repositories.decision_persistor import DecisionPersistor
 from database.session_factory import SessionFactory
 
 
+_CONCEPT_DRIFT_WIN_RATE_DROP_THRESHOLD = 0.15
+
+
+def get_concept_drift_diagnostics(decision_repo: DecisionPersistor) -> dict:
+    """Faz 268-sonrası — kullanıcı isteği: "Concept Drift aktif olduğunda
+    panelden göreyim, neden pozisyon almadığını bilmeden kalmayayım."
+    _compute_concept_drift_reason (aşağıda) SADECE tetiklendiğinde bir
+    RiskReason döner — dashboard'un HER ZAMAN (tetiklenmemişken de) gerçek
+    sayıları gösterebilmesi için bu, ALTTAKI ham veriyi/kararı ayrıştırıp
+    döndüren, tek kaynak fonksiyon (ikisi de AYNI eşikleri kullanıyor,
+    kopya/çelişkili mantık riski yok)."""
+    trades = decision_repo.list_closed_trades(limit=150)
+    if len(trades) < 100:
+        return {"available": False, "sample_size": len(trades), "required_sample_size": 100}
+
+    recent_outcomes = [(t.get("pnl") or 0.0) > 0 for t in trades[:50]]
+    baseline_outcomes = [(t.get("pnl") or 0.0) > 0 for t in trades[50:150]]
+    drift = compute_concept_drift(baseline_outcomes, recent_outcomes)
+    if drift is None:
+        return {"available": False, "sample_size": len(trades), "required_sample_size": 100}
+
+    win_rate_drop = round(drift["baseline_win_rate"] - drift["recent_win_rate"], 4)
+    active = drift["drift_detected"] and win_rate_drop >= _CONCEPT_DRIFT_WIN_RATE_DROP_THRESHOLD
+    return {
+        "available": True,
+        "active": active,
+        "baseline_win_rate": drift["baseline_win_rate"],
+        "recent_win_rate": drift["recent_win_rate"],
+        "win_rate_drop": win_rate_drop,
+        "p_value": drift["p_value"],
+    }
+
+
 def _compute_concept_drift_reason(decision_repo: DecisionPersistor) -> RiskReason | None:
     """Faz 268-sonrası — bkz. contracts/contexts/risk.py::concept_drift_
     reason yorumu. Burada (RiskEngine.execute()'un İÇİNDE DEĞİL) hesaplanır
     ki test çağıranlar ctx.risk.concept_drift_reason'ı doğrudan set edip
     RiskEngine'i izole test edebilsin — gerçek bir regresyon (2026-08-13)
     bu ayrımın neden zorunlu olduğunu kanıtladı."""
-    trades = decision_repo.list_closed_trades(limit=150)
-    if len(trades) < 100:
-        return None
-
-    recent_outcomes = [(t.get("pnl") or 0.0) > 0 for t in trades[:50]]
-    baseline_outcomes = [(t.get("pnl") or 0.0) > 0 for t in trades[50:150]]
-
-    drift = compute_concept_drift(baseline_outcomes, recent_outcomes)
-    if drift is None or not drift["drift_detected"]:
-        return None
-
-    win_rate_drop = drift["baseline_win_rate"] - drift["recent_win_rate"]
-    if win_rate_drop < 0.15:
+    diagnostics = get_concept_drift_diagnostics(decision_repo)
+    if not diagnostics["available"] or not diagnostics["active"]:
         return None
 
     return RiskReason(
         code="CONCEPT_DRIFT_DEGRADATION",
         message=(
-            f"Kazanma oranı {drift['baseline_win_rate']:.1%}'den "
-            f"{drift['recent_win_rate']:.1%}'e düştü (p={drift['p_value']:.4f}, "
+            f"Kazanma oranı {diagnostics['baseline_win_rate']:.1%}'den "
+            f"{diagnostics['recent_win_rate']:.1%}'e düştü (p={diagnostics['p_value']:.4f}, "
             f"istatistiksel olarak anlamlı) — model geçerliliği sorgulanıyor"
         ),
         severity="warning",

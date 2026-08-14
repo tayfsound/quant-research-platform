@@ -395,3 +395,66 @@ def test_concept_drift_reason_set_when_recent_win_rate_drops_significantly_and_m
         assert state["concept_drift_reason"].code == "CONCEPT_DRIFT_DEGRADATION"
     finally:
         _cleanup_symbol(symbol)
+
+
+def test_get_concept_drift_diagnostics_reports_real_numbers_even_when_not_active():
+    """Faz 268-sonrası — kullanıcı isteği: dashboard'un HER ZAMAN (drift
+    tetiklenmemişken de) gerçek sayıları gösterebilmesi için ayrı bir
+    tanı fonksiyonu eklendi — bu, _compute_concept_drift_reason'ın
+    AYNI eşiklerini kullandığını (kopya/çelişkili mantık riski yok)
+    doğruluyor. offset (hours=21), dosyadaki diğer TÜM testlerden
+    (en yükseği hours=20) kasıtlı olarak daha ileride."""
+    from datetime import UTC, datetime, timedelta
+
+    from services.risk_state import get_concept_drift_diagnostics
+
+    symbol = f"RISKSTATE{uuid4().hex[:8]}"
+    far_future = datetime.now(UTC) + timedelta(days=3650, hours=21)
+    try:
+        with SessionFactory.get_session() as session:
+            repo = DecisionPersistor(session)
+            for i in range(100):
+                pnl = 10.0 if i % 10 != 0 else -5.0
+                event = DecisionEvent(
+                    id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+                    final_size=1.0, status="open", entry_price=100.0, quantity=1.0,
+                )
+                repo.persist(event)
+                repo.close_position(
+                    decision_id=str(event.id), exit_price=100.0, pnl=pnl,
+                    closed_at=far_future + timedelta(seconds=i),
+                )
+            for i in range(50):
+                pnl = 10.0 if i % 5 == 0 else -5.0
+                event = DecisionEvent(
+                    id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+                    final_size=1.0, status="open", entry_price=100.0, quantity=1.0,
+                )
+                repo.persist(event)
+                repo.close_position(
+                    decision_id=str(event.id), exit_price=100.0, pnl=pnl,
+                    closed_at=far_future + timedelta(hours=1, seconds=i),
+                )
+
+        with SessionFactory.get_session() as session:
+            diagnostics = get_concept_drift_diagnostics(DecisionPersistor(session))
+
+        assert diagnostics["available"] is True
+        assert diagnostics["active"] is True
+        assert diagnostics["baseline_win_rate"] > diagnostics["recent_win_rate"]
+        assert diagnostics["win_rate_drop"] >= 0.15
+        assert diagnostics["p_value"] < 0.05
+    finally:
+        _cleanup_symbol(symbol)
+
+
+def test_get_concept_drift_diagnostics_reports_unavailable_below_sample_threshold(tmp_path):
+    from services.risk_state import get_concept_drift_diagnostics
+
+    class _EmptyRepo:
+        def list_closed_trades(self, limit):
+            return []
+
+    diagnostics = get_concept_drift_diagnostics(_EmptyRepo())
+    assert diagnostics["available"] is False
+    assert diagnostics["sample_size"] == 0

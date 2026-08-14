@@ -223,6 +223,14 @@ export default function Dashboard() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [signalHealth, setSignalHealth] = useState<SignalHealth | null>(null);
+  // Faz 268-sonrası — kullanıcı isteği: "Concept Drift aktif olduğunda
+  // dashboard'da göreyim, sistem neden pozisyon almıyor bilmeden
+  // kalmayayım." RiskEngine'in AYNI eşiği/hesabıyla (services/risk_state.
+  // py::get_concept_drift_diagnostics) — burada ayrı bir kopya mantık yok.
+  const [conceptDrift, setConceptDrift] = useState<{
+    available: boolean; active?: boolean;
+    baseline_win_rate?: number; recent_win_rate?: number; p_value?: number;
+  } | null>(null);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | "unsupported">(
     typeof Notification === "undefined" ? "unsupported" : Notification.permission
   );
@@ -299,6 +307,10 @@ export default function Dashboard() {
       .then((r) => r.json())
       .then(handleSignalHealth)
       .catch(() => {});
+    fetch("/api/v1/dashboard/concept-drift-status", { headers: authHeaders() })
+      .then((r) => r.json())
+      .then(setConceptDrift)
+      .catch(() => setConceptDrift(null));
   };
 
   const requestNotifPermission = () => {
@@ -370,6 +382,21 @@ export default function Dashboard() {
               tarayıcı adres çubuğundaki site ayarlarından izin verebilirsin.
             </p>
           )}
+        </div>
+      )}
+
+      {conceptDrift?.available && conceptDrift.active && (
+        <div className="mb-6 rounded-xl border border-fall/20 bg-fall-soft p-4">
+          <p className="text-sm font-semibold text-fall mb-1">
+            ⚠ Concept Drift koruması aktif — yeni pozisyon açılmıyor
+          </p>
+          <p className="text-xs text-ink-soft">
+            Kazanma oranı {((conceptDrift.baseline_win_rate ?? 0) * 100).toFixed(1)}%'den{" "}
+            {((conceptDrift.recent_win_rate ?? 0) * 100).toFixed(1)}%'e düştü (p={(conceptDrift.p_value ?? 0).toFixed(4)},
+            istatistiksel olarak anlamlı) — sistem bunu kendi güvenlik mekanizması olarak algılayıp yeni işlem
+            açmayı durdurdu. Zaten açık pozisyonlar etkilenmez, normal şekilde kapanmaya devam eder. Yakın
+            pencere yeterince gerçek/sağlıklı kapanışla dolunca kendiliğinden açılır.
+          </p>
         </div>
       )}
 
