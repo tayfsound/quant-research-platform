@@ -165,6 +165,9 @@ def _validate(key: str, value: str) -> None:
         timeframes = [tf.strip() for tf in value.split(",") if tf.strip()]
         if not timeframes or any(tf not in CANDLE_TIMEFRAMES for tf in timeframes):
             raise HTTPException(400, f"multi_timeframe_cascade_timeframes must be a comma-separated subset of {list(CANDLE_TIMEFRAMES)}")
+    elif key == "adaptive_barrier_enabled":
+        if value not in ("true", "false"):
+            raise HTTPException(400, "adaptive_barrier_enabled must be 'true' or 'false'")
     elif key == "max_open_positions_per_symbol_direction":
         # Faz 268-sonrası: gerçek olaydan (54 XAUTUSDT SHORT aynı anda
         # açık bulundu) eklenen kontrol — kullanıcı Settings sayfasından

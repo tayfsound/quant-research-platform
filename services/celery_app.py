@@ -97,6 +97,14 @@ celery_app.conf.beat_schedule = {
         "task": "retrain_agent_confidence_models_task",
         "schedule": 86400.0,
     },
+    # Faz 268-sonrası: Adaptive Barrier tablosu — retrain-agent-
+    # confidence-models-daily ile AYNI ritim (günlük, ucuz bir SQL
+    # sorgusu + lojistik olmayan bir ızgara taraması). Yetersiz veri
+    # varsa no-op, kullanıcının hiçbir şeyi elle tetiklemesi gerekmiyor.
+    "refresh-barrier-table-daily": {
+        "task": "refresh_barrier_table_task",
+        "schedule": 86400.0,
+    },
     # Faz 229: kritik bulgu — WeightOptimizer'ın onay-gate'i (Faz 160-165)
     # dedup kontrolü olmadan üretimde 7000'den fazla bekleyen onay biriktirdi.
     # Dedup eklendi (has_pending()) ama zaten var olan/ilerideki süresi

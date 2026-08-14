@@ -210,6 +210,23 @@ def retrain_agent_confidence_models_task() -> dict:
     return results
 
 
+@celery_app.task(name="refresh_barrier_table_task")
+def refresh_barrier_table_task() -> dict:
+    """Faz 268-sonrası — kullanıcı isteği: Adaptive Barrier Engine'i
+    RiskTargetStage'e wire ettik ("kesin unuturum" kararıyla ayrı bir
+    açık/kapalı anahtarı yok, güvenlik veri şartından geliyor). Bu görev,
+    gerçek kapanmış işlemler MIN_TOTAL_SAMPLES'a (200) ulaşınca tabloyu
+    otomatik kurup kaydeder — kullanıcı hiçbir şeyi elle tetiklemek
+    zorunda kalmaz. Yetersiz veri varsa (bkz. build_and_save_barrier_
+    table) hiçbir şey değiştirmez, eski tablo (varsa) korunur."""
+    from analytics.barrier_table_builder import build_and_save_barrier_table
+
+    table = build_and_save_barrier_table()
+    if table is None:
+        return {"skipped": "insufficient_samples"}
+    return {"buckets": len(table)}
+
+
 @celery_app.task(name="auto_reject_stale_weight_approvals_task")
 def auto_reject_stale_weight_approvals_task(max_age_hours: float = 24) -> dict:
     """Faz 229: kritik bulgu — canlı üretimde WeightOptimizer.optimize()/

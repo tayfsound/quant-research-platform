@@ -60,6 +60,32 @@ def test_refresh_llm_news_sentiment_task_is_in_beat_schedule():
     assert entry["task"] == "refresh_llm_news_sentiment_task"
 
 
+def test_refresh_barrier_table_task_runs_in_eager_mode_and_returns_skip_when_insufficient(tmp_path):
+    """Faz 268-sonrası: Adaptive Barrier tablosu — gerçek DB'ye karşı
+    çalışıyor, testin çalıştığı ortamda genelde yeterli örneklem
+    (MIN_TOTAL_SAMPLES=200) olmayacağı için fail-closed "skipped" dönmesi
+    beklenir — asla gürültüden bir tablo üretilmemeli."""
+    from services.celery_app import celery_app
+    from services.tasks import refresh_barrier_table_task
+
+    celery_app.conf.task_always_eager = True
+    celery_app.conf.task_eager_propagates = True
+    try:
+        with patch("analytics.barrier_table_builder.build_and_save_barrier_table", return_value=None):
+            async_result = refresh_barrier_table_task.delay()
+            assert async_result.successful()
+            assert async_result.result == {"skipped": "insufficient_samples"}
+    finally:
+        celery_app.conf.task_always_eager = False
+
+
+def test_refresh_barrier_table_task_is_in_beat_schedule():
+    from services.celery_app import celery_app
+
+    entry = celery_app.conf.beat_schedule["refresh-barrier-table-daily"]
+    assert entry["task"] == "refresh_barrier_table_task"
+
+
 def test_auto_reject_stale_weight_approvals_task_rejects_only_old_pending_rows():
     """Faz 229: kritik bulgu — canlı üretimde WeightApproval kuyruğu
     (dedup kontrolü olmadan) 7000'den fazla bekleyen satır biriktirmişti,

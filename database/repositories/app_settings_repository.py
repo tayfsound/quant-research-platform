@@ -216,6 +216,17 @@ DEFAULTS: dict[str, str] = {
     # işlemlerle Welch's t-test karşılaştırması yapabilsin diye.
     # Varsayılan kapalı — opt-in, mevcut davranış hiç değişmez.
     "multi_timeframe_cascade_ab_test_enabled": "false",
+    # Faz 268-sonrası — kullanıcı isteği: Adaptive Barrier Engine'i
+    # (analytics/adaptive_barrier_engine.py, MAE/MFE'nin GERÇEK koşullu
+    # dağılımından türetilen SL/TP önerisi) RiskTargetStage'e wire
+    # edelim. Kullanıcı kararı: ayrı bir "açık/kapalı" anahtarı bırakma
+    # ("kesin unuturum") — gerçek güvenlik zaten anahtardan değil, veri
+    # şartından geliyor (build_and_save_barrier_table MIN_TOTAL_SAMPLES=
+    # 200 gerçek kapanış birikmeden HİÇBİR tablo üretmiyor/kaydetmiyor,
+    # tablo yoksa RiskTargetStage her zaman statik ATR hesabına düşüyor).
+    # Bu yüzden varsayılan AÇIK — kendi kendine, veri birikince devreye
+    # girecek (bkz. services/tasks.py::refresh_barrier_table_task).
+    "adaptive_barrier_enabled": "true",
 }
 
 CANDLE_TIMEFRAMES = ("1m", "5m", "15m", "1h", "4h", "1d")

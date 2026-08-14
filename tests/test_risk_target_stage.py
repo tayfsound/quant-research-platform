@@ -130,6 +130,128 @@ def test_multipliers_are_read_from_app_settings_not_hardcoded():
             AppSettingsRepository(session).set("target_atr_mult", "1.4", updated_by="test")
 
 
+def _set_adaptive_barrier_enabled(value: str) -> None:
+    from database.repositories.app_settings_repository import AppSettingsRepository
+    from database.session_factory import SessionFactory
+
+    with SessionFactory.get_session() as session:
+        AppSettingsRepository(session).set("adaptive_barrier_enabled", value, updated_by="test")
+
+
+def test_risk_target_stage_uses_adaptive_barrier_when_enabled_and_bucket_matches(monkeypatch):
+    """Faz 268-sonrası — kullanıcı isteği: Adaptive Barrier Engine wire
+    edildi. Gerçek bir kova varsa VE açıksa, statik ATR hesabı YERİNE
+    o kovanın sl_pct/tp_pct'i kullanılmalı."""
+    from analytics.barrier_table_repository import BarrierTableRepository
+
+    # sl_pct=%6 kasıtlı olarak DEFAULT_MIN_STOP_PCT (%4.5) tabanının
+    # ÜSTÜNDE — taban genişletmesiyle karışmasın, sadece "adaptive yol
+    # gerçekten kullanılıyor mu" izole test ediliyor (taban ayrı bir
+    # testte, aşağıda).
+    stored = {
+        "sample_count": 250,
+        "group_by": ["direction", "regime", "volatility_regime"],
+        "table": {"direction=LONG|regime=bull_trend|volatility_regime=normal": {"sl_pct": 0.06, "tp_pct": 0.05}},
+    }
+    monkeypatch.setattr(BarrierTableRepository, "get_latest", lambda self: stored)
+    _set_adaptive_barrier_enabled("true")
+    try:
+        ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
+        ctx.market.features = {
+            "daily_atr_pct": 0.02, "long_term_trend_regime": "bull_trend", "volatility_regime": "normal",
+        }
+        ctx = RiskTargetStage().execute(ctx)
+        assert abs(ctx.decision.stop_loss - 6.0) < 1e-9   # 100 * 0.06 (adaptive, statik 2.5*0.02=5.0 DEĞİL)
+        assert abs(ctx.decision.take_profit - 5.0) < 1e-9  # 100 * 0.05
+    finally:
+        _set_adaptive_barrier_enabled("true")
+
+
+def test_risk_target_stage_falls_back_to_static_atr_when_adaptive_barrier_disabled(monkeypatch):
+    from analytics.barrier_table_repository import BarrierTableRepository
+
+    stored = {
+        "sample_count": 250,
+        "group_by": ["direction", "regime", "volatility_regime"],
+        "table": {"direction=LONG|regime=bull_trend|volatility_regime=normal": {"sl_pct": 0.03, "tp_pct": 0.05}},
+    }
+    monkeypatch.setattr(BarrierTableRepository, "get_latest", lambda self: stored)
+    _set_adaptive_barrier_enabled("false")
+    try:
+        ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
+        ctx.market.features = {
+            "daily_atr_pct": 0.02, "long_term_trend_regime": "bull_trend", "volatility_regime": "normal",
+        }
+        ctx = RiskTargetStage().execute(ctx)
+        assert abs(ctx.decision.stop_loss - 5.0) < 1e-9  # statik: 100 * 2.5 * 0.02
+    finally:
+        _set_adaptive_barrier_enabled("true")
+
+
+def test_risk_target_stage_falls_back_when_no_matching_bucket(monkeypatch):
+    """Tablo var ve açık ama bu kararın kovası (yön/rejim/volatilite)
+    tabloda yoksa (fail-closed) statik ATR hesabına düşülmeli."""
+    from analytics.barrier_table_repository import BarrierTableRepository
+
+    stored = {
+        "sample_count": 250,
+        "group_by": ["direction", "regime", "volatility_regime"],
+        "table": {"direction=SHORT|regime=bear_trend|volatility_regime=high": {"sl_pct": 0.03, "tp_pct": 0.05}},
+    }
+    monkeypatch.setattr(BarrierTableRepository, "get_latest", lambda self: stored)
+    _set_adaptive_barrier_enabled("true")
+    try:
+        ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
+        ctx.market.features = {
+            "daily_atr_pct": 0.02, "long_term_trend_regime": "bull_trend", "volatility_regime": "normal",
+        }
+        ctx = RiskTargetStage().execute(ctx)
+        assert abs(ctx.decision.stop_loss - 5.0) < 1e-9  # statik: 100 * 2.5 * 0.02
+    finally:
+        _set_adaptive_barrier_enabled("true")
+
+
+def test_risk_target_stage_falls_back_when_no_table_saved_yet(monkeypatch):
+    from analytics.barrier_table_repository import BarrierTableRepository
+
+    monkeypatch.setattr(BarrierTableRepository, "get_latest", lambda self: None)
+    _set_adaptive_barrier_enabled("true")
+    try:
+        ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
+        ctx = RiskTargetStage().execute(ctx)
+        assert abs(ctx.decision.stop_loss - 5.0) < 1e-9  # statik: 100 * 2.5 * 0.02
+    finally:
+        _set_adaptive_barrier_enabled("true")
+
+
+def test_adaptive_barrier_still_respects_the_min_stop_pct_floor(monkeypatch):
+    """Adaptive öneri de min_stop_pct tabanından ASLA muaf değil — aynı
+    güvenlik tabanı her iki yoldan da geçerli."""
+    from analytics.barrier_table_repository import BarrierTableRepository
+
+    stored = {
+        "sample_count": 250,
+        "group_by": ["direction", "regime", "volatility_regime"],
+        # sl_pct=%1 -> DEFAULT_MIN_STOP_PCT (%4.5) tabanının altında.
+        "table": {"direction=LONG|regime=bull_trend|volatility_regime=normal": {"sl_pct": 0.01, "tp_pct": 0.02}},
+    }
+    monkeypatch.setattr(BarrierTableRepository, "get_latest", lambda self: stored)
+    _set_adaptive_barrier_enabled("true")
+    try:
+        ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
+        ctx.market.features = {
+            "daily_atr_pct": 0.02, "long_term_trend_regime": "bull_trend", "volatility_regime": "normal",
+        }
+        ctx = RiskTargetStage().execute(ctx)
+        assert abs(ctx.decision.stop_loss - 4.5) < 1e-9  # taban uygulanmış: 100 * %4.5
+        # Oran korunmuş olmalı: taban öncesi (0.02/0.01) ile sonrası aynı.
+        ratio_before = 0.02 / 0.01
+        ratio_after = ctx.decision.take_profit / ctx.decision.stop_loss
+        assert abs(ratio_before - ratio_after) < 1e-9
+    finally:
+        _set_adaptive_barrier_enabled("true")
+
+
 def test_decision_fusion_still_forces_wait_without_risk_target_stage():
     """Regresyon kilidi: RiskTargetStage atlanırsa (eski, bug'lı davranış)
     DecisionFusion hâlâ her zaman WAIT'e zorlamalı — bu testin kendisi

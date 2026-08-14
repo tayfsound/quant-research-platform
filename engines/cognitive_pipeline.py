@@ -396,8 +396,22 @@ class RiskTargetStage:
             return ctx
 
         stop_mult, target_mult, min_stop_pct = self._load_multipliers()
-        stop_pct = stop_mult * daily_atr_pct
-        target_pct = target_mult * daily_atr_pct
+
+        # Faz 268-sonrası — kullanıcı isteği: Adaptive Barrier Engine
+        # (MAE/MFE'nin GERÇEK koşullu dağılımından türetilmiş SL/TP
+        # önerisi) wire edildi. Varsayılan KAPALI (adaptive_barrier_
+        # enabled) — açıldığında bile SADECE yeterli örneklemli, gerçek
+        # bir kovaya düşen kararlar için devreye girer; aksi halde
+        # (fail-closed) hemen altındaki, zaten doğrulanmış statik
+        # ATR-tabanlı hesaba düşülür. Adaptive öneri de min_stop_pct
+        # tabanından ASLA muaf değil — aynı güvenlik tabanı her iki
+        # yoldan da geçerli.
+        adaptive = self._try_adaptive_barrier(ctx)
+        if adaptive is not None:
+            stop_pct, target_pct = adaptive
+        else:
+            stop_pct = stop_mult * daily_atr_pct
+            target_pct = target_mult * daily_atr_pct
         if stop_pct < min_stop_pct:
             scale = min_stop_pct / stop_pct
             stop_pct *= scale
@@ -406,6 +420,42 @@ class RiskTargetStage:
         ctx.decision.stop_loss = current_price * stop_pct
         ctx.decision.take_profit = current_price * target_pct
         return ctx
+
+    def _try_adaptive_barrier(self, ctx: CognitiveCycleContext) -> tuple[float, float] | None:
+        """adaptive_barrier_enabled kapalıysa, kaydedilmiş bir tablo
+        yoksa, ya da kararın düştüğü koşul kovası (yön/rejim/volatilite)
+        için yeterli örneklemli/kararlı bir öneri yoksa None — çağıran
+        taraf statik ATR hesabına düşer. Hiçbir hata burada yukarı
+        fırlatılmaz (fail-closed, adaptive öneri asla zorunlu değil)."""
+        try:
+            from database.repositories.app_settings_repository import AppSettingsRepository
+            from database.session_factory import SessionFactory
+
+            with SessionFactory.get_session() as session:
+                enabled = AppSettingsRepository(session).get("adaptive_barrier_enabled") == "true"
+            if not enabled:
+                return None
+
+            from analytics.adaptive_barrier_engine import recommend_barrier
+            from analytics.barrier_table_repository import BarrierTableRepository
+
+            stored = BarrierTableRepository().get_latest()
+            if stored is None:
+                return None
+
+            features = ctx.market.features or {}
+            context = {
+                "direction": (ctx.decision.proposed_direction or "").upper(),
+                "regime": features.get("long_term_trend_regime", "unknown"),
+                "volatility_regime": features.get("volatility_regime", "unknown"),
+                "confidence": ctx.decision.confidence or 0.0,
+            }
+            recommendation = recommend_barrier(context, stored["table"], group_by=tuple(stored["group_by"]))
+            if recommendation is None:
+                return None
+            return recommendation["sl_pct"], recommendation["tp_pct"]
+        except Exception:
+            return None
 
     def _load_multipliers(self) -> tuple[float, float, float]:
         try:
