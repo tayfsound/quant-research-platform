@@ -1,9 +1,34 @@
-# Mevcut Durum -- v1.51.0 (Kill switch/RiskGate kök-neden turu + R/R yeniden kalibrasyonu + LLM Decision Critic)
+# Mevcut Durum -- v1.52.0 (Karar kalitesi kapıları + LLM periyodik denetim + Concept Drift/backtest sağlamlaştırma)
 
-**Tarih:** 2026-08-13
+**Tarih:** 2026-08-14
 **Branch:** main
-**Son commit (HEAD):** bkz. git log (Faz 268q-268y)
-**Test:** targeted (her değişikliğin kendi test dosyası — hepsi izole çalıştırıldığında yeşil), `npx tsc -b` temiz. Tam suite bu bölümün SONUNDA (push öncesi) çalıştırılacak.
+**Son commit (HEAD):** 74a7353 (Faz 271: LLM periyodik sistem denetimi)
+**Test:** her adımda targeted + push öncesi tam suite (1259-1265 passed, 1 skipped, 1 xpassed), `npx tsc --noEmit` temiz. Tüm commit'ler push edildi, servisler her deploy'dan sonra yeniden başlatıldı.
+
+## Faz 268-sonrası (devam) — Explain butonu, Concept Drift canlı-mod kısıtı, karar kalitesi kapıları, LLM denetçi (2026-08-14)
+
+Kullanıcının Transaction/Dashboard sayfalarındaki gerçek "Açıkla" raporlarını okuyup somut sorunlar bulmasıyla başlayan, günü kaplayan bir tur:
+
+**1) `GET /positions/{id}/explain` + Transactions "Açıkla" modalı (c81cd3f, 069ad37, add0dc4):**
+Hangi ajandan ne karar geldiğini gösteren, `agent_contributions`'ı ayrıştıran endpoint + hem açık hem kapalı pozisyonlarda modal. Kullanıcı bulgusu: `.glass-panel`'in kasıtlı %8-32 opaklığı (site geneli "cam" tasarımı) modal içinde arkadaki sayfa içeriğinin metinle çakışmasına yol açıyordu — `Card`'a `opaque` prop'u (`.modal-panel`, %96 opak) eklendi, hem Explain hem Tokens kaldıraç modalında kullanıldı (tasarım tutarlılığı).
+
+**2) Concept Drift — dashboard göstergesi + sadece canlı modda pozisyon engelleme (069ad37, de23631):**
+`get_concept_drift_diagnostics()` dashboard'a taşındı. Kullanıcı bulgusu: test modunda gerçek sermaye riski yokken bu koruma veri toplamayı gereksiz yere durduruyordu — artık sadece `trading_mode="live"` iken `RiskReason` üretiyor (`enforced` alanıyla ayırt ediliyor). Ayrı bulgu: panelde üç farklı "kazanma oranı" (tüm-zamanlar %59, concept-drift baseline %52, recent %0) çelişki sanılıyordu — banner metni artık pencereleri açıkça etiketliyor.
+
+**3) Backtest task'ları deploy restart'larında sessizce kayboluyordu (42a6020):**
+Kullanıcı bulgusu: "sen servisleri kapatıp açtıkça backtestler kapanıyor." Celery varsayılanı `task_acks_late=False` — worker öldürülünce mesaj bitmeden kuyruktan siliniyordu. Sadece 3 backtest task'ına (`run_backtest_task`, `run_real_backtest_task`, `run_portfolio_backtest_task` — idempotent, tek etkileri kendi `backtest_runs` satırı) `acks_late+reject_on_worker_lost` eklendi; gerçek pozisyon açan task'lara BİLEREK eklenmedi (yeniden çalıştırma aynı sinyali ikinci kez pozisyona çevirebilir).
+
+**4) Karar kalitesi — güçlü tek-ses itirazı freni + Faz 207 test-modu tabanının kaldırılması (f61f2e6):**
+İki gerçek "Açıkla" raporu (ADAUSDT %19.1 güven, technical ajanı %87 güvenle VE kalibrasyon x1.09 ile TERS yöne işaret ederken yine de LONG açılmış; başka bir örnekte 10 ajandan 7'si "benched"ken kalan 2 zayıf ses %16.9 güvenle pozisyon açmış) somut mimari eksikleri ortaya çıkardı:
+- `MetaStage` artık `opinions`'a bakıyor: benched olmayan herhangi bir ajan nihai yönün TERSİNE %75+ güvenle işaret ediyorsa WAIT.
+- Faz 207'nin test-modu `reduce_threshold=0.05` tabanı KALDIRILDI (kullanıcı: "confidence değerinin önemi yok, 20 ile de 80 ile de pozisyona giriyorsa bu veri bir anlam ifade etmiyor"). Her iki gerçek "kumar" örneği de SADECE bu düzeltmeyle zaten WAIT'e düşüyor.
+- Denenip TERK EDİLEN üçüncü fikir: sabit "en az N aktif ajan" eşiği. Gerçek 23.221 kararlık geçmiş veriyle ölçüldü — katılımcı sayısı ile confidence ZIT yönde ilişkili (tek çelişkisiz ses confidence'ı yapay yükseltebiliyor); sabit eşik geçmişin ~%64'ünü ayrım gözetmeksizin bloke ederdi. Kullanıcının "iki uç noktada gidip geleceğiz" endişesi veriyle doğrulandı, eklenmedi.
+- Watchlist 20→37 sembole çıkarıldı (17 yeni likit Binance Futures paritesi, TRADING durumu API ile doğrulandı) — kullanıcı tercihi: "işlem sayısını artıracaksak coinleri artıralım," veri hacmi artık sembol çeşitliliğiyle karşılanıyor, tek sembolde karar kalitesinden ödün verilmiyor.
+
+**5) Faz 271 — LLM periyodik sistem denetimi (74a7353):**
+Kullanıcı: "LLM var yazışabiliyoruz sadece mimariye entegre edilmemiş... karar mekanizmasına dahil etmemiz lazım." Ama net tercih: karar LLM'e bırakılmayacak, mekanik sistem daha güvenilir — LLM DENETLEYİCİ. `services/llm_system_audit.py::run_system_audit()`, her 6 saatte bir (`llm_system_audit_task`, celery beat) `NvidiaDecisionCritic.ask_with_tools()`'u (zaten var olan 6 araçla) kendiliğinden tetikliyor, somut sorun bulursa ZATEN VAR OLAN `code_change_proposals` kuyruğuna (Faz 270, insan onaylı) öneri düşürüyor. Yeni `llm_audit_runs` tablosu + dashboard'da "LLM Denetim Geçmişi" bölümü — "hiçbir şey bulamadım" dahil her çalışma görünür (aksi halde çalıştığına dair hiçbir iz olmazdı).
+
+**Açık kalan iki takip maddesi:** R/R canlı doğrulama (zamana ihtiyaç var); yatay piyasada pozisyon açma riskinin azaltılması (kullanıcı isteğiyle en sona ertelendi).
 
 ## Faz 268q-268y — Kill switch/RiskGate kök-neden turu, R/R yeniden kalibrasyonu, LLM Decision Critic (2026-08-13)
 
