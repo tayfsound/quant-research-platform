@@ -25,6 +25,7 @@ simülasyonuna sızdırmamak için (services/orchestrator.py::
 build_cognitive_context()'i DOĞRUDAN çağırmıyoruz, ama AYNI signal_engine
 fonksiyonlarını kullanıyoruz — "iki beyin" riski sinyal hesaplamasında
 yok, sadece risk-context kurulumunda kasıtlı bir ayrım var)."""
+import logging
 from datetime import timedelta
 
 from analytics.mae_mfe import compute_mae_mfe
@@ -59,6 +60,8 @@ from simulator.slippage_model import SlippageModel
 # geçmiş verisiyle, gerçek CognitiveEngine council'iyle, gerçek exit
 # mantığıyla çalışıyor — sadece sonuçlar hiçbir yere kaydedilmiyordu.
 _VALID_AGENT_DOMAINS = VOTING_AGENT_DOMAINS
+
+logger = logging.getLogger(__name__)
 
 
 # Faz 268-sonrası — kritik bulgu (2026-08-13): lookback her walk-forward
@@ -158,6 +161,7 @@ def _build_backtest_context(
         "volume": window[-1].volume,
         "high": window[-1].high,
         "low": window[-1].low,
+        "last_bar_timestamp": window[-1].timestamp.isoformat(),
         **pattern,
     }
 
@@ -327,17 +331,40 @@ def run_real_backtest(
     trades = []
     open_positions_never_closed = 0
 
+    # Faz 268-sonrası — kritik bulgu (kullanıcı bulgusu: ~100 backtest
+    # denemesinden sadece ~6'sı gerçekten sonuçlandı, geri kalanı hiçbir
+    # iz bırakmadan kayboldu). Kök neden: bu döngü, CognitiveEngine.run()
+    # dahil HER adımı istisnasız çalıştırıyordu — 1000 bar'lık bir koşu
+    # ~900 gerçek walk-forward adımı demek, HER biri council'in gerçek
+    # dış API çağrılarını (FRED/on-chain/fear&greed) tetikliyor. Binlerce
+    # ağ çağrısından TEK bir geçici hata (timeout, rate limit) TÜM
+    # çalışmayı (o ana kadarki bütün ilerlemeyle birlikte) hiçbir kayıt
+    # bırakmadan çöktürüyordu — celery task'ının kendisinde de try/except
+    # yoktu. Artık TEK bir bar'ın hatası (ör. bir dış API'nin o an
+    # yanıt vermemesi) sadece O barı atlıyor (gerçek bir canlı cycle'ın
+    # bir hata karşısında bir sonraki cycle'a geçmesiyle AYNI ilke) —
+    # zaten tamamlanmış ilerleme kaybolmuyor, hata görünür şekilde
+    # loglanıyor (sessizce yutulmuyor).
+    skipped_bars = 0
     for t in range(lookback, len(bars) - 1):
         if kill_switch_threshold > 0 and consecutive_losses >= kill_switch_threshold:
             if kill_switch_tripped_at_bar is None:
                 kill_switch_tripped_at_bar = t
             continue  # gerçek kill switch tetiklenseydi AI dururdu — yeni pozisyon açılmıyor
 
-        window = bars[max(0, t - lookback): t + 1]
-        daily_atr_pct = _risk_atr_pct_asof(risk_bars, bars[t].timestamp, risk_bar_duration)
-        ctx = _build_backtest_context(symbol, timeframe, window, capital_per_trade, daily_atr_pct=daily_atr_pct)
-        ctx.risk.consecutive_losses = consecutive_losses
-        result_ctx = engine.run(ctx, persist=False)
+        try:
+            window = bars[max(0, t - lookback): t + 1]
+            daily_atr_pct = _risk_atr_pct_asof(risk_bars, bars[t].timestamp, risk_bar_duration)
+            ctx = _build_backtest_context(symbol, timeframe, window, capital_per_trade, daily_atr_pct=daily_atr_pct)
+            ctx.risk.consecutive_losses = consecutive_losses
+            result_ctx = engine.run(ctx, persist=False)
+        except Exception:
+            logger.exception(
+                "Backtest step failed, skipping this bar (progress so far is preserved)",
+                extra={"symbol": symbol, "bar_index": t},
+            )
+            skipped_bars += 1
+            continue
 
         direction = result_ctx.decision.proposed_direction or "WAIT"
         size = result_ctx.decision.final_size or 0.0
@@ -444,16 +471,22 @@ def run_real_backtest(
             "exit_time": bars[exit_idx].timestamp.isoformat(),
         })
 
+    if skipped_bars:
+        logger.warning(
+            "Backtest completed with %d/%d bars skipped due to transient errors",
+            skipped_bars, len(bars) - lookback, extra={"symbol": symbol},
+        )
+
     return _summarize(
         symbol, timeframe, bars, trades, open_positions_never_closed, capital_per_trade,
-        kill_switch_tripped_at_bar=kill_switch_tripped_at_bar,
+        kill_switch_tripped_at_bar=kill_switch_tripped_at_bar, skipped_bars=skipped_bars,
     )
 
 
 def _summarize(
     symbol: str, timeframe: str, bars: list[OHLCV], trades: list[dict],
     open_positions_never_closed: int, capital_per_trade: float,
-    kill_switch_tripped_at_bar: int | None = None,
+    kill_switch_tripped_at_bar: int | None = None, skipped_bars: int = 0,
 ) -> dict:
     from collections import Counter
 
@@ -470,6 +503,7 @@ def _summarize(
             "metrics": {},
             "equity_curve": [capital_per_trade],
             "kill_switch_tripped_at_bar": kill_switch_tripped_at_bar,
+            "skipped_bars": skipped_bars,
         }
 
     wins = sum(1 for t in trades if t["win"])
@@ -505,6 +539,7 @@ def _summarize(
         "equity_curve": equity,
         "trades": trades,
         "kill_switch_tripped_at_bar": kill_switch_tripped_at_bar,
+        "skipped_bars": skipped_bars,
     }
 
 
@@ -540,11 +575,21 @@ def run_real_backtest_multi(
     engine = CognitiveEngine()
     agent_memory = AgentMemory(storage_path="backtest_agent_memory_history") if feed_agent_learning else None
     per_symbol = {}
+    failed_symbols: dict[str, str] = {}
     for symbol in symbols:
-        per_symbol[symbol] = run_real_backtest(
-            symbol, timeframe, bars_count, lookback, max_forward_bars, capital_per_trade,
-            engine=engine, agent_memory=agent_memory,
-        )
+        # Faz 268-sonrası — kritik bulgu: bir sembolün GERÇEK geçmiş verisi
+        # o an alınamazsa (ör. Binance'in o sembol için geçici bir hatası),
+        # bu TÜM diğer sembollerin de sonucunu kaybettiriyordu — çok
+        # sembollü bir istekte tek bir sembol, geri kalan tamamen sağlıklı
+        # sonuçları da beraberinde götürüyordu.
+        try:
+            per_symbol[symbol] = run_real_backtest(
+                symbol, timeframe, bars_count, lookback, max_forward_bars, capital_per_trade,
+                engine=engine, agent_memory=agent_memory,
+            )
+        except Exception as exc:
+            logger.exception("Backtest failed entirely for symbol, skipping it", extra={"symbol": symbol})
+            failed_symbols[symbol] = str(exc)
 
     total_pnl_usd = sum(r["total_pnl_usd"] for r in per_symbol.values())
     total_trades = sum(r["trade_count"] for r in per_symbol.values())
@@ -568,6 +613,7 @@ def run_real_backtest_multi(
         "overall_win_rate": (all_wins / total_trades) if total_trades else 0.0,
         "combined_equity_curve": combined_equity,
         "per_symbol": per_symbol,
+        "failed_symbols": failed_symbols,
     }
 
 

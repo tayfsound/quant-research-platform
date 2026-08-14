@@ -98,6 +98,68 @@ class _FixedDirectionEngine:
         return ctx
 
 
+class _FlakyEngine:
+    """Faz 268-sonrası — kritik bulgu: kullanıcı ~100 backtest denemesinden
+    sadece ~6'sının sonuçlandığını bildirdi. Kök neden: tek bir walk-forward
+    adımının hatası (gerçek council'in tetiklediği dış API çağrılarından
+    biri, ör. FRED/on-chain, geçici olarak başarısız olursa) TÜM koşuyu
+    (o ana kadarki ilerlemeyle birlikte) hiçbir iz bırakmadan çöktürüyordu.
+    Bu sahte engine, belirli çağrılarda GERÇEK bir dış API hatasını simgeleyen
+    bir istisna fırlatıp diğerlerinde normal (sabit LONG) davranışa dönerek,
+    "tek bir barın hatası sadece o barı atlamalı" davranışını deterministik
+    doğruluyor."""
+    def __init__(self, fail_on_calls: set[int], direction: str = "LONG", stop: float = 1.0, target: float = 2.0):
+        self._inner = _FixedDirectionEngine(direction, stop, target)
+        self.fail_on_calls = fail_on_calls
+        self.call_count = 0
+
+    def run(self, ctx, persist=False):
+        self.call_count += 1
+        if self.call_count in self.fail_on_calls:
+            raise RuntimeError("simulated transient network failure")
+        return self._inner.run(ctx, persist=persist)
+
+
+def test_run_real_backtest_survives_a_transient_step_failure_and_keeps_progress():
+    flaky = _FlakyEngine(fail_on_calls={2, 5}, stop=100.0, target=200.0)
+    result = run_real_backtest(
+        "BTCUSDT", timeframe="15m", bars_count=120, lookback=100, max_forward_bars=15,
+        capital_per_trade=1000.0, engine=flaky,
+    )
+    assert result["skipped_bars"] == 2
+    # Koşu tamamen çökmek yerine ilerlemeye devam etmiş olmalı — atlanan
+    # barların dışındaki adımlardan en az bir kısmı gerçek bir sonuca
+    # (kapanmış işlem ya da hâlâ açık pozisyon) ulaşmış olmalı. Tam sayı
+    # kill switch/consecutive_losses gibi gerçek DB durumuna duyarlı
+    # olabileceği için burada üst sınır değil, sadece "çökmedi" ve "en az
+    # bir adım gerçekten sonuçlandı" doğrulanıyor.
+    assert result["trade_count"] + result["open_positions_never_closed"] > 0
+
+
+def test_run_real_backtest_multi_isolates_a_fully_failed_symbol_from_others(monkeypatch):
+    """Bir sembolün GERÇEK geçmiş verisi/koşusu tamamen başarısız olursa
+    (ör. o an alınamayan bir veri), bu diğer, tamamen sağlıklı sembollerin
+    sonucunu artık kaybettirmemeli."""
+    import backtest.real_historical_backtest as rhb
+
+    original_run_real_backtest = rhb.run_real_backtest
+
+    def sometimes_failing(symbol, *args, **kwargs):
+        if symbol == "ETHUSDT":
+            raise RuntimeError("simulated total symbol failure")
+        return original_run_real_backtest(symbol, *args, **kwargs)
+
+    monkeypatch.setattr(rhb, "run_real_backtest", sometimes_failing)
+
+    result = rhb.run_real_backtest_multi(
+        ["BTCUSDT", "ETHUSDT"], timeframe="15m", bars_count=110, lookback=100, max_forward_bars=5,
+        capital_per_trade=1000.0,
+    )
+    assert "ETHUSDT" in result["failed_symbols"]
+    assert "BTCUSDT" in result["per_symbol"]
+    assert "ETHUSDT" not in result["per_symbol"]
+
+
 def test_reverse_direction_flips_long_to_short_and_stop_target_follow():
     """Faz 268ab — kullanıcının getirdiği 'tam tersini yap' teşhis testi:
     reverse_direction=True iken council LONG dese bile gerçekleşen işlem
