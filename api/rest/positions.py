@@ -153,6 +153,53 @@ async def list_open_positions(
     }
 
 
+@router.get("/positions/{decision_id}/explain")
+async def explain_position(decision_id: str, user: AuthContext = Depends(get_current_user)):
+    """Faz 268-sonrası — kullanıcı isteği: "hangi ajandan ne karar geldiğini
+    gösteren açıklayan bir fonksiyon." decisions.agent_contributions'ta
+    bu bilginin TAMAMI zaten kayıtlı (her ajanın gerçek AgentOpinion'ı +
+    council belief + debate/itiraz sonucu + InnerCritic + DecisionFusion
+    gerekçesi) — burada tabloda tek bir JSON blob olarak gömülü kalmak
+    yerine, dashboard'un kullanabileceği ayrı bölümlere ayrıştırılıyor."""
+    with SessionFactory.get_session() as session:
+        row = DecisionPersistor(session).get_by_id(decision_id)
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="decision_not_found")
+
+    contributions = row.get("agent_contributions") or []
+    agent_votes = [item for item in contributions if isinstance(item, dict) and "domain" in item]
+    weight_snapshot = next((i["data"] for i in contributions if isinstance(i, dict) and i.get("type") == "weight_snapshot"), None)
+    council_belief = next((i["data"] for i in contributions if isinstance(i, dict) and i.get("type") == "council_belief"), None)
+    debate_result = next((i["data"] for i in contributions if isinstance(i, dict) and i.get("type") == "debate_result"), None)
+    inner_critic = next((i["data"] for i in contributions if isinstance(i, dict) and i.get("type") == "inner_critic"), None)
+    decision_fusion_entries = [i["data"] for i in contributions if isinstance(i, dict) and i.get("type") == "decision_fusion"]
+
+    return {
+        "id": str(row["id"]),
+        "symbol": row["symbol"],
+        "final_direction": row["direction"],
+        "final_confidence": row.get("confidence"),
+        "agent_votes": [
+            {
+                "domain": v.get("domain"),
+                "direction": v.get("direction"),
+                "confidence": v.get("confidence"),
+                "effective_influence": v.get("effective_influence"),
+                "performance_weight": v.get("performance_weight"),
+                "evidence": v.get("evidence"),
+                "caveats": v.get("caveats"),
+            }
+            for v in agent_votes
+        ],
+        "council_belief": council_belief,
+        "debate_result": debate_result,
+        "inner_critic": inner_critic,
+        "decision_fusion": decision_fusion_entries,
+        "weight_snapshot_id": (weight_snapshot or {}).get("id"),
+    }
+
+
 @router.get("/trades")
 async def list_closed_trades(limit: int = 100, user: AuthContext = Depends(get_current_user)):
     """Faz 224: kritik bulgu — "summary" artık `limit`'e (tablo için kaç
