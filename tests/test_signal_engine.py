@@ -398,3 +398,135 @@ def test_wyckoff_none_when_price_stays_inside_the_range():
 
     bars = _range_bars(support=95.0, resistance=105.0, n=21)
     assert _wyckoff_event(bars) == "none"
+
+
+# Faz 268-sonrası — kullanıcı isteği: "gerçek Wyckoff faz tespitini
+# uygulayalım." _real_wyckoff_phase() artık tek bir barın volatilite/hacim
+# istatistiğine değil, gerçek Wyckoff şemasının sırasına (trading range ->
+# öncül trend -> test/SOS/SOW -> breakout) bakıyor.
+
+def _trend_bars(start: float, end: float, n: int, volume: float = 100.0, offset: int = 0) -> list[OHLCV]:
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    return [
+        OHLCV(
+            timestamp=base + timedelta(minutes=offset + i),
+            open=(c := start + (end - start) * i / (n - 1)),
+            high=c * 1.001, low=c * 0.999, close=c, volume=volume,
+        )
+        for i in range(n)
+    ]
+
+
+def test_wyckoff_phase_is_neutral_with_no_trading_range_contraction():
+    """Düz, kesintisiz bir trend — hiçbir zaman daralan bir menzil
+    oluşmuyor, bu yüzden "accumulation/distribution" demek anlamsız."""
+    from market_data.features.signal_engine import _real_wyckoff_phase
+
+    pure_trend = _trend_bars(100, 300, 80)
+    assert _real_wyckoff_phase(pure_trend) == "neutral"
+
+
+def test_wyckoff_phase_is_accumulation_after_downtrend_into_a_range():
+    from market_data.features.signal_engine import _real_wyckoff_phase
+
+    downtrend = _trend_bars(250, 150, 40, offset=0)
+    trading_range = _range_bars(support=145.0, resistance=155.0, n=40, volume=100.0)
+    data = downtrend + trading_range
+    assert _real_wyckoff_phase(data) == "accumulation"
+
+
+def test_wyckoff_phase_is_markup_after_accumulation_range_breaks_out_with_volume():
+    """Aynı accumulation kurulumu, ama son bar gerçek bir hacim-teyitli
+    kırılım (SOS) — artık Phase E, TR'den ayrılış."""
+    from market_data.features.signal_engine import _real_wyckoff_phase
+
+    downtrend = _trend_bars(250, 150, 40, offset=0)
+    trading_range = _range_bars(support=145.0, resistance=155.0, n=40, volume=100.0)
+    breakout_bar = OHLCV(
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC) + timedelta(minutes=80),
+        open=155, high=162, low=154, close=160.0, volume=500.0,
+    )
+    data = downtrend + trading_range + [breakout_bar]
+    assert _real_wyckoff_phase(data) == "markup"
+
+
+def test_wyckoff_phase_is_distribution_after_uptrend_into_a_range():
+    from market_data.features.signal_engine import _real_wyckoff_phase
+
+    uptrend = _trend_bars(150, 250, 40, offset=0)
+    trading_range = _range_bars(support=245.0, resistance=255.0, n=40, volume=100.0)
+    data = uptrend + trading_range
+    assert _real_wyckoff_phase(data) == "distribution"
+
+
+def test_wyckoff_phase_is_markdown_after_distribution_range_breaks_down_with_volume():
+    from market_data.features.signal_engine import _real_wyckoff_phase
+
+    uptrend = _trend_bars(150, 250, 40, offset=0)
+    trading_range = _range_bars(support=245.0, resistance=255.0, n=40, volume=100.0)
+    breakdown_bar = OHLCV(
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC) + timedelta(minutes=80),
+        open=245, high=246, low=238, close=240.0, volume=500.0,
+    )
+    data = uptrend + trading_range + [breakdown_bar]
+    assert _real_wyckoff_phase(data) == "markdown"
+
+
+def test_wyckoff_phase_is_neutral_with_too_few_bars():
+    from market_data.features.signal_engine import _real_wyckoff_phase
+
+    assert _real_wyckoff_phase(_trend_bars(100, 90, 10)) == "neutral"
+
+
+def test_wyckoff_phase_is_neutral_when_range_has_no_clear_preceding_trend():
+    """Bir trading range var ama öncesinde net bir yön (>=%2 hareket) yok
+    — aynı seviyede iki ayrı düz segment, aralarında gerçek bir yön
+    değişikliği YOK (ikisi de ~150 civarında). Wyckoff'ta accumulation/
+    distribution her zaman bir trend sonrasıdır, bağlamsız bir
+    konsolidasyon "neutral" kalmalı."""
+    from market_data.features.signal_engine import _real_wyckoff_phase
+
+    flat_before = _range_bars(support=148.0, resistance=152.0, n=40, volume=100.0)
+    trading_range = _range_bars(support=145.0, resistance=155.0, n=40, volume=100.0)
+    data = flat_before + trading_range
+    assert _real_wyckoff_phase(data) == "neutral"
+
+
+def test_is_trading_range_detects_real_contraction():
+    from market_data.features.signal_engine import _is_trading_range
+    import numpy as np
+
+    downtrend = _trend_bars(250, 150, 40)
+    trading_range = _range_bars(support=145.0, resistance=155.0, n=40, volume=100.0)
+    data = downtrend + trading_range
+    highs = np.array([d.high for d in data], dtype=float)
+    lows = np.array([d.low for d in data], dtype=float)
+    result = _is_trading_range(highs, lows, end_idx=len(data) - 1)
+    assert result is not None
+    support, resistance = result
+    assert 144.0 < support < 146.0
+    assert 154.0 < resistance < 156.0
+
+
+def test_is_trading_range_returns_none_for_a_pure_trend():
+    from market_data.features.signal_engine import _is_trading_range
+    import numpy as np
+
+    pure_trend = _trend_bars(100, 300, 80)
+    highs = np.array([d.high for d in pure_trend], dtype=float)
+    lows = np.array([d.low for d in pure_trend], dtype=float)
+    assert _is_trading_range(highs, lows, end_idx=len(pure_trend) - 1) is None
+
+
+def test_preceding_trend_direction_identifies_real_decline_and_rise():
+    from market_data.features.signal_engine import _preceding_trend_direction
+    import numpy as np
+
+    down_closes = np.array([d.close for d in _trend_bars(250, 150, 40)])
+    assert _preceding_trend_direction(down_closes, tr_start_idx=39) == "down"
+
+    up_closes = np.array([d.close for d in _trend_bars(150, 250, 40)])
+    assert _preceding_trend_direction(up_closes, tr_start_idx=39) == "up"
+
+    flat_closes = np.array([d.close for d in _trend_bars(200, 201, 40)])
+    assert _preceding_trend_direction(flat_closes, tr_start_idx=39) == "none"

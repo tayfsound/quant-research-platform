@@ -13,11 +13,17 @@ inner_critic.py, outcome_evaluator.py, salience_detector.py, onlarca test)
 `"RSI"` (büyük harf) bekliyordu — RSI de hiçbir zaman gerçek değildi. Bu
 modül `"RSI"` (büyük harf) yazarak kod tabanının asıl konvansiyonuna uyuyor.
 
-Dürüstlük ilkesi: Wyckoff faz tespiti gibi gerçekten belirsiz/öznel
-konularda basitleştirilmiş bir yaklaşım kullanıyoruz ve bunu açıkça
-belirtiyoruz — sofistike bir şeymiş gibi göstermiyoruz. Z-score, Hurst,
-otokorelasyon, BOS/CHoCH/FVG gibi kesin tanımlı olanlar tam olarak
-hesaplanıyor.
+Dürüstlük ilkesi: gerçekten belirsiz/öznel konularda basitleştirilmiş bir
+yaklaşım kullanıyoruz ve bunu açıkça belirtiyoruz — sofistike bir şeymiş
+gibi göstermiyoruz. Z-score, Hurst, otokorelasyon, BOS/CHoCH/FVG gibi
+kesin tanımlı olanlar tam olarak hesaplanıyor. Wyckoff faz tespiti
+(_real_wyckoff_phase) de Faz 268-sonrası'ndan itibaren tek bir barın
+volatilite/hacim istatistiğine bakan kaba bir proxy DEĞİL — gerçek
+Wyckoff şemasının sırasını (daralan trading range -> öncül trend ->
+zaten kesin-tanımlı Spring/Upthrust/SOS/SOW olayları -> breakout) takip
+ediyor. Yine de manuel grafik okumanın yakaladığı her nüansı (P&F sayım,
+gerçek "cause" ölçümü, çoklu ST/AR alt-olayları) modellemiyor — kesin
+kurallı ama basitleştirilmiş, öznel şekil-tanıma değil.
 """
 from __future__ import annotations
 
@@ -431,7 +437,7 @@ def compute_pattern_signals(data: list[OHLCV]) -> dict:
     elif swing_lows and data[-1].low < lows[swing_lows[-1]] and data[-1].close > lows[swing_lows[-1]]:
         liquidity_sweep = "sell_side_swept"
 
-    structure_phase = _approximate_wyckoff_phase(data)
+    structure_phase = _real_wyckoff_phase(data)
     fib_level, fib_position = _fibonacci_signal(closes, highs, lows, swing_highs, swing_lows)
     wyckoff_event = _wyckoff_event(data)
 
@@ -498,46 +504,113 @@ def _fibonacci_signal(
     return nearest_label, position
 
 
-def _approximate_wyckoff_phase(data: list[OHLCV]) -> str:
-    """Kaba yaklaşım: düşük volatilite + artan hacim + yatay fiyat =
-    accumulation-vari; yüksek volatilite + düşen hacim tepe civarında =
-    distribution-vari. Gerçek Wyckoff analizi değil, dürüst bir proxy.
+_WYCKOFF_TR_WINDOW = 30  # trading range değerlendirme penceresi
+_WYCKOFF_TR_CONTRACTION_RATIO = 0.65  # şu anki menzil, ÖNCEKİ menzilin bu oranından DAR olmalı
+_WYCKOFF_TREND_LOOKBACK = 20  # TR öncesi trend penceresi
+_WYCKOFF_TREND_THRESHOLD_PCT = 0.02  # TR öncesi net yön için min. %2 hareket
 
-    Faz 215: gerçek bulgu — "düşük/yüksek volatilite" sabit bir oranla
-    (vol_ratio < 0.8 / > 1.3, son-10-bar / tüm-100-bar) tanımlanıyordu.
-    Son 10 bar zaten tüm 100 barın İÇİNDE olduğu için oran neredeyse hep
-    1.0 civarında kalıyor, gerçek verilerde (BTC/ETH/SOL) neredeyse hiç
-    bu aralığın dışına çıkmıyordu — structure_phase sürekli "neutral"
-    çıkıyordu. Codebase'in zaten kullandığı desenle (realized_vol_
-    percentile, quant_signals'ta) tutarlı şekilde: mutlak bir oran yerine
-    volatilitenin KENDİ yakın geçmişine göre yüzdelik dilimi kullanılıyor
-    — kendi kendini normalize ediyor, hangi sembol/zaman dilimi olursa
-    olsun anlamlı şekilde tetiklenebiliyor."""
+
+def _is_trading_range(highs: np.ndarray, lows: np.ndarray, end_idx: int, window: int = _WYCKOFF_TR_WINDOW) -> tuple[float, float] | None:
+    """Son `window` bar'ın menzili, ONDAN ÖNCEKİ `window` bar'ın menziline
+    göre gerçekten DARALMIŞSA (gerçek bir trading range/konsolidasyon
+    imzası) (support, resistance) döner — daralma yoksa None (gerçek bir
+    TR değil, düz trend devam ediyor demektir)."""
+    if end_idx - 2 * window + 1 < 0:
+        return None
+    current_high = highs[end_idx - window + 1:end_idx + 1].max()
+    current_low = lows[end_idx - window + 1:end_idx + 1].min()
+    current_range = current_high - current_low
+
+    prior_high = highs[end_idx - 2 * window + 1:end_idx - window + 1].max()
+    prior_low = lows[end_idx - 2 * window + 1:end_idx - window + 1].min()
+    prior_range = prior_high - prior_low
+    if prior_range <= 0 or current_range / prior_range > _WYCKOFF_TR_CONTRACTION_RATIO:
+        return None
+    return current_low, current_high
+
+
+def _preceding_trend_direction(closes: np.ndarray, tr_start_idx: int, lookback: int = _WYCKOFF_TREND_LOOKBACK) -> str:
+    """Trading range BAŞLAMADAN önceki `lookback` barda net bir yön var
+    mıydı? Wyckoff'ta accumulation her zaman bir DÜŞÜŞ sonrası, distribution
+    her zaman bir YÜKSELİŞ sonrası oluşan bir trading range'dir — TR'nin
+    kendisi bu bağlam olmadan yön belirtmez."""
+    start = max(0, tr_start_idx - lookback)
+    if tr_start_idx - start < 5:
+        return "none"
+    pre_closes = closes[start:tr_start_idx]
+    if pre_closes[0] == 0:
+        return "none"
+    change_pct = (pre_closes[-1] - pre_closes[0]) / pre_closes[0]
+    if change_pct <= -_WYCKOFF_TREND_THRESHOLD_PCT:
+        return "down"
+    if change_pct >= _WYCKOFF_TREND_THRESHOLD_PCT:
+        return "up"
+    return "none"
+
+
+def _real_wyckoff_phase(data: list[OHLCV]) -> str:
+    """Faz 268-sonrası — kullanıcı isteği: "gerçek Wyckoff faz tespitini
+    uygulayalım." Öncekinin (tek bir barın volatilite/hacim istatistiğine
+    bakan kaba proxy) YERİNE, gerçek Wyckoff şemasının sırasını takip eden
+    çok adımlı bir tespit:
+
+    1. Daralan bir trading range (TR) var mı (_is_trading_range) — Wyckoff
+       fazları TANIM GEREĞİ bir TR içinde gerçekleşir, düz bir trend'de
+       "accumulation/distribution" demek anlamsızdır.
+    2. TR'den ÖNCEKİ trend yönü ne (_preceding_trend_direction) —
+       accumulation her zaman düşüş sonrası, distribution her zaman
+       yükseliş sonrası bir TR'dir; bağlamsız bir TR "neutral" kalır.
+    3. TR içinde, önceden zaten kesin-tanımlı kurallarla tespit edilen
+       (_wyckoff_event) Spring/Upthrust/SOS/SOW olayları hiç yaşanmış mı —
+       bunlar fazın Phase C (test) / Phase D (yön kanıtı) aşamasına
+       geçtiğini gösterir; hiç yaşanmamışsa hâlâ Phase A/B (cause
+       biriktiriliyor).
+    4. TR'nin dışına GERÇEKTEN çıkıldıysa (kapanış artık menzilin dışında)
+       VE bunu destekleyen bir SOS/SOW varsa, faz artık markup/markdown
+       (Phase E — TR'den ayrılış).
+
+    Hâlâ öznel bir şekil-tanıma DEĞİL — her adım kesin, geriye dönük
+    tarafsız (lookahead yok) kurallarla tanımlı. Ama artık gerçek Wyckoff
+    şemasının (TR -> öncül trend -> test -> SOS/SOW -> breakout) sırasını
+    izliyor, tek bir barın istatistiğine bakmıyor."""
+    highs = np.array([d.high for d in data], dtype=float)
+    lows = np.array([d.low for d in data], dtype=float)
     closes = _closes(data)
-    volumes = np.array([d.volume for d in data], dtype=float)
-    if len(closes) < 20:
+    end_idx = len(data) - 1
+
+    # Menzil (support/resistance), ŞU ANKİ bar HARİÇ kuruluyor — aksi halde
+    # bir kırılım barının kendi high/low'u menzile karışıp "kendi kendini
+    # kıramaması" gibi dairesel bir soruna yol açardı (_wyckoff_event'in
+    # zaten uyguladığı AYNI ilke).
+    if end_idx < 1:
         return "neutral"
-    returns = _returns(closes)
-    vol_percentile = _realized_vol_percentile(returns)
-    volume_trend = volumes[-5:].mean() - volumes[-15:-5].mean() if len(volumes) >= 15 else 0.0
-    price_range_pct = (closes[-10:].max() - closes[-10:].min()) / closes[-10:].mean()
+    tr = _is_trading_range(highs, lows, end_idx - 1)
+    if tr is None:
+        return "neutral"
+    support, resistance = tr
+    tr_start_idx = (end_idx - 1) - _WYCKOFF_TR_WINDOW + 1
 
-    if vol_percentile < 20 and price_range_pct < 0.03 and volume_trend > 0:
-        return "accumulation" if closes[-1] < closes[-10:].mean() else "distribution"
-    if vol_percentile > 80 and closes[-1] > closes[-10:].mean():
-        return "markup"
-    if vol_percentile > 80 and closes[-1] < closes[-10:].mean():
+    trend = _preceding_trend_direction(closes, tr_start_idx)
+    if trend == "none":
+        return "neutral"
+
+    events_in_tr = {_wyckoff_event(data, end_idx=i) for i in range(tr_start_idx, end_idx + 1)}
+    current_close = closes[end_idx]
+
+    if trend == "down":
+        if "sign_of_strength" in events_in_tr and current_close > resistance:
+            return "markup"
+        return "accumulation"
+
+    if "sign_of_weakness" in events_in_tr and current_close < support:
         return "markdown"
-    return "neutral"
+    return "distribution"
 
 
-def _wyckoff_event(data: list[OHLCV], window: int = 20) -> str:
+def _wyckoff_event(data: list[OHLCV], window: int = 20, end_idx: int | None = None) -> str:
     """Faz 237: kullanıcı isteği — "gerçek Wyckoff analizi yaptıralım."
-    _approximate_wyckoff_phase() (yukarıda) kasıtlı olarak kaba bir proxy
-    olarak kalıyor — genel rejim (accumulation/distribution/markup/
-    markdown) hâlâ öznel bir yorum. Ama Wyckoff metodolojisinin KESİN
-    TANIMLI, gerçekten ayrık fiyat-hacim olayları var, ve bunlar burada
-    gerçekten tespit ediliyor:
+    Wyckoff metodolojisinin KESİN TANIMLI, gerçekten ayrık fiyat-hacim
+    olayları var, ve bunlar burada gerçekten tespit ediliyor:
     - Spring: fiyat menzil DESTEĞİNİN altına sarkıyor (düşük fitil) ama
       kapanış menzil içine geri dönüyor — klasik "sahte kırılma/shakeout",
       bullish (zayıf elleri temizleyip gerçek alıcıları içeri çekiyor).
@@ -547,20 +620,26 @@ def _wyckoff_event(data: list[OHLCV], window: int = 20) -> str:
       VE hacim kendi yakın geçmiş ortalamasının üstünde — hacimle
       desteklenen gerçek bir kırılım (sadece bir fitil değil).
     - Sign of Weakness (SOW): SOS'un aynası, menzil desteğinin altında.
-    Menzil (destek/direnç), ŞU ANKİ bar HARİÇ son `window` bar'ın en düşük
-    low'u / en yüksek high'ı — lookahead yok."""
-    if len(data) < window + 2:
+    Menzil (destek/direnç), DEĞERLENDİRİLEN bar HARİÇ ondan önceki `window`
+    bar'ın en düşük low'u / en yüksek high'ı — lookahead yok.
+
+    Faz 268-sonrası: end_idx eklendi — _real_wyckoff_phase()'in bir trading
+    range içindeki GEÇMİŞ barları (şu anki bar değil) tarayabilmesi için.
+    end_idx=None (varsayılan) ESKİ davranışla birebir aynı: son bar."""
+    if end_idx is None:
+        end_idx = len(data) - 1
+    if end_idx < window + 1:
         return "none"
 
     highs = np.array([d.high for d in data], dtype=float)
     lows = np.array([d.low for d in data], dtype=float)
     volumes = np.array([d.volume for d in data], dtype=float)
 
-    support = lows[-(window + 1):-1].min()
-    resistance = highs[-(window + 1):-1].max()
-    avg_volume = volumes[-(window + 1):-1].mean()
+    support = lows[end_idx - window:end_idx].min()
+    resistance = highs[end_idx - window:end_idx].max()
+    avg_volume = volumes[end_idx - window:end_idx].mean()
 
-    current = data[-1]
+    current = data[end_idx]
 
     if current.low < support and current.close > support:
         return "spring"
