@@ -4,14 +4,17 @@ export function Card({
   children,
   className = "",
   padded = true,
+  opaque = false,
 }: {
   children: ReactNode;
   className?: string;
   padded?: boolean;
+  // Faz 268-sonrası: modallar için — bkz. index.css .modal-panel yorumu.
+  opaque?: boolean;
 }) {
   return (
     <div
-      className={`glass-panel border border-line rounded-xl shadow-layer-1 hover:shadow-layer-2 min-w-0 overflow-hidden ${
+      className={`${opaque ? "modal-panel" : "glass-panel"} border border-line rounded-xl shadow-layer-1 hover:shadow-layer-2 min-w-0 overflow-hidden ${
         padded ? "p-5" : ""
       } ${className}`}
     >

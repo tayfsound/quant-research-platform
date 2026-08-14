@@ -124,6 +124,20 @@
   -webkit-backdrop-filter: blur(22px) saturate(180%);
 }
 
+/* Faz 268-sonrası: kullanıcı bulgusu — Explain modalı gibi yoğun metin
+   içeren modallarda `.glass-panel`in %8-32 opaklığı, arkadaki sayfa
+   içeriğinin (tablo satırları, sayılar) içinden geçip metni okunmaz hale
+   getiriyordu. Modallar zaten kendi katmanı (z-50 + karartılmış arka
+   plan) olduğu için tam saydamlığa ihtiyaçları yok — aynı kenarlık/
+   gölge/radius diliyle ama çok daha opak bir varyant. Card'ın `opaque`
+   prop'uyla seçiliyor; hem Transactions hem Tokens modalında kullanılıyor
+   ki tasarım tutarlılığı bozulmasın (ikisi de aynı sorunu yaşıyordu). */
+.modal-panel {
+  background: color-mix(in srgb, var(--color-surface) 96%, transparent);
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+}
+
 html, body, #root {
   height: 100%;
 }

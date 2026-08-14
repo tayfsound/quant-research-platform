@@ -155,7 +155,7 @@ function LeverageDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()} className="w-full max-w-sm">
-        <Card>
+        <Card opaque>
           <h3 className="text-sm font-semibold text-ink mb-1">{symbol} kaldıracı</h3>
           <p className="text-xs text-ink-soft mb-4">
             1x = spot (kaldıraçsız). Kaldıraçlı bir pozisyon gerçek likidasyon fiyatına ulaşırsa

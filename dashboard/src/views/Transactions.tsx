@@ -146,7 +146,7 @@ function ExplainModal({ decisionId, onClose }: { decisionId: string; onClose: ()
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()} className="w-full max-w-2xl max-h-[85vh] overflow-y-auto">
-        <Card>
+        <Card opaque>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-ink">
               {data ? `${data.symbol} — karar açıklaması` : "Karar açıklaması"}
