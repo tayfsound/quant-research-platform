@@ -17,38 +17,38 @@ class OnChainAgent:
         # Exchange akışı
         if context.exchange_outflow_24h > context.exchange_inflow_24h * 1.5:
             contributions["exchange_flow"] = 1.5
-            evidence.append("Strong exchange outflow — coins leaving exchanges")
+            evidence.append("Güçlü borsa çıkışı — coin'ler borsalardan ayrılıyor")
         elif context.exchange_inflow_24h > context.exchange_outflow_24h * 1.5:
             contributions["exchange_flow"] = -1.5
-            evidence.append("Strong exchange inflow — potential selling pressure")
+            evidence.append("Güçlü borsa girişi — olası satış baskısı")
 
         # Balina aktivitesi
         if context.whale_accumulation and context.whale_distribution:
-            caveats.append("Conflicting whale signals detected — accumulation and distribution simultaneously")
+            caveats.append("Çelişkili balina sinyalleri — aynı anda hem biriktirme hem dağıtım")
         elif context.whale_accumulation:
             contributions["whale_activity"] = 1.5
-            evidence.append("Whale accumulation detected")
+            evidence.append("Balina biriktirmesi tespit edildi")
         elif context.whale_distribution:
             contributions["whale_activity"] = -1.5
-            evidence.append("Whale distribution detected")
+            evidence.append("Balina dağıtımı tespit edildi")
 
         # Stablecoin arzı
         if context.stablecoin_mint_24h > 100_000_000:
             contributions["stablecoin_mint"] = 1.0
-            evidence.append(f"Significant stablecoin minting (${context.stablecoin_mint_24h:,.0f}) — potential buying power")
+            evidence.append(f"Belirgin stablecoin basımı (${context.stablecoin_mint_24h:,.0f}) — olası alım gücü")
 
         # Uyuyan coin'ler
         if context.dormant_coins_moved:
-            caveats.append("Dormant coins moved — potential market anomaly")
+            caveats.append("Uyuyan coin'ler hareket etti — olası piyasa anomalisi")
 
         # Faz 196: ETH gas fiyatı + Solana TPS — gerçek, kolay ölçülen ağ
         # aktivitesi metrikleri. Kasıtlı olarak yönü DEĞİŞTİRMİYOR (yüksek
         # gas'ın fiyat için bullish mi bearish mi olduğu literatürde net
         # değil) — sadece bağlam/uyarı notu olarak ekleniyor.
         if context.eth_gas_price_gwei is not None and context.eth_gas_price_gwei > 50:
-            caveats.append(f"High ETH network congestion (gas: {context.eth_gas_price_gwei:.1f} gwei)")
+            caveats.append(f"Yüksek ETH ağ tıkanıklığı (gas: {context.eth_gas_price_gwei:.1f} gwei)")
         if context.solana_tps is not None:
-            evidence.append(f"Solana network activity: {context.solana_tps:.0f} tx/s")
+            evidence.append(f"Solana ağ aktivitesi: {context.solana_tps:.0f} tx/s")
 
         # Faz 215: gerçek ağ kullanım/madenci trendleri (blockchain.info,
         # Bitcoin'e özel). Aktif adres artışı = gerçek kullanım büyüyor
@@ -69,20 +69,20 @@ class OnChainAgent:
         if context.network_activity_trend == "rising":
             if is_btc:
                 contributions["network_activity_trend"] = 0.5
-            evidence.append("Active address count rising — real network usage growing (BTC)")
+            evidence.append("Aktif adres sayısı artıyor — gerçek ağ kullanımı büyüyor (BTC)")
         elif context.network_activity_trend == "falling":
             if is_btc:
                 contributions["network_activity_trend"] = -0.5
-            evidence.append("Active address count falling — network usage declining (BTC)")
+            evidence.append("Aktif adres sayısı azalıyor — ağ kullanımı düşüyor (BTC)")
 
         if context.hash_rate_trend == "falling":
             if is_btc:
                 contributions["hash_rate_trend"] = -0.5
-            evidence.append("Hash rate declining — possible miner capitulation (BTC)")
+            evidence.append("Hash rate düşüyor — olası madenci kapitülasyonu (BTC)")
         elif context.hash_rate_trend == "rising":
             if is_btc:
                 contributions["hash_rate_trend"] = 0.5
-            evidence.append("Hash rate rising — miner conviction/network security increasing (BTC)")
+            evidence.append("Hash rate yükseliyor — madenci güveni/ağ güvenliği artıyor (BTC)")
 
         if not is_btc and context.network_activity_trend != "stable":
             caveats.append(
@@ -93,10 +93,10 @@ class OnChainAgent:
         # MVRV Z-Score
         if context.mvrv_zscore > 3.0:
             contributions["mvrv_zscore"] = -2.0
-            evidence.append(f"MVRV Z-Score extremely high ({context.mvrv_zscore}) — market overvalued")
+            evidence.append(f"MVRV Z-Score aşırı yüksek ({context.mvrv_zscore}) — piyasa aşırı değerli")
         elif context.mvrv_zscore < -1.0:
             contributions["mvrv_zscore"] = 2.0
-            evidence.append(f"MVRV Z-Score extremely low ({context.mvrv_zscore}) — market undervalued")
+            evidence.append(f"MVRV Z-Score aşırı düşük ({context.mvrv_zscore}) — piyasa aşırı ucuz")
 
         score = sum(contributions.values())
 

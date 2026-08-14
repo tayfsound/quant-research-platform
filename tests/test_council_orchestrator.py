@@ -282,7 +282,7 @@ def test_unanswered_risk_challenge_reduces_real_vote_weight_end_to_end():
 
     assert orchestrator.last_debate_result.unanswered_challenge_penalties.get("technical") is not None
     assert technical.performance_weight < 1.0
-    assert any("Unanswered risk challenge" in c for c in technical.caveats)
+    assert any("Cevapsız risk itirazı" in c for c in technical.caveats)
 
 
 def test_single_agent_directional_agreement_is_not_flagged_as_crowding():

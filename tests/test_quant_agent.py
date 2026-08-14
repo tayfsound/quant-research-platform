@@ -33,7 +33,7 @@ def test_random_walk_regime_has_no_edge():
     ctx = QuantContext(zscore=-2.5, hurst_exponent=0.5)
     opinion = agent.analyze(ctx)
     assert opinion.direction == "WAIT"
-    assert any("random walk" in c.lower() for c in opinion.caveats)
+    assert any("rastgele yürüyüşe" in c.lower() for c in opinion.caveats)
 
 
 def test_hurst_dead_zone_discounts_a_lone_long_term_regime_signal_to_wait():
@@ -48,7 +48,7 @@ def test_hurst_dead_zone_discounts_a_lone_long_term_regime_signal_to_wait():
     ctx = QuantContext(zscore=0.0, hurst_exponent=0.47, long_term_trend_regime="bear_trend")
     opinion = agent.analyze(ctx)
     assert opinion.direction == "WAIT"
-    assert any("random walk" in c.lower() for c in opinion.caveats)
+    assert any("rastgele yürüyüşe" in c.lower() for c in opinion.caveats)
 
 
 def test_hurst_dead_zone_never_produces_a_directional_call_on_its_own():

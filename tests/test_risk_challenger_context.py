@@ -56,4 +56,4 @@ def test_crowded_high_volatility_high_confidence_council_actually_gets_challenge
     # Before the fix, this was always empty for ANY input — context was
     # always {}, so volatility/crowding checks could never fire.
     assert len(all_challenges) >= 1
-    assert any("volatility" in c.reason.lower() or "crowding" in c.reason.lower() for c in all_challenges)
+    assert any("volatilite" in c.reason.lower() or "kalabalık" in c.reason.lower() for c in all_challenges)

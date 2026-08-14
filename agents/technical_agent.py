@@ -76,44 +76,44 @@ class TechnicalAgent:
         # Trend
         if context.trend == "bullish":
             contributions["trend"] = c.trend_weight
-            evidence.append("Market in bullish trend")
+            evidence.append("Piyasa yükseliş trendinde")
         elif context.trend == "bearish":
             contributions["trend"] = -c.trend_weight
-            evidence.append("Market in bearish trend")
+            evidence.append("Piyasa düşüş trendinde")
 
         # Momentum
         if context.momentum == "strengthening" and context.trend == "bullish":
             contributions["momentum"] = c.momentum_weight
-            evidence.append("Bullish momentum strengthening")
+            evidence.append("Yükseliş momentumu güçleniyor")
         elif context.momentum == "weakening" and context.trend == "bearish":
             contributions["momentum"] = -c.momentum_weight
-            evidence.append("Bearish momentum strengthening")
+            evidence.append("Düşüş momentumu güçleniyor")
 
         # Piyasa yapısı
         if context.market_structure == "higher_highs":
             contributions["market_structure"] = c.market_structure_weight
-            evidence.append("Higher highs structure — bullish continuation pattern")
+            evidence.append("Yükselen tepe/dip yapısı — yükseliş devam deseni")
         elif context.market_structure == "lower_lows":
             contributions["market_structure"] = -c.market_structure_weight
-            evidence.append("Lower lows structure — bearish continuation pattern")
+            evidence.append("Alçalan tepe/dip yapısı — düşüş devam deseni")
         elif context.market_structure == "ranging":
-            caveats.append("Market in consolidation — breakout needed for conviction")
+            caveats.append("Piyasa konsolidasyonda — güven için kırılım gerekiyor")
 
         # EMA dizilimi
         if context.ema_alignment == "bullish_aligned":
             contributions["ema_alignment"] = c.ema_alignment_weight
-            evidence.append("EMAs bullishly aligned")
+            evidence.append("EMA'lar yükseliş yönünde dizilmiş")
         elif context.ema_alignment == "bearish_aligned":
             contributions["ema_alignment"] = -c.ema_alignment_weight
-            evidence.append("EMAs bearishly aligned")
+            evidence.append("EMA'lar düşüş yönünde dizilmiş")
 
         # RSI aşırı bölgeler
         if context.rsi_value < 25:
             contributions["rsi_extreme"] = c.rsi_extreme_weight
-            evidence.append(f"RSI extremely oversold ({context.rsi_value})")
+            evidence.append(f"RSI aşırı satım bölgesinde ({context.rsi_value})")
         elif context.rsi_value > 75:
             contributions["rsi_extreme"] = -c.rsi_extreme_weight
-            evidence.append(f"RSI extremely overbought ({context.rsi_value})")
+            evidence.append(f"RSI aşırı alım bölgesinde ({context.rsi_value})")
 
         # Hacim teyidi
         # Faz 258: kritik bulgu — feature importance analiziyle (561 gerçek
@@ -129,15 +129,15 @@ class TechnicalAgent:
         if context.volume_confirmation:
             contributions["volume_confirmation"] = -c.volume_confirmation_penalty
             caveats.append(
-                "Recent volume spike (above 20-bar average) — historically correlated with "
-                "worse outcomes in this system (potential exhaustion/reversal, not confirmed continuation)"
+                "Son hacim sıçraması (20 mumluk ortalamanın üzerinde) — bu sistemde tarihsel "
+                "olarak daha kötü sonuçlarla ilişkili (olası tükeniş/dönüş, teyitli devam değil)"
             )
         else:
-            caveats.append("Volume not confirming trend — potential divergence")
+            caveats.append("Hacim trendi teyit etmiyor — olası ıraksama")
 
         # Volatilite
         if context.volatility_regime == "high":
-            caveats.append("High volatility regime — reduced position sizing recommended")
+            caveats.append("Yüksek volatilite rejimi — pozisyon büyüklüğünün azaltılması önerilir")
 
         # Faz 237: Bollinger Bands — bandın DIŞINA taşmak (percent_b<0 ya da
         # >1) genelde ya gerçek bir kırılım ya da aşırı-uzama/dönüş adayı;
@@ -147,42 +147,42 @@ class TechnicalAgent:
         # kapsadığı z-score'la çakışırdı).
         if context.bollinger_percent_b > 1.0 and context.trend == "bullish":
             contributions["bollinger_confirm"] = c.bollinger_confirm_weight
-            evidence.append(f"Price above upper Bollinger Band ({context.bollinger_percent_b:.2f}) confirming bullish trend")
+            evidence.append(f"Fiyat üst Bollinger Bandının üzerinde ({context.bollinger_percent_b:.2f}) — yükseliş trendini teyit ediyor")
         elif context.bollinger_percent_b < 0.0 and context.trend == "bearish":
             contributions["bollinger_confirm"] = -c.bollinger_confirm_weight
-            evidence.append(f"Price below lower Bollinger Band ({context.bollinger_percent_b:.2f}) confirming bearish trend")
+            evidence.append(f"Fiyat alt Bollinger Bandının altında ({context.bollinger_percent_b:.2f}) — düşüş trendini teyit ediyor")
 
         # Faz 237: VWAP sapması — fiyat "adil değerin" ne kadar üstünde/
         # altında, mevcut trend'i doğrulayan yönde hafif bir kanıt.
         if context.vwap_deviation_pct > 0.01 and context.trend == "bullish":
             contributions["vwap_confirm"] = c.vwap_confirm_weight
-            evidence.append(f"Price {context.vwap_deviation_pct:.2%} above VWAP — real buying pressure")
+            evidence.append(f"Fiyat VWAP'ın {context.vwap_deviation_pct:.2%} üzerinde — gerçek alım baskısı")
         elif context.vwap_deviation_pct < -0.01 and context.trend == "bearish":
             contributions["vwap_confirm"] = -c.vwap_confirm_weight
-            evidence.append(f"Price {context.vwap_deviation_pct:.2%} below VWAP — real selling pressure")
+            evidence.append(f"Fiyat VWAP'ın {context.vwap_deviation_pct:.2%} altında — gerçek satım baskısı")
 
         # Faz 237: ADX — trend YÖNÜ değil GÜCÜ. Zayıf/yatay trend'te (ADX<20)
         # bu ajanın kendi trend/momentum sinyallerine güveni azaltılıyor;
         # güçlü trend'te (ADX>25) DI+/DI- yönü mevcut trend'i doğruluyorsa
         # hafifçe güçlendiriliyor.
         if context.adx < 20:
-            caveats.append(f"ADX {context.adx:.1f} — weak/ranging trend, low conviction")
+            caveats.append(f"ADX {context.adx:.1f} — zayıf/yatay trend, düşük güven")
             scale_all(c.adx_weak_discount)
         elif context.adx > 25:
             if context.di_plus > context.di_minus and context.trend == "bullish":
                 contributions["adx_strong_confirm"] = c.adx_strong_confirm_weight
-                evidence.append(f"ADX {context.adx:.1f} — strong trend, DI+ confirms bullish direction")
+                evidence.append(f"ADX {context.adx:.1f} — güçlü trend, DI+ yükseliş yönünü teyit ediyor")
             elif context.di_minus > context.di_plus and context.trend == "bearish":
                 contributions["adx_strong_confirm"] = -c.adx_strong_confirm_weight
-                evidence.append(f"ADX {context.adx:.1f} — strong trend, DI- confirms bearish direction")
+                evidence.append(f"ADX {context.adx:.1f} — güçlü trend, DI- düşüş yönünü teyit ediyor")
 
         # Faz 237: OBV ıraksaması — gerçek hacim akışı fiyatı desteklemiyorsa
         # (klasik "zayıf rally/zayıf düşüş" uyarısı) güveni azaltıyor.
         if context.price_obv_divergence == "bearish_divergence":
-            caveats.append("Price rising but OBV falling — bearish volume divergence")
+            caveats.append("Fiyat yükseliyor ama OBV düşüyor — düşüş yönlü hacim ıraksaması")
             contributions["obv_divergence"] = -c.obv_divergence_weight
         elif context.price_obv_divergence == "bullish_divergence":
-            caveats.append("Price falling but OBV rising — bullish volume divergence")
+            caveats.append("Fiyat düşüyor ama OBV yükseliyor — yükseliş yönlü hacim ıraksaması")
             contributions["obv_divergence"] = c.obv_divergence_weight
 
         score = sum(contributions.values())

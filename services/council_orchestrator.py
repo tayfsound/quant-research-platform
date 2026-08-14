@@ -187,8 +187,8 @@ class CouncilOrchestrator:
             if penalty is not None and penalty < 1.0:
                 opinion.performance_weight = round(opinion.performance_weight * penalty, 4)
                 opinion.caveats.append(
-                    f"Unanswered risk challenge reduced {opinion.domain.value} vote weight by "
-                    f"{round((1 - penalty) * 100, 1)}% (no responder registered to defend it)."
+                    f"Cevapsız risk itirazı, {opinion.domain.value} oy ağırlığını "
+                    f"%{round((1 - penalty) * 100, 1)} azalttı (itirazı savunacak bir yanıtlayıcı kayıtlı değil)."
                 )
                 opinion.recalculate()
 

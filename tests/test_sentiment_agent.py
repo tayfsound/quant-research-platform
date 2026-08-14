@@ -15,7 +15,7 @@ def test_extreme_fear_generates_long():
     assert opinion.domain.value == "sentiment"
     assert opinion.direction == "LONG"
     assert opinion.confidence > 0
-    assert "Contrarian" in " ".join(opinion.evidence)
+    assert "Kontraryan" in " ".join(opinion.evidence)
 
 def test_extreme_greed_generates_short():
     agent = SentimentAgent()
@@ -55,7 +55,7 @@ def test_google_trends_high_retail_risk():
         google_trends_score=90.0,
     )
     opinion = agent.analyze(ctx)
-    assert "retail overheating" in " ".join(opinion.evidence).lower()
+    assert "aşırı ısınmasına" in " ".join(opinion.evidence).lower()
 
 
 def test_feature_contributions_sum_to_the_implied_raw_score():

@@ -9,7 +9,7 @@ KENDİ davranışını (herd behavior, overconfidence, confirmation bias)
 eleştiren bir denetim katmanı.
 
 `_run_cognitive_audit()`, dönen `AgentChallenge.reason` metnindeki
-"bias"/"herd"/"confidence" kelimelerine göre skorları CognitiveAudit'e
+"yanlılık"/"sürü"/"güven" kelimelerine göre skorları CognitiveAudit'e
 dağıtıyor — bu yüzden reason metinleri bilinçli olarak bu kelimeleri içeriyor.
 """
 from contracts.agent import AgentChallenge, AgentDomain, AgentOpinion
@@ -45,10 +45,10 @@ class AlterEgoChallenger:
             challenges.append(AgentChallenge(
                 challenger_domain=AgentDomain.ALTER_EGO,
                 target_domain=AgentDomain.EXECUTIVE,
-                reason=f"Herd behavior risk: {majority_share:.0%} of directional agents agree on the same direction",
+                reason=f"Sürü davranışı riski: yönlü ajanların %{majority_share:.0%}'i aynı yönde hemfikir",
                 confidence=round(majority_share, 3),
                 evidence_strength=0.7,
-                suggested_adjustment="Reduce position size — low diversity of independent opinion",
+                suggested_adjustment="Pozisyon büyüklüğünü azalt — bağımsız görüş çeşitliliği düşük",
             ))
 
         # Overconfidence: ortalama güven yüksek ama destekleyen kanıt zayıf.
@@ -56,10 +56,10 @@ class AlterEgoChallenger:
             challenges.append(AgentChallenge(
                 challenger_domain=AgentDomain.ALTER_EGO,
                 target_domain=AgentDomain.EXECUTIVE,
-                reason=f"Overconfidence risk: average confidence {avg_confidence:.2f} despite weak average evidence strength {avg_evidence_strength:.2f}",
+                reason=f"Aşırı güven riski: ortalama güven {avg_confidence:.2f} olmasına rağmen ortalama kanıt gücü zayıf ({avg_evidence_strength:.2f})",
                 confidence=round(min(avg_confidence, 0.9), 3),
                 evidence_strength=avg_evidence_strength,
-                suggested_adjustment="Discount confidence until evidence strength improves",
+                suggested_adjustment="Kanıt gücü iyileşene kadar güveni indirimle değerlendir",
             ))
 
         # Confirmation bias: neredeyse oybirliği var AMA debate turlarında
@@ -69,10 +69,10 @@ class AlterEgoChallenger:
             challenges.append(AgentChallenge(
                 challenger_domain=AgentDomain.ALTER_EGO,
                 target_domain=AgentDomain.EXECUTIVE,
-                reason="Confirmation bias risk: near-unanimous agreement produced zero real challenges during debate",
+                reason="Doğrulama yanlılığı riski: neredeyse oybirliğine rağmen tartışma sırasında hiç gerçek itiraz üretilmedi",
                 confidence=round(majority_share, 3),
                 evidence_strength=0.6,
-                suggested_adjustment="Actively seek disconfirming evidence before acting",
+                suggested_adjustment="Harekete geçmeden önce aktif olarak karşı kanıt ara",
             ))
 
         return challenges

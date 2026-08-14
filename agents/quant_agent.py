@@ -28,25 +28,25 @@ class QuantAgent:
         hurst_dead_zone = False
 
         if mean_reverting_regime:
-            evidence.append(f"Hurst exponent {context.hurst_exponent:.2f} — mean-reverting regime")
+            evidence.append(f"Hurst exponent {context.hurst_exponent:.2f} — ortalamaya dönüş (mean-reverting) rejimi")
             # Mean-reversion rejiminde z-score'un TERSİNE bahis
             if context.zscore <= -2.0:
                 contributions["zscore_mean_reversion"] = 2.0
-                evidence.append(f"Z-score {context.zscore:.2f} — statistically oversold")
+                evidence.append(f"Z-score {context.zscore:.2f} — istatistiksel olarak aşırı satım")
             elif context.zscore >= 2.0:
                 contributions["zscore_mean_reversion"] = -2.0
-                evidence.append(f"Z-score {context.zscore:.2f} — statistically overbought")
+                evidence.append(f"Z-score {context.zscore:.2f} — istatistiksel olarak aşırı alım")
         elif trending_regime:
-            evidence.append(f"Hurst exponent {context.hurst_exponent:.2f} — trending regime")
+            evidence.append(f"Hurst exponent {context.hurst_exponent:.2f} — trend rejimi")
             # Trend rejiminde otokorelasyonun YÖNÜNDE bahis (momentum devam eder varsayımı)
             if context.autocorrelation > 0.3:
                 contributions["autocorrelation_momentum"] = 1.5
-                evidence.append(f"Positive autocorrelation {context.autocorrelation:.2f} — momentum continuation")
+                evidence.append(f"Pozitif otokorelasyon {context.autocorrelation:.2f} — momentum devam ediyor")
             elif context.autocorrelation < -0.3:
                 contributions["autocorrelation_momentum"] = -1.5
-                evidence.append(f"Negative autocorrelation {context.autocorrelation:.2f} — momentum continuation")
+                evidence.append(f"Negatif otokorelasyon {context.autocorrelation:.2f} — momentum devam ediyor")
         else:
-            caveats.append(f"Hurst exponent {context.hurst_exponent:.2f} — near random walk, no statistical edge")
+            caveats.append(f"Hurst exponent {context.hurst_exponent:.2f} — rastgele yürüyüşe yakın, istatistiksel avantaj yok")
             hurst_dead_zone = True
 
         # Faz 222: gerçek 200 EMA'ya göre uzun-vade rejim — Hurst'ün ölçtüğü
@@ -55,12 +55,12 @@ class QuantAgent:
         # trendinde mi. candle_lookback yeterince derinse (>=220 bar) hesaplanır.
         if context.long_term_trend_regime == "bull_trend":
             contributions["long_term_trend_regime"] = 1.0
-            evidence.append("Long-term regime (real 200-EMA, 220+ bar lookback): bull trend")
+            evidence.append("Uzun vadeli rejim (gerçek 200-EMA, 220+ mum geriye bakış): yükseliş trendi")
         elif context.long_term_trend_regime == "bear_trend":
             contributions["long_term_trend_regime"] = -1.0
-            evidence.append("Long-term regime (real 200-EMA, 220+ bar lookback): bear trend")
+            evidence.append("Uzun vadeli rejim (gerçek 200-EMA, 220+ mum geriye bakış): düşüş trendi")
         elif context.long_term_trend_regime == "insufficient_data":
-            caveats.append("Long-term trend regime unavailable — candle_lookback < 220 bars")
+            caveats.append("Uzun vadeli trend rejimi hesaplanamıyor — candle_lookback < 220 mum")
 
         # Faz 268-sonrası — gerçek olay (2026-08-12): bu YAVAŞ/gecikmeli
         # sinyal, fiyat aktif olarak tersine dönerken bile eski rejimi
@@ -75,14 +75,14 @@ class QuantAgent:
         # (Hurst/z-score tabanlı diğer kanıtlar değil) indirime uğruyor.
         if context.regime_changepoint_detected and contributions.get("long_term_trend_regime", 0.0) != 0.0:
             caveats.append(
-                "Regime changepoint detected — recent returns statistically diverge from "
-                "this (lagging) long-term regime"
+                "Rejim değişim noktası (changepoint) tespit edildi — son dönem getirileri bu "
+                "(gecikmeli) uzun vadeli rejimden istatistiksel olarak anlamlı şekilde ayrışıyor"
             )
             contributions["long_term_trend_regime"] *= 0.3
 
         # Aşırı volatilite — güveni azalt
         if context.realized_vol_percentile > 90:
-            caveats.append(f"Realized volatility at {context.realized_vol_percentile:.0f}th percentile — reduced statistical reliability")
+            caveats.append(f"Gerçekleşen volatilite {context.realized_vol_percentile:.0f}. persentilde — istatistiksel güvenilirlik azaldı")
             scale_all(0.6)
 
         # Faz 268e — gerçek bulgu: Hurst ölü bölgesindeyken (0.45-0.55, "ne

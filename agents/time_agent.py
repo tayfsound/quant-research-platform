@@ -19,19 +19,19 @@ class TimeAgent:
         confidence = 0.3  # Baz: zaman zayıf bir sinyal, her zaman düşük başlar
 
         if context.hours_to_funding <= 0.25:
-            caveats.append(f"Funding settlement in {context.hours_to_funding * 60:.0f} minutes — volatility spike risk")
+            caveats.append(f"Funding ödemesi {context.hours_to_funding * 60:.0f} dakika sonra — volatilite sıçraması riski")
             confidence = 0.5
         else:
-            evidence.append(f"{context.hours_to_funding:.1f}h to next funding settlement")
+            evidence.append(f"Sonraki funding ödemesine {context.hours_to_funding:.1f} saat var")
 
         if context.is_weekend:
-            caveats.append("Weekend session — lower liquidity, wider slippage risk")
+            caveats.append("Hafta sonu seansı — daha düşük likidite, daha geniş kayma (slippage) riski")
             confidence = max(confidence, 0.4)
 
         if context.session == "overlap":
-            evidence.append("Session overlap (EU/US) — typically highest liquidity window")
+            evidence.append("Seans çakışması (Avrupa/ABD) — genelde en yüksek likidite penceresi")
         elif context.session == "unknown":
-            caveats.append("Session could not be determined")
+            caveats.append("Seans belirlenemedi")
 
         return AgentOpinion(
             agent_id=self.agent_id,

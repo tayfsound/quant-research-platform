@@ -37,7 +37,7 @@ class RiskChallenger:
                 AgentChallenge(
                     challenger_domain=AgentDomain.RISK,
                     target_domain=opinion.domain,
-                    reason="High confidence during elevated volatility",
+                    reason="Yüksek volatilite döneminde yüksek güven",
                     confidence=0.8,
                     evidence_strength=0.7,
                 )
@@ -56,7 +56,7 @@ class RiskChallenger:
                 AgentChallenge(
                     challenger_domain=AgentDomain.RISK,
                     target_domain=opinion.domain,
-                    reason="Possible crowding / herd behavior risk",
+                    reason="Olası kalabalık / sürü davranışı riski",
                     confidence=0.75,
                     evidence_strength=0.6,
                 )
@@ -68,7 +68,7 @@ class RiskChallenger:
                 AgentChallenge(
                     challenger_domain=AgentDomain.RISK,
                     target_domain=opinion.domain,
-                    reason="Low data quality supporting decision",
+                    reason="Kararı destekleyen veri kalitesi düşük",
                     confidence=0.7,
                     evidence_strength=0.5,
                 )

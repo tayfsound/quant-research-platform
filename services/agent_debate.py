@@ -144,15 +144,15 @@ class AgentDebate:
 
         return CognitiveAudit(
             confirmation_bias=round(
-                sum(c.confidence for c in challenges if "bias" in c.reason.lower()) /
+                sum(c.confidence for c in challenges if "yanlılığ" in c.reason.lower()) /
                 max(len(challenges), 1), 3
             ),
             herd_behavior_risk=round(
-                sum(c.confidence for c in challenges if "herd" in c.reason.lower()) /
+                sum(c.confidence for c in challenges if "sürü" in c.reason.lower()) /
                 max(len(challenges), 1), 3
             ),
             overconfidence_risk=round(
-                sum(c.confidence for c in challenges if "confidence" in c.reason.lower()) /
+                sum(c.confidence for c in challenges if "güven" in c.reason.lower()) /
                 max(len(challenges), 1), 3
             ),
             missing_information=[c.reason for c in challenges],
@@ -199,13 +199,13 @@ class AgentDebate:
     def _generate_reasoning(
         self, opinions, rounds, audit, final,
     ) -> str:
-        parts = [f"Final: {final.direction} (conf {final.confidence})"]
+        parts = [f"Nihai: {final.direction} (güven {final.confidence})"]
         total_challenges = sum(len(r.challenges) for r in rounds)
         if total_challenges:
-            parts.append(f"{total_challenges} challenges across {len(rounds)} rounds")
+            parts.append(f"{len(rounds)} turda {total_challenges} itiraz")
         if audit:
             if audit.overconfidence_risk > 0.5:
-                parts.append("⚠️ Overconfidence risk detected")
+                parts.append("⚠️ Aşırı güven riski tespit edildi")
             if audit.herd_behavior_risk > 0.5:
-                parts.append("⚠️ Herd behavior risk detected")
+                parts.append("⚠️ Sürü davranışı riski tespit edildi")
         return " | ".join(parts)

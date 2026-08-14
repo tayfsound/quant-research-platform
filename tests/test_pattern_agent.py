@@ -39,7 +39,7 @@ def test_change_of_character_dampens_confidence():
         swing_structure="higher_highs_higher_lows", change_of_character=False,
     ))
     assert with_choch.confidence < without_choch.confidence
-    assert any("Change of character" in c for c in with_choch.caveats)
+    assert any("Karakter değişimi" in c for c in with_choch.caveats)
 
 
 def test_mixed_structure_waits():

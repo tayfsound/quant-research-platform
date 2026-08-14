@@ -18,20 +18,20 @@ class EpistemologyAgent:
         caveats = []
 
         if context.feature_completeness >= 0.8:
-            evidence.append(f"Feature completeness {context.feature_completeness:.0%} — strong data foundation")
+            evidence.append(f"Özellik tamlığı {context.feature_completeness:.0%} — sağlam veri temeli")
             wait_confidence = 0.2
         elif context.feature_completeness >= 0.5:
-            caveats.append(f"Feature completeness only {context.feature_completeness:.0%}")
+            caveats.append(f"Özellik tamlığı sadece {context.feature_completeness:.0%}")
             wait_confidence = 0.5
         else:
-            caveats.append(f"Feature completeness critically low ({context.feature_completeness:.0%}) — decision should not be trusted")
+            caveats.append(f"Özellik tamlığı kritik derecede düşük ({context.feature_completeness:.0%}) — karara güvenilmemeli")
             wait_confidence = 0.8
 
         if context.known_unknown_count > 0:
-            caveats.append(f"{context.known_unknown_count} expected feature(s) missing or defaulted")
+            caveats.append(f"{context.known_unknown_count} beklenen özellik eksik ya da varsayılan değerde")
 
         if context.data_age_seconds > 300:
-            caveats.append(f"Data is {context.data_age_seconds:.0f}s old — may be stale")
+            caveats.append(f"Veri {context.data_age_seconds:.0f}sn eski — bayat olabilir")
             wait_confidence = min(wait_confidence + 0.2, 0.9)
 
         # Faz 268-sonrası: Data Quality Scoring — signal_engine.compute_
@@ -40,8 +40,8 @@ class EpistemologyAgent:
         # şüpheliyken güveni artırıyor, kendi başına bir yön belirlemiyor.
         if context.data_quality_score < 0.9:
             caveats.append(
-                f"Data quality score {context.data_quality_score:.0%} — possible price spike/wick "
-                "manipulation detected in recent bars"
+                f"Veri kalitesi skoru {context.data_quality_score:.0%} — son mumlarda olası fiyat "
+                "sıçraması/fitil manipülasyonu tespit edildi"
             )
             wait_confidence = min(wait_confidence + 0.2, 0.9)
 
@@ -51,7 +51,7 @@ class EpistemologyAgent:
         # yön belirlemiyor. Kurumsal risk yönetiminde standart bir
         # uygulama (event risk) — yeni bir strateji değil.
         if context.high_impact_event_imminent:
-            caveats.append("High-impact economic release (FOMC/CPI) imminent — event risk elevated")
+            caveats.append("Yüksek etkili ekonomik veri açıklaması (FOMC/CPI) yaklaşıyor — olay riski yükseldi")
             wait_confidence = min(wait_confidence + 0.2, 0.9)
 
         # data_quality alanı iki BAĞIMSIZ sinyalin daha kötümser olanı —

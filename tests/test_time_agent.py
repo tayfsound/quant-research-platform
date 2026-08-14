@@ -24,4 +24,4 @@ def test_funding_settlement_soon_raises_caveat_and_confidence():
 def test_weekend_raises_caveat():
     agent = TimeAgent()
     opinion = agent.analyze(TimeContext(is_weekend=True, hours_to_funding=6.0))
-    assert any("weekend" in c.lower() for c in opinion.caveats)
+    assert any("hafta sonu" in c.lower() for c in opinion.caveats)

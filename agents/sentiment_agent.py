@@ -24,55 +24,55 @@ class SentimentAgent:
         # Fear & Greed — contrarian yorum
         if context.fear_greed_index < 25:
             contributions["fear_greed"] = 2.0
-            evidence.append(f"Extreme fear detected ({context.fear_greed_index})")
-            evidence.append("Contrarian interpretation: possible accumulation zone")
+            evidence.append(f"Aşırı korku tespit edildi ({context.fear_greed_index})")
+            evidence.append("Kontraryan yorum: olası birikim bölgesi")
         elif context.fear_greed_index > 75:
             contributions["fear_greed"] = -2.0
-            evidence.append(f"Extreme greed detected ({context.fear_greed_index})")
-            evidence.append("Contrarian interpretation: possible distribution zone")
+            evidence.append(f"Aşırı açgözlülük tespit edildi ({context.fear_greed_index})")
+            evidence.append("Kontraryan yorum: olası dağıtım bölgesi")
         elif context.fear_greed_index < 40:
             contributions["fear_greed"] = 0.5
-            evidence.append(f"Fear elevated ({context.fear_greed_index})")
+            evidence.append(f"Korku yükselmiş ({context.fear_greed_index})")
 
         # Sosyal medya tonu
         if context.social_media_sentiment < -0.3:
             contributions["social_media"] = 1.0
-            evidence.append("Social media sentiment extremely negative — contrarian signal")
+            evidence.append("Sosyal medya duyarlılığı aşırı negatif — kontraryan sinyal")
         elif context.social_media_sentiment > 0.5:
             contributions["social_media"] = -0.5
-            evidence.append("Social media euphoric — caution")
+            evidence.append("Sosyal medya öforik — dikkatli olunmalı")
 
         # Haber tonu
         if context.news_tone == "negative":
             contributions["news_tone"] = 0.3
-            evidence.append("Negative news tone indicates bearish crowd positioning")
+            evidence.append("Negatif haber tonu, düşüş yönlü kalabalık pozisyonlanmaya işaret ediyor")
         elif context.news_tone == "positive":
             contributions["news_tone"] = -0.3
-            evidence.append("Positive news tone — may be overbought")
+            evidence.append("Pozitif haber tonu — aşırı alım olabilir")
 
         # Google Trends
         if context.google_trends_score > 80:
             contributions["google_trends"] = -0.2
-            evidence.append("Extreme search interest may indicate retail overheating")
+            evidence.append("Aşırı arama ilgisi, perakende yatırımcı aşırı ısınmasına işaret edebilir")
         elif context.google_trends_score < 20:
             contributions["google_trends"] = 0.2
-            evidence.append("Low search interest — potential undervaluation")
+            evidence.append("Düşük arama ilgisi — olası düşük değerleme")
 
         # Volatilite
         if context.volatility_index > 30:
-            caveats.append(f"High volatility ({context.volatility_index}) — position sizing critical")
+            caveats.append(f"Yüksek volatilite ({context.volatility_index}) — pozisyon büyüklüğü kritik")
             scale_all(0.7)
 
         # Piyasa pozisyonlanması
         if context.positioning == "short_bias":
             contributions["positioning"] = 1.0
-            evidence.append("Market heavily short — squeeze potential")
+            evidence.append("Piyasa ağırlıklı short — sıkışma (squeeze) potansiyeli")
         elif context.positioning == "long_bias":
             contributions["positioning"] = -1.0
-            evidence.append("Market heavily long — downside risk")
+            evidence.append("Piyasa ağırlıklı long — düşüş riski")
 
         # Self-bias farkındalığı
-        caveats.append("Sentiment signals are reflexive and crowd-dependent")
+        caveats.append("Sentiment sinyalleri refleksif ve kalabalığa bağımlıdır")
 
         score = sum(contributions.values())
 

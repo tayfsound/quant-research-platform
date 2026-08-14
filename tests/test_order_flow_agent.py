@@ -23,7 +23,7 @@ def test_wide_spread_dampens_confidence_and_warns():
     tight = agent.analyze(OrderFlowContext(bid_ask_imbalance=0.5, spread_bps=2.0))
     wide = agent.analyze(OrderFlowContext(bid_ask_imbalance=0.5, spread_bps=25.0))
     assert wide.confidence < tight.confidence
-    assert any("wide spread" in c.lower() for c in wide.caveats)
+    assert any("geniş spread" in c.lower() for c in wide.caveats)
 
 
 def test_balanced_book_waits():
@@ -76,7 +76,7 @@ def test_falling_open_interest_dampens_confidence_and_warns():
     stable = agent.analyze(OrderFlowContext(bid_ask_imbalance=0.5, open_interest_trend="stable"))
     falling = agent.analyze(OrderFlowContext(bid_ask_imbalance=0.5, open_interest_trend="falling"))
     assert falling.confidence < stable.confidence
-    assert any("open interest falling" in c.lower() for c in falling.caveats)
+    assert any("open interest) azalıyor" in c.lower() for c in falling.caveats)
 
 
 def test_rising_open_interest_with_no_direction_does_not_create_one():

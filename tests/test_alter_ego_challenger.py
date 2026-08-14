@@ -18,7 +18,7 @@ def test_near_unanimous_directional_opinions_trigger_herd_challenge():
     ]
     dummy = AgentOpinion(domain=AgentDomain.EXECUTIVE, direction="WAIT", confidence=0.5)
     challenges = challenger.challenge(dummy, {"opinions": [o.model_dump() for o in opinions], "rounds": []})
-    assert any("herd" in c.reason.lower() for c in challenges)
+    assert any("sürü" in c.reason.lower() for c in challenges)
 
 
 def test_high_confidence_low_evidence_triggers_overconfidence_challenge():
@@ -29,7 +29,7 @@ def test_high_confidence_low_evidence_triggers_overconfidence_challenge():
     ]
     dummy = AgentOpinion(domain=AgentDomain.EXECUTIVE, direction="WAIT", confidence=0.5)
     challenges = challenger.challenge(dummy, {"opinions": [o.model_dump() for o in opinions], "rounds": []})
-    assert any("confidence" in c.reason.lower() for c in challenges)
+    assert any("güven" in c.reason.lower() for c in challenges)
 
 
 def test_unanimous_with_zero_real_debate_triggers_confirmation_bias_challenge():
@@ -42,7 +42,7 @@ def test_unanimous_with_zero_real_debate_triggers_confirmation_bias_challenge():
     dummy = AgentOpinion(domain=AgentDomain.EXECUTIVE, direction="WAIT", confidence=0.5)
     # rounds boş — hiçbir gerçek itiraz üretilmemiş
     challenges = challenger.challenge(dummy, {"opinions": [o.model_dump() for o in opinions], "rounds": [{"challenges": []}]})
-    assert any("bias" in c.reason.lower() for c in challenges)
+    assert any("yanlılığ" in c.reason.lower() for c in challenges)
 
 
 def test_diverse_opinions_trigger_no_challenges():

@@ -59,8 +59,8 @@ def test_volume_confirmation_no_longer_rewarded_as_bullish():
     opinion_with_spike = agent.analyze(ctx_with_spike)
     opinion_without_spike = agent.analyze(ctx_without_spike)
 
-    assert not any("confirms trend" in e for e in opinion_with_spike.evidence)
-    assert any("volume spike" in c.lower() for c in opinion_with_spike.caveats)
+    assert not any("teyit ediyor" in e for e in opinion_with_spike.evidence)
+    assert any("hacim sıçraması" in c.lower() for c in opinion_with_spike.caveats)
     # Aynı diğer koşullarda, hacim sıçraması OLAN senaryo artık OLMAYANDAN
     # daha düşük konviksiyonlu olmalı (önceden tam tersiydi).
     assert opinion_with_spike.confidence < opinion_without_spike.confidence
@@ -75,7 +75,7 @@ def test_volume_divergence_warning():
         volume_confirmation=False,
     )
     opinion = agent.analyze(ctx)
-    assert any("Volume not confirming" in c for c in opinion.caveats)
+    assert any("Hacim trendi teyit etmiyor" in c for c in opinion.caveats)
 
 
 def test_confirming_tradingview_signal_adds_evidence_not_a_new_direction():

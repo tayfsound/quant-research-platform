@@ -54,7 +54,7 @@ def test_expanding_net_liquidity_pushes_toward_long():
     score_expansion = agent.analyze(with_expansion)
 
     assert score_expansion.direction == "LONG"
-    assert "Net liquidity" in " ".join(score_expansion.evidence)
+    assert "Net likidite" in " ".join(score_expansion.evidence)
     assert score_baseline.direction == "WAIT"
 
 
@@ -73,7 +73,7 @@ def test_improving_employment_pushes_toward_long():
     ctx = MacroContext(indicators=[], employment_trend="improving")
     opinion = agent.analyze(ctx)
     assert opinion.direction == "LONG"
-    assert any("improving" in e.lower() for e in opinion.evidence)
+    assert any("iyileşiyor" in e.lower() for e in opinion.evidence)
 
 
 def test_empty_net_liquidity_trend_contributes_no_score():
@@ -84,7 +84,7 @@ def test_empty_net_liquidity_trend_contributes_no_score():
     ctx = MacroContext(indicators=[], net_liquidity_trend="")
     opinion = agent.analyze(ctx)
     assert opinion.direction == "WAIT"
-    assert not any("Net liquidity" in e for e in opinion.evidence)
+    assert not any("Net likidite" in e for e in opinion.evidence)
 
 
 def test_feature_contributions_sum_to_the_implied_raw_score():

@@ -17,7 +17,7 @@ def test_low_completeness_raises_confidence_and_warns():
     complete = agent.analyze(EpistemologyContext(feature_completeness=0.9, known_unknown_count=0))
     incomplete = agent.analyze(EpistemologyContext(feature_completeness=0.3, known_unknown_count=3))
     assert incomplete.confidence > complete.confidence
-    assert any("critically low" in c.lower() for c in incomplete.caveats)
+    assert any("kritik derecede düşük" in c.lower() for c in incomplete.caveats)
 
 
 def test_stale_data_raises_confidence():
@@ -25,7 +25,7 @@ def test_stale_data_raises_confidence():
     fresh = agent.analyze(EpistemologyContext(feature_completeness=0.9, data_age_seconds=10))
     stale = agent.analyze(EpistemologyContext(feature_completeness=0.9, data_age_seconds=600))
     assert stale.confidence > fresh.confidence
-    assert any("stale" in c.lower() for c in stale.caveats)
+    assert any("bayat" in c.lower() for c in stale.caveats)
 
 
 def test_data_quality_reflects_completeness():
@@ -42,7 +42,7 @@ def test_suspected_price_spike_manipulation_raises_confidence_and_warns():
     clean = agent.analyze(EpistemologyContext(feature_completeness=0.9, data_quality_score=1.0))
     suspect = agent.analyze(EpistemologyContext(feature_completeness=0.9, data_quality_score=0.6))
     assert suspect.confidence > clean.confidence
-    assert any("data quality" in c.lower() for c in suspect.caveats)
+    assert any("veri kalitesi" in c.lower() for c in suspect.caveats)
 
 
 def test_data_quality_field_is_the_more_pessimistic_of_the_two_signals():
