@@ -36,5 +36,11 @@ def test_concept_drift_status_returns_real_shape():
         assert "baseline_win_rate" in body
         assert "recent_win_rate" in body
         assert "p_value" in body
+        # Faz 268-sonrası — kullanıcı isteği: "sadece canlı modda aktif
+        # olsun." "enforced", trading_mode=="live" olup olmadığını taşır
+        # — test modunda drift tespit edilse bile pozisyon açmayı
+        # ENGELLEMEZ, panel bunu ayırt edebilsin diye eklendi.
+        assert "enforced" in body
+        assert isinstance(body["enforced"], bool)
     else:
         assert "sample_size" in body

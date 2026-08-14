@@ -459,6 +459,7 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
                 <th className="py-2 pr-4">Stop / Hedef</th>
                 <th className="py-2 pr-4">Açıldı</th>
                 <th className="py-2 pr-4">Aşamalı Kapama</th>
+                <th className="py-2 pr-4"></th>
               </tr>
             </thead>
             <tbody>
@@ -536,6 +537,14 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
                         Realize edilen: <span className={p.realized_pnl > 0 ? "text-rise" : p.realized_pnl < 0 ? "text-fall" : ""}>{format(p.realized_pnl)}</span>
                       </div>
                     )}
+                  </td>
+                  <td className="py-2 pr-4">
+                    <button
+                      onClick={() => setExplainId(p.id)}
+                      className="text-xs text-accent hover:underline"
+                    >
+                      Açıkla
+                    </button>
                   </td>
                 </tr>
                 );

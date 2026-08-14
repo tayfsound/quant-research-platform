@@ -228,7 +228,7 @@ export default function Dashboard() {
   // kalmayayım." RiskEngine'in AYNI eşiği/hesabıyla (services/risk_state.
   // py::get_concept_drift_diagnostics) — burada ayrı bir kopya mantık yok.
   const [conceptDrift, setConceptDrift] = useState<{
-    available: boolean; active?: boolean;
+    available: boolean; active?: boolean; enforced?: boolean;
     baseline_win_rate?: number; recent_win_rate?: number; p_value?: number;
   } | null>(null);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | "unsupported">(
@@ -385,17 +385,39 @@ export default function Dashboard() {
         </div>
       )}
 
-      {conceptDrift?.available && conceptDrift.active && (
+      {conceptDrift?.available && conceptDrift.active && conceptDrift.enforced && (
         <div className="mb-6 rounded-xl border border-fall/20 bg-fall-soft p-4">
           <p className="text-sm font-semibold text-fall mb-1">
             ⚠ Concept Drift koruması aktif — yeni pozisyon açılmıyor
           </p>
           <p className="text-xs text-ink-soft">
-            Kazanma oranı {((conceptDrift.baseline_win_rate ?? 0) * 100).toFixed(1)}%'den{" "}
-            {((conceptDrift.recent_win_rate ?? 0) * 100).toFixed(1)}%'e düştü (p={(conceptDrift.p_value ?? 0).toFixed(4)},
+            Bunun öncesindeki 100 işlemde kazanma oranı {((conceptDrift.baseline_win_rate ?? 0) * 100).toFixed(1)}%
+            iken son 50 işlemde {((conceptDrift.recent_win_rate ?? 0) * 100).toFixed(1)}%'e düştü — bu, genel/tüm-zamanlar
+            kazanma oranından FARKLI, sadece en yakın 150 kapanan işlemin kendi içindeki karşılaştırması
+            (p={(conceptDrift.p_value ?? 0).toFixed(4)},
             istatistiksel olarak anlamlı) — sistem bunu kendi güvenlik mekanizması olarak algılayıp yeni işlem
             açmayı durdurdu. Zaten açık pozisyonlar etkilenmez, normal şekilde kapanmaya devam eder. Yakın
             pencere yeterince gerçek/sağlıklı kapanışla dolunca kendiliğinden açılır.
+          </p>
+        </div>
+      )}
+
+      {/* Faz 268-sonrası — kullanıcı isteği: "test modunda çalışmasın."
+          Koruma artık sadece canlı modda pozisyon engelliyor (services/
+          risk_state.py). Test modunda tespit edilse bile SADECE
+          bilgilendirme — alarm rengi değil, "engellenmiyor" net belirtiliyor. */}
+      {conceptDrift?.available && conceptDrift.active && !conceptDrift.enforced && (
+        <div className="mb-6 rounded-xl border border-warn/20 bg-warn-soft p-4">
+          <p className="text-sm font-semibold text-warn mb-1">
+            ℹ Concept Drift tespit edildi — test modunda olduğun için pozisyon açmayı engellemiyor
+          </p>
+          <p className="text-xs text-ink-soft">
+            Bunun öncesindeki 100 işlemde kazanma oranı {((conceptDrift.baseline_win_rate ?? 0) * 100).toFixed(1)}%
+            iken son 50 işlemde {((conceptDrift.recent_win_rate ?? 0) * 100).toFixed(1)}%'e düştü — bu, genel/tüm-zamanlar
+            kazanma oranından FARKLI, sadece en yakın 150 kapanan işlemin kendi içindeki karşılaştırması
+            (p={(conceptDrift.p_value ?? 0).toFixed(4)},
+            istatistiksel olarak anlamlı). Bu koruma sadece canlı modda gerçek pozisyon açmayı durdurur —
+            test modunda amaç zaten veri biriktirmek olduğu için burada sadece bilgi amaçlı gösteriliyor.
           </p>
         </div>
       )}

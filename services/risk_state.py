@@ -106,7 +106,17 @@ def load_position_risk_state(
 
         decision_repo = DecisionPersistor(session)
 
-        concept_drift_reason = _compute_concept_drift_reason(decision_repo)
+        # Faz 268-sonrası — kullanıcı isteği: "test modunda çalışmasın, illa
+        # olacaksa da sadece canlı modunda aktif olsun." Concept Drift GERÇEK
+        # sermayeyi bozuk bir modelle işlem yapmaya devam etmekten koruyor —
+        # test modunda gerçek kayıp yok, ve tam da test modunun amacı budur
+        # (kötü bir dönemden bile geçip gerçek kapanmış işlem verisi
+        # biriktirmek — reduce_threshold'un test modunda gevşetilmesiyle
+        # aynı felsefe, bkz. CognitiveEngine.execute() Faz 207 yorumu).
+        # get_concept_drift_diagnostics (dashboard'un okuduğu) hâlâ HER
+        # zaman gerçek istatistikleri hesaplıyor — sadece gerçek pozisyon
+        # engelleme (RiskReason) canlı modla sınırlandı.
+        concept_drift_reason = _compute_concept_drift_reason(decision_repo) if trading_mode == "live" else None
 
         # Faz 268-sonrası — gerçek olay: XAUTUSDT SHORT x54. bkz.
         # contracts/contexts/risk.py::same_direction_open_counts.

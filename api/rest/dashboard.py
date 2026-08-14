@@ -31,9 +31,18 @@ async def concept_drift_status(user: AuthContext = Depends(get_current_user)):
     Aynı eşiği/hesabı kullanır (services/risk_state.py::get_concept_
     drift_diagnostics) — RiskEngine'in ne yaptığıyla dashboard'un
     gösterdiği HER ZAMAN aynı, ayrı bir kopya hesap değil."""
+    from database.repositories.app_settings_repository import AppSettingsRepository
     from database.repositories.decision_persistor import DecisionPersistor
     from database.session_factory import SessionFactory
     from services.risk_state import get_concept_drift_diagnostics
 
     with SessionFactory.get_session() as session:
-        return get_concept_drift_diagnostics(DecisionPersistor(session))
+        diagnostics = get_concept_drift_diagnostics(DecisionPersistor(session))
+        # Faz 268-sonrası: kullanıcı isteği — koruma sadece canlı modda
+        # pozisyon açmayı engelliyor (bkz. services/risk_state.py::
+        # load_position_risk_state). Panel istatistikleri hep gerçek
+        # gösterir ama "enforced" olmadan bu SADECE bilgilendirme, sistem
+        # gerçekte durdurulmuş değil.
+        trading_mode = AppSettingsRepository(session).get("trading_mode")
+        diagnostics["enforced"] = trading_mode == "live"
+        return diagnostics
