@@ -137,6 +137,7 @@ class AgentMemory:
         domain: str,
         window: int | None = None,
         regime: str | None = None,
+        min_timestamp=None,
     ) -> AgentPerformanceSummary:
         # Faz 253: kritik bulgu — canlıda doğrulandı. Faz 245, WAIT diyen
         # bir ajanın kaydedilmesini (record() çağrısını) durdurmuştu ama
@@ -160,6 +161,16 @@ class AgentMemory:
         # kalanı" değil.
         if regime is not None:
             records = [r for r in records if (r.market_regime or "unknown") == regime]
+
+        # Faz 268-sonrası — kullanıcı isteği: SourceReliabilityAgent'ın
+        # gerçek isabet oranına geçmesiyle birlikte eklendi (bkz. agents/
+        # source_reliability_agent.py) — "reliability_legacy_cutoff_at"
+        # ayarı kill_switch_legacy_cutoff_at ile AYNI Class 2 deseni: bu
+        # tarihten ÖNCEKİ kayıtlar sayılmıyor, eski/bozuk mekanizmanın
+        # dönemi yeni hesaba hiç karışmıyor (satırlar silinmiyor, sadece
+        # dışarıda bırakılıyor).
+        if min_timestamp is not None:
+            records = [r for r in records if r.timestamp >= min_timestamp]
 
         # Faz 263 — kritik bulgu: WeightOptimizer.propose_weights() bu
         # metodu window'suz çağırıyordu, yani ağırlıklar HER ZAMAN tüm

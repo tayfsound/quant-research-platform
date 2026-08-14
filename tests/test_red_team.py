@@ -32,8 +32,51 @@ from services.cognitive_engine import CognitiveEngine
 
 
 @pytest.fixture(scope="module")
-def engine():
-    return CognitiveEngine()
+def engine(tmp_path_factory):
+    # Faz 268-sonrası — kritik bulgu: SourceReliabilityAgent artık GERÇEK,
+    # kalıcı AgentMemory geçmişinden reliability hesaplıyor (bkz. agents/
+    # source_reliability_agent.py). Varsayılan AgentMemory() TÜM test
+    # sürecinin paylaştığı tek bir dosyaya yazıyor (conftest.py::
+    # AGENT_MEMORY_STORAGE_PATH) — bu dosyaya başka test dosyalarının
+    # yazdığı "technical" kayıtları (ör. test_agent_auto_bench.py'nin
+    # bilerek yazdığı was_correct=False kayıtlar) buradaki senaryoyu
+    # kirletmesin diye izole bir AgentMemory veriliyor.
+    #
+    # İkinci, daha ince bulgu: bu senaryo SADECE technical'in gerçek,
+    # fiyat-türevli sinyaline dayanıyor (whipsaw_chop) — ama _build_
+    # backtest_context() macro/sentiment/onchain/vb. için hiç gerçek veri
+    # sağlamıyor (backtest/real_historical_backtest.py, sadece technical+
+    # quant+pattern hesaplıyor). ContextAdapter bu domain'ler için
+    # Pydantic VARSAYILAN değerleriyle bir context üretiyor — ör. macro
+    # her zaman AYNI (sabit, fiyattan bağımsız) "LONG, liquidity
+    # expansionary" oyu veriyor. Eski (bozuk, confidence-tabanlı) mekanizma
+    # bunları YANLIŞ sebeple ama tesadüfen susturuyordu (düşük raporlanan
+    # confidence → "güvenilmez"). Doğru mekanizma (gerçek isabet oranı)
+    # haklı olarak susturmuyor — kanıt yok. Sonuç: sabit macro oyu,
+    # technical'in dönüşümlü sinyaliyle sürekli çekişip belief.strength'i
+    # asla eşiğin üstüne çıkarmıyor, senaryo SONSUZA DEK WAIT'te kalıyor
+    # (gerçek 150 bar'lık izlemeyle doğrulandı). Bu senaryonun placeholder
+    # domain'lerinin gerçek bir sinyali OLMADIĞINI dürüstçe belirtmek için
+    # (icat edilmiş bir "iyi" geçmiş değil, "bu bağlamda hiç kanıtlanmamış"
+    # gerçeği), technical/epistemology HARİÇ tüm domain'ler için GERÇEK
+    # (ama olumsuz) bir geçmiş seed ediliyor — tam olarak eski mekanizmanın
+    # kazara ürettiği sonucu, artık doğru/açık bir sebeple.
+    from contracts.agent_performance import AgentPerformanceRecord
+    from services.agent_memory import AgentMemory
+
+    eng = CognitiveEngine()
+    isolated_memory = AgentMemory(storage_path=str(tmp_path_factory.mktemp("red_team_agent_memory")))
+    placeholder_domains = (
+        "macro", "sentiment", "onchain", "pattern", "quant",
+        "order_flow", "time", "relative_strength",
+    )
+    for domain in placeholder_domains:
+        for _ in range(12):
+            isolated_memory.record(AgentPerformanceRecord(
+                agent_domain=domain, direction="LONG", confidence=0.5, was_correct=False,
+            ))
+    eng.council_stage.orchestrator.reliability_annotator.agent.memory = isolated_memory
+    return eng
 
 
 def test_severe_whipsaw_eventually_trips_the_kill_switch(engine):

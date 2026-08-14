@@ -43,10 +43,15 @@ class RiskChallenger:
                 )
             )
 
-        # Yön kalabalığı riski
+        # Yön kalabalığı riski — Faz 268-sonrası kullanıcı bulgusu: bu
+        # kontrol önceden opinion.direction'a BAKMADAN her ajanı (kalabalığa
+        # hiç katılmayan azınlık/muhalif ses dahil) cezalandırıyordu.
+        # "Sürü davranışı" kavramsal olarak sadece KALABALIĞA katılan
+        # görüşler için anlamlı — sadece o yöndeki opinion hedefleniyor.
         crowding = context.get("crowding_risk", 0.0)
+        crowded_direction = context.get("crowded_direction")
 
-        if crowding > 0.6:
+        if crowding > 0.6 and crowded_direction is not None and opinion.direction == crowded_direction:
             challenges.append(
                 AgentChallenge(
                     challenger_domain=AgentDomain.RISK,

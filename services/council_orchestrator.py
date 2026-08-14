@@ -153,19 +153,19 @@ class CouncilOrchestrator:
                 opinion.freshness = data_freshness
             opinion.source_reliability = info["source_reliability"]
             if info.get("benched"):
-                # Auto-bench: bu domain art arda BENCH_AFTER kez düşük
-                # güvenilirlik gösterdi. Metafor değil — performance_weight=0
-                # effective_influence'ı (intrinsic_trust * performance_weight)
-                # gerçekten sıfırlar, yani bu oy nihai karara hiç katkı
-                # vermiyor. Opinion listede KALIYOR (sessizce yutulmuyor,
-                # explainability zincirinde görünür) ve gelecek cycle'larda
-                # gerçekten toparlanırsa (RECOVERY_THRESHOLD) otomatik geri
-                # döner.
+                # Auto-bench: bu domain'in GERÇEK, kalıcı (AgentMemory'den
+                # okunan) son 20 yönlü kararının isabet oranı eşiğin altında.
+                # Metafor değil — performance_weight=0 effective_influence'ı
+                # (intrinsic_trust * performance_weight) gerçekten sıfırlar,
+                # yani bu oy nihai karara hiç katkı vermiyor. Opinion listede
+                # KALIYOR (sessizce yutulmuyor, explainability zincirinde
+                # görünür) ve gerçekten yeni, isabetli kararlar birikince
+                # otomatik geri döner (bkz. agents/source_reliability_agent.py).
                 opinion.performance_weight = 0.0
                 opinion.caveats.append(
-                    f"Benched: {opinion.domain.value} reliability stayed below "
-                    f"{self.reliability_annotator.agent.BENCH_THRESHOLD} for "
-                    f"{self.reliability_annotator.agent.BENCH_AFTER}+ cycles — vote weight zeroed until it recovers."
+                    f"Benched: {opinion.domain.value}'s real recent accuracy "
+                    f"(last {self.reliability_annotator.agent.WINDOW} directional decisions) is below "
+                    f"{self.reliability_annotator.agent.BENCH_THRESHOLD} — vote weight zeroed until it recovers."
                 )
             opinion.recalculate()
 
@@ -247,13 +247,27 @@ class CouncilOrchestrator:
         # sürü davranışı" tanım gereği ANLAMSIZ, çünkü tek bir ajan kendi
         # kendisiyle "kalabalık" oluşturamaz. En az 3 bağımsız yönlü görüş
         # olmadan bu kontrol hiç değerlendirilmiyor.
+        # Faz 268-sonrası — kullanıcı bulgusu, gerçek bir karardan (RENDER
+        # örneği): crowding_risk yüksek çıktığında RiskChallenger.challenge()
+        # bunu opinion.direction'a bakmadan HER ajana (azınlık/karşı görüşü
+        # savunan tek ses dahil, hatta WAIT diyenler dahil) aynı şekilde
+        # uyguluyordu. Gerçek örnekte: SHORT %80 "kalabalık" oranı çıktı,
+        # ama SHORT'çu ajanların hepsi zaten benched'ti (etkisi zaten sıfır)
+        # — cezanın GERÇEK/tek etkisi, kalabalığa hiç KATILMAYAN tek LONG
+        # sesin (macro) ağırlığını kısmaktı. "Sürü davranışına karşı uyar"
+        # mekanizması, sürüye katılmayan tek muhalif sesi cezalandırıyordu
+        # — kavramsal olarak tam tersi. Artık HANGİ yönün kalabalık olduğu
+        # da context'e taşınıyor, RiskChallenger sadece O yöndeki
+        # opinion'ları hedefleyebilsin diye.
         _MIN_DIRECTIONAL_FOR_CROWDING = 3
         crowding_risk = 0.0
+        crowded_direction = None
         directional = [o for o in opinions if o.direction != "WAIT"]
         if len(directional) >= _MIN_DIRECTIONAL_FOR_CROWDING:
             counts: dict[str, int] = {}
             for o in directional:
                 counts[o.direction] = counts.get(o.direction, 0) + 1
-            crowding_risk = max(counts.values()) / len(directional)
+            crowded_direction = max(counts, key=counts.get)
+            crowding_risk = counts[crowded_direction] / len(directional)
 
-        return {"volatility": volatility, "crowding_risk": crowding_risk}
+        return {"volatility": volatility, "crowding_risk": crowding_risk, "crowded_direction": crowded_direction}

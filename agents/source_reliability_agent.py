@@ -1,71 +1,89 @@
-"""Kaynak guvenilirligi ajani — diger ajanlarin guvenilirligini puanlar."""
-from typing import Dict, List
-from dataclasses import dataclass
+"""Kaynak güvenilirliği ajanı — diğer ajanların güvenilirliğini gerçek
+geçmiş ISABET oranına göre puanlar.
 
-@dataclass
-class ReliabilityScore:
-    domain: str
-    source_reliability: float
-    data_freshness_hours: float
-    source_count: int
+Faz 268-sonrası — kullanıcı bulgusu, iki katmanlı kritik hata: (1) eski
+implementasyon "reliability"i son 10 kararın ORTALAMA CONFIDENCE'i olarak
+hesaplıyordu — ajanın GERÇEKTEN doğru tahmin edip etmediğine (was_correct,
+gerçek kâr/zarar) hiç bakmıyordu; kendinden emin ama sürekli yanlış bir
+ajan "güvenilir" sayılabiliyordu. (2) Bu hafıza (self.history/self._benched)
+sıradan bir Python dict'te tutuluyordu ve CognitiveOrchestrator her
+run_trading_cycle_task çağrısında (120 saniyede bir, services/celery_app.py)
+SIFIRDAN yaratıldığı için TAMAMEN siliniyordu — "X reliability stayed below
+0.35 for 5+ cycles" ifadesi günler süren bir geçmiş DEĞİL, o anki 120
+saniyelik geçişte watchlist'teki ardışık 5 SEMBOL demekti.
+
+Artık services/agent_memory.py::AgentMemory'nin GERÇEK, diske kalıcı
+yazılan (was_correct alanlı, süreç/cycle sınırlarında kaybolmayan)
+kayıtlarından hesaplanıyor — confidence_calibration.py'nin zaten kullandığı
+AYNI veri kaynağı. Tamamen stateless: her annotate() çağrısı diskten taze
+okur, hiçbir in-process hafıza tutmaz — "her 2 dakikada bir sıfırlanma"
+hata sınıfı yapısal olarak ortadan kalkar."""
+from datetime import datetime
+
+from services.agent_memory import AgentMemory
+
 
 class SourceReliabilityAgent:
-    """Diğer ajanların güvenilirliğini gerçek geçmiş performansına göre
-    puanlar. Ayrıca "auto-bench" uyguluyor: bir domain üst üste
-    BENCH_AFTER kez düşük güvenilirlik gösterirse (BENCH_THRESHOLD altı),
-    RECOVERY_THRESHOLD'a gerçekten geri dönene kadar oyu sıfır ağırlıkla
-    sayılır — CouncilOrchestrator bunu opinion.performance_weight=0 ile
-    uyguluyor. Metafor değil: sürekli kötü performans gösteren bir ajan
-    kararın ağırlıklandırmasında gerçekten söz sahibi olmaktan çıkıyor,
-    geçmişi düzelene kadar."""
-
     BENCH_THRESHOLD = 0.35
-    BENCH_AFTER = 5
-    RECOVERY_THRESHOLD = 0.5
+    # Yeterli gerçek kanıt (kapanmış, yönlü karar) yoksa fail-closed: nötr
+    # (tam ağırlık), benched DEĞİL — "kanıtlanana kadar güven" ilkesi,
+    # Adaptive Barrier'ın MIN_TOTAL_SAMPLES'ıyla aynı disiplin.
+    MIN_SAMPLES = 10
+    # Son N gerçek yönlü karar üzerinden — AgentMemory.get_summary'nin
+    # zaten kullandığı pencere (Faz 263: eski başarı yeni çöküşü
+    # matematiksel olarak gizlemesin).
+    WINDOW = 20
 
-    def __init__(self):
-        self.history: Dict[str, List[float]] = {}
-        self._consecutive_low: Dict[str, int] = {}
-        self._benched: set[str] = set()
+    def __init__(self, memory: AgentMemory | None = None):
+        self.memory = memory or AgentMemory()
 
-    def annotate(self, opinions: List[dict]) -> List[dict]:
-        """Her opinion'a source_reliability puanı ve benched durumunu ekler."""
+    def annotate(self, opinions: list[dict]) -> list[dict]:
+        """Her opinion'a GERÇEK isabet oranından hesaplanan source_
+        reliability ve benched durumunu ekler."""
+        cutoff = self._legacy_cutoff()
         for op in opinions:
             domain = op.get("domain", "unknown")
-            if domain not in self.history:
-                self.history[domain] = []
-
-            # Basit: confidence history'si varsa ortalama
-            confidence = op.get("confidence", 0.5)
-            self.history[domain].append(confidence)
-
-            # Reliability = son 10 kararin ortalama confidence'i
-            recent = self.history[domain][-10:]
-            reliability = sum(recent) / len(recent) if recent else 0.5
-            reliability = min(reliability, 1.0)
-
-            self._update_bench_state(domain, reliability)
-
+            summary = self.memory.get_summary(domain, window=self.WINDOW, min_timestamp=cutoff)
+            if summary.total_predictions < self.MIN_SAMPLES:
+                reliability = 0.5
+                benched = False
+            else:
+                reliability = summary.recent_accuracy
+                benched = reliability < self.BENCH_THRESHOLD
             op["source_reliability"] = reliability
-            op["data_freshness_hours"] = 0.0  # Simulated real-time
-            op["source_count"] = 1
-            op["benched"] = domain in self._benched
-
+            op["data_freshness_hours"] = 0.0
+            op["source_count"] = summary.total_predictions
+            op["benched"] = benched
         return opinions
 
-    def _update_bench_state(self, domain: str, reliability: float) -> None:
-        if reliability < self.BENCH_THRESHOLD:
-            self._consecutive_low[domain] = self._consecutive_low.get(domain, 0) + 1
-            if self._consecutive_low[domain] >= self.BENCH_AFTER:
-                self._benched.add(domain)
-        elif reliability >= self.RECOVERY_THRESHOLD:
-            # Gerçek toparlanma — sadece "düşük değil" değil, gerçekten iyi.
-            self._consecutive_low[domain] = 0
-            self._benched.discard(domain)
+    @staticmethod
+    def _legacy_cutoff() -> datetime | None:
+        # Faz 268-sonrası — kullanıcı isteği: "başlangıç olarak her ajanın
+        # kararda eşit ağırlığı olacak şekilde sistemi başlatalım." Eski,
+        # bozuk mekanizmanın ürettiği geçmiş kayıtlar bu düzeltmenin
+        # devreye girdiği andan (reliability_legacy_cutoff_at) ÖNCE
+        # kalıyorsa hiç sayılmıyor — hiçbir kayıt SİLİNMİYOR (Class 2),
+        # sadece yeni hesaptan dışarıda bırakılıyor. DB'ye erişilemezse
+        # (ör. bazı izole unit testler) fail-closed: kesim yok, tüm geçmiş
+        # sayılır.
+        try:
+            from database.repositories.app_settings_repository import AppSettingsRepository
+            from database.session_factory import SessionFactory
+
+            with SessionFactory.get_session() as session:
+                raw = AppSettingsRepository(session).get("reliability_legacy_cutoff_at")
+            return datetime.fromisoformat(raw) if raw else None
+        except Exception:
+            return None
 
     def is_benched(self, domain: str) -> bool:
-        return domain in self._benched
+        summary = self.memory.get_summary(domain, window=self.WINDOW, min_timestamp=self._legacy_cutoff())
+        if summary.total_predictions < self.MIN_SAMPLES:
+            return False
+        return summary.recent_accuracy < self.BENCH_THRESHOLD
 
     def get_domain_reliability(self, domain: str) -> float:
-        scores = self.history.get(domain, [])
-        return sum(scores) / len(scores) if scores else 0.5
+        summary = self.memory.get_summary(domain, window=self.WINDOW, min_timestamp=self._legacy_cutoff())
+        if summary.total_predictions < self.MIN_SAMPLES:
+            return 0.5
+        return summary.recent_accuracy
