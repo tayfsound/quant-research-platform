@@ -389,7 +389,19 @@ def close_due_positions_task() -> dict:
     return {"closed_count": len(closed), "closed": closed}
 
 
-@celery_app.task(name="run_backtest_task", bind=True)
+    # Faz 268-sonrası — kullanıcı bulgusu: her deploy'da celery worker'ı
+    # yeniden başlatıyoruz (yeni kod yüklensin diye); Celery'nin VARSAYILAN
+    # davranışı task_acks_late=False'tur — yani worker mesajı ALINCA
+    # (çalışması BİTMEDEN) kuyruktan siler. Worker o an bir backtest
+    # çalıştırırken öldürülürse, task sessizce KAYBOLUYORDU — hiç hata
+    # yok, hiç yeniden deneme yok, sonuç asla dönmüyordu. Bu üç backtest
+    # task'ı için (run_trading_cycle_task GİBİ gerçek pozisyon AÇAN
+    # task'lar İÇİN DEĞİL — orada acks_late tekrar çalıştırmayı
+    # tetikleyip AYNI sinyali İKİNCİ kez gerçek pozisyona çevirebilir)
+    # acks_late+reject_on_worker_lost açık: worker ölürse task kuyruğa
+    # geri döner, sonraki worker baştan çalıştırır — güvenli, çünkü tek
+    # etkisi kendi backtest_runs satırını yazmak, idempotent.
+@celery_app.task(name="run_backtest_task", bind=True, acks_late=True, reject_on_worker_lost=True)
 def run_backtest_task(self, symbols: list[str], bars: int = 200, seed: int = 42, fee: float = 0.001) -> dict:
     """Runs the same real CognitiveEngine-backed backtest pipeline
     (Sprint 3-6) as POST /backtest/run, but off the request thread — a real
@@ -415,7 +427,7 @@ def run_backtest_task(self, symbols: list[str], bars: int = 200, seed: int = 42,
     }
 
 
-@celery_app.task(name="run_real_backtest_task", bind=True)
+@celery_app.task(name="run_real_backtest_task", bind=True, acks_late=True, reject_on_worker_lost=True)
 def run_real_backtest_task(
     self,
     symbols: list[str],
@@ -455,7 +467,7 @@ def run_real_backtest_task(
     }
 
 
-@celery_app.task(name="run_portfolio_backtest_task", bind=True)
+@celery_app.task(name="run_portfolio_backtest_task", bind=True, acks_late=True, reject_on_worker_lost=True)
 def run_portfolio_backtest_task(
     self,
     symbols: list[str],
