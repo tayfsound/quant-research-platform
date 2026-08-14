@@ -51,6 +51,34 @@ def test_viewer_cannot_set_settings():
         assert response.status_code == 403
 
 
+def test_admin_can_set_max_open_positions_per_symbol_direction():
+    """Faz 268-sonrası — kullanıcı isteği: bu ayar (gerçek olaydan sonra
+    eklendi — 54 XAUTUSDT SHORT aynı anda açık bulunmuştu) önceden Settings
+    sayfasında hiç yoktu, sadece koddaki varsayılana (5) sabitliydi."""
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        client = _client()
+        response = client.post(
+            "/api/v1/settings/max_open_positions_per_symbol_direction",
+            params={"value": "3"},
+            headers=make_authed_headers(Role.ADMIN),
+        )
+        assert response.status_code == 200
+
+        with SessionFactory.get_session() as session:
+            assert AppSettingsRepository(session).get("max_open_positions_per_symbol_direction") == "3"
+
+
+def test_max_open_positions_per_symbol_direction_rejects_non_positive_value():
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        client = _client()
+        response = client.post(
+            "/api/v1/settings/max_open_positions_per_symbol_direction",
+            params={"value": "0"},
+            headers=make_authed_headers(Role.ADMIN),
+        )
+        assert response.status_code == 400
+
+
 def test_invalid_trading_mode_value_rejected():
     with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
         client = _client()

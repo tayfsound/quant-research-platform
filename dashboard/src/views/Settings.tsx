@@ -240,6 +240,28 @@ export default function Settings() {
         </Card>
 
         <Card>
+          <h3 className="text-sm font-semibold text-ink mb-1">Bir sembol/yönde max açık pozisyon</h3>
+          <p className="text-xs text-ink-soft mb-3">
+            Aynı sembolde, aynı yönde (ör. 10 tane XAUTUSDT SHORT) art arda pozisyon yığılmasını
+            önler — gerçek bir olaydan sonra eklendi (54 XAUTUSDT SHORT aynı anda açık bulunmuştu).
+            Yukarıdaki "aynı anda max açık işlem" toplam sınırından AYRI, daha dar bir kontrol.
+          </p>
+          <div className="flex gap-2">
+            <Input
+              type="number"
+              value={draft.max_open_positions_per_symbol_direction ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, max_open_positions_per_symbol_direction: v }))}
+            />
+            <Button
+              disabled={saving === "max_open_positions_per_symbol_direction"}
+              onClick={() => save("max_open_positions_per_symbol_direction", draft.max_open_positions_per_symbol_direction)}
+            >
+              {saved === "max_open_positions_per_symbol_direction" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+        </Card>
+
+        <Card>
           <h3 className="text-sm font-semibold text-ink mb-1">Kasanın max %kaçı kullanılabilir</h3>
           <p className="text-xs text-ink-soft mb-3">0.5 = kasanın en fazla %50'si açık pozisyonlara bağlanabilir.</p>
           <div className="flex gap-2">

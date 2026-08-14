@@ -152,6 +152,16 @@ def _validate(key: str, value: str) -> None:
                 raise ValueError
         except ValueError:
             raise HTTPException(400, "medium_term_max_concurrent must be a positive integer")
+    elif key == "max_open_positions_per_symbol_direction":
+        # Faz 268-sonrası: gerçek olaydan (54 XAUTUSDT SHORT aynı anda
+        # açık bulundu) eklenen kontrol — kullanıcı Settings sayfasından
+        # kendi ayarlayabilsin diye eklendi, önceden sadece koddaki
+        # varsayılana (5) sabitliydi.
+        try:
+            if int(value) < 1:
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "max_open_positions_per_symbol_direction must be a positive integer")
     else:
         raise HTTPException(400, f"unknown setting key: {key}")
 
