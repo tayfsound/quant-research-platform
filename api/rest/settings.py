@@ -152,6 +152,19 @@ def _validate(key: str, value: str) -> None:
                 raise ValueError
         except ValueError:
             raise HTTPException(400, "medium_term_max_concurrent must be a positive integer")
+    elif key == "multi_timeframe_cascade_enabled":
+        # Faz 268-sonrası — kullanıcı isteği: her işlemden önce en az
+        # 15dk/4h/1g'nin AYRI AYRI değerlendirilmesi ("her biri farklı bir
+        # hikaye anlatıyor olabilir"). Mekanizma (services/orchestrator.py
+        # ::propose()) zaten vardı ama hem varsayılan kapalıydı hem de
+        # Settings API'sinde hiç doğrulanmıyordu (kullanıcı bunu API'den
+        # HİÇ değiştiremezdi).
+        if value not in ("true", "false"):
+            raise HTTPException(400, "multi_timeframe_cascade_enabled must be 'true' or 'false'")
+    elif key == "multi_timeframe_cascade_timeframes":
+        timeframes = [tf.strip() for tf in value.split(",") if tf.strip()]
+        if not timeframes or any(tf not in CANDLE_TIMEFRAMES for tf in timeframes):
+            raise HTTPException(400, f"multi_timeframe_cascade_timeframes must be a comma-separated subset of {list(CANDLE_TIMEFRAMES)}")
     elif key == "max_open_positions_per_symbol_direction":
         # Faz 268-sonrası: gerçek olaydan (54 XAUTUSDT SHORT aynı anda
         # açık bulundu) eklenen kontrol — kullanıcı Settings sayfasından

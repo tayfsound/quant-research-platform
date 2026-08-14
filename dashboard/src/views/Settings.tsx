@@ -505,6 +505,48 @@ export default function Settings() {
         </Card>
 
         <Card>
+          <h3 className="text-sm font-semibold text-ink mb-1">Çoklu zaman dilimi teyidi</h3>
+          <p className="text-xs text-ink-soft mb-3">
+            Açıkken, her işlemden önce aşağıdaki ek zaman dilimlerinde de AYRI birer tam council
+            çalıştırılır (aşağıdaki "Analiz mum aralığı" seçimi ana/karar veren zaman dilimi olarak
+            kalır) — kaç zaman diliminde de aynı yön teyit ediliyor diye bakılır, çelişkide karar
+            motoru bunu görür. Maliyet: sembol başına ~ek her zaman dilimi için bir tam council
+            çağrısı daha (cycle süresi uzar).
+          </p>
+          <div className="flex gap-2 mb-4">
+            {[
+              { key: "true", label: "Açık" },
+              { key: "false", label: "Kapalı" },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => save("multi_timeframe_cascade_enabled", key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  (settings.multi_timeframe_cascade_enabled ?? "false") === key
+                    ? "bg-accent text-white border-accent"
+                    : "bg-canvas-soft text-ink-soft border-line hover:bg-surface-soft"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-ink-soft mb-2">Ek (teyit) zaman dilimleri — virgülle ayrılmış</p>
+          <div className="flex gap-2">
+            <Input
+              value={draft.multi_timeframe_cascade_timeframes ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, multi_timeframe_cascade_timeframes: v }))}
+            />
+            <Button
+              disabled={saving === "multi_timeframe_cascade_timeframes"}
+              onClick={() => save("multi_timeframe_cascade_timeframes", draft.multi_timeframe_cascade_timeframes)}
+            >
+              {saved === "multi_timeframe_cascade_timeframes" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+        </Card>
+
+        <Card>
           <h3 className="text-sm font-semibold text-ink mb-1">Orta vadeli pozisyon katmanı</h3>
           <p className="text-xs text-ink-soft mb-3">
             Kısa vadeli katmandan tamamen ayrı çalışır: kendi günlük/4 saatlik sinyaliyle, kendi ayrı

@@ -79,6 +79,59 @@ def test_max_open_positions_per_symbol_direction_rejects_non_positive_value():
         assert response.status_code == 400
 
 
+def test_multi_timeframe_cascade_settings_accept_valid_and_reject_invalid_values():
+    """Faz 268-sonrası — kullanıcı isteği: her işlemden önce en az 15dk/
+    4h/1g'nin AYRI AYRI değerlendirilmesi. Mekanizma (services/
+    orchestrator.py::propose()) zaten vardı ama Settings API'sinde hiç
+    doğrulanmıyordu — kullanıcı bunu API'den hiç değiştiremezdi."""
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        client = _client()
+        try:
+            ok = client.post(
+                "/api/v1/settings/multi_timeframe_cascade_enabled",
+                params={"value": "true"},
+                headers=make_authed_headers(Role.ADMIN),
+            )
+            assert ok.status_code == 200
+            with SessionFactory.get_session() as session:
+                assert AppSettingsRepository(session).get("multi_timeframe_cascade_enabled") == "true"
+
+            bad = client.post(
+                "/api/v1/settings/multi_timeframe_cascade_enabled",
+                params={"value": "yolo"},
+                headers=make_authed_headers(Role.ADMIN),
+            )
+            assert bad.status_code == 400
+
+            ok_tf = client.post(
+                "/api/v1/settings/multi_timeframe_cascade_timeframes",
+                params={"value": "15m,4h"},
+                headers=make_authed_headers(Role.ADMIN),
+            )
+            assert ok_tf.status_code == 200
+            with SessionFactory.get_session() as session:
+                assert AppSettingsRepository(session).get("multi_timeframe_cascade_timeframes") == "15m,4h"
+
+            bad_tf = client.post(
+                "/api/v1/settings/multi_timeframe_cascade_timeframes",
+                params={"value": "15m,3w"},
+                headers=make_authed_headers(Role.ADMIN),
+            )
+            assert bad_tf.status_code == 400
+
+            empty_tf = client.post(
+                "/api/v1/settings/multi_timeframe_cascade_timeframes",
+                params={"value": ""},
+                headers=make_authed_headers(Role.ADMIN),
+            )
+            assert empty_tf.status_code == 400
+        finally:
+            with SessionFactory.get_session() as session:
+                repo = AppSettingsRepository(session)
+                repo.set("multi_timeframe_cascade_enabled", DEFAULTS["multi_timeframe_cascade_enabled"], updated_by="test")
+                repo.set("multi_timeframe_cascade_timeframes", DEFAULTS["multi_timeframe_cascade_timeframes"], updated_by="test")
+
+
 def test_invalid_trading_mode_value_rejected():
     with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
         client = _client()
