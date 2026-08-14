@@ -174,6 +174,40 @@ def classify_recent_stop_loss_failures(hours: int = 90) -> dict:
     return summarize_stop_loss_failures(hours=hours)
 
 
+def train_and_evaluate_meta_label_model(window: int = 1000, min_samples: int = 100) -> dict:
+    """Gerçek kapanmış işlemlerden P(TP before SL) meta-labeling
+    modelini eğitir ve GERÇEK OOS (train/test) doğrulama metriklerini
+    döndürür (test_accuracy, test_auc, taban oranı). Bu model HİÇBİR
+    canlı karara bağlı değil — sadece "kendi edge'ini kanıtladı mı"
+    sorusuna gerçek veriyle cevap vermek için."""
+    from services.meta_label_model import train_meta_label_model
+
+    model = train_meta_label_model(window=window, min_samples=min_samples)
+    if model is None:
+        return {"trained": False, "reason": "insufficient_samples_or_single_class"}
+    return {
+        "trained": True,
+        "sample_count": model.sample_count,
+        "baseline_correctness_rate": model.baseline_correctness_rate,
+        "train_accuracy": model.train_accuracy,
+        "test_accuracy": model.test_accuracy,
+        "test_auc": model.test_auc,
+        # Etiketler dengesiz olabilir (ör. TP oranı %28 ise "hep SL de"
+        # diyen saf bir sınıflandırıcı %72 doğrulukla "kazanır") —
+        # gerçek taban, ham TP oranı değil, ÇOĞUNLUK SINIFININ kendisi.
+        # AUC (sınıf dengesizliğinden etkilenmez) bu yüzden burada daha
+        # güvenilir bir sinyal — accuracy'nin yanında ayrıca bildiriliyor.
+        "beats_naive_majority_class_baseline": model.test_accuracy > max(
+            model.baseline_correctness_rate, 1 - model.baseline_correctness_rate,
+        ),
+        "note": (
+            "Bu model canlı kararlara bağlı DEĞİL — sadece araştırma/doğrulama amaçlı. "
+            "Etiketler dengesizse (TP oranı taban oranından çok farklıysa) accuracy yanıltıcı "
+            "olabilir — test_auc (0.5=rastgele, 1.0=mükemmel) daha güvenilir bir sinyaldir."
+        ),
+    }
+
+
 def propose_code_change(file_path: str, title: str, description: str, diff: str, rationale: str) -> dict:
     """HİÇBİR ZAMAN diske yazmaz — sadece code_change_proposals'a
     "pending" bir satır ekler. Gerçek dosya değişikliği daima ayrı, insan
@@ -265,6 +299,24 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "train_and_evaluate_meta_label_model",
+            "description": (
+                "Gerçek kapanmış işlemlerden P(TP before SL) meta-labeling modelini eğitir, "
+                "GERÇEK OOS doğrulama metriklerini (test_accuracy, test_auc, taban oranı) döndürür. "
+                "Canlı kararlara bağlı değil — sadece bu modelin gerçekten bir edge'i olup olmadığını sormak için."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "window": {"type": "integer", "description": "Kaç kapalı işlem (varsayılan 1000)"},
+                    "min_samples": {"type": "integer", "description": "Min. eğitim örneklemi (varsayılan 100)"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "propose_code_change",
             "description": (
                 "Bir kod değişikliği ÖNERİR — asla diske yazmaz, sadece kullanıcının "
@@ -291,5 +343,6 @@ TOOL_FUNCTIONS = {
     "read_source_file": read_source_file,
     "search_code": search_code,
     "classify_recent_stop_loss_failures": classify_recent_stop_loss_failures,
+    "train_and_evaluate_meta_label_model": train_and_evaluate_meta_label_model,
     "propose_code_change": propose_code_change,
 }

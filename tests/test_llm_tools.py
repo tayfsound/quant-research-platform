@@ -23,6 +23,11 @@ def test_classify_recent_stop_loss_failures_returns_real_shape():
     assert "barrier_error_count" in result
 
 
+def test_train_and_evaluate_meta_label_model_returns_real_shape():
+    result = llm_tools.train_and_evaluate_meta_label_model(window=50, min_samples=10_000_000)
+    assert result == {"trained": False, "reason": "insufficient_samples_or_single_class"}
+
+
 def test_read_source_file_returns_real_content():
     result = llm_tools.read_source_file("llm_tools.py", start_line=1, end_line=5)
     assert "error" not in result
