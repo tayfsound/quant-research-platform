@@ -383,6 +383,92 @@ def _volatility_regime(returns: np.ndarray) -> str:
     return "normal"
 
 
+def compute_volume_profile(data: list[OHLCV], num_bins: int = 20, value_area_pct: float = 0.70) -> dict:
+    """Faz 268-sonrası — kullanıcı bulgusu: "fiyatın akümüle olduğu
+    bölgelere göre strateji" hiç yoktu — swing high/low tabanlı destek/
+    direncin dışında gerçek bir hacim-fiyat analizi (Volume Profile)
+    eksikti. Tick-seviyeli işlem verisi yok (sadece OHLC+bar toplam
+    hacmi) — bu yüzden her bar'ın hacmi kendi [low, high] aralığına
+    EŞİT dağıtılıyor (standart, dürüst bir yaklaşıklama; gerçek
+    tick-by-tick VP'nin yerini tutmaz ama öznel bir şekil-tanıma da
+    DEĞİL, kesin tanımlı bir hesaplama).
+
+    Döner:
+    - poc_price: Point of Control — en çok hacmin işlem gördüğü fiyat
+      (fiyatın GERÇEKTEN en çok "biriktiği" tek nokta).
+    - value_area_low/high: toplam hacmin ~%70'inin (value_area_pct)
+      işlem gördüğü, POC'tan dışa doğru genişleyen aralık.
+    - high_volume_nodes: ortalamanın belirgin üstünde (1.5x) hacim
+      görmüş fiyat seviyeleri — gerçek birikim bölgeleri (support/
+      resistance adayları)."""
+    if len(data) < 5:
+        return {"poc_price": None, "value_area_low": None, "value_area_high": None, "high_volume_nodes": []}
+
+    lowest = min(bar.low for bar in data)
+    highest = max(bar.high for bar in data)
+    if highest <= lowest:
+        return {"poc_price": None, "value_area_low": None, "value_area_high": None, "high_volume_nodes": []}
+
+    bin_size = (highest - lowest) / num_bins
+    bins = [0.0] * num_bins
+
+    for bar in data:
+        bar_range = bar.high - bar.low
+        if bar_range <= 0:
+            idx = min(int((bar.low - lowest) / bin_size), num_bins - 1)
+            bins[idx] += bar.volume
+            continue
+        start_idx = max(0, int((bar.low - lowest) / bin_size))
+        end_idx = min(num_bins - 1, int((bar.high - lowest) / bin_size))
+        for idx in range(start_idx, end_idx + 1):
+            bin_low = lowest + idx * bin_size
+            bin_high = bin_low + bin_size
+            overlap = min(bar.high, bin_high) - max(bar.low, bin_low)
+            if overlap > 0:
+                bins[idx] += bar.volume * (overlap / bar_range)
+
+    total_volume = sum(bins)
+    if total_volume <= 0:
+        return {"poc_price": None, "value_area_low": None, "value_area_high": None, "high_volume_nodes": []}
+
+    poc_idx = max(range(num_bins), key=lambda i: bins[i])
+    poc_price = lowest + (poc_idx + 0.5) * bin_size
+
+    # Value area: POC'tan dışa doğru, her adımda daha hacimli komşu bin
+    # eklenerek toplam hacmin value_area_pct'ine ulaşana kadar genişler
+    # (standart Volume Profile Value Area algoritması).
+    included = {poc_idx}
+    accumulated = bins[poc_idx]
+    left, right = poc_idx - 1, poc_idx + 1
+    while accumulated < total_volume * value_area_pct and (left >= 0 or right < num_bins):
+        left_vol = bins[left] if left >= 0 else -1.0
+        right_vol = bins[right] if right < num_bins else -1.0
+        if right_vol >= left_vol:
+            included.add(right)
+            accumulated += right_vol
+            right += 1
+        else:
+            included.add(left)
+            accumulated += left_vol
+            left -= 1
+
+    value_area_low = lowest + min(included) * bin_size
+    value_area_high = lowest + (max(included) + 1) * bin_size
+
+    avg_bin_volume = total_volume / num_bins
+    high_volume_nodes = [
+        round(lowest + (i + 0.5) * bin_size, 8)
+        for i in range(num_bins) if bins[i] > avg_bin_volume * 1.5
+    ]
+
+    return {
+        "poc_price": round(poc_price, 8),
+        "value_area_low": round(value_area_low, 8),
+        "value_area_high": round(value_area_high, 8),
+        "high_volume_nodes": high_volume_nodes,
+    }
+
+
 def compute_pattern_signals(data: list[OHLCV]) -> dict:
     """structure_phase/break_of_structure/change_of_character/fair_value_gap/
     swing_structure/liquidity_sweep — BOS/CHoCH/FVG/swing/sweep kesin
@@ -396,6 +482,7 @@ def compute_pattern_signals(data: list[OHLCV]) -> dict:
             "structure_phase": "neutral", "break_of_structure": "none",
             "change_of_character": False, "fair_value_gap": "none",
             "swing_structure": "mixed", "liquidity_sweep": "none",
+            "poc_distance_pct": 0.0, "in_value_area": False, "near_high_volume_node": False,
             "fibonacci_nearest_level": "none", "fibonacci_price_position": "none",
             "wyckoff_event": "none",
         }
@@ -440,6 +527,19 @@ def compute_pattern_signals(data: list[OHLCV]) -> dict:
     structure_phase = _real_wyckoff_phase(data)
     fib_level, fib_position = _fibonacci_signal(closes, highs, lows, swing_highs, swing_lows)
     wyckoff_event = _wyckoff_event(data)
+    volume_profile = compute_volume_profile(data)
+    current_price = data[-1].close
+    poc_distance_pct = 0.0
+    in_value_area = False
+    near_high_volume_node = False
+    if volume_profile["poc_price"] is not None and current_price > 0:
+        poc_distance_pct = round((current_price - volume_profile["poc_price"]) / current_price, 6)
+        in_value_area = volume_profile["value_area_low"] <= current_price <= volume_profile["value_area_high"]
+        node_proximity_pct = 0.005  # fiyatın %0.5 yakınında bir HVN varsa "yakın" sayılır
+        near_high_volume_node = any(
+            abs(current_price - node) / current_price <= node_proximity_pct
+            for node in volume_profile["high_volume_nodes"]
+        )
 
     return {
         "structure_phase": structure_phase,
@@ -448,6 +548,9 @@ def compute_pattern_signals(data: list[OHLCV]) -> dict:
         "fair_value_gap": fair_value_gap,
         "swing_structure": swing_structure,
         "liquidity_sweep": liquidity_sweep,
+        "poc_distance_pct": poc_distance_pct,
+        "in_value_area": in_value_area,
+        "near_high_volume_node": near_high_volume_node,
         "fibonacci_nearest_level": fib_level,
         "fibonacci_price_position": fib_position,
         "wyckoff_event": wyckoff_event,

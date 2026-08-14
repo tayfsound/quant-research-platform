@@ -72,7 +72,7 @@ _SPECS = [
                 "fiyat ile OBV arasındaki uyumsuzluk"),
     # --- market_data.features.signal_engine::compute_pattern_signals ---
     FeatureSpec("structure_phase", "market_data.features.signal_engine", "compute_pattern_signals", "str",
-                "basitleştirilmiş Wyckoff faz yaklaşıklaması (sofistike bir Wyckoff analizi değil)"),
+                "gerçek Wyckoff fazı — daralan trading range + öncül trend + spring/SOS sıralamasına dayalı"),
     FeatureSpec("break_of_structure", "market_data.features.signal_engine", "compute_pattern_signals", "str",
                 "fiyat en son önemli swing high/low'u aştı mı"),
     FeatureSpec("change_of_character", "market_data.features.signal_engine", "compute_pattern_signals", "bool",
@@ -89,6 +89,12 @@ _SPECS = [
                 "fiyatın Fibonacci seviyeleri arasındaki konumu"),
     FeatureSpec("wyckoff_event", "market_data.features.signal_engine", "compute_pattern_signals", "str",
                 "tespit edilen Wyckoff olayı (varsa)"),
+    FeatureSpec("poc_distance_pct", "market_data.features.signal_engine", "compute_pattern_signals", "float",
+                "fiyatın Volume Profile POC'una (en çok hacim gören fiyat) göre uzaklığı"),
+    FeatureSpec("in_value_area", "market_data.features.signal_engine", "compute_pattern_signals", "bool",
+                "fiyat hacmin ~%70'inin işlem gördüğü value area içinde mi"),
+    FeatureSpec("near_high_volume_node", "market_data.features.signal_engine", "compute_pattern_signals", "bool",
+                "fiyat gerçek bir hacim-birikim bölgesine (support/resistance adayı) yakın mı"),
     # --- market_data.features.signal_engine::compute_quant_signals ---
     FeatureSpec("zscore", "market_data.features.signal_engine", "compute_quant_signals", "float",
                 "fiyatın 20-barlık ortalamaya göre standart sapma cinsinden sapması"),

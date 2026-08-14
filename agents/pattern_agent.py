@@ -110,6 +110,22 @@ class PatternAgent:
             else:
                 caveats.append(f"Price at Fibonacci resistance ({context.fibonacci_nearest_level}) but structure is bullish — mixed signal")
 
+        # Faz 268-sonrası — kullanıcı isteği: "fiyatın akümüle olduğu
+        # bölgelere göre strateji" — gerçek Volume Profile (bkz.
+        # signal_engine.compute_volume_profile). Fibonacci ile AYNI ilke:
+        # yüksek-hacim bölgesi (gerçek biriktirme/support-resistance)
+        # kendi başına yön açmıyor, mevcut yapısal kanıtı DOĞRULUYOR.
+        current_score = sum(contributions.values())
+        if context.near_high_volume_node:
+            if current_score > 0:
+                contributions["volume_profile_confirm"] = 0.5
+                evidence.append("Price near a high-volume accumulation node — confirms bullish structure (real support)")
+            elif current_score < 0:
+                contributions["volume_profile_confirm"] = -0.5
+                evidence.append("Price near a high-volume accumulation node — confirms bearish structure (real resistance)")
+        if not context.in_value_area:
+            caveats.append("Price outside the volume-profile value area (~70% of recent volume) — thinner liquidity here")
+
         score = sum(contributions.values())
 
         if score > 0.5:

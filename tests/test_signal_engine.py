@@ -570,3 +570,62 @@ def test_data_freshness_falls_back_to_full_for_future_timestamps():
     now = datetime(2026, 1, 1, 1, 0, 0, tzinfo=UTC)
     last_bar = now + timedelta(minutes=5)
     assert compute_data_freshness(last_bar, now, "1h") == 1.0
+
+
+# Faz 268-sonrası — kullanıcı bulgusu: "fiyatın akümüle olduğu bölgeler"
+# (Volume Profile) hiç yoktu.
+
+def _volume_bars(closes_and_volumes: list[tuple[float, float]]) -> list[OHLCV]:
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    return [
+        OHLCV(timestamp=base + timedelta(minutes=i), open=c, high=c + 0.5, low=c - 0.5, close=c, volume=v)
+        for i, (c, v) in enumerate(closes_and_volumes)
+    ]
+
+
+def test_volume_profile_poc_is_at_the_real_high_volume_cluster():
+    from market_data.features.signal_engine import compute_volume_profile
+
+    # 30 bar yuksek hacimle 100-102 arasinda sikisiyor, 10 bar dusuk
+    # hacimle 105-115'e firliyor - POC gercekten sikisma bolgesinde olmali.
+    bars = _volume_bars([(101.0, 1000.0)] * 30 + [(105.0 + i, 10.0) for i in range(10)])
+    vp = compute_volume_profile(bars)
+    assert vp["poc_price"] is not None
+    assert 99.0 <= vp["poc_price"] <= 103.0
+
+
+def test_volume_profile_value_area_contains_the_poc():
+    from market_data.features.signal_engine import compute_volume_profile
+
+    bars = _volume_bars([(100.0 + (i % 5), 100.0) for i in range(40)])
+    vp = compute_volume_profile(bars)
+    assert vp["value_area_low"] <= vp["poc_price"] <= vp["value_area_high"]
+
+
+def test_volume_profile_high_volume_nodes_flag_the_real_accumulation_zone():
+    from market_data.features.signal_engine import compute_volume_profile
+
+    bars = _volume_bars([(101.0, 1000.0)] * 30 + [(110.0 + i, 5.0) for i in range(10)])
+    vp = compute_volume_profile(bars)
+    assert len(vp["high_volume_nodes"]) > 0
+    assert any(99.0 <= node <= 103.0 for node in vp["high_volume_nodes"])
+
+
+def test_volume_profile_returns_none_for_too_few_bars():
+    from market_data.features.signal_engine import compute_volume_profile
+
+    vp = compute_volume_profile(_volume_bars([(100.0, 10.0)] * 3))
+    assert vp["poc_price"] is None
+    assert vp["high_volume_nodes"] == []
+
+
+def test_compute_pattern_signals_flags_near_high_volume_node():
+    from market_data.features.signal_engine import compute_pattern_signals
+
+    # Genis toplam fiyat araligi (101->119) ki dar bin_size, yogun
+    # kumenin hacmini az sayida bin'de yogunlastirsin (aksi halde her
+    # bar'in kendi genis [low,high] penceresi bile tek basina bin'lere
+    # yayilip yogunlasmayi sulandirabiliyor).
+    bars = _volume_bars([(101.0, 1000.0)] * 30 + [(110.0 + i, 10.0) for i in range(9)] + [(101.05, 10.0)])
+    signals = compute_pattern_signals(bars)
+    assert signals["near_high_volume_node"] is True

@@ -22,4 +22,13 @@ class PatternContext(BaseModel):
     # kasıtlı olarak kaba genel-rejim yaklaşıklamasından farklı olarak.
     # "spring", "upthrust", "sign_of_strength", "sign_of_weakness", "none".
     wyckoff_event: str = "none"
+    # Faz 268-sonrası — kullanıcı bulgusu: "fiyatın akümüle olduğu
+    # bölgeler" (Volume Profile) hiç yoktu — swing high/low tabanlı
+    # destek/direnç dışında gerçek bir hacim-fiyat analizi olmadan
+    # teknik analiz eksik kalıyordu. bkz. signal_engine.compute_
+    # volume_profile — tick verisi olmadığı için her bar'ın hacmi kendi
+    # [low,high] aralığına dağıtılan, dürüst bir yaklaşıklama.
+    poc_distance_pct: float = 0.0          # fiyatın POC'a göre uzaklığı (+üstünde, -altında)
+    in_value_area: bool = False            # fiyat hacmin ~%70'inin işlem gördüğü aralıkta mı
+    near_high_volume_node: bool = False    # fiyat bilinen bir yüksek-hacim (birikim) bölgesine yakın mı
     timestamp: datetime = Field(default_factory=datetime.now)
