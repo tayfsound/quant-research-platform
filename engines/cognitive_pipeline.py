@@ -125,10 +125,20 @@ class CouncilStage:
 
 
 class MetaStage:
+    # Faz 268-sonrası — kullanıcı isteği, gerçek örneklerle doğrulandı
+    # (bkz. ADAUSDT %19.1 güven kararı: technical ajanı %87 güvenle VE
+    # kalibrasyon modelinin x1.09 ile doğruladığı zengin kanıtla belief
+    # yönünün TERSİNE işaret ederken sistem yine de LONG açmıştı —
+    # ağırlıklı toplam oylama, tek başına çok güvenilir bir itirazı sayıca
+    # fazla ama zayıf seslere karşı hiç ayrıcalıklı görmüyordu). Kullanıcının
+    # kendi ifadesiyle: "İyi trade doğru zamanda doğru hamleyi yapmaktır,
+    # zırt pırt pozisyon açmak değil."
+    STRONG_DISSENT_CONFIDENCE_THRESHOLD = 0.75
+
     def __init__(self):
         self.metacognition = Metacognition()
 
-    def execute(self, ctx: CognitiveCycleContext, belief: Belief) -> CognitiveCycleContext:
+    def execute(self, ctx: CognitiveCycleContext, belief: Belief, opinions: list[AgentOpinion]) -> CognitiveCycleContext:
         # Faz 204: eşikler artık app_settings'ten okunuyor — başlangıçta
         # dürüst varsayılan (%70/%40, hiç kalibre edilmemiş) ama
         # services/threshold_optimizer.py yeterli gerçek kapalı işlem
@@ -142,25 +152,19 @@ class MetaStage:
             self.metacognition.act_threshold = float(settings_repo.get("act_threshold"))
             self.metacognition.reduce_threshold = float(settings_repo.get("reduce_threshold"))
 
-        # Faz 207: kullanıcı isteği — "test modundayken güven olmasa da bir
-        # şeyler yapsın, deneyim kazansın; hataları gerçek kayıp
-        # yaratmıyorken onu neden kısıtlıyoruz?" Gerçek bir nokta: services/
-        # threshold_optimizer.py ve weight_optimizer gibi öğrenme
-        # mekanizmalarının hepsi gerçek kapanmış işlem geçmişine ihtiyaç
-        # duyuyor, ama reduce_threshold (0.4) test modunda bile aynı sıkılıkta
-        # uygulandığı için belief.direction gerçekten LONG/SHORT olsa bile
-        # (WAIT değil — o zaten aşağıda RiskTargetStage/DecisionFusion'da
-        # ayrıca elenir) zayıf ama gerçek bir yönlü sinyal hiç açılmadan
-        # WAIT'e düşüyordu, sistem hiç gerçek sonuç biriktiremiyordu. Test
-        # modunda tabanı neredeyse sıfıra indiriyoruz — REDUCE zaten
-        # büyüklüğü confidence ile orantılı küçültüyor (final_size =
-        # proposed_size * confidence), yani zayıf sinyal otomatik olarak
-        # küçük pozisyon açıyor, büyük risk almıyor. act_threshold (tam
-        # büyüklük için gereken gerçek konviksiyon çıtası) test modunda da
-        # aynı kalıyor — "her sinyal tam büyüklük" değil, "her yönlü sinyal
-        # bir şans" istiyoruz.
-        if ctx.risk.trading_mode == "test":
-            self.metacognition.reduce_threshold = 0.05
+        # Faz 268-sonrası — kullanıcı isteği: Faz 207'nin test-modu
+        # tabanı (reduce_threshold'u 0.05'e indirme) KALDIRILDI. Kullanıcının
+        # kendi gözlemi: "%19 ile bile pozisyon alıyor... confidence
+        # değerinin önemi yok, 20 ile de 80 ile de pozisyona giriyorsa bu
+        # veri bir anlam ifade etmiyor demektir." Faz 207'nin amacı hızlı
+        # veri birikimiydi ama confidence'ı anlamsızlaştırarak bunu
+        # yapıyordu — hem gerçek sonuçları öğrenme döngülerine (weight
+        # optimizer, confidence kalibrasyonu) gürültü olarak besliyor hem
+        # de "iyi trade doğru zamanda doğru hamledir" ilkesine aykırı
+        # düşüyordu. Veri hacmi ihtiyacı artık watchlist genişletilerek
+        # (daha fazla sembol) karşılanıyor — tek bir sembolde karar
+        # kalitesinden ödün vermeye gerek kalmadı. Test modunda da artık
+        # canlıyla AYNI reduce_threshold (act_threshold zaten hep aynıydı).
 
         conflict_level = max(
             belief.cluster_disagreement,
@@ -192,6 +196,35 @@ class MetaStage:
 
         ctx.decision.confidence = meta["confidence"]
         ctx.decision.uncertainty = meta["uncertainty"]
+
+        # Güçlü tek-ses itirazı: benched OLMAYAN (effective_influence>0)
+        # herhangi bir ajan, nihai yönün TERSİNE, eşiğin üzerinde güvenle
+        # işaret ediyorsa pozisyon açma.
+        strong_dissent = any(
+            o.effective_influence > 0
+            and o.direction in ("LONG", "SHORT")
+            and o.direction != belief.direction
+            and o.confidence > self.STRONG_DISSENT_CONFIDENCE_THRESHOLD
+            for o in opinions
+        )
+        #
+        # NOT — "ince konsey" (az sayıda aktif ajan) için AYRI bir sabit
+        # sayı eşiği KASITLI OLARAK eklenmedi: gerçek 23.221 kararlık
+        # geçmiş veriyle ölçüldü, katılımcı sayısı ile confidence ZIT
+        # yönde ilişkili çıktı (tek başına çelişkisiz bir ses confidence'ı
+        # YAPAY OLARAK yükseltebiliyor — ort. 1 katılımcı: %50 confidence,
+        # ort. 5 katılımcı: %35 — çünkü çok seslilikte anlaşmazlık zaten
+        # kendiliğinden confidence'ı düşürüyor). Sabit bir "en az N ajan"
+        # kuralı gerçek geçmiş kararların ~%64'ünü (aktif katılımcı<3)
+        # ayrım gözetmeksizin bloke ederdi — kullanıcının "iki uç noktada
+        # gidip geleceğiz" endişesi haklı, bu körü körüne kesim çözüm
+        # değildi. Asıl düzeltme aşağıdaki reduce_threshold'un test
+        # modunda da GERÇEK değerine dönmesi: hem "kumar" örneği (%16.9)
+        # hem ADAUSDT örneği (%19.1) zaten SADECE bununla WAIT'e düşüyor
+        # — ayrı bir katılımcı sayısı kuralına gerek kalmadan.
+        if strong_dissent:
+            meta["decision"] = "WAIT"
+
         if meta["decision"] == "WAIT":
             ctx.decision.action = ActionType.WAIT
             ctx.decision.final_size = 0.0

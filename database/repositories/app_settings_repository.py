@@ -132,7 +132,12 @@ DEFAULTS: dict[str, str] = {
     # LINK (Chainlink — oracle altyapısı, DeFi'de yaygın), UNI (Uniswap —
     # lider DEX), NEAR (Near Protocol — köklü L1), ZEC (Zcash — 2016'dan
     # beri var, gizlilik odaklı köklü proje).
-    "watchlist": "BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,ADAUSDT,XAUTUSDT,DOGEUSDT,TRXUSDT,LINKUSDT,UNIUSDT,NEARUSDT,ZECUSDT,AAPL,NVDA,MSFT,GC=F,SI=F,^IXIC,^GSPC",
+    # Faz 268-sonrası — kullanıcı isteği: "az token var artıralım... işlem
+    # sayısını artıracaksak coinleri artıralım." 17 yeni likit Binance
+    # Futures paritesi eklendi (hepsi gerçek API ile TRADING durumu
+    # doğrulandı) — hacim ihtiyacı artık tek sembolde karar kalitesinden
+    # ödün vermek yerine sembol çeşitliliğiyle karşılanıyor.
+    "watchlist": "BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,ADAUSDT,XAUTUSDT,DOGEUSDT,TRXUSDT,LINKUSDT,UNIUSDT,NEARUSDT,ZECUSDT,AAPL,NVDA,MSFT,GC=F,SI=F,^IXIC,^GSPC,AVAXUSDT,DOTUSDT,LTCUSDT,ATOMUSDT,APTUSDT,ARBUSDT,OPUSDT,SUIUSDT,INJUSDT,FILUSDT,ETCUSDT,ICPUSDT,BCHUSDT,WLDUSDT,TIAUSDT,SEIUSDT,RENDERUSDT",
     # Faz 199: portfolio_fusion.py'nin gerçekten bağlanması — aynı cycle'da
     # birden fazla sembol eşzamanlı yönlü öneri üretirse, gerçek kovaryans
     # matrisiyle hesaplanan portföy VaR'ı bu yüzdeyi (sermayenin) aşarsa

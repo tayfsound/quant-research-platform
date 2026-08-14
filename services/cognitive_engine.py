@@ -80,7 +80,7 @@ class CognitiveEngine:
         ctx = self.knowledge_stage.execute(ctx)
         ctx = self.binder_stage.execute(ctx)
         ctx, belief, opinions = self.council_stage.execute(ctx)
-        ctx = self.meta_stage.execute(ctx, belief)
+        ctx = self.meta_stage.execute(ctx, belief, opinions)
         ctx = self.predictive_risk_stage.execute(ctx)
         ctx = self.drawdown_sizing_stage.execute(ctx)
         ctx = self.risk_target_stage.execute(ctx)

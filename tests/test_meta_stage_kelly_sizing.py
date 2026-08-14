@@ -3,6 +3,7 @@ haritasının D fazı. MetaStage'in ACT dalı (confidence >= act_threshold),
 Kelly çarpanının (services/kelly_sizing.py) matematiği ayrı test ediliyor
 (test_kelly_sizing.py) — burada SADECE MetaStage.execute()'ın bunu
 gerçekten çağırıp final_size'ı ölçeklendirdiği doğrulanıyor."""
+from contracts.agent import AgentDomain, AgentOpinion
 from contracts.belief import Belief
 from contracts.context import CognitiveCycleContext
 from engines.cognitive_pipeline import MetaStage
@@ -15,6 +16,19 @@ def _high_confidence_long_belief() -> Belief:
     )
 
 
+def _supportive_opinions() -> list[AgentOpinion]:
+    """Faz 268-sonrası: MetaStage artık opinions'a bakıp (a) güçlü tek-ses
+    itirazı ve (b) ince konsey kontrolü yapıyor — bu testler o kontrollerin
+    KONUSU değil (Kelly çarpanını test ediyorlar), o yüzden her ikisini de
+    rahatça geçecek, belief ile UYUMLU 3 gerçek yönlü oy veriyoruz."""
+    opinions = []
+    for domain in (AgentDomain.MACRO, AgentDomain.TECHNICAL, AgentDomain.QUANT):
+        o = AgentOpinion(domain=domain, direction="LONG", confidence=0.7)
+        o.effective_influence = 0.6
+        opinions.append(o)
+    return opinions
+
+
 def test_act_tier_final_size_is_scaled_by_kelly_multiplier(monkeypatch):
     import engines.cognitive_pipeline as pipeline_module
 
@@ -25,7 +39,7 @@ def test_act_tier_final_size_is_scaled_by_kelly_multiplier(monkeypatch):
     ctx.decision.proposed_size = 1.0
 
     stage = MetaStage()
-    result_ctx = stage.execute(ctx, _high_confidence_long_belief())
+    result_ctx = stage.execute(ctx, _high_confidence_long_belief(), _supportive_opinions())
 
     assert result_ctx.decision.confidence >= 0.7  # gerçekten ACT'e ulaştı
     assert abs(result_ctx.decision.final_size - 0.3) < 1e-9  # 1.0 * 0.3
@@ -43,7 +57,7 @@ def test_act_tier_with_no_kelly_data_keeps_full_size(monkeypatch):
     ctx.decision.proposed_size = 1.0
 
     stage = MetaStage()
-    result_ctx = stage.execute(ctx, _high_confidence_long_belief())
+    result_ctx = stage.execute(ctx, _high_confidence_long_belief(), _supportive_opinions())
 
     assert result_ctx.decision.final_size == 1.0
 
@@ -64,7 +78,7 @@ def test_act_tier_kelly_multiplier_never_increases_size_beyond_proposed(monkeypa
     ctx.decision.proposed_size = 2.0
 
     stage = MetaStage()
-    result_ctx = stage.execute(ctx, _high_confidence_long_belief())
+    result_ctx = stage.execute(ctx, _high_confidence_long_belief(), _supportive_opinions())
 
     assert result_ctx.decision.final_size < ctx.decision.proposed_size
     assert abs(result_ctx.decision.final_size - 1.2) < 1e-9
