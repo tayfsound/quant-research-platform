@@ -196,6 +196,11 @@ def build_cognitive_context(
         "volume": data[-1].volume,
         "high": data[-1].high,
         "low": data[-1].low,
+        # Faz 268-sonrası — kullanıcı bulgusu: her ajan AgentOpinion.
+        # freshness'ı SABİT bir varsayılanla (0.85/0.90 gibi) bildiriyordu
+        # — gerçek veri yaşı hiç ölçülmüyordu. CouncilStage bu alanı okuyup
+        # gerçek bir freshness hesaplıyor (bkz. compute_data_freshness).
+        "last_bar_timestamp": data[-1].timestamp.isoformat(),
         **pattern_signals,
     }
 

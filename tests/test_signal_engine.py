@@ -530,3 +530,43 @@ def test_preceding_trend_direction_identifies_real_decline_and_rise():
 
     flat_closes = np.array([d.close for d in _trend_bars(200, 201, 40)])
     assert _preceding_trend_direction(flat_closes, tr_start_idx=39) == "none"
+
+
+# Faz 268-sonrası — kullanıcı bulgusu: her ajan AgentOpinion.freshness'ı
+# SABİT bir varsayılanla (0.85/0.90 gibi) bildiriyordu, gerçek veri yaşı
+# hiç ölçülmüyordu.
+
+def test_data_freshness_is_full_when_last_bar_is_within_its_own_timeframe():
+    from market_data.features.signal_engine import compute_data_freshness
+
+    now = datetime(2026, 1, 1, 1, 0, 0, tzinfo=UTC)
+    last_bar = now - timedelta(minutes=30)
+    assert compute_data_freshness(last_bar, now, "1h") == 1.0
+
+
+def test_data_freshness_decays_linearly_between_one_and_five_bar_ages():
+    from market_data.features.signal_engine import compute_data_freshness
+
+    now = datetime(2026, 1, 1, 5, 0, 0, tzinfo=UTC)
+    # 1h bar, 3 saat yaşında -> 1h ile 5h arası tam ortasında -> ~0.5.
+    last_bar = now - timedelta(hours=3)
+    result = compute_data_freshness(last_bar, now, "1h")
+    assert 0.45 <= result <= 0.55
+
+
+def test_data_freshness_is_zero_when_stale_beyond_five_bar_ages():
+    from market_data.features.signal_engine import compute_data_freshness
+
+    now = datetime(2026, 1, 1, 10, 0, 0, tzinfo=UTC)
+    last_bar = now - timedelta(hours=10)
+    assert compute_data_freshness(last_bar, now, "1h") == 0.0
+
+
+def test_data_freshness_falls_back_to_full_for_future_timestamps():
+    """Saat kayması/senkronizasyon farkı gibi bir durumda (negatif yaş)
+    fail-closed davranış: hataya düşmek yerine tam taze varsayılıyor."""
+    from market_data.features.signal_engine import compute_data_freshness
+
+    now = datetime(2026, 1, 1, 1, 0, 0, tzinfo=UTC)
+    last_bar = now + timedelta(minutes=5)
+    assert compute_data_freshness(last_bar, now, "1h") == 1.0

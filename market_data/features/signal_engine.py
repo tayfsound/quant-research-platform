@@ -875,3 +875,24 @@ def compute_data_quality_score(data: list[OHLCV]) -> dict:
         "anomaly_count": len(anomalies),
         "anomalies": anomalies[:20],
     }
+
+
+_TIMEFRAME_TO_SECONDS = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}
+
+
+def compute_data_freshness(last_bar_timestamp, now, timeframe: str) -> float:
+    """Faz 268-sonrası — kullanıcı bulgusu: her ajan AgentOpinion.freshness'ı
+    SABİT bir varsayılanla (0.85/0.90 gibi) bildiriyordu, gerçek veri yaşı
+    hiç ölçülmüyordu. Son bar'ın GERÇEK yaşını, kendi zaman diliminin
+    süresine göre normalize eder — 1 bar süresi içindeyse tam taze (1.0),
+    5 bar süresinden eskiyse tamamen bayat (0.0), arası doğrusal düşüş.
+    "last_bar_timestamp gelecekte" gibi saat kayması durumlarında da
+    (negatif yaş) fail-closed 1.0'a sabitlenir, hataya düşülmez."""
+    bar_seconds = _TIMEFRAME_TO_SECONDS.get(timeframe, 3600)
+    age_seconds = (now - last_bar_timestamp).total_seconds()
+    if age_seconds <= bar_seconds:
+        return 1.0
+    stale_at_seconds = bar_seconds * 5
+    if age_seconds >= stale_at_seconds:
+        return 0.0
+    return round(1.0 - (age_seconds - bar_seconds) / (stale_at_seconds - bar_seconds), 4)

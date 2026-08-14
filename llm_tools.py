@@ -164,6 +164,16 @@ def search_code(query: str, max_results: int = _MAX_SEARCH_RESULTS) -> dict:
     return {"query": query, "matches": matches, "truncated": truncated}
 
 
+def classify_recent_stop_loss_failures(hours: int = 90) -> dict:
+    """Gerçek DB'den son N saatteki TÜM stop_loss kapanışlarını MAE/MFE
+    verisine göre direction_error/barrier_error diye sınıflandırır —
+    kullanıcının "37 kaybın 21'i yön hatası, 9'u bariyer hatası" tarzı
+    adli teşhisinin doğrudan karşılığı."""
+    from analytics.failure_classifier import summarize_stop_loss_failures
+
+    return summarize_stop_loss_failures(hours=hours)
+
+
 def propose_code_change(file_path: str, title: str, description: str, diff: str, rationale: str) -> dict:
     """HİÇBİR ZAMAN diske yazmaz — sadece code_change_proposals'a
     "pending" bir satır ekler. Gerçek dosya değişikliği daima ayrı, insan
@@ -238,6 +248,23 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "classify_recent_stop_loss_failures",
+            "description": (
+                "Son N saatteki tüm stop_loss kapanışlarını gerçek MAE/MFE verisine göre "
+                "direction_error (yön tahmini kötüydü) / barrier_error (stop çok dardı, "
+                "fiyat aslında hedefe ulaşmıştı) diye sınıflandırır."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "hours": {"type": "integer", "description": "Kaç saatlik pencere (varsayılan 90)"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "propose_code_change",
             "description": (
                 "Bir kod değişikliği ÖNERİR — asla diske yazmaz, sadece kullanıcının "
@@ -263,5 +290,6 @@ TOOL_FUNCTIONS = {
     "get_recent_performance_summary": get_recent_performance_summary,
     "read_source_file": read_source_file,
     "search_code": search_code,
+    "classify_recent_stop_loss_failures": classify_recent_stop_loss_failures,
     "propose_code_change": propose_code_change,
 }

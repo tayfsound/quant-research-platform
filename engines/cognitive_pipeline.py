@@ -77,8 +77,27 @@ class CouncilStage:
         trend = features.get("trend", "unknown")
         current_regime = f"{trend}_{features.get('volatility_regime', 'normal')}" if trend != "unknown" else None
 
+        # Faz 268-sonrası — kullanıcı bulgusu: her ajan freshness'ı SABİT
+        # bir varsayılanla bildiriyordu, gerçek veri yaşı hiç ölçülmüyordu.
+        # deliberate()'e verilmeden ÖNCE hesaplanıyor — belief SENTEZİNDEN
+        # önce uygulanmazsa (ör. deliberate() döndükten SONRA opinion.
+        # freshness'ı değiştirmek) zaten hesaplanmış belief'i etkilemez.
+        data_freshness = None
+        last_bar_ts_raw = (ctx.market.raw_snapshot or {}).get("last_bar_timestamp")
+        if last_bar_ts_raw:
+            from datetime import UTC, datetime
+
+            from market_data.features.signal_engine import compute_data_freshness
+
+            try:
+                last_bar_ts = datetime.fromisoformat(last_bar_ts_raw)
+                data_freshness = compute_data_freshness(last_bar_ts, datetime.now(UTC), ctx.market.timeframe)
+            except (ValueError, TypeError):
+                data_freshness = None
+
         belief, opinions = self.orchestrator.deliberate(
             contexts, regime=current_regime, symbol=ctx.market.symbol or None,
+            data_freshness=data_freshness,
         )
 
         ctx.cognition.relevant_knowledge.append({

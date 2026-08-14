@@ -143,6 +143,7 @@ class DecisionRecorder:
             liquidation_price=liquidation_price,
             timeframe=ctx.market.timeframe,
             experiment_bucket=experiment_bucket,
+            decision_latency_ms=self._compute_decision_latency_ms(ctx),
         )
 
         self.persistor.persist(event)
@@ -172,6 +173,30 @@ class DecisionRecorder:
             return leverage if leverage >= 1.0 else 1.0
         except Exception:
             return 1.0
+
+    def _compute_decision_latency_ms(self, ctx) -> float:
+        """Faz 268-sonrası — kritik bulgu: DecisionEvent.decision_latency_ms
+        hiç doldurulmuyordu (her zaman varsayılan 0.0) — ml/training/
+        feature_extractor.py bunu gerçek bir özellik gibi okuyordu ama
+        aslında hep sabit sıfırdı. Kararın dayandığı son bar'ın ne kadar
+        eski olduğunu (orchestrator.py::build_cognitive_context'in
+        raw_snapshot'a yazdığı GERÇEK last_bar_timestamp) ctx.timestamp'e
+        (kararın verildiği an) göre ölçer. Veri yoksa/bozuksa (fail-closed)
+        0.0 — asla uydurulmuş bir gecikme değeri üretilmez."""
+        last_bar_ts_raw = (ctx.market.raw_snapshot or {}).get("last_bar_timestamp")
+        if not last_bar_ts_raw:
+            return 0.0
+        try:
+            from datetime import datetime
+
+            last_bar_ts = datetime.fromisoformat(last_bar_ts_raw)
+            decided_at = ctx.timestamp
+            if last_bar_ts.tzinfo is None or decided_at.tzinfo is None:
+                return 0.0
+            latency_seconds = (decided_at - last_bar_ts).total_seconds()
+            return max(0.0, latency_seconds * 1000.0)
+        except (ValueError, TypeError):
+            return 0.0
 
     def replay(self, decision_id: str):
         data = self.persistor.get_by_id(decision_id)

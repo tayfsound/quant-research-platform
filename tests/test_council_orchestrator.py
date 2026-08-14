@@ -182,9 +182,9 @@ def test_council_stage_derives_regime_from_market_features_and_forwards_it(monke
     captured = {}
     original_deliberate = co_module.CouncilOrchestrator.deliberate
 
-    def spy_deliberate(self, contexts, regime=None, symbol=None):
+    def spy_deliberate(self, contexts, regime=None, symbol=None, data_freshness=None):
         captured["regime"] = regime
-        return original_deliberate(self, contexts, regime=regime, symbol=symbol)
+        return original_deliberate(self, contexts, regime=regime, symbol=symbol, data_freshness=data_freshness)
 
     monkeypatch.setattr(co_module.CouncilOrchestrator, "deliberate", spy_deliberate)
 
@@ -197,6 +197,61 @@ def test_council_stage_derives_regime_from_market_features_and_forwards_it(monke
     stage.execute(ctx)
 
     assert captured["regime"] == "bullish_high"
+
+
+def test_council_stage_computes_real_data_freshness_from_last_bar_timestamp(monkeypatch):
+    """Faz 268-sonrası: CouncilStage.execute(), ctx.market.raw_snapshot'taki
+    GERÇEK last_bar_timestamp'ten bir tazelik değeri hesaplayıp
+    deliberate()'e vermeli — ajanların kendi hardcoded varsayılanı değil."""
+    from datetime import UTC, datetime, timedelta
+
+    from contracts.context import CognitiveCycleContext
+    from engines.cognitive_pipeline import CouncilStage
+    import services.council_orchestrator as co_module
+
+    captured = {}
+    original_deliberate = co_module.CouncilOrchestrator.deliberate
+
+    def spy_deliberate(self, contexts, regime=None, symbol=None, data_freshness=None):
+        captured["data_freshness"] = data_freshness
+        return original_deliberate(self, contexts, regime=regime, symbol=symbol, data_freshness=data_freshness)
+
+    monkeypatch.setattr(co_module.CouncilOrchestrator, "deliberate", spy_deliberate)
+
+    registry = AgentRegistry.create_default()
+    stage = CouncilStage(registry)
+
+    ctx = CognitiveCycleContext()
+    ctx.market.symbol = "BTCUSDT"
+    ctx.market.timeframe = "1h"
+    stale_timestamp = (datetime.now(UTC) - timedelta(hours=10)).isoformat()
+    ctx.market.raw_snapshot = {"last_bar_timestamp": stale_timestamp}
+    stage.execute(ctx)
+
+    assert captured["data_freshness"] == 0.0  # 1h bar, 10 saat yaşında -> tamamen bayat
+
+
+def test_council_stage_leaves_data_freshness_none_without_a_last_bar_timestamp(monkeypatch):
+    from contracts.context import CognitiveCycleContext
+    from engines.cognitive_pipeline import CouncilStage
+    import services.council_orchestrator as co_module
+
+    captured = {}
+    original_deliberate = co_module.CouncilOrchestrator.deliberate
+
+    def spy_deliberate(self, contexts, regime=None, symbol=None, data_freshness=None):
+        captured["data_freshness"] = data_freshness
+        return original_deliberate(self, contexts, regime=regime, symbol=symbol, data_freshness=data_freshness)
+
+    monkeypatch.setattr(co_module.CouncilOrchestrator, "deliberate", spy_deliberate)
+
+    registry = AgentRegistry.create_default()
+    stage = CouncilStage(registry)
+    ctx = CognitiveCycleContext()
+    ctx.market.symbol = "BTCUSDT"
+    stage.execute(ctx)
+
+    assert captured["data_freshness"] is None
 
 
 def test_unanswered_risk_challenge_reduces_real_vote_weight_end_to_end():
@@ -251,6 +306,30 @@ def test_single_agent_directional_agreement_is_not_flagged_as_crowding():
 
     assert technical.performance_weight == 1.0
     assert orchestrator.last_debate_result.unanswered_challenge_penalties == {}
+
+
+def test_deliberate_applies_real_data_freshness_to_all_opinions():
+    """Faz 268-sonrası — kullanıcı bulgusu: her ajan freshness'ı kendi
+    analyze()'inde SABİT bir değerle bildiriyordu. deliberate()'e gerçek
+    bir data_freshness verilirse, TÜM ajanların opinion.freshness'ına
+    uygulanmalı (ajanın kendi hardcoded değeri değil)."""
+    registry = AgentRegistry.create_default()
+    orchestrator = CouncilOrchestrator(registry)
+    ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs")
+
+    _, opinions = orchestrator.deliberate({AgentDomain.TECHNICAL: ctx}, data_freshness=0.3)
+    technical = next(o for o in opinions if o.domain == AgentDomain.TECHNICAL)
+    assert technical.freshness == 0.3
+
+
+def test_deliberate_leaves_freshness_untouched_when_not_provided():
+    registry = AgentRegistry.create_default()
+    orchestrator = CouncilOrchestrator(registry)
+    ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs")
+
+    _, opinions = orchestrator.deliberate({AgentDomain.TECHNICAL: ctx})
+    technical = next(o for o in opinions if o.domain == AgentDomain.TECHNICAL)
+    assert technical.freshness == 0.90  # technical_agent.py'nin kendi hardcoded değeri
 
 
 def test_technical_confidence_model_adjusts_opinion_confidence_when_saved():

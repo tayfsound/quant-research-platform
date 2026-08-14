@@ -16,6 +16,13 @@ def test_get_recent_performance_summary_returns_real_shape():
     assert result["window_hours"] == 24
 
 
+def test_classify_recent_stop_loss_failures_returns_real_shape():
+    result = llm_tools.classify_recent_stop_loss_failures(hours=90)
+    assert "total_stop_loss_trades" in result
+    assert "direction_error_count" in result
+    assert "barrier_error_count" in result
+
+
 def test_read_source_file_returns_real_content():
     result = llm_tools.read_source_file("llm_tools.py", start_line=1, end_line=5)
     assert "error" not in result

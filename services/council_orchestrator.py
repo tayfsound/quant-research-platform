@@ -56,6 +56,7 @@ class CouncilOrchestrator:
         contexts: dict[AgentDomain, object],
         regime: str | None = None,
         symbol: str | None = None,
+        data_freshness: float | None = None,
     ) -> tuple[Belief, list[AgentOpinion]]:
 
         opinions: list[AgentOpinion] = []
@@ -139,6 +140,17 @@ class CouncilOrchestrator:
                 opinion.domain.value, opinion.confidence,
                 evidence_count=len(opinion.evidence), symbol=symbol,
             )
+            # Faz 268-sonrası — kritik bulgu: her ajan freshness'ı kendi
+            # analyze()'inde SABİT bir değerle (0.85/0.90 gibi) bildiriyordu
+            # — hiçbir ajan gerçek veri yaşını ölçmüyordu. Artık GERÇEK,
+            # bar-yaşına dayalı bir değer varsa (compute_data_freshness,
+            # bkz. CouncilStage.execute()) TÜM ajanlara aynı ölçüde
+            # uygulanıyor — veri ne kadar bayatsa, o kadar az güveniliyor.
+            # None ise (ör. last_bar_timestamp hiç sağlanmadıysa, backtest
+            # gibi eski çağıranlar) fail-closed: ajanın kendi ham değeri
+            # aynen kalır.
+            if data_freshness is not None:
+                opinion.freshness = data_freshness
             opinion.source_reliability = info["source_reliability"]
             if info.get("benched"):
                 # Auto-bench: bu domain art arda BENCH_AFTER kez düşük
