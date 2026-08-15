@@ -94,11 +94,30 @@ class DecisionRecorder:
         # buna göre ölçekleniyor, gerçek likidasyon fiyatı hesaplanıyor.
         # Sembol için ayar yoksa leverage=1.0 (spot, önceki davranışla
         # birebir aynı, geriye dönük uyumlu).
+        #
+        # Faz 268-sonrası — kritik, gerçek olay (DOLOUSDT): symbol_leverage
+        # ayarı, o sembolün GERÇEK ATR-tabanlı stop mesafesine hiç
+        # bakmadan uygulanıyordu. simulator/margin.py::max_safe_leverage
+        # (Faz 260) tam bu senaryo için yazılmıştı ama burada hiç
+        # çağrılmıyordu — geniş bir stop mesafesi (ör. DOLOUSDT'de ~%20)
+        # yüksek kaldıraçla (5x) birleşince likidasyon fiyatı stop'tan
+        # ÖNCE geliyordu, pozisyon planlanan zararı hiç görmeden tüm
+        # teminatı kaybediyordu. Artık her pozisyon açılışında kaldıraç,
+        # O SEMBOLÜN gerçek stop mesafesine göre güvenli üst sınıra
+        # otomatik kırpılıyor — configured leverage sadece bir TAVAN,
+        # asla dayatılan bir taban değil (AI kendi riskini asla
+        # gevşetmez, sadece sıkılaştırır ilkesiyle tutarlı).
         leverage = 1.0
         liquidation_price = None
         quantity = getattr(ctx.decision, "final_size", 0.0)
         if opens_position:
             leverage = self._symbol_leverage(ctx.market.symbol)
+            if leverage > 1.0 and stop_loss_price and entry_price:
+                from simulator.margin import max_safe_leverage
+                stop_distance_pct = abs(entry_price - stop_loss_price) / entry_price
+                safe_leverage = max_safe_leverage(stop_distance_pct)
+                if safe_leverage is not None:
+                    leverage = max(1.0, min(leverage, safe_leverage))
             if leverage > 1.0:
                 quantity = quantity * leverage
                 from simulator.margin import compute_liquidation_price

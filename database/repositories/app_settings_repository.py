@@ -145,11 +145,22 @@ DEFAULTS: dict[str, str] = {
     # lider DEX), NEAR (Near Protocol — köklü L1), ZEC (Zcash — 2016'dan
     # beri var, gizlilik odaklı köklü proje).
     # Faz 268-sonrası — kullanıcı isteği: "az token var artıralım... işlem
-    # sayısını artıracaksak coinleri artıralım." 17 yeni likit Binance
-    # Futures paritesi eklendi (hepsi gerçek API ile TRADING durumu
-    # doğrulandı) — hacim ihtiyacı artık tek sembolde karar kalitesinden
-    # ödün vermek yerine sembol çeşitliliğiyle karşılanıyor.
-    "watchlist": "BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,ADAUSDT,XAUTUSDT,DOGEUSDT,TRXUSDT,LINKUSDT,UNIUSDT,NEARUSDT,ZECUSDT,AAPL,NVDA,MSFT,GC=F,SI=F,^IXIC,^GSPC,AVAXUSDT,DOTUSDT,LTCUSDT,ATOMUSDT,APTUSDT,ARBUSDT,OPUSDT,SUIUSDT,INJUSDT,FILUSDT,ETCUSDT,ICPUSDT,BCHUSDT,WLDUSDT,TIAUSDT,SEIUSDT,RENDERUSDT",
+    # sayısını artıracaksak coinleri artıralım." 17 likit Binance Futures
+    # paritesi eklendi (hepsi gerçek API ile TRADING durumu doğrulandı).
+    #
+    # Faz 268-sonrası (2) — gerçek olay: bu 37'lik liste bir ara GEÇİCİ
+    # olarak hacme göre otomatik seçilen 200 sembole çıkarıldı — ama üç
+    # gerçek, ölçülmüş sorun ortaya çıktı: (1) ham hacim sıralaması meme/
+    # çöp coin'leri de içeri çekti (TRUMPUSDT, FARTCOINUSDT, hatta Çince
+    # karakterli joke token'lar), (2) run_trading_cycle_task (120sn'de bir,
+    # tek worker) 207 sembolü sırayla işlerken süresi 120sn'yi katlayarak
+    # aştı, celery kuyruğu 11.900+ göreve kadar tıkandı, hiçbir backtest
+    # asla sırasına gelemedi, (3) _apply_portfolio_fusion()'ın sabit
+    # portföy VaR bütçesi artık onlarca eşzamanlı yönlü öneriye
+    # bölünüyordu — hedef $80-100'lük pozisyonlar kuruşa (~$0.0007
+    # notional) düşüyordu. Watchlist elle doğrulanmış, köklü 43 kripto +
+    # 7 hisse/emtia/endekse (toplam 50) geri çekildi — kullanıcı tercihi.
+    "watchlist": "BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,ADAUSDT,XAUTUSDT,DOGEUSDT,TRXUSDT,LINKUSDT,UNIUSDT,NEARUSDT,ZECUSDT,AVAXUSDT,DOTUSDT,LTCUSDT,ATOMUSDT,APTUSDT,ARBUSDT,OPUSDT,SUIUSDT,INJUSDT,FILUSDT,ETCUSDT,ICPUSDT,BCHUSDT,WLDUSDT,TIAUSDT,SEIUSDT,RENDERUSDT,AAVEUSDT,ONDOUSDT,LDOUSDT,CRVUSDT,GALAUSDT,SANDUSDT,AXSUSDT,CHZUSDT,CAKEUSDT,ALGOUSDT,XLMUSDT,VETUSDT,JUPUSDT,AAPL,NVDA,MSFT,GC=F,SI=F,^IXIC,^GSPC",
     # Faz 199: portfolio_fusion.py'nin gerçekten bağlanması — aynı cycle'da
     # birden fazla sembol eşzamanlı yönlü öneri üretirse, gerçek kovaryans
     # matrisiyle hesaplanan portföy VaR'ı bu yüzdeyi (sermayenin) aşarsa

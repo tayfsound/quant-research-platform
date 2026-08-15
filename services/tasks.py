@@ -2,6 +2,39 @@
 from services.celery_app import celery_app
 
 
+class _CycleLock:
+    """Faz 268-sonrası — kritik bulgu, kullanıcı bulgusu: watchlist 207
+    sembole çıkınca run_trading_cycle_task'ın (120sn'de bir, tek worker,
+    concurrency=1) tek bir çalışması 120 saniyeden çok daha uzun sürmeye
+    başladı — celery beat yine de her 120sn'de bir YENİ bir kopyasını
+    kuyruğa eklemeye devam etti, hiçbiri gerçekten bitmediği için kuyruk
+    11.900+ göreve kadar tıkandı (backtest dahil hiçbir görev sırasına
+    asla gelemedi). Bu basit Redis SETNX kilidi, bir önceki çalışma hâlâ
+    sürüyorsa yenisinin sessizce atlanmasını (kuyruğa hiç girmemesini)
+    sağlıyor — watchlist boyutundan bağımsız, bu hata sınıfı bir daha
+    asla oluşamaz. TTL, worker çökerse kilidin sonsuza dek takılı
+    kalmaması için bir güvenlik tavanı (gerçek çalışma süresinden çok
+    daha uzun tutuluyor)."""
+
+    def __init__(self, key: str, ttl_seconds: int):
+        self.key = key
+        self.ttl_seconds = ttl_seconds
+        self._acquired = False
+
+    def __enter__(self) -> bool:
+        import redis
+
+        from config import get_settings
+
+        self._client = redis.from_url(get_settings().REDIS_URL)
+        self._acquired = bool(self._client.set(self.key, "1", nx=True, ex=self.ttl_seconds))
+        return self._acquired
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        if self._acquired:
+            self._client.delete(self.key)
+
+
 def _real_market_data_source_or_none() -> str | None:
     """Faz 268af — gerçek olay: 6 Ağustos 21:27-21:46 arası, MARKET_DATA_
     SOURCE'un .env'den yüklenemediği bir anda (muhtemelen bir celery
@@ -75,12 +108,16 @@ def run_trading_cycle_task(symbol: str | None = None) -> dict:
     # Faz 199: bu, run_portfolio_aware_cycle'ın 2+ sembol eşzamanlı yönlü
     # öneri gördüğünde gerçek portföy VaR'ına göre ölçeklendirme yapabilmesi
     # için şart (tek tek ayrı orchestrator'larla mümkün değil).
-    open_symbols = [s for s in watchlist if is_market_open(s)]
-    closed_symbols = [s for s in watchlist if s not in open_symbols]
+    with _CycleLock("lock:run_trading_cycle_task", ttl_seconds=600) as acquired:
+        if not acquired:
+            return {"skipped": "previous_cycle_still_running"}
 
-    orch = CognitiveOrchestrator(data_provider=RoutingProvider())
-    cycles = orch.run_portfolio_aware_cycle(open_symbols) if open_symbols else []
-    cycles += [{"symbol": s, "skipped": "market_closed"} for s in closed_symbols]
+        open_symbols = [s for s in watchlist if is_market_open(s)]
+        closed_symbols = [s for s in watchlist if s not in open_symbols]
+
+        orch = CognitiveOrchestrator(data_provider=RoutingProvider())
+        cycles = orch.run_portfolio_aware_cycle(open_symbols) if open_symbols else []
+        cycles += [{"symbol": s, "skipped": "market_closed"} for s in closed_symbols]
 
     return {"cycles": [
         {
@@ -123,8 +160,12 @@ def run_medium_term_cycle_task() -> dict:
 
     open_symbols = [s for s in watchlist if is_market_open(s)]
 
-    orch = CognitiveOrchestrator(data_provider=RoutingProvider())
-    cycles = orch.run_medium_term_cycle(open_symbols) if open_symbols else []
+    with _CycleLock("lock:run_medium_term_cycle_task", ttl_seconds=1800) as acquired:
+        if not acquired:
+            return {"skipped": "previous_cycle_still_running"}
+
+        orch = CognitiveOrchestrator(data_provider=RoutingProvider())
+        cycles = orch.run_medium_term_cycle(open_symbols) if open_symbols else []
 
     return {"cycles": [
         {

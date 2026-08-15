@@ -32,6 +32,61 @@ def test_backtest_task_runs_synchronously_in_eager_mode_and_persists():
                 celery_app.conf.task_always_eager = False
 
 
+def test_cycle_lock_prevents_overlapping_runs_and_releases_after():
+    """Faz 268-sonrası — kritik bulgu: watchlist 207 sembole çıkınca tek
+    bir run_trading_cycle_task çalışması 120sn'lik beat aralığından çok
+    daha uzun sürmeye başladı, celery kuyruğu 11.900+ göreve kadar
+    tıkandı (backtest dahil hiçbir görev sırasına asla gelemedi). Bu
+    kilit, bir önceki çalışma sürerken yenisinin sessizce atlanmasını
+    sağlıyor — watchlist boyutundan bağımsız, bir daha asla birikemez."""
+    import redis
+
+    from config import get_settings
+    from services.tasks import _CycleLock
+
+    key = "lock:test_cycle_lock_prevents_overlapping_runs"
+    client = redis.from_url(get_settings().REDIS_URL)
+    client.delete(key)
+    try:
+        with _CycleLock(key, ttl_seconds=60) as first_acquired:
+            assert first_acquired is True
+            with _CycleLock(key, ttl_seconds=60) as second_acquired:
+                assert second_acquired is False
+
+        # İlk kilit serbest bırakıldıktan sonra yenisi gerçekten alınabilmeli.
+        with _CycleLock(key, ttl_seconds=60) as third_acquired:
+            assert third_acquired is True
+    finally:
+        client.delete(key)
+
+
+def test_run_trading_cycle_task_skips_when_previous_cycle_still_running():
+    import redis
+
+    from config import get_settings
+    from database.repositories.app_settings_repository import AppSettingsRepository
+    from database.session_factory import SessionFactory
+    from services.celery_app import celery_app
+    from services.tasks import run_trading_cycle_task
+
+    with SessionFactory.get_session() as session:
+        AppSettingsRepository(session).set("ai_enabled", "true", updated_by="test")
+
+    client = redis.from_url(get_settings().REDIS_URL)
+    lock_key = "lock:run_trading_cycle_task"
+    client.set(lock_key, "1", nx=True, ex=60)
+
+    celery_app.conf.task_always_eager = True
+    celery_app.conf.task_eager_propagates = True
+    try:
+        async_result = run_trading_cycle_task.delay()
+        assert async_result.successful()
+        assert async_result.result == {"skipped": "previous_cycle_still_running"}
+    finally:
+        celery_app.conf.task_always_eager = False
+        client.delete(lock_key)
+
+
 def test_refresh_llm_news_sentiment_task_runs_in_eager_mode_and_returns_score():
     """Faz 268-sonrası: Reddit yerine LLM tabanlı gerçek haber sentiment'i
     — gerçek RSS/LLM ağ çağrısı yapmadan (mock'lanmış refresh()) görevin

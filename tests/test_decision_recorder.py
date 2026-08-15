@@ -36,6 +36,53 @@ def test_record_defaults_decision_latency_to_zero_without_last_bar_timestamp():
     assert event.decision_latency_ms == 0.0
 
 
+def test_leverage_is_clamped_to_keep_liquidation_safely_beyond_the_stop(tmp_path):
+    """Faz 268-sonrası — gerçek olay (DOLOUSDT): stop mesafesi ~%20 iken
+    symbol_leverage'daki 5x hiç sorgulanmadan uygulanıyordu — likidasyon
+    fiyatı stop'tan ÖNCE geliyordu, pozisyon planlanan stop'u hiç
+    görmeden teminatın neredeyse tamamını kaybediyordu. Artık kaldıraç,
+    max_safe_leverage(stop_distance_pct)'e göre otomatik kırpılıyor."""
+    from database.repositories.app_settings_repository import AppSettingsRepository
+    from database.session_factory import SessionFactory
+    from simulator.margin import max_safe_leverage
+
+    symbol = "DOLOTESTUSDT"
+    with SessionFactory.get_session() as session:
+        repo = AppSettingsRepository(session)
+        original = repo.get("symbol_leverage")
+        import json
+        mapping = json.loads(original)
+        mapping[symbol] = 5
+        repo.set("symbol_leverage", json.dumps(mapping), updated_by="test")
+
+    try:
+        recorder = DecisionRecorder()
+        entry_price = 0.0271
+        stop_loss_pct = 0.20  # DOLOUSDT'deki gerçek mesafeyle aynı büyüklükte
+        risk_mag = entry_price * stop_loss_pct
+
+        ctx = CognitiveCycleContext(
+            market={"symbol": symbol, "raw_snapshot": {"close": entry_price}},
+            decision={
+                "proposed_direction": "LONG", "final_action": "LONG",
+                "final_size": 100.0, "stop_loss": risk_mag, "take_profit": risk_mag * 0.56,
+            },
+            risk={"evaluation": {"verdict": "approved"}},
+        )
+
+        event = recorder.record(ctx, [])
+
+        expected_safe_leverage = max_safe_leverage(stop_loss_pct)
+        assert event.leverage < 5.0
+        assert event.leverage == round(expected_safe_leverage, 10) or abs(event.leverage - expected_safe_leverage) < 1e-6
+
+        # Kritik doğrulama: likidasyon fiyatı artık stop'tan ÖNCE gelmiyor.
+        assert event.liquidation_price < event.stop_loss_price
+    finally:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("symbol_leverage", original, updated_by="test")
+
+
 def test_record_and_replay():
     recorder = DecisionRecorder()
 
