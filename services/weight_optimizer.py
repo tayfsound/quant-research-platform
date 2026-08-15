@@ -5,13 +5,30 @@ from enum import Enum
 
 from contracts.agent import VOTING_AGENT_DOMAINS
 from contracts.agent_weight_snapshot import AgentWeightSnapshot
-from services.agent_memory import AgentMemory
+from services.agent_memory import AgentMemory, get_reliability_legacy_cutoff
 from services.weight_repository import WeightRepository
 from contracts.weight_approval import WeightApproval
 from database.session_factory import SessionFactory
 from database.repositories.weight_approval_repository import WeightApprovalRepository
 
 MAX_WEIGHT_DELTA = 0.10
+# Faz 268-sonrası — kullanıcı bulgusu, gerçek olay: reliability_legacy_
+# cutoff_at eklendiğinde (kullanıcı isteği: "her ajanın kararda eşit
+# ağırlığı olsun") bu, sadece agents/source_reliability_agent.py'ye
+# (per-cycle benching) bağlanmıştı — bu, AYRI/kalıcı global ağırlık
+# önerisi sistemine hiç yansımamıştı, hâlâ eski/bozuk dönemin tüm
+# verisini kullanıyordu. Kesimi buraya da bağlarken İKİNCİ, daha derin
+# bir hata bulundu: confidence_factor (min(total/window, 1.0)) az
+# taze veriyle küçük çıkınca, smoothed_accuracy (Bayesian prior sayesinde
+# veri yokken ~0.5'e yakın, "nötr" bir değer) ile ÇARPILINCA sonuç
+# neredeyse sıfıra eziliyordu — "kanıt yok = nötr" değil, "kanıt yok =
+# sıfır" davranıyordu. Kesim tarihinden hemen sonra (henüz 500 taze
+# kayıt birikmeden) bu, PRATİKTE her ajanı sıfıra çekiyordu. Artık
+# yeterli taze (kesim sonrası) kanıt yoksa o domain için hiç değişiklik
+# ÖNERİLMİYOR — mevcut ağırlık (varsa) ya da nötr 1.0 aynen korunuyor,
+# "kanıtlanana kadar güven" ilkesi (Adaptive Barrier/SourceReliabilityAgent
+# ile aynı disiplin).
+MIN_SAMPLES_FOR_PROPOSAL = 10
 
 
 class WeightOptimizer:
@@ -76,11 +93,21 @@ class WeightOptimizer:
             "long": evaluation_window * 5,
         }
 
+        cutoff = get_reliability_legacy_cutoff()
+
+        # Faz 268b — Regime-Aware Learning: sadece AYNI rejimin (ya da
+        # regime=None ise global'in) önceki snapshot'ıyla karşılaştırılır
+        # — farklı rejimlerin ağırlıkları elma-armut kıyaslanmaz, ve bir
+        # rejimin büyük değişimi başka bir rejimin onay kuyruğunu bloklamaz.
+        previous = self.weight_repository.get_latest(regime=regime)
+        previous_weights = dict(previous.weights) if previous else {}
+
         proposed = {}
         window_breakdown: dict[str, dict[str, float]] = {}
 
         for domain in domains:
             component_scores = {}
+            medium_total = 0
             for label, window in windows.items():
                 # Faz 263: kritik bulgu — evaluation_window önceden sadece
                 # confidence_factor'ü ölçeklendiriyordu, HANGİ kayıtların
@@ -90,9 +117,15 @@ class WeightOptimizer:
                 # bulgu: technical_agent tüm-zamanlar %76.7 ama son 20
                 # tahmininin %15'i doğru). Artık gerçekten SADECE ilgili
                 # pencerenin son N kaydı kullanılıyor.
-                summary = self.agent_memory.get_summary(domain, window=window, regime=regime)
+                #
+                # Faz 268-sonrası: reliability_legacy_cutoff_at'ten ÖNCEKİ
+                # kayıtlar (eski/bozuk dönem) hiç sayılmıyor — bkz.
+                # services/agent_memory.py::get_reliability_legacy_cutoff.
+                summary = self.agent_memory.get_summary(domain, window=window, regime=regime, min_timestamp=cutoff)
 
                 total = summary.total_predictions
+                if label == "medium":
+                    medium_total = total
                 correct = int(summary.overall_accuracy * total)
 
                 smoothed_accuracy = (
@@ -106,20 +139,27 @@ class WeightOptimizer:
                 component_scores[label] = round(smoothed_accuracy * confidence_factor, 3)
 
             window_breakdown[domain] = component_scores
-            proposed[domain] = round(
-                sum(component_scores.values()) / len(component_scores), 3
-            )
 
-        # Faz 268b — Regime-Aware Learning: sadece AYNI rejimin (ya da
-        # regime=None ise global'in) önceki snapshot'ıyla karşılaştırılır
-        # — farklı rejimlerin ağırlıkları elma-armut kıyaslanmaz, ve bir
-        # rejimin büyük değişimi başka bir rejimin onay kuyruğunu bloklamaz.
-        previous = self.weight_repository.get_latest(regime=regime)
-        previous_weights = dict(previous.weights) if previous else {}
+            # Faz 268-sonrası — kritik bulgu: yeterli TAZE (kesim sonrası)
+            # kanıt yokken confidence_factor küçük çıkıyor, smoothed_
+            # accuracy'nin (veri yokken Bayesian prior sayesinde ~0.5
+            # "nötr") ÇARPIMI neredeyse sıfıra eziliyordu — "kanıt yok =
+            # nötr" değil, "kanıt yok = sıfır" demek. Kesimden hemen sonra
+            # (henüz 500 taze kayıt birikmeden) bu PRATİKTE her ajanı
+            # sıfıra çekiyordu. Yeterli kanıt yoksa hiç değişiklik
+            # ÖNERİLMİYOR — mevcut ağırlık (varsa) ya da nötr 1.0 aynen
+            # korunuyor.
+            if medium_total < MIN_SAMPLES_FOR_PROPOSAL:
+                proposed[domain] = previous_weights.get(domain, 1.0)
+            else:
+                proposed[domain] = round(
+                    sum(component_scores.values()) / len(component_scores), 3
+                )
 
         snapshot = AgentWeightSnapshot(
             weights=proposed,
             evaluation_window=evaluation_window,
+            window_breakdown=window_breakdown,
             previous_snapshot_id=(
                 previous.id
                 if previous

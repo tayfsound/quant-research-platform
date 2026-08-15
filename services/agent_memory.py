@@ -25,6 +25,31 @@ from contracts.agent_performance import (
 _DEFAULT_STORAGE_PATH = os.environ.get("AGENT_MEMORY_STORAGE_PATH", "agent_memory_history")
 
 
+def get_reliability_legacy_cutoff():
+    """Faz 268-sonrası — kullanıcı isteği: "başlangıç olarak her ajanın
+    kararda eşit ağırlığı olsun." reliability_legacy_cutoff_at (kill_
+    switch_legacy_cutoff_at ile AYNI Class 2 deseni) set edildiğinde, bu
+    tarihten ÖNCEKİ AgentPerformanceRecord'lar hiçbir gerçek isabet/
+    ağırlık hesabına girmiyor — hiçbir kayıt SİLİNMİYOR, sadece dışarıda
+    bırakılıyor. TEK kaynak: hem agents/source_reliability_agent.py
+    (per-cycle benching) hem services/weight_optimizer.py (kalıcı global
+    ağırlık önerileri) BURAYI çağırmalı — aksi halde ikisi arasında
+    tutarsız bir "eşit başlangıç" ortaya çıkar (gerçek olay: ilki
+    sıfırlandı, ikincisi hâlâ eski/bozuk dönemin verisini kullanmaya
+    devam etti). DB'ye erişilemezse (ör. izole unit testler) fail-closed:
+    kesim yok, tüm geçmiş sayılır."""
+    try:
+        from database.repositories.app_settings_repository import AppSettingsRepository
+        from database.session_factory import SessionFactory
+
+        with SessionFactory.get_session() as session:
+            raw = AppSettingsRepository(session).get("reliability_legacy_cutoff_at")
+        from datetime import datetime
+        return datetime.fromisoformat(raw) if raw else None
+    except Exception:
+        return None
+
+
 class AgentMemory:
 
     def __init__(self, storage_path: str = _DEFAULT_STORAGE_PATH):
