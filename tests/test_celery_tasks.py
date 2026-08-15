@@ -87,6 +87,56 @@ def test_run_trading_cycle_task_skips_when_previous_cycle_still_running():
         client.delete(lock_key)
 
 
+def test_run_pump_fade_cycle_task_is_in_beat_schedule():
+    from services.celery_app import celery_app
+
+    entry = celery_app.conf.beat_schedule["run-pump-fade-cycle-every-30m"]
+    assert entry["task"] == "run_pump_fade_cycle_task"
+
+
+def test_run_pump_fade_cycle_task_skips_when_previous_cycle_still_running():
+    import redis
+
+    from config import get_settings
+    from services.celery_app import celery_app
+    from services.tasks import run_pump_fade_cycle_task
+
+    client = redis.from_url(get_settings().REDIS_URL)
+    lock_key = "lock:run_pump_fade_cycle_task"
+    client.set(lock_key, "1", nx=True, ex=60)
+
+    celery_app.conf.task_always_eager = True
+    celery_app.conf.task_eager_propagates = True
+    try:
+        async_result = run_pump_fade_cycle_task.delay()
+        assert async_result.successful()
+        assert async_result.result == {"skipped": "previous_cycle_still_running"}
+    finally:
+        celery_app.conf.task_always_eager = False
+        client.delete(lock_key)
+
+
+def test_run_pump_fade_cycle_task_skipped_when_pump_fade_disabled():
+    """pump_fade_enabled ai_enabled'dan tamamen bağımsız — bu task ai_
+    enabled'a hiç bakmaz, sadece kendi ayarına."""
+    from database.repositories.app_settings_repository import AppSettingsRepository
+    from database.session_factory import SessionFactory
+    from services.celery_app import celery_app
+    from services.tasks import run_pump_fade_cycle_task
+
+    with SessionFactory.get_session() as session:
+        AppSettingsRepository(session).set("pump_fade_enabled", "false", updated_by="test")
+
+    celery_app.conf.task_always_eager = True
+    celery_app.conf.task_eager_propagates = True
+    try:
+        async_result = run_pump_fade_cycle_task.delay()
+        assert async_result.successful()
+        assert async_result.result == {"skipped": "pump_fade_disabled"}
+    finally:
+        celery_app.conf.task_always_eager = False
+
+
 def test_refresh_llm_news_sentiment_task_runs_in_eager_mode_and_returns_score():
     """Faz 268-sonrası: Reddit yerine LLM tabanlı gerçek haber sentiment'i
     — gerçek RSS/LLM ağ çağrısı yapmadan (mock'lanmış refresh()) görevin
@@ -286,6 +336,7 @@ def test_live_trading_tasks_refuse_to_run_when_market_data_source_is_not_binance
         close_due_positions_task,
         run_medium_term_cycle_task,
         run_pairs_trading_task,
+        run_pump_fade_cycle_task,
         run_trading_cycle_task,
     )
 
@@ -294,7 +345,10 @@ def test_live_trading_tasks_refuse_to_run_when_market_data_source_is_not_binance
     celery_app.conf.task_always_eager = True
     celery_app.conf.task_eager_propagates = True
     try:
-        for task in (run_trading_cycle_task, run_pairs_trading_task, close_due_positions_task, run_medium_term_cycle_task):
+        for task in (
+            run_trading_cycle_task, run_pairs_trading_task, close_due_positions_task,
+            run_medium_term_cycle_task, run_pump_fade_cycle_task,
+        ):
             result = task.delay()
             assert result.successful()
             assert result.result == {"skipped": "non_binance_market_data_source"}

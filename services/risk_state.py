@@ -10,6 +10,7 @@ from contracts.contexts.risk import RiskReason
 from database.repositories.app_settings_repository import AppSettingsRepository
 from database.repositories.decision_persistor import DecisionPersistor
 from database.session_factory import SessionFactory
+from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMENT_BUCKET
 
 
 _CONCEPT_DRIFT_WIN_RATE_DROP_THRESHOLD = 0.15
@@ -22,8 +23,16 @@ def get_concept_drift_diagnostics(decision_repo: DecisionPersistor) -> dict:
     RiskReason döner — dashboard'un HER ZAMAN (tetiklenmemişken de) gerçek
     sayıları gösterebilmesi için bu, ALTTAKI ham veriyi/kararı ayrıştırıp
     döndüren, tek kaynak fonksiyon (ikisi de AYNI eşikleri kullanıyor,
-    kopya/çelişkili mantık riski yok)."""
-    trades = decision_repo.list_closed_trades(limit=150)
+    kopya/çelişkili mantık riski yok).
+
+    pump_fade_v1 (bkz. services/pump_fade_strategy.py) hariç tutuluyor —
+    AI'ın karar/confidence sisteminden tamamen yalıtık, kendi (çok farklı)
+    kâr/zarar dağılımına sahip mekanik bir strateji; onun kapanışları AI'ın
+    kazanma oranı istatistiğine karışırsa Concept Drift AI'ın gerçekte
+    bozulmadığı bir anda yanlışlıkla tetiklenebilir."""
+    trades = decision_repo.list_closed_trades(
+        limit=150, exclude_experiment_bucket=PUMP_FADE_EXPERIMENT_BUCKET
+    )
     if len(trades) < 100:
         return {"available": False, "sample_size": len(trades), "required_sample_size": 100}
 
@@ -146,7 +155,11 @@ def load_position_risk_state(
         consecutive_losses = 0
         fetch_limit = max(50, kill_switch_consecutive_losses * 2)
         while True:
-            recent_closed = decision_repo.list_closed_trades(limit=fetch_limit, min_opened_at=legacy_cutoff_at)
+            recent_closed = decision_repo.list_closed_trades(
+                limit=fetch_limit,
+                min_opened_at=legacy_cutoff_at,
+                exclude_experiment_bucket=PUMP_FADE_EXPERIMENT_BUCKET,
+            )
             consecutive_losses = 0
             found_win = False
             for trade in recent_closed:

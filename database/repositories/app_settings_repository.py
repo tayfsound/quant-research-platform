@@ -255,6 +255,38 @@ DEFAULTS: dict[str, str] = {
     # Bu yüzden varsayılan AÇIK — kendi kendine, veri birikince devreye
     # girecek (bkz. services/tasks.py::refresh_barrier_table_task).
     "adaptive_barrier_enabled": "true",
+    # Faz 268-sonrası — kullanıcı isteği: "farklı bir tipte işlem takip
+    # edecek bir modül... AI karar/confidence ile işi olmayan, mevcut
+    # sistemden yalıtık." bkz. services/pump_fade_strategy.py — market
+    # genelinde son pump_fade_lookback_hours saatte pump_fade_min_gain_pct
+    # ve üstü kazanç gösteren USDT perpetual'ları SHORT'lar. Varsayılan
+    # KAPALI — kullanıcının kendi sözüyle "test için", opt-in.
+    "pump_fade_enabled": "false",
+    # Kasanın (starting_capital) yüzde kaçı marjin olarak kullanılacak —
+    # kullanıcı isteği: "kasanın %5'i kadar."
+    "pump_fade_capital_pct": "0.05",
+    # Kullanıcı isteği: "5x pozisyona girecek." Gerçek uygulanan kaldıraç
+    # bunun ÜSTÜNE ÇIKMAZ ama simulator/margin.py::max_safe_leverage
+    # güvenlik kilidiyle (pump_fade_stop_distance_pct'e göre) daha DÜŞÜK
+    # bir değere kırpılabilir — AskUserQuestion ile onaylanan "aynı
+    # güvenlik kilidi uygulansın" kararı.
+    "pump_fade_leverage": "5",
+    # "%100 yapmış" — min_gain_pct=1.0, lookback penceresindeki EN DÜŞÜK
+    # kapanıştan güncel kapanışa göre ölçülen kazanç oranı.
+    "pump_fade_min_gain_pct": "1.0",
+    # "son iki gün" — 48 saat, 1 saatlik mumlarla taranıyor.
+    "pump_fade_lookback_hours": "48",
+    # Faz 268-sonrası — kritik tasarım kararı: kullanıcı çıkışı ("%100
+    # kâr ettiğinde") onayladı ama KORUYUCU stop-loss mesafesini
+    # belirtmedi (sadece "max_safe_leverage ile aynı güvenlik kilidi
+    # uygulansın" dedi — bu, BİR stop mesafesi varsayımı gerektiriyor).
+    # %15: fiyat girişten sonra %15 daha yükselirse (short'un aleyhine,
+    # pump'ın devam ettiği/fade tezinin geçersiz olduğu anlamına gelir)
+    # pozisyon kapanır. 5x hedef kaldıraçla max_safe_leverage(0.15) ≈
+    # 4.3x'e kırpar (likidasyon mesafesi bu stop'un en az 1.5 katı kalsın
+    # diye) — 5x'in neredeyse tamamı korunur, tam 5x DEĞİL. Bu değer
+    # sabit kodlanmadı, burada AppSettings üzerinden ayarlanabilir.
+    "pump_fade_stop_distance_pct": "0.15",
 }
 
 CANDLE_TIMEFRAMES = ("1m", "5m", "15m", "1h", "4h", "1d")

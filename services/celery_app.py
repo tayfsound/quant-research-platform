@@ -152,4 +152,16 @@ celery_app.conf.beat_schedule = {
         "task": "llm_system_audit_task",
         "schedule": 21600.0,
     },
+    # Faz 268-sonrası — kullanıcı isteği: AI'dan tamamen yalıtık, test
+    # amaçlı pump-fade stratejisi (bkz. services/pump_fade_strategy.py).
+    # 48 saatlik "pump" penceresi dakikalar içinde önemli ölçüde değişmez;
+    # 300+ USDT perpetual'ın her biri için gerçek bir Binance isteği
+    # gerektirdiğinden (run_trading_cycle_task'ın 50 sembollük
+    # watchlist'inden çok daha ağır bir tarama) 30 dakikada bir yeterli —
+    # pump_fade_enabled=false (varsayılan) iken görev anında çıkar, hiçbir
+    # yük oluşturmaz.
+    "run-pump-fade-cycle-every-30m": {
+        "task": "run_pump_fade_cycle_task",
+        "schedule": 1800.0,
+    },
 }

@@ -197,6 +197,22 @@ class DecisionPersistor:
 
         return [dict(r) for r in rows]
 
+    def has_open_position_for_experiment(self, symbol: str, experiment_bucket: str) -> bool:
+        """Faz 268-sonrası — kullanıcı isteği: pump-fade gibi AI konseyinden
+        yalıtık, kendi experiment_bucket etiketiyle çalışan mekanik
+        stratejiler için — aynı sembolde zaten kendi açık pozisyonu varken
+        ikinci bir tane daha açmasın (count_open_by_symbol_direction AI'ın
+        genel aynı-yön yığılma kontrolü, bu ondan bağımsız, TEK bir
+        deneyin kendi sembolü için tekilliği)."""
+        row = self.session.execute(
+            text(
+                "SELECT 1 FROM decisions WHERE status = 'open' "
+                "AND symbol = :symbol AND experiment_bucket = :experiment_bucket LIMIT 1"
+            ),
+            {"symbol": symbol, "experiment_bucket": experiment_bucket},
+        ).first()
+        return row is not None
+
     def count_open_by_symbol_direction(self, symbol: str) -> dict[str, int]:
         """Faz 268-sonrası — bkz. contracts/contexts/risk.py::
         same_direction_open_counts. Bu SEMBOL için, yöne göre gruplanmış
@@ -235,7 +251,7 @@ class DecisionPersistor:
             "committed_notional": float(row["committed_notional"] or 0.0),
         }
 
-    def list_closed_trades(self, limit: int = 200, min_opened_at=None):
+    def list_closed_trades(self, limit: int = 200, min_opened_at=None, exclude_experiment_bucket: str | None = None):
         # Faz 238: kullanıcı isteği — "kirli geçmiş veriyi temizle."
         # excluded_from_stats=true işaretli satırlar (aşırı capital
         # testlerinden kalan, gerçek olmayan notional'lı işlemler)
@@ -248,11 +264,22 @@ class DecisionPersistor:
         # geçmiyor. opened_at NULL olan (çok eski, bu alan eklenmeden
         # önceki) satırlar filtre aktifken YOK sayılır — yaşı
         # doğrulanamayan bir işlem "taze" varsayılmaz (fail-closed).
+        #
+        # Faz 268-sonrası: exclude_experiment_bucket — SADECE kill switch'in
+        # ardışık-kayıp sayacı VE Concept Drift (bkz. risk_state.py) bunu
+        # pump_fade_v1 için kullanıyor. Kullanıcı isteği: pump-fade AI karar/
+        # confidence sisteminden tamamen yalıtık olmalı — bu satır olmadan,
+        # pump-fade'in kendi (AI'dan çok farklı bir kâr/zarar dağılımına
+        # sahip) kapanışları AI'ın kill switch'ini/concept drift algısını
+        # kirletir, mekanik bir strateji AI'ı sessizce durdurabilirdi.
         query = "SELECT * FROM decisions WHERE status = 'closed' AND excluded_from_stats = false"
         params: dict = {"limit": limit}
         if min_opened_at is not None:
             query += " AND opened_at IS NOT NULL AND opened_at >= :min_opened_at"
             params["min_opened_at"] = min_opened_at
+        if exclude_experiment_bucket is not None:
+            query += " AND (experiment_bucket IS NULL OR experiment_bucket != :exclude_experiment_bucket)"
+            params["exclude_experiment_bucket"] = exclude_experiment_bucket
         query += " ORDER BY closed_at DESC LIMIT :limit"
 
         rows = self.session.execute(text(query), params).mappings().all()

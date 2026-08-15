@@ -404,6 +404,28 @@ def ingest_candles_task() -> dict:
     return {"ingested": results}
 
 
+@celery_app.task(name="run_pump_fade_cycle_task")
+def run_pump_fade_cycle_task() -> dict:
+    """Faz 268-sonrası — kullanıcı isteği: AI konsey/confidence sisteminden
+    tamamen yalıtık, test amaçlı mekanik bir strateji (bkz. services/
+    pump_fade_strategy.py). run_trading_cycle_task/run_medium_term_cycle_task
+    gibi ai_enabled'a hiç bakmıyor — kendi bağımsız pump_fade_enabled
+    anahtarıyla (PumpFadeStrategy.run_cycle() içinde kontrol edilir)
+    açılıp kapanıyor. Kendi _CycleLock'u: TÜM USDT perpetual'ları (300+)
+    taramak run_trading_cycle_task'ın 50 sembollük watchlist'inden çok daha
+    uzun sürebilir, aynı DOLOUSDT/kuyruk-tıkanması hata sınıfına bir daha
+    düşülmesin diye."""
+    from services.pump_fade_strategy import PumpFadeStrategy
+
+    if _real_market_data_source_or_none() is None:
+        return {"skipped": "non_binance_market_data_source"}
+
+    with _CycleLock("lock:run_pump_fade_cycle_task", ttl_seconds=1500) as acquired:
+        if not acquired:
+            return {"skipped": "previous_cycle_still_running"}
+        return PumpFadeStrategy().run_cycle()
+
+
 @celery_app.task(name="run_pairs_trading_task")
 def run_pairs_trading_task() -> dict:
     """Faz 200: pairs trading / istatistiksel arbitraj — gerçek Engle-

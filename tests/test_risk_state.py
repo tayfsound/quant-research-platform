@@ -218,6 +218,50 @@ def test_consecutive_losses_does_not_silently_truncate_at_the_initial_fetch_limi
             AppSettingsRepository(session).set("kill_switch_consecutive_losses", "10", updated_by="test")
 
 
+def test_consecutive_losses_excludes_pump_fade_trades():
+    """Faz 268-sonrası — kullanıcı isteği: pump-fade (bkz. services/
+    pump_fade_strategy.py) AI'ın karar/confidence sisteminden tamamen
+    yalıtık olmalı. Bu test, pump-fade'in KENDİ (AI'dan çok farklı) kâr/
+    zarar dağılımının AI'ın kill switch sayacını sessizce tetiklemediğini
+    doğruluyor: en yeni kapanış pump-fade'in kaybı, ondan bir önceki AI'ın
+    kazancı — kill switch pump-fade'i doğru hariç tutuyorsa sayaç en yeni
+    AI kaydında (kazanç) durup 0 dönmeli."""
+    from datetime import UTC, datetime, timedelta
+
+    from services.pump_fade_strategy import EXPERIMENT_BUCKET
+
+    symbol = f"RISKSTATE{uuid4().hex[:8]}"
+    far_future = datetime.now(UTC) + timedelta(days=3650, hours=25)
+    try:
+        with SessionFactory.get_session() as session:
+            repo = DecisionPersistor(session)
+            win_event = DecisionEvent(
+                id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+                final_size=1.0, status="open", entry_price=100.0, quantity=1.0,
+            )
+            repo.persist(win_event)
+            repo.close_position(
+                decision_id=str(win_event.id), exit_price=105.0, pnl=5.0,
+                closed_at=far_future,
+            )
+            # En yeni kapanış: pump-fade'in KENDİ kaybı.
+            pf_event = DecisionEvent(
+                id=uuid4(), symbol=symbol, proposed_direction="SHORT", final_action="SHORT",
+                final_size=1.0, status="open", entry_price=100.0, quantity=1.0,
+                experiment_bucket=EXPERIMENT_BUCKET,
+            )
+            repo.persist(pf_event)
+            repo.close_position(
+                decision_id=str(pf_event.id), exit_price=115.0, pnl=-15.0,
+                closed_at=far_future + timedelta(seconds=1),
+            )
+
+        state = load_position_risk_state()
+        assert state["consecutive_losses"] == 0
+    finally:
+        _cleanup_symbol(symbol)
+
+
 def test_kill_switch_threshold_reflects_app_setting():
     with SessionFactory.get_session() as session:
         AppSettingsRepository(session).set("kill_switch_consecutive_losses", "7", updated_by="test")
@@ -495,7 +539,7 @@ def test_get_concept_drift_diagnostics_reports_unavailable_below_sample_threshol
     from services.risk_state import get_concept_drift_diagnostics
 
     class _EmptyRepo:
-        def list_closed_trades(self, limit):
+        def list_closed_trades(self, limit, exclude_experiment_bucket=None):
             return []
 
     diagnostics = get_concept_drift_diagnostics(_EmptyRepo())
