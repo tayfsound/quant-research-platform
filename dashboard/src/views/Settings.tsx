@@ -727,6 +727,29 @@ export default function Settings() {
             </Button>
           </div>
         </Card>
+
+        <Card>
+          <h3 className="text-sm font-semibold text-ink mb-1">Pairs trading (hedge)</h3>
+          <p className="text-xs text-ink-soft mb-3">
+            Kointegre iki sembol arasındaki spread saparsa iki bacaklı (bir LONG bir SHORT) pozisyon açar —
+            council/confidence sisteminden bağımsız, istatistiksel bir sinyal. Her bacağın gerçek dolar
+            (marjin) boyutu bu tutar / o anki fiyat olarak hesaplanır — tüm varlıklarda aynı gerçek risk.
+          </p>
+          <p className="text-xs text-ink-soft mb-2">Bacak başına sermaye (dolar)</p>
+          <div className="flex gap-2">
+            <Input
+              decimal
+              value={draft.pairs_trading_leg_capital_usd ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, pairs_trading_leg_capital_usd: v }))}
+            />
+            <Button
+              disabled={saving === "pairs_trading_leg_capital_usd"}
+              onClick={() => save("pairs_trading_leg_capital_usd", draft.pairs_trading_leg_capital_usd)}
+            >
+              {saved === "pairs_trading_leg_capital_usd" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+        </Card>
       </div>
     </div>
   );

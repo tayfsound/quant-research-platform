@@ -204,6 +204,12 @@ def _validate(key: str, value: str) -> None:
                 raise ValueError
         except ValueError:
             raise HTTPException(400, "pump_fade_stop_distance_pct must be a number in (0, 1)")
+    elif key == "pairs_trading_leg_capital_usd":
+        try:
+            if float(value) <= 0:
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "pairs_trading_leg_capital_usd must be a positive number")
     elif key == "max_open_positions_per_symbol_direction":
         # Faz 268-sonrası: gerçek olaydan (54 XAUTUSDT SHORT aynı anda
         # açık bulundu) eklenen kontrol — kullanıcı Settings sayfasından

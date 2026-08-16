@@ -25,7 +25,13 @@ from market_data.market_hours import is_market_open
 from services.decision_recorder import DecisionRecorder
 from services.risk_state import load_position_risk_state
 
-LEG_SIZE = 0.2  # her bacak, RiskTargetStage'inkinden bağımsız, sabit-küçük bir boyut
+# Faz 268-sonrası — kritik bulgu, kullanıcı bulgusu: eski LEG_SIZE=0.2
+# SABİT BİR HAM VARLIK BİRİMİYDİ (dolar değil) — 0.2 BTC (~$13.000
+# notional, 10x kaldıraçla) ile 0.2 ETH (~$380) arasında GERÇEK dolar
+# riski 30 kattan fazla farklıydı, "sabit-küçük bir boyut" niyetinin tam
+# tersiydi. Artık AppSettings'teki (kullanıcı ayarlanabilir)
+# pairs_trading_leg_capital_usd kullanılıyor — current_price'a bölünüp
+# asıl miktara çevriliyor, TÜM varlıklarda gerçekten aynı dolar boyutu.
 
 
 class PairsTrader:
@@ -86,16 +92,25 @@ class PairsTrader:
         }
 
     def _open_leg(self, symbol: str, data, direction: str, pair_label: str, zscore: float) -> bool:
+        entry_price = data[-1].close
+        if not entry_price or entry_price <= 0:
+            return False
+
+        with SessionFactory.get_session() as session:
+            leg_capital_usd = float(AppSettingsRepository(session).get("pairs_trading_leg_capital_usd"))
+
         ctx = CognitiveCycleContext()
         ctx.market.symbol = symbol
         ctx.market.raw_snapshot = {
-            "close": data[-1].close,
+            "close": entry_price,
             "pairs_trade": pair_label,
             "pairs_zscore": zscore,
         }
         ctx.decision.proposed_direction = direction
-        ctx.decision.final_size = LEG_SIZE
-        ctx.decision.filled_price = data[-1].close
+        # Faz 268-sonrası: dolar bazlı, TÜM varlıklarda gerçekten aynı
+        # boyut — bkz. modül üstündeki not.
+        ctx.decision.final_size = leg_capital_usd / entry_price
+        ctx.decision.filled_price = entry_price
 
         ctx.risk.limits = load_active_limits()
         risk_state = load_position_risk_state(symbol=symbol)
@@ -126,10 +141,9 @@ class PairsTrader:
         # mekanizma: günlük ATR yüzdesi + AppSettings'teki AYNI stop_atr_
         # mult/target_atr_mult/min_stop_pct (ayrı, hiç doğrulanmamış bir
         # oran icat etmek yerine).
-        current_price = data[-1].close
         daily_bars = self.data_provider.get_ohlcv(symbol, "1d", limit=30)
         daily_atr_pct = compute_daily_atr_pct(daily_bars) if daily_bars else None
-        if daily_atr_pct and daily_atr_pct > 0 and current_price > 0:
+        if daily_atr_pct and daily_atr_pct > 0:
             stop_mult, target_mult, min_stop_pct = RiskTargetStage()._load_multipliers()
             stop_pct = stop_mult * daily_atr_pct
             target_pct = target_mult * daily_atr_pct
@@ -137,8 +151,21 @@ class PairsTrader:
                 scale = min_stop_pct / stop_pct
                 stop_pct *= scale
                 target_pct *= scale
-            ctx.decision.stop_loss = current_price * stop_pct
-            ctx.decision.take_profit = current_price * target_pct
+            ctx.decision.stop_loss = entry_price * stop_pct
+            ctx.decision.take_profit = entry_price * target_pct
+
+        # Faz 268-sonrası — kritik bulgu, kullanıcı bulgusu: bu bacaklar
+        # DecisionFusion'dan hiç geçmiyordu — ana AI'ın "hedef, komisyonu
+        # karşılamayacak kadar küçükse açma" korumasını (min_profit_
+        # target_pct) tamamen atlıyordu. Gerçek veride görüldü: bazı
+        # hedge bacakları "take_profit"e ulaşıp yine de NET ZARARLA
+        # kapandı (küçük hedef, round-trip komisyonu karşılamadı). Artık
+        # AYNI kontrol burada da uygulanıyor.
+        if ctx.decision.take_profit:
+            with SessionFactory.get_session() as session:
+                min_profit_target_pct = float(AppSettingsRepository(session).get("min_profit_target_pct"))
+            if ctx.decision.take_profit / entry_price < min_profit_target_pct:
+                return False
 
         # Faz 268-sonrası — gerçek bulgu: burada RiskEngine() secret'sız
         # çağrılıyordu (cognitive_engine.py/execution_router.py'nin

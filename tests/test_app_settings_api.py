@@ -334,6 +334,32 @@ def test_pump_fade_settings_accept_valid_and_reject_invalid_values():
                     repo.set(key, DEFAULTS[key], updated_by="test")
 
 
+def test_pairs_trading_leg_capital_usd_accepts_valid_and_rejects_invalid_values():
+    """Faz 268-sonrası — eski LEG_SIZE=0.2 sabit ham birim yerine dolar
+    bazlı, kullanıcı ayarlanabilir bir bacak boyutu."""
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        client = _client()
+        try:
+            ok = client.post(
+                "/api/v1/settings/pairs_trading_leg_capital_usd",
+                params={"value": "250"},
+                headers=make_authed_headers(Role.ADMIN),
+            )
+            assert ok.status_code == 200
+
+            bad = client.post(
+                "/api/v1/settings/pairs_trading_leg_capital_usd",
+                params={"value": "0"},
+                headers=make_authed_headers(Role.ADMIN),
+            )
+            assert bad.status_code == 400
+        finally:
+            with SessionFactory.get_session() as session:
+                AppSettingsRepository(session).set(
+                    "pairs_trading_leg_capital_usd", DEFAULTS["pairs_trading_leg_capital_usd"], updated_by="test"
+                )
+
+
 def test_currency_rates_endpoint_returns_real_live_rates():
     with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
         client = _client()

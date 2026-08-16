@@ -287,6 +287,16 @@ DEFAULTS: dict[str, str] = {
     # diye) — 5x'in neredeyse tamamı korunur, tam 5x DEĞİL. Bu değer
     # sabit kodlanmadı, burada AppSettings üzerinden ayarlanabilir.
     "pump_fade_stop_distance_pct": "0.15",
+    # Faz 268-sonrası — kullanıcı bulgusu: "15 hedge pozisyondan gelen
+    # kayıp 400 dolardan fazla, scalp'te 1109 işlem sadece 16 dolar
+    # kaybettirmiş — acayip bir dengesizlik." Kök neden: services/
+    # pairs_trader.py::LEG_SIZE = 0.2 sabit bir HAM VARLIK BİRİMİYDİ
+    # (dolar değil) — 0.2 BTC (~$13.000 notional, 10x kaldıraçla) ile
+    # 0.2 ETH (~$380) arasında GERÇEK dolar riski 30 kattan fazla
+    # farklıydı, "sabit-küçük bir boyut" niyetinin tam tersi. Artık
+    # sabit bir DOLAR tutarı — her bacağın asıl miktarı current_price'a
+    # bölünerek hesaplanıyor, tüm varlıklarda GERÇEKTEN aynı boyut.
+    "pairs_trading_leg_capital_usd": "100",
 }
 
 CANDLE_TIMEFRAMES = ("1m", "5m", "15m", "1h", "4h", "1d")

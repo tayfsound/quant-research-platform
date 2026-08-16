@@ -119,6 +119,109 @@ def test_pairs_trader_skips_everything_when_ai_disabled():
             AppSettingsRepository(session).set("ai_enabled", "true", updated_by="test")
 
 
+def test_leg_size_is_dollar_based_and_consistent_across_wildly_different_prices():
+    """Faz 268-sonrası — kritik bulgu, kullanıcı bulgusu: eski LEG_SIZE=0.2
+    sabit bir HAM VARLIK BİRİMİYDİ — 0.2 BTC (~$13.000) ile 0.2 ETH (~$380)
+    arasında gerçek dolar riski 30 kattan fazla farklıydı. Artık iki farklı
+    fiyat ölçeğindeki (aynı istatistiksel yapı, ~100 vs ~100.000'e
+    ölçeklenmiş) sembollerin gerçek dolar (marjin) tutarı NEREDEYSE AYNI
+    olmalı — kanıtlanmış kointegre bir seri (_cointegrated_bars, halihazırda
+    çalışan başka bir testte kullanılıyor) 1000x ölçeklenerek "pahalı"
+    versiyonu üretiliyor; ölçekleme kointegrasyon yapısını bozmaz."""
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        cheap_a, cheap_b = f"CHEAPA{uuid4().hex[:6]}USDT", f"CHEAPB{uuid4().hex[:6]}USDT"
+        pricey_a, pricey_b = f"PRICEYA{uuid4().hex[:6]}USDT", f"PRICEYB{uuid4().hex[:6]}USDT"
+
+        bars_a_cheap, bars_b_cheap = _cointegrated_bars(seed=1, diverge_last=3.0)
+
+        def _scaled_bars(bars, factor):
+            return [
+                OHLCV(timestamp=b.timestamp, open=b.open * factor, high=b.high * factor,
+                      low=b.low * factor, close=b.close * factor, volume=b.volume)
+                for b in bars
+            ]
+
+        bars_a_pricey = _scaled_bars(bars_a_cheap, 1000.0)
+        bars_b_pricey = _scaled_bars(bars_b_cheap, 1000.0)
+
+        provider = _FakeProvider({
+            cheap_a: bars_a_cheap, cheap_b: bars_b_cheap,
+            pricey_a: bars_a_pricey, pricey_b: bars_b_pricey,
+        })
+
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("ai_enabled", "true", updated_by="test")
+            AppSettingsRepository(session).set("trading_mode", "test", updated_by="test")
+            AppSettingsRepository(session).set("max_capital_pct", "1000000", updated_by="test")
+            AppSettingsRepository(session).set("max_concurrent_positions", "100000", updated_by="test")
+            AppSettingsRepository(session).set("kill_switch_consecutive_losses", "0", updated_by="test")
+            AppSettingsRepository(session).set("pairs_trading_leg_capital_usd", "100", updated_by="test")
+
+        trader = PairsTrader(data_provider=provider)
+        try:
+            trader._check_pair(cheap_a, cheap_b)
+            trader._check_pair(pricey_a, pricey_b)
+        finally:
+            with SessionFactory.get_session() as session:
+                repo = AppSettingsRepository(session)
+                repo.set("max_capital_pct", DEFAULTS["max_capital_pct"], updated_by="test")
+                repo.set("max_concurrent_positions", DEFAULTS["max_concurrent_positions"], updated_by="test")
+                repo.set("pairs_trading_leg_capital_usd", DEFAULTS["pairs_trading_leg_capital_usd"], updated_by="test")
+
+        with SessionFactory.get_session() as session:
+            repo = DecisionPersistor(session)
+            cheap_rows = [r for r in repo.list_open_positions(limit=200) if r["symbol"] in (cheap_a, cheap_b)]
+            pricey_rows = [r for r in repo.list_open_positions(limit=200) if r["symbol"] in (pricey_a, pricey_b)]
+
+        assert len(cheap_rows) == 2
+        assert len(pricey_rows) == 2
+
+        def _notional(rows):
+            return [r["entry_price"] * r["quantity"] / (r["leverage"] or 1.0) for r in rows]
+
+        cheap_notionals = _notional(cheap_rows)
+        pricey_notionals = _notional(pricey_rows)
+
+        # Gerçek dolar (marjin) boyutu HER İKİ ölçekte de ~$100 civarında
+        # olmalı — eski hatada pahalı varlık ucuzdan yüzlerce kat fazla
+        # notional taşıyordu.
+        for notional in cheap_notionals + pricey_notionals:
+            assert 90 < notional < 110
+
+
+def test_leg_is_skipped_when_target_is_below_min_profit_target_pct(monkeypatch):
+    """Faz 268-sonrası — kritik bulgu: hedge bacakları DecisionFusion'dan
+    hiç geçmediği için ana AI'ın min_profit_target_pct korumasını
+    atlıyordu — bazı bacaklar take_profit'e ulaşıp yine de komisyonu
+    karşılamayan net zararla kapanıyordu. Artık aynı kontrol burada da var."""
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        sym_a, sym_b = f"TINYA{uuid4().hex[:6]}USDT", f"TINYB{uuid4().hex[:6]}USDT"
+        bars_a, bars_b = _cointegrated_bars(diverge_last=3.0)
+        provider = _FakeProvider({sym_a: bars_a, sym_b: bars_b})
+
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("ai_enabled", "true", updated_by="test")
+            AppSettingsRepository(session).set("trading_mode", "test", updated_by="test")
+            AppSettingsRepository(session).set("max_capital_pct", "1000000", updated_by="test")
+            AppSettingsRepository(session).set("max_concurrent_positions", "100000", updated_by="test")
+            AppSettingsRepository(session).set("kill_switch_consecutive_losses", "0", updated_by="test")
+            # Fiilen ulaşılamaz bir minimum hedef — her bacak hedefin
+            # altında kalıp atlanmalı.
+            AppSettingsRepository(session).set("min_profit_target_pct", "0.99", updated_by="test")
+
+        trader = PairsTrader(data_provider=provider)
+        try:
+            result = trader._check_pair(sym_a, sym_b)
+        finally:
+            with SessionFactory.get_session() as session:
+                repo = AppSettingsRepository(session)
+                repo.set("max_capital_pct", DEFAULTS["max_capital_pct"], updated_by="test")
+                repo.set("max_concurrent_positions", DEFAULTS["max_concurrent_positions"], updated_by="test")
+                repo.set("min_profit_target_pct", DEFAULTS["min_profit_target_pct"], updated_by="test")
+
+        assert result.get("opened_legs") == []
+
+
 def test_uncointegrated_pair_is_reported_as_such():
     with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
         sym_a, sym_b = f"INDA{uuid4().hex[:6]}USDT", f"INDB{uuid4().hex[:6]}USDT"
