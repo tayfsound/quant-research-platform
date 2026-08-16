@@ -24,6 +24,32 @@ from contracts.agent_performance import (
 # gerçek dosyaya asla dokunmuyor.
 _DEFAULT_STORAGE_PATH = os.environ.get("AGENT_MEMORY_STORAGE_PATH", "agent_memory_history")
 
+# Faz 247 — services/confidence_calibration.py'den taşındı (Faz 268-sonrası):
+# kullanıcı bulgusu, gerçek veriyle doğrulandı — macro ajanı kripto'da %30.5,
+# kripto-dışında (hisse/endeks/emtia) %55.4 isabetli; technical ise TAM
+# TERSİ (kripto %61.8, kripto-dışı %35.0). SourceReliabilityAgent'ın
+# benching/güvenilirlik hesabı bu ikisini TEK bir global ortalamada
+# karıştırıyordu — buraya taşınmasının nedeni: hem confidence_calibration.py
+# hem source_reliability_agent.py (agent_memory üzerinden) AYNI sınıflandırmayı
+# kullanmalı, iki ayrı/uyuşmaz tanım olmasın.
+_ASSET_CLASS_SYMBOLS: dict[str, tuple[str, ...]] = {
+    "gold_backed": ("PAXGUSDT", "XAUTUSDT"),
+    "precious_metal_future": ("GC=F", "SI=F"),
+    "equity_index": ("^IXIC", "^GSPC"),
+    "equity": ("AAPL", "NVDA", "MSFT"),
+}
+_CRYPTO_QUOTE_SUFFIXES = ("USDT", "BUSD", "USDC", "FDUSD")
+
+
+def asset_class_of_symbol(symbol: str) -> str:
+    s = (symbol or "").upper()
+    for asset_class, symbols in _ASSET_CLASS_SYMBOLS.items():
+        if s in symbols:
+            return asset_class
+    if s.endswith(_CRYPTO_QUOTE_SUFFIXES):
+        return "crypto"
+    return "other"
+
 
 def get_reliability_legacy_cutoff():
     """Faz 268-sonrası — kullanıcı isteği: "başlangıç olarak her ajanın
@@ -163,6 +189,7 @@ class AgentMemory:
         window: int | None = None,
         regime: str | None = None,
         min_timestamp=None,
+        asset_class: str | None = None,
     ) -> AgentPerformanceSummary:
         # Faz 253: kritik bulgu — canlıda doğrulandı. Faz 245, WAIT diyen
         # bir ajanın kaydedilmesini (record() çağrısını) durdurmuştu ama
@@ -186,6 +213,16 @@ class AgentMemory:
         # kalanı" değil.
         if regime is not None:
             records = [r for r in records if (r.market_regime or "unknown") == regime]
+
+        # Faz 268-sonrası — kullanıcı bulgusu: ajan performansı varlık
+        # sınıfına göre büyük ölçüde farklılaşıyor (gerçek veriyle
+        # doğrulandı: macro kripto'da %30.5, kripto-dışında %55.4;
+        # technical TAM TERSİ, kripto'da %61.8, kripto-dışında %35.0).
+        # Global (tüm varlık sınıflarını karıştıran) tek bir ortalama, her
+        # iki bağlamda da yanlış bir sinyal veriyordu. asset_class
+        # verilirse SADECE o sınıftaki gerçek kararlar sayılır.
+        if asset_class is not None:
+            records = [r for r in records if asset_class_of_symbol(r.symbol) == asset_class]
 
         # Faz 268-sonrası — kullanıcı isteği: SourceReliabilityAgent'ın
         # gerçek isabet oranına geçmesiyle birlikte eklendi (bkz. agents/

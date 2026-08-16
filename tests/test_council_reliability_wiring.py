@@ -42,5 +42,13 @@ def test_source_reliability_adapts_from_real_accuracy_not_the_agent_hardcoded_de
     # TechnicalAgent itself always sets source_reliability=0.75 before
     # recalculate() — this asserts the annotator actually overrode it with
     # the real, accumulated (100% correct) accuracy.
+    #
+    # Faz 268-sonrası — kritik bulgu: reliability artık Bayesian (Beta-
+    # prior, prior_strength=5) yumuşatılıyor — 15 örneklemde %100 ham
+    # isabet bile (15+5)/(15+10)=0.80'e düşer (gerçek olay: macro
+    # ajanının ~23 örneklemlik "harika" son serisi, 600+ işlemlik
+    # geçmişte aslında ~%37 isabetliydi; küçük örneklemi tam güvenle
+    # işlemek yanıltıcıydı). 0.95 artık ulaşılamaz bir bar — 0.80,
+    # hardcoded 0.75 varsayılanından hâlâ AÇIKÇA farklı ve yüksek.
     assert technical_opinion.source_reliability != 0.75
-    assert technical_opinion.source_reliability > 0.95
+    assert technical_opinion.source_reliability > 0.75

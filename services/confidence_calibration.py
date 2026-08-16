@@ -27,6 +27,7 @@ temiz başladık" tarihi tutmak yerine (kafa karıştırıcı), tek bir gerçek
 kaynak."""
 import time
 
+from services.agent_memory import asset_class_of_symbol as _asset_class_of_symbol
 from services.agent_memory import get_reliability_legacy_cutoff
 
 _MIN_BUCKET_SAMPLES = 20
@@ -225,23 +226,11 @@ _FULL_TRUST_EVIDENCE_COUNT = 3
 # başına ayrı eğri, örneklemi anlamsız derecede seyreltirdi), o sınıf için
 # yeterli veri varsa (>= _DOMAIN_MIN_BUCKET_SAMPLES/kova) ONU kullan, yoksa
 # global domain eğrisine düş.
-_ASSET_CLASS_SYMBOLS: dict[str, tuple[str, ...]] = {
-    "gold_backed": ("PAXGUSDT", "XAUTUSDT"),
-    "precious_metal_future": ("GC=F", "SI=F"),
-    "equity_index": ("^IXIC", "^GSPC"),
-    "equity": ("AAPL", "NVDA", "MSFT"),
-}
-_CRYPTO_QUOTE_SUFFIXES = ("USDT", "BUSD", "USDC", "FDUSD")
-
-
-def _asset_class_of_symbol(symbol: str) -> str:
-    s = (symbol or "").upper()
-    for asset_class, symbols in _ASSET_CLASS_SYMBOLS.items():
-        if s in symbols:
-            return asset_class
-    if s.endswith(_CRYPTO_QUOTE_SUFFIXES):
-        return "crypto"
-    return "other"
+#
+# Faz 268-sonrası: sınıflandırmanın kendisi services/agent_memory.py'ye
+# taşındı (asset_class_of_symbol, yukarıda import edildi) —
+# SourceReliabilityAgent de AYNI sınıflandırmayı kullanmaya başladı, iki
+# ayrı/uyuşmaz tanım olmasın diye tek gerçek kaynağa indirgendi.
 
 
 def compute_asset_class_calibration_curves(memory=None) -> dict[str, list[tuple[float, float]]]:

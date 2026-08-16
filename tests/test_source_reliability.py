@@ -31,14 +31,48 @@ def test_reliability_reflects_real_accuracy_not_confidence(tmp_path):
 
 
 def test_reliability_reflects_genuinely_correct_track_record(tmp_path):
+    # Faz 268-sonrası — kritik bulgu: küçük bir örneklemde (ör. 15) %100
+    # ham isabet bile artık Bayesian yumuşatmayla (prior_strength=5)
+    # 0.80'e (tam sınıra) düşer — bu KASITLI (gerçek olay: macro ajanının
+    # ~23 örneklemlik "harika" son serisi, 600+ işlemlik geçmişte aslında
+    # ~%37 isabetliydi; küçük örneklemi tam güvenle işlemek yanıltıcıydı).
+    # Bu test 30 örneklemle ("gerçekten büyük, tutarlı bir track record")
+    # bu ayrımı koruyor — smoothed değer hâlâ ham orana yaklaşıp %80'i
+    # rahatça aşıyor.
     memory = AgentMemory(storage_path=str(tmp_path))
-    _seed(memory, "macro", 15, was_correct=True, confidence=0.5)
+    _seed(memory, "macro", 30, was_correct=True, confidence=0.5)
 
     agent = SourceReliabilityAgent(memory=memory)
     result = agent.annotate([{"domain": "macro", "confidence": 0.5}])
 
     assert result[0]["source_reliability"] > 0.8
     assert result[0]["benched"] is False
+
+
+def test_small_sample_high_accuracy_is_smoothed_not_fully_trusted(tmp_path):
+    """Faz 268-sonrası — gerçek olay: macro ajanının son ~23 kararı %82.6
+    isabetli görünüyordu (LDOUSDT kararında tek başına %84 nihai güvenle
+    kararı taşımasının nedeni buydu) — ama aynı ajanın büyük örneklemli
+    (600+ işlem) geçmiş performansı sadece ~%37'ydi. Küçük bir örneklemde
+    yüksek ham isabet artık TAM güvenle işlenmiyor — Bayesian yumuşatma
+    onu nötre doğru çekiyor, ham orandan belirgin şekilde düşük çıkmalı."""
+    memory = AgentMemory(storage_path=str(tmp_path))
+    n = 23
+    correct_n = round(n * 0.826)
+    for i in range(n):
+        memory.record(AgentPerformanceRecord(
+            agent_domain="macro", direction="LONG", confidence=0.7,
+            was_correct=i < correct_n,
+        ))
+
+    agent = SourceReliabilityAgent(memory=memory)
+    result = agent.annotate([{"domain": "macro", "confidence": 0.7}])
+
+    raw_accuracy = correct_n / n
+    assert result[0]["source_reliability"] < raw_accuracy
+    # Yine de nötrün (0.5) üzerinde kalmalı — gerçekten pozitif bir sinyal
+    # var, sadece abartılı güvenle değil.
+    assert 0.5 < result[0]["source_reliability"] < raw_accuracy
 
 
 def test_insufficient_real_samples_is_neutral_not_benched(tmp_path):
@@ -71,6 +105,70 @@ def test_state_persists_across_fresh_instances_not_reset_every_call(tmp_path):
     assert result[0]["benched"] is True
 
 
+def _seed_symbol(memory: AgentMemory, domain: str, symbol: str, n: int, was_correct: bool, confidence: float = 0.7) -> None:
+    for _ in range(n):
+        memory.record(AgentPerformanceRecord(
+            agent_domain=domain, direction="LONG", confidence=confidence, was_correct=was_correct, symbol=symbol,
+        ))
+
+
+def test_reliability_is_asset_class_aware_not_global(tmp_path):
+    """Faz 268-sonrası — kullanıcı bulgusu, gerçek veriyle doğrulandı: bir
+    ajanın performansı varlık sınıfına göre büyük ölçüde farklılaşabiliyor
+    (macro kripto'da %30.5, kripto-dışında %55.4 — TAM TERSİ değil ama bu
+    testte netlik için tersi kurgulanıyor). Global tek bir ortalama her
+    iki bağlamda da yanlış bir sinyal veriyordu — artık symbol verilirse
+    o sembolün varlık sınıfına özel geçmiş kullanılıyor."""
+    memory = AgentMemory(storage_path=str(tmp_path))
+    # Kripto'da hep yanlış (20 örneklem, yeterli).
+    _seed_symbol(memory, "macro", "BTCUSDT", 20, was_correct=False)
+    # Hisse senedinde hep doğru (20 örneklem, yeterli).
+    _seed_symbol(memory, "macro", "AAPL", 20, was_correct=True)
+
+    agent = SourceReliabilityAgent(memory=memory)
+
+    crypto_result = agent.annotate([{"domain": "macro", "confidence": 0.7}], symbol="ETHUSDT")
+    equity_result = agent.annotate([{"domain": "macro", "confidence": 0.7}], symbol="NVDA")
+
+    # ETHUSDT/NVDA hiç doğrudan izlenmemiş ama AYNI varlık sınıfına
+    # (crypto/equity) düşüyor — BTCUSDT/AAPL'ın geçmişini kullanmalı.
+    assert crypto_result[0]["benched"] is True
+    assert crypto_result[0]["source_reliability"] < 0.35
+    assert equity_result[0]["benched"] is False
+    assert equity_result[0]["source_reliability"] > 0.7
+
+
+def test_reliability_falls_back_to_global_when_asset_class_has_insufficient_samples(tmp_path):
+    """Belirli bir varlık sınıfında yeterli örneklem yoksa (MIN_SAMPLES
+    altında), tamamen nötre (0.5) düşmek yerine GLOBAL (tüm sınıflar)
+    geçmişe düşülmeli — confidence_calibration.py'nin fail-closed
+    deseniyle aynı."""
+    memory = AgentMemory(storage_path=str(tmp_path))
+    # Kripto'da bol örneklem, hep dogru.
+    _seed_symbol(memory, "quant", "BTCUSDT", 20, was_correct=True)
+    # Hisse senedinde SADECE 2 örneklem (MIN_SAMPLES=10'un altında).
+    _seed_symbol(memory, "quant", "AAPL", 2, was_correct=False)
+
+    agent = SourceReliabilityAgent(memory=memory)
+    result = agent.annotate([{"domain": "quant", "confidence": 0.7}], symbol="NVDA")
+
+    # NVDA (equity) kendi sınıfında yetersiz veri -> global'e (esas
+    # olarak kripto'nun 20 doğru kaydı) düşmeli, nötr (0.5) DEĞİL.
+    assert result[0]["source_reliability"] > 0.6
+
+
+def test_annotate_without_symbol_uses_global_summary_unchanged(tmp_path):
+    """Regresyon kontrolü: symbol verilmezse (eski çağıranlar, ör. testler)
+    davranış birebir eskisiyle aynı kalmalı — global özet kullanılır."""
+    memory = AgentMemory(storage_path=str(tmp_path))
+    _seed(memory, "technical", 15, was_correct=False, confidence=0.95)
+
+    agent = SourceReliabilityAgent(memory=memory)
+    result = agent.annotate([{"domain": "technical", "confidence": 0.95}])
+
+    assert result[0]["benched"] is True
+
+
 def test_legacy_records_before_cutoff_do_not_count(tmp_path, monkeypatch):
     """Kullanıcı isteği: "başlangıç olarak her ajanın kararda eşit
     ağırlığı olsun." reliability_legacy_cutoff_at set edildiğinde, o
@@ -86,7 +184,12 @@ def test_legacy_records_before_cutoff_do_not_count(tmp_path, monkeypatch):
     )
     memory._records.setdefault("pattern", []).append(old_record)
     memory._save()
-    _seed(memory, "pattern", 12, was_correct=True, confidence=0.6)
+    # Faz 268-sonrası: 12'den 30'a çıkarıldı — Bayesian yumuşatma artık
+    # küçük örneklemi nötre çekiyor (bkz. test_small_sample_high_accuracy_
+    # is_smoothed_not_fully_trusted), bu test kesim mantığını (eski kayıt
+    # sayılmamalı) doğruluyor, yumuşatmanın kendisini değil — yeterince
+    # büyük bir örneklem seçildi ki iki etki birbirine karışmasın.
+    _seed(memory, "pattern", 30, was_correct=True, confidence=0.6)
 
     cutoff = (datetime.now() - timedelta(hours=1)).isoformat()
     with SessionFactory.get_session() as session:
