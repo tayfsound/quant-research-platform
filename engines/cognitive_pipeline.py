@@ -133,7 +133,33 @@ class MetaStage:
     # fazla ama zayıf seslere karşı hiç ayrıcalıklı görmüyordu). Kullanıcının
     # kendi ifadesiyle: "İyi trade doğru zamanda doğru hamleyi yapmaktır,
     # zırt pırt pozisyon açmak değil."
-    STRONG_DISSENT_CONFIDENCE_THRESHOLD = 0.75
+    #
+    # Faz 268-sonrası (2) — kullanıcı kararıyla 0.75'ten 0.65'e çekildi:
+    # sistem genel olarak daha temkinli olsun, VE benched ajan eşiğinin
+    # (aşağıda) altında kalarak mantık sırası korunsun (güvenilir/benched-
+    # olmayan bir ajan için daha DÜŞÜK bar, benched bir ajan için biraz
+    # daha YÜKSEK bar — "az güvenilen sesin ciddiye alınması için daha
+    # sağlam bir sinyal gerekir" ilkesi tersine dönmesin).
+    STRONG_DISSENT_CONFIDENCE_THRESHOLD = 0.65
+
+    # Faz 268-sonrası — kullanıcı bulgusu, gerçek örnekle doğrulandı
+    # (LDOUSDT: technical ajanı %89 güvenle SHORT diyordu — EMA'lar
+    # düşüş yönlü, fiyat VWAP'ın %80 altında, gerçek somut kanıtla — ama
+    # benched olduğu (son 20 kararının isabeti %20, eşiğin altında) için
+    # effective_influence=0 idi ve strong-dissent kuralı onu HİÇ
+    # saymıyordu; karar sadece macro'nun %74 güvenli tek sesiyle %84.4
+    # nihai güvenle LONG açıldı). Kronik düşük isabet, HER tekil tahminin
+    # yanlış olacağı anlamına gelmez — ama genel güvenilirliği düşük
+    # olduğu için normal eşikten biraz daha YÜKSEK, daha sağlam bir
+    # sinyal gerektiriyor. Benched bir ajan artık TAMAMEN yok sayılmıyor;
+    # bu eşiği geçerse yine WAIT'e zorluyor.
+    #
+    # Kritik kalibrasyon düzeltmesi: ilk seçilen değer (0.90) TAM OLARAK
+    # bu düzeltmeyi tetikleyen gerçek örneği (technical %89) YAKALAMIYORDU
+    # — kullanıcı bunu hemen fark etti. Kullanıcı kararıyla 0.70'e
+    # çekildi (sistem artık genel olarak daha temkinli, benched bir
+    # ajanın bile orta-yüksek güvenli itirazını ciddiye alıyor).
+    BENCHED_STRONG_DISSENT_CONFIDENCE_THRESHOLD = 0.70
 
     def __init__(self):
         self.metacognition = Metacognition()
@@ -198,13 +224,18 @@ class MetaStage:
         ctx.decision.uncertainty = meta["uncertainty"]
 
         # Güçlü tek-ses itirazı: benched OLMAYAN (effective_influence>0)
-        # herhangi bir ajan, nihai yönün TERSİNE, eşiğin üzerinde güvenle
-        # işaret ediyorsa pozisyon açma.
+        # bir ajan normal eşiğin (0.75) üzerinde güvenle nihai yönün
+        # TERSİNE işaret ediyorsa pozisyon açma. Benched bir ajan da
+        # (effective_influence=0, kronik düşük isabet nedeniyle oyu
+        # zaten sıfırlanmış) TAMAMEN yok sayılmıyor — çok daha yüksek
+        # bir bar (0.90) geçerse o da WAIT'e zorluyor.
         strong_dissent = any(
-            o.effective_influence > 0
-            and o.direction in ("LONG", "SHORT")
+            o.direction in ("LONG", "SHORT")
             and o.direction != belief.direction
-            and o.confidence > self.STRONG_DISSENT_CONFIDENCE_THRESHOLD
+            and (
+                (o.effective_influence > 0 and o.confidence > self.STRONG_DISSENT_CONFIDENCE_THRESHOLD)
+                or (o.effective_influence == 0 and o.confidence > self.BENCHED_STRONG_DISSENT_CONFIDENCE_THRESHOLD)
+            )
             for o in opinions
         )
         #
