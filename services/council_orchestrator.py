@@ -163,9 +163,10 @@ class CouncilOrchestrator:
                 # otomatik geri döner (bkz. agents/source_reliability_agent.py).
                 opinion.performance_weight = 0.0
                 opinion.caveats.append(
-                    f"Benched: {opinion.domain.value}'s real recent accuracy "
-                    f"(last {self.reliability_annotator.agent.WINDOW} directional decisions) is below "
-                    f"{self.reliability_annotator.agent.BENCH_THRESHOLD} — vote weight zeroed until it recovers."
+                    f"Devre dışı (benched): {opinion.domain.value} ajanının gerçek son isabet oranı "
+                    f"(son {self.reliability_annotator.agent.WINDOW} yönlü karar) "
+                    f"{self.reliability_annotator.agent.BENCH_THRESHOLD} eşiğinin altında — "
+                    f"gerçek isabetli kararlar birikene kadar oy ağırlığı sıfırlandı."
                 )
             opinion.recalculate()
 

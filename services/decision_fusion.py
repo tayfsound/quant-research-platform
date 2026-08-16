@@ -47,7 +47,7 @@ class DecisionFusion:
             ctx.decision.final_size = 0.0
             ctx.cognition.relevant_knowledge.append({
                 "type": "decision_fusion",
-                "data": {"rejection": "Negative EV", "ev": round(ev, 6)},
+                "data": {"rejection": "Negatif beklenen değer (EV)", "ev": round(ev, 6)},
             })
             return ctx
 
@@ -74,7 +74,7 @@ class DecisionFusion:
                 ctx.cognition.relevant_knowledge.append({
                     "type": "decision_fusion",
                     "data": {
-                        "rejection": "Target below min_profit_target_pct",
+                        "rejection": "Hedef, min_profit_target_pct'in altında",
                         "target_pct": round(win / current_price, 6),
                         "min_profit_target_pct": min_profit_target_pct,
                     },
@@ -86,7 +86,7 @@ class DecisionFusion:
             ctx.cognition.relevant_knowledge.append({
                 "type": "decision_fusion",
                 "data": {
-                    "adjustment": "InnerCritic size reduction",
+                    "adjustment": "İç Eleştirmen (InnerCritic) pozisyon boyutunu küçülttü",
                     "size_multiplier": critique["size_multiplier"],
                     "risk_flags": critique["risk_flags"],
                 },
@@ -97,7 +97,7 @@ class DecisionFusion:
             ctx.cognition.relevant_knowledge.append({
                 "type": "decision_fusion",
                 "data": {
-                    "adjustment": "R/R too low, size halved",
+                    "adjustment": "Risk/ödül oranı çok düşük, boyut yarıya indirildi",
                     "rr": round(win / loss, 6),
                 },
             })
