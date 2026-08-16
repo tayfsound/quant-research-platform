@@ -44,7 +44,17 @@ somut şekilde özetle."""
 
 async def _run_audit_async() -> dict:
     critic = NvidiaDecisionCritic()
-    return await critic.ask_with_tools(AUDIT_PROMPT, timeout_ms=120000, max_iterations=6)
+    # Faz 268-sonrası — kritik bulgu: bu görev canlıda kayıtlı denetim
+    # (llm_audit_runs) hiç üretmiyordu. Kök neden bulundu: NVIDIA API'nin
+    # bu model için gecikmesi çok değişken — gerçek ölçüm, "sadece tamam
+    # de" gibi bedava bir istekte bile 15-74 saniye arası salınıyor (curl
+    # ile de doğrulandı, ağ/kodumuzla ilgisi yok). Uzun sistem promptu +
+    # 6 araç tanımı içeren gerçek denetim isteği eski 120s sınırını
+    # düzenli aşıyordu (httpx.ReadTimeout). Bu görev periyodik (6 saatte
+    # bir) ve artık kendi "slow" kuyruğunda (bkz. celery_app.py) —
+    # gecikmeye duyarlı hiçbir şeyi bloklamıyor, bu yüzden cömert bir
+    # üst sınır (300s/çağrı) güvenle uygulanabilir.
+    return await critic.ask_with_tools(AUDIT_PROMPT, timeout_ms=300000, max_iterations=6)
 
 
 def run_system_audit() -> dict:
