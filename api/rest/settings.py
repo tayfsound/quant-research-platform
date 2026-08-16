@@ -168,6 +168,42 @@ def _validate(key: str, value: str) -> None:
     elif key == "adaptive_barrier_enabled":
         if value not in ("true", "false"):
             raise HTTPException(400, "adaptive_barrier_enabled must be 'true' or 'false'")
+    elif key == "pump_fade_enabled":
+        if value not in ("true", "false"):
+            raise HTTPException(400, "pump_fade_enabled must be 'true' or 'false'")
+    elif key == "pump_fade_capital_pct":
+        try:
+            v = float(value)
+            if not (0 < v <= 1):
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "pump_fade_capital_pct must be a number in (0, 1]")
+    elif key == "pump_fade_leverage":
+        try:
+            v = float(value)
+            if not (1.0 <= v <= 125.0):
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "pump_fade_leverage must be a number in [1, 125]")
+    elif key == "pump_fade_min_gain_pct":
+        try:
+            if float(value) <= 0:
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "pump_fade_min_gain_pct must be a positive number (1.0 = %100)")
+    elif key == "pump_fade_lookback_hours":
+        try:
+            if int(value) < 1:
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "pump_fade_lookback_hours must be a positive integer")
+    elif key == "pump_fade_stop_distance_pct":
+        try:
+            v = float(value)
+            if not (0 < v < 1):
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "pump_fade_stop_distance_pct must be a number in (0, 1)")
     elif key == "max_open_positions_per_symbol_direction":
         # Faz 268-sonrası: gerçek olaydan (54 XAUTUSDT SHORT aynı anda
         # açık bulundu) eklenen kontrol — kullanıcı Settings sayfasından

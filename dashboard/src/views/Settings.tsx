@@ -623,6 +623,110 @@ export default function Settings() {
             </Button>
           </div>
         </Card>
+
+        <Card>
+          <h3 className="text-sm font-semibold text-ink mb-1">Pump-Fade stratejisi (test)</h3>
+          <p className="text-xs text-ink-soft mb-3">
+            AI'ın karar/confidence sisteminden tamamen yalıtık, mekanik bir strateji. Son{" "}
+            {draft.pump_fade_lookback_hours ?? "48"} saatte en az %{Math.round(Number(draft.pump_fade_min_gain_pct ?? 1) * 100)}{" "}
+            kazanmış tüm USDT perpetual'ları short'lar, pozisyon %100 kâr ettiğinde kapanır. Kapalıyken hiçbir etkisi yok.
+          </p>
+          <div className="flex gap-2 mb-4">
+            {[
+              { key: "true", label: "Açık" },
+              { key: "false", label: "Kapalı" },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => save("pump_fade_enabled", key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  (settings.pump_fade_enabled ?? "false") === key
+                    ? "bg-accent text-white border-accent"
+                    : "bg-canvas-soft text-ink-soft border-line hover:bg-surface-soft"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <p className="text-xs text-ink-soft mb-2">Sermaye payı (0-1 arası, ör. 0.05 = kasanın %5'i)</p>
+          <div className="flex gap-2 mb-4">
+            <Input
+              decimal
+              value={draft.pump_fade_capital_pct ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, pump_fade_capital_pct: v }))}
+            />
+            <Button
+              disabled={saving === "pump_fade_capital_pct"}
+              onClick={() => save("pump_fade_capital_pct", draft.pump_fade_capital_pct)}
+            >
+              {saved === "pump_fade_capital_pct" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+
+          <p className="text-xs text-ink-soft mb-2">Hedef kaldıraç (1-125, güvenlik kilidi daha düşüğe kırpabilir)</p>
+          <div className="flex gap-2 mb-4">
+            <Input
+              decimal
+              value={draft.pump_fade_leverage ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, pump_fade_leverage: v }))}
+            />
+            <Button
+              disabled={saving === "pump_fade_leverage"}
+              onClick={() => save("pump_fade_leverage", draft.pump_fade_leverage)}
+            >
+              {saved === "pump_fade_leverage" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+
+          <p className="text-xs text-ink-soft mb-2">Minimum kazanç eşiği (1.0 = %100)</p>
+          <div className="flex gap-2 mb-4">
+            <Input
+              decimal
+              value={draft.pump_fade_min_gain_pct ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, pump_fade_min_gain_pct: v }))}
+            />
+            <Button
+              disabled={saving === "pump_fade_min_gain_pct"}
+              onClick={() => save("pump_fade_min_gain_pct", draft.pump_fade_min_gain_pct)}
+            >
+              {saved === "pump_fade_min_gain_pct" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+
+          <p className="text-xs text-ink-soft mb-2">Tarama penceresi (saat)</p>
+          <div className="flex gap-2 mb-4">
+            <Input
+              type="number"
+              value={draft.pump_fade_lookback_hours ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, pump_fade_lookback_hours: v }))}
+            />
+            <Button
+              disabled={saving === "pump_fade_lookback_hours"}
+              onClick={() => save("pump_fade_lookback_hours", draft.pump_fade_lookback_hours)}
+            >
+              {saved === "pump_fade_lookback_hours" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+
+          <p className="text-xs text-ink-soft mb-2">
+            Güvenlik stop mesafesi (0-1 arası, ör. 0.15 = fiyat %15 aleyhte hareket ederse kapanır)
+          </p>
+          <div className="flex gap-2">
+            <Input
+              decimal
+              value={draft.pump_fade_stop_distance_pct ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, pump_fade_stop_distance_pct: v }))}
+            />
+            <Button
+              disabled={saving === "pump_fade_stop_distance_pct"}
+              onClick={() => save("pump_fade_stop_distance_pct", draft.pump_fade_stop_distance_pct)}
+            >
+              {saved === "pump_fade_stop_distance_pct" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+        </Card>
       </div>
     </div>
   );
