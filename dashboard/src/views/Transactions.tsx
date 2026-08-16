@@ -453,6 +453,7 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
                 <th className="py-2 pr-4">Sembol</th>
                 <th className="py-2 pr-4">Yön</th>
                 <th className="py-2 pr-4">Giriş Fiyatı</th>
+                <th className="py-2 pr-4">Güncel Fiyat</th>
                 <th className="py-2 pr-4">Miktar</th>
                 <th className="py-2 pr-4">Pozisyon Büyüklüğü</th>
                 <th className="py-2 pr-4">Kaldıraç</th>
@@ -498,6 +499,13 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
                     <Badge tone={p.direction === "LONG" ? "rise" : "fall"}>{p.direction}</Badge>
                   </td>
                   <td className="py-2 pr-4 font-mono text-ink-soft">{format(p.entry_price)}</td>
+                  {/* Faz 268-sonrası — kullanıcı bulgusu: current_price API'den
+                      geliyordu (GET /positions zaten döndürüyordu) ama hiçbir
+                      sütunda gösterilmiyordu — "mevcut token fiyatları
+                      görünmüyor" tam olarak bu eksiklikti. */}
+                  <td className="py-2 pr-4 font-mono text-ink">
+                    {p.current_price != null ? format(p.current_price) : "—"}
+                  </td>
                   <td className="py-2 pr-4 font-mono text-ink-soft">{fmt(p.quantity, 4)}</td>
                   <td className="py-2 pr-4 font-mono text-ink-soft">
                     {p.entry_price != null && p.quantity != null ? format(p.entry_price * p.quantity) : "—"}
