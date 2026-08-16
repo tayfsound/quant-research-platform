@@ -24,6 +24,45 @@ logger = logging.getLogger(__name__)
 
 NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 
+# Faz 268-sonrası — kullanıcı bulgusu, gerçek olay: NVIDIA API "Server
+# error '529 status code 529'" döndürdü — bu HIZLI başarısız olan, GEÇİCİ
+# bir hata (timeout değil, saniyeler içinde dönen bir hata yanıtı), kısa
+# bir bekleyip tekrar denemek genellikle işe yarar. Zaman aşımlarını
+# (httpx.TimeoutException/TransportError) KASITLI OLARAK yeniden
+# denemiyoruz — dış asyncio.wait_for zaten bir üst sınır uyguluyor, zaten
+# yavaş bir isteği tekrarlamak o sınırı gereksiz yere zorlar; sadece HIZLI
+# dönen sunucu hataları (429/500/502/503/504/529) için anlamlı.
+_TRANSIENT_HTTP_STATUS_CODES = {429, 500, 502, 503, 504, 529}
+_RETRY_BACKOFF_SECONDS = (2.0, 5.0)
+
+
+def _post_with_retry(url: str, headers: dict, json_payload: dict, timeout_seconds: float):
+    """Bu modüldeki HER httpx.post çağrısı için ortak, geçici-hata-
+    farkında yeniden deneme sarmalayıcısı — hepsi periyodik arka plan
+    görevleri (canlı karar döngüsünde gerçek zamanlı çağrılmıyor), bu
+    yüzden birkaç saniyelik ek bekleme kabul edilebilir."""
+    import time
+
+    import httpx
+
+    last_exc: Exception | None = None
+    for attempt, delay in enumerate((0.0,) + _RETRY_BACKOFF_SECONDS):
+        if delay:
+            time.sleep(delay)
+        try:
+            response = httpx.post(url, headers=headers, json=json_payload, timeout=timeout_seconds)
+            response.raise_for_status()
+            return response
+        except httpx.HTTPStatusError as exc:
+            last_exc = exc
+            if exc.response.status_code not in _TRANSIENT_HTTP_STATUS_CODES:
+                raise
+            logger.warning(
+                "LLM API geçici sunucu hatası, tekrar denenecek",
+                extra={"status_code": exc.response.status_code, "attempt": attempt},
+            )
+    raise last_exc
+
 SYSTEM_PROMPT = """ÖNEMLİ: Bütün yanıtını SADECE TÜRKÇE yaz. İngilizce tek bir cümle bile yazma.
 (IMPORTANT: Write your entire response ONLY IN TURKISH. Do not write a single sentence in English.)
 
@@ -116,11 +155,10 @@ class NvidiaDecisionCritic:
             return f"Hata: {e}"
 
     def _ask_sync(self, message: str, timeout_ms: int, api_key: str, system_prompt: str) -> str:
-        import httpx
-        response = httpx.post(
+        response = _post_with_retry(
             NVIDIA_API_URL,
             headers={"Authorization": f"Bearer {api_key}"},
-            json={
+            json_payload={
                 "model": self.model,
                 "messages": [
                     {"role": "system", "content": system_prompt},
@@ -129,9 +167,8 @@ class NvidiaDecisionCritic:
                 "temperature": 0.3,
                 "max_tokens": 2000,
             },
-            timeout=timeout_ms / 1000,
+            timeout_seconds=timeout_ms / 1000,
         )
-        response.raise_for_status()
         data = response.json()
         choices = data.get("choices") or []
         content = (choices[0].get("message", {}).get("content") or "") if choices else ""
@@ -184,8 +221,6 @@ class NvidiaDecisionCritic:
             return {"response": f"Hata: {e}", "tool_calls": []}
 
     def _ask_with_tools_sync(self, message: str, timeout_ms: int, api_key: str, max_iterations: int) -> dict:
-        import httpx
-
         import llm_tools
         from llm_tools import TOOL_FUNCTIONS, TOOL_SCHEMAS
 
@@ -196,10 +231,10 @@ class NvidiaDecisionCritic:
         tool_call_log: list[dict] = []
 
         for _ in range(max_iterations):
-            response = httpx.post(
+            response = _post_with_retry(
                 NVIDIA_API_URL,
                 headers={"Authorization": f"Bearer {api_key}"},
-                json={
+                json_payload={
                     "model": self.model,
                     "messages": messages,
                     "tools": TOOL_SCHEMAS,
@@ -207,9 +242,8 @@ class NvidiaDecisionCritic:
                     "temperature": 0.2,
                     "max_tokens": 1500,
                 },
-                timeout=timeout_ms / 1000,
+                timeout_seconds=timeout_ms / 1000,
             )
-            response.raise_for_status()
             data = response.json()
             choices = data.get("choices") or []
             assistant_message = choices[0].get("message", {}) if choices else {}
@@ -293,10 +327,10 @@ class NvidiaDecisionCritic:
         user_prompt = json.dumps(ensemble_output, indent=2, default=str)
         symbol = ensemble_output.get("symbol", "unknown")
         try:
-            response = httpx.post(
+            response = _post_with_retry(
                 NVIDIA_API_URL,
                 headers={"Authorization": f"Bearer {api_key}"},
-                json={
+                json_payload={
                     "model": self.model,
                     "messages": [
                         {"role": "system", "content": prompt},
@@ -308,9 +342,8 @@ class NvidiaDecisionCritic:
                     # max_tokens gerçek içeriği boş bırakabiliyor (ölçüldü).
                     "max_tokens": 1500,
                 },
-                timeout=timeout_ms / 1000,
+                timeout_seconds=timeout_ms / 1000,
             )
-            response.raise_for_status()
             data = response.json()
             choices = data.get("choices") or []
             raw = (choices[0].get("message", {}).get("content") or "") if choices else ""
