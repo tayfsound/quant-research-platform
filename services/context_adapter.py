@@ -429,7 +429,17 @@ class ContextAdapter:
     def to_epistemology(self, ctx: CognitiveCycleContext) -> EpistemologyContext:
         present = sum(1 for key in _EXPECTED_FEATURES if self._get(ctx, key, None) is not None)
         completeness = present / len(_EXPECTED_FEATURES)
-        age_seconds = max(0.0, (datetime.now() - ctx.timestamp.replace(tzinfo=None)).total_seconds())
+        # Faz 268-sonrası — kritik bulgu, kullanıcı bulgusu: "her pozisyonda
+        # AYNI süre (7200sn) bayat diyor" — gerçek işlem gecikmesi olsaydı
+        # her seferinde farklı olurdu. Kök neden: order_book_snapshots.time
+        # bug'ıyla (Faz 231) AYNI hata sınıfı — bu makinenin yerel saati
+        # CEST/UTC+2. datetime.now() (naive, YEREL saat) ile ctx.timestamp'in
+        # (aware, UTC) tzinfo'sunu SİLİP naive gibi karşılaştırmak, gerçek
+        # geçen süreden BAĞIMSIZ, sabit +2 saatlik (7200sn) bir sahte yaş
+        # üretiyordu — EpistemologyAgent'ın "veri bayat" uyarısı ve
+        # freshness hesabı SİSTEMATİK OLARAK yanlıştı (veri aslında taze
+        # olsa bile hep "2 saat bayat" görünüyordu).
+        age_seconds = max(0.0, (datetime.now(UTC) - ctx.timestamp).total_seconds())
 
         return EpistemologyContext(
             feature_completeness=round(completeness, 3),

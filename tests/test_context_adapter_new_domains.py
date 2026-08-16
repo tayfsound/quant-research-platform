@@ -168,7 +168,13 @@ def test_to_epistemology_partial_completeness_when_features_missing():
 
 
 def test_to_epistemology_data_age_reflects_ctx_timestamp():
-    old_ts = datetime.now() - timedelta(seconds=120)
+    # Faz 268-sonrası — kritik bulgu: bu ARTIK datetime.now(UTC) (aware)
+    # olmalı — eskiden naive datetime.now() kullanıyordu, ki bu tam olarak
+    # gerçek koddaki (services/context_adapter.py::to_epistemology) naive/
+    # aware karışıklığı bug'ını gizliyordu (yerel saat CEST/UTC+2 olduğu
+    # için HER hesap sabit +7200sn sahte yaş üretiyordu, testler bunu asla
+    # yakalayamazdı çünkü kendisi de aynı hatayı tekrarlıyordu).
+    old_ts = datetime.now(UTC) - timedelta(seconds=120)
     ctx = CognitiveCycleContext(timestamp=old_ts)
     result = ContextAdapter().to_epistemology(ctx)
     assert result.data_age_seconds >= 100
