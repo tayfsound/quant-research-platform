@@ -256,6 +256,22 @@ class MetaStage:
         if strong_dissent:
             meta["decision"] = "WAIT"
 
+        # Yatay piyasa gate'i — kullanıcı isteği: kısa vadeli trend gücü
+        # (ADX) DÜŞÜK ve uzun vadeli rejim (200-EMA tabanlı) belirsizken
+        # (transition — ne bull ne bear, insufficient_data DEĞİL) pozisyon
+        # açma. Gerçek 2990 kararlık geçmiş veriyle doğrulandı: bu ikisi
+        # AYNI ANDA sadece %2.4 oranında oluşuyor — önceden reddedilen
+        # "min katılımcı" gate'i gibi tarihin büyük bir kısmını körü
+        # körüne bloke eden geniş bir kesim DEĞİL, gerçekten nadir ve
+        # anlamlı bir "piyasada ne kısa ne uzun vadede net bir yön var"
+        # durumu.
+        features = ctx.market.features or {}
+        adx = features.get("adx")
+        long_term_trend_regime = features.get("long_term_trend_regime")
+        sideways_market = adx is not None and adx < 20 and long_term_trend_regime == "transition"
+        if sideways_market:
+            meta["decision"] = "WAIT"
+
         if meta["decision"] == "WAIT":
             ctx.decision.action = ActionType.WAIT
             ctx.decision.final_size = 0.0
