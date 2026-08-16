@@ -56,3 +56,38 @@ def test_feature_ic_reflects_real_closed_trades_with_feature_contributions():
         assert features[key]["ic"] > 0.9
         assert features[key]["sample_size"] == 25
         assert features[key]["agent_domain"] == "quant"
+
+
+def test_feature_ic_reports_requires_auth():
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        client = _client()
+        response = client.get("/api/v1/feature-ic/reports")
+        assert response.status_code in (401, 403)
+
+
+def test_feature_ic_reports_returns_saved_snapshots():
+    """Faz 268-sonrası — kullanıcı isteği: "Feature IC'yi karar hattına
+    bağlama." Canlı / uç noktası her zaman O ANKİ durumu gösterir; bu
+    test /reports'un GERÇEKTEN kaydedilmiş (services/tasks.py::refresh_
+    feature_ic_report_task'ın ürettiği) geçmişi döndürdüğünü doğruluyor."""
+    from contracts.feature_ic_report import FeatureICReport
+    from database.repositories.feature_ic_report_repository import FeatureICReportRepository
+
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        with SessionFactory.get_session() as session:
+            report = FeatureICReport(
+                features={"test_feature_xyz": {"ic": 0.42, "p_value": 0.01, "sample_size": 30, "agent_domain": "quant"}},
+                total_closed_trades=123,
+            )
+            FeatureICReportRepository(session).save(report)
+
+        client = _client()
+        response = client.get(
+            "/api/v1/feature-ic/reports", params={"limit": 5}, headers=make_authed_headers(Role.VIEWER)
+        )
+        assert response.status_code == 200
+        reports = response.json()["reports"]
+        assert any(r["id"] == str(report.id) for r in reports)
+        saved = next(r for r in reports if r["id"] == str(report.id))
+        assert saved["total_closed_trades"] == 123
+        assert saved["features"]["test_feature_xyz"]["ic"] == 0.42

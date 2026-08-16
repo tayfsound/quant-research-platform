@@ -159,6 +159,40 @@ def test_run_pump_fade_cycle_task_skipped_when_pump_fade_disabled():
         celery_app.conf.task_always_eager = False
 
 
+def test_refresh_feature_ic_report_task_runs_in_eager_mode_and_persists():
+    """Faz 268-sonrası — kullanıcı isteği: "Feature IC'yi karar hattına
+    bağlama." Görevin gerçekten çalışıp bir FeatureICReport kaydettiğini
+    (gerçek kapanmış işlem geçmişinden hesaplayarak) doğrular."""
+    from database.repositories.feature_ic_report_repository import FeatureICReportRepository
+    from database.session_factory import SessionFactory
+    from services.celery_app import celery_app
+    from services.tasks import refresh_feature_ic_report_task
+
+    celery_app.conf.task_always_eager = True
+    celery_app.conf.task_eager_propagates = True
+    try:
+        async_result = refresh_feature_ic_report_task.delay()
+        assert async_result.successful()
+        result = async_result.result
+        assert "id" in result
+        assert "feature_count" in result
+        assert "total_closed_trades" in result
+
+        with SessionFactory.get_session() as session:
+            saved = FeatureICReportRepository(session).get_latest()
+        assert saved is not None
+        assert saved["id"] == result["id"]
+    finally:
+        celery_app.conf.task_always_eager = False
+
+
+def test_refresh_feature_ic_report_task_is_in_beat_schedule():
+    from services.celery_app import celery_app
+
+    entry = celery_app.conf.beat_schedule["refresh-feature-ic-report-weekly"]
+    assert entry["task"] == "refresh_feature_ic_report_task"
+
+
 def test_refresh_llm_news_sentiment_task_runs_in_eager_mode_and_returns_score():
     """Faz 268-sonrası: Reddit yerine LLM tabanlı gerçek haber sentiment'i
     — gerçek RSS/LLM ağ çağrısı yapmadan (mock'lanmış refresh()) görevin

@@ -19,3 +19,18 @@ async def feature_ic(min_sample_size: int = 20, user: AuthContext = Depends(get_
     with SessionFactory.get_session() as session:
         closed_trades = DecisionPersistor(session).list_closed_trades(limit=100_000)
     return {"features": compute_feature_ic(closed_trades, min_sample_size=min_sample_size)}
+
+
+@router.get("/reports")
+async def feature_ic_reports(limit: int = 20, user: AuthContext = Depends(get_current_user)):
+    """Faz 268-sonrası — kullanıcı isteği: "Feature IC'yi karar hattına
+    bağlama." Yukarıdaki / (canlı, her istekte taze hesaplanır) her zaman
+    O ANKİ durumu gösterir — "zamanla nasıl değişti" sorusu bu geçmiş
+    olmadan cevaplanamaz. services/tasks.py::refresh_feature_ic_report_
+    task'ın haftalık kaydettiği anlık görüntüler (bkz.
+    database/repositories/feature_ic_report_repository.py)."""
+    from database.repositories.feature_ic_report_repository import FeatureICReportRepository
+
+    with SessionFactory.get_session() as session:
+        reports = FeatureICReportRepository(session).get_recent(limit=limit)
+    return {"reports": reports}

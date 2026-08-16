@@ -325,6 +325,33 @@ def propose_agent_tuning_task() -> dict:
     }
 
 
+@celery_app.task(name="refresh_feature_ic_report_task")
+def refresh_feature_ic_report_task() -> dict:
+    """Faz 268-sonrası — kullanıcı isteği: "Feature IC'yi karar hattına
+    bağlama" yol haritası maddesi. analytics/feature_ic.py::
+    compute_feature_ic() zaten gerçek zamanlı çalışıyordu (GET
+    /feature-ic/) ama hiçbir GEÇMİŞİ yoktu — "IC zamanla nasıl değişti"
+    sorusu cevaplanamıyordu. Bu görev periyodik (haftalık) bir anlık
+    görüntüyü contracts/feature_ic_report.py::FeatureICReport olarak
+    kaydediyor — llm_system_audit_task/llm_audit_runs (Faz 271) ile AYNI
+    desen. SADECE ölçüm/kayıt — hiçbir feature'ı otomatik pasifleştirmiyor
+    (compute_feature_ic'in kendi ilkesiyle aynı: "AI kendi skorlama
+    mantığını otomatik gevşetemez/değiştiremez")."""
+    from analytics.feature_ic import compute_feature_ic
+    from contracts.feature_ic_report import FeatureICReport
+    from database.repositories.decision_persistor import DecisionPersistor
+    from database.repositories.feature_ic_report_repository import FeatureICReportRepository
+    from database.session_factory import SessionFactory
+
+    with SessionFactory.get_session() as session:
+        closed_trades = DecisionPersistor(session).list_closed_trades(limit=100_000)
+        features = compute_feature_ic(closed_trades)
+        report = FeatureICReport(features=features, total_closed_trades=len(closed_trades))
+        FeatureICReportRepository(session).save(report)
+
+    return {"id": str(report.id), "feature_count": len(features), "total_closed_trades": len(closed_trades)}
+
+
 @celery_app.task(name="ingest_order_book_task")
 def ingest_order_book_task() -> dict:
     """Faz 201: gerçek bulgu — market_data/ingestion/pipeline.py::

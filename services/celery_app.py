@@ -187,4 +187,13 @@ celery_app.conf.beat_schedule = {
         "task": "run_pump_fade_cycle_task",
         "schedule": 1800.0,
     },
+    # Faz 268-sonrası — kullanıcı isteği: "Feature IC'yi karar hattına
+    # bağlama." propose-agent-tuning-weekly ile AYNI ritim — feature IC'nin
+    # zamanla anlamlı şekilde değişmesi günler değil haftalar sürer,
+    # gerçek kapanmış işlem geçmişi üzerinde tekrar hesaplayan ucuz
+    # olmayan bir işlem (100.000'e kadar satır çekip Pearson hesaplıyor).
+    "refresh-feature-ic-report-weekly": {
+        "task": "refresh_feature_ic_report_task",
+        "schedule": 604800.0,
+    },
 }
