@@ -179,10 +179,19 @@ export default function BacktestRuns() {
           arka planda GERÇEKTEN çalışan bir backtest varsa görünür. */}
       {serverActiveTasks.length > 0 && (
         <div className="mb-6 rounded-xl border border-accent/30 bg-accent-soft p-4">
-          <p className="text-sm font-medium text-ink">
-            Arka planda {serverActiveTasks.length} backtest çalışıyor: {" "}
-            {serverActiveTasks.map((t) => JSON.stringify(t.args)).join(", ")}
+          <p className="text-sm font-medium text-ink mb-1">
+            Arka planda {serverActiveTasks.length} backtest çalışıyor:
           </p>
+          {/* Faz 268-sonrası — kullanıcı bulgusu: JSON.stringify(t.args)
+              (ör. 49 sembollük bir watchlist dizisi) tek, boşluksuz bir
+              satır olarak basılıyordu — konteynerin dışına taşıp
+              sonsuza gidiyordu. break-all + overflow-x-auto ile artık
+              kutunun içinde sarılıyor/kayıyor. */}
+          {serverActiveTasks.map((t, i) => (
+            <p key={i} className="text-xs text-ink-soft font-mono break-all whitespace-pre-wrap overflow-x-auto">
+              {JSON.stringify(t.args)}
+            </p>
+          ))}
         </div>
       )}
       {!inspectionAvailable && (
