@@ -87,6 +87,28 @@ def test_run_trading_cycle_task_skips_when_previous_cycle_still_running():
         client.delete(lock_key)
 
 
+def test_slow_network_dependent_tasks_are_routed_to_the_slow_queue():
+    """Faz 268-sonrası — kritik bulgu: concurrency=1 tek worker'da yavaş/ağ
+    bağımlı görevler (LLM, backtest) güvenlik-kritik close_due_positions_
+    task ile aynı kuyrukta yarışıyordu — gerçek bir olayla (HF Hub donması,
+    kuyrukta 8320+ görev birikmesi) aynı hata sınıfı. Bu görevler artık
+    ayrı bir kuyruğa yönlendiriliyor, varsayılan kuyruktaki hızlı/kritik
+    görevleri hiç bloklamıyorlar."""
+    from services.celery_app import celery_app
+
+    routes = celery_app.conf.task_routes
+    for task_name in (
+        "llm_system_audit_task", "refresh_llm_news_sentiment_task",
+        "run_backtest_task", "run_real_backtest_task", "run_portfolio_backtest_task",
+    ):
+        assert routes[task_name]["queue"] == "slow"
+
+    # Güvenlik-kritik/periyodik görevler VARSAYILAN kuyrukta kalmalı —
+    # "slow" kuyruğuna yanlışlıkla sürüklenmemiş olmalılar.
+    for task_name in ("close_due_positions_task", "run_trading_cycle_task", "run_pump_fade_cycle_task"):
+        assert task_name not in routes
+
+
 def test_run_pump_fade_cycle_task_is_in_beat_schedule():
     from services.celery_app import celery_app
 

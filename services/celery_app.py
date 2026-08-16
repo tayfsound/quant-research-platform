@@ -28,6 +28,29 @@ celery_app.conf.update(
     task_store_eager_result=True,
 )
 
+# Faz 268-sonrası — kritik bulgu (mimari inceleme, gerçek koda karşı
+# doğrulandı): worker concurrency=1 ile TÜM task'lar (backtest, LLM
+# denetimi, açık pozisyon kontrolü) AYNI tek kuyrukta bekliyordu. Bu,
+# GERÇEKTEN yaşanmış bir olayla (HF Hub donması, embedding çağrısı
+# celery worker'ı tamamen dondurmuş, kuyrukta 8320+ görev birikmişti —
+# bkz. AI_MEMORY_SYSTEM/CURRENT_STATE.md) AYNI hata sınıfı: yavaş/ağ
+# bağımlı bir görev (llm_system_audit_task ~1-2dk gerçek LLM çağrısı,
+# refresh_llm_news_sentiment_task gerçek RSS/LLM çağrısı, backtest
+# task'ları) çalışırken, GÜVENLİK KRİTİK close_due_positions_task
+# (60sn'de bir açık pozisyonları stop/hedef/likidasyona göre kontrol
+# eden görev) sırasını bekliyor — açık pozisyonlar bu süre boyunca
+# kontrolsüz kalıyor. Yavaş/ağ-bağımlı görevler artık ayrı bir "slow"
+# kuyruğuna yönlendiriliyor; bu kuyruğu SADECE ayrı bir worker tüketiyor
+# (bkz. restart komutları), varsayılan kuyruktaki hızlı/kritik görevler
+# hiçbir zaman onları beklemiyor.
+celery_app.conf.task_routes = {
+    "llm_system_audit_task": {"queue": "slow"},
+    "refresh_llm_news_sentiment_task": {"queue": "slow"},
+    "run_backtest_task": {"queue": "slow"},
+    "run_real_backtest_task": {"queue": "slow"},
+    "run_portfolio_backtest_task": {"queue": "slow"},
+}
+
 celery_app.autodiscover_tasks(["services"], related_name="tasks")
 
 # Faz 187: açık pozisyonları periyodik olarak kontrol edip süresi dolanları
