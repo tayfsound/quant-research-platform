@@ -204,11 +204,15 @@ def test_to_epistemology_defaults_high_impact_event_imminent_to_false_when_absen
     assert result.high_impact_event_imminent is False
 
 
-def test_to_relative_strength_waits_when_symbol_never_ingested():
-    """Hedefin KENDİ verisi hiç yoksa (peer'ler watchlist'te veri
-    biriktirmiş olsa bile — paylaşılan test DB'sinde başka testlerden
-    gerçek watchlist sembolleri için satır olabilir) dürüstçe sinyal
-    üretilmemeli."""
+def test_to_relative_strength_waits_when_symbol_never_ingested(monkeypatch):
+    """Faz 268-sonrası — kıyaslama artık services/market_breadth.py'nin
+    piyasa geneli (tüm USDT perpetual) verisinden geliyor, watchlist/
+    market_snapshots'tan değil. Hedefin KENDİ verisi bu piyasa geneli
+    veride yoksa dürüstçe sinyal üretilmemeli."""
+    monkeypatch.setattr(
+        "services.market_breadth.fetch_market_wide_24h_returns",
+        lambda **kwargs: {"BTCUSDT": 0.01, "ETHUSDT": 0.02, "SOLUSDT": -0.01},
+    )
     ctx = CognitiveCycleContext(market={"symbol": f"NEVERINGESTED{uuid4().hex[:6]}USDT"})
     result = ContextAdapter().to_relative_strength(ctx)
     assert result.symbol_return_pct == 0.0
@@ -218,98 +222,38 @@ def test_to_relative_strength_waits_when_symbol_never_ingested():
 def test_to_relative_strength_waits_for_non_crypto_symbol():
     ctx = CognitiveCycleContext(market={"symbol": "AAPL"})
     result = ContextAdapter().to_relative_strength(ctx)
-    # AAPL market_snapshots'a hiç ingest edilmiyor (services/tasks.py::
-    # ingest_candles_task sadece Binance çiftleri) — dürüstçe hesaplanamaz.
+    # AAPL bir Binance USDT perpetual değil — icat edilmiş bir karşılaştırma yapılmaz.
     assert result.relative_strength_pct == 0.0
 
 
-def test_to_relative_strength_computes_real_divergence_against_watchlist_peers():
-    """Gerçek DB'ye karşı: hedef sembol + 3 eş için gerçek, kontrollü
-    market_snapshots satırları yazılıyor (watchlist geçici olarak bu
-    izole sembollere çevriliyor, testten sonra eski haline döndürülüyor),
-    to_relative_strength'in doğru getiri/basket ortalaması/göreli güç
-    hesapladığı doğrulanıyor."""
-    from contracts.market_data import DataSource, MarketSnapshot, Resolution
-    from database.repositories.app_settings_repository import AppSettingsRepository
-    from database.repositories.market_data_repository import MarketDataRepository
-    from database.session_factory import SessionFactory
+def test_to_relative_strength_computes_real_divergence_against_market_wide_peers(monkeypatch):
+    """fetch_market_wide_24h_returns'ün döndürdüğü piyasa geneli veriye
+    karşı, to_relative_strength'in doğru getiri/basket ortalaması/göreli
+    güç hesapladığı doğrulanıyor."""
+    target = "RSTGTUSDT"
+    returns = {target: 0.10, "PEER1USDT": 0.0, "PEER2USDT": 0.02, "PEER3USDT": -0.02}
+    monkeypatch.setattr(
+        "services.market_breadth.fetch_market_wide_24h_returns", lambda **kwargs: returns
+    )
 
-    target = f"RSTGT{uuid4().hex[:6]}USDT"
-    peers = [f"RSPEER{i}{uuid4().hex[:6]}USDT" for i in range(3)]
-    peer_returns = [0.0, 0.02, -0.02]  # basket ortalaması = 0.0
+    ctx = CognitiveCycleContext(market={"symbol": target})
+    result = ContextAdapter().to_relative_strength(ctx)
 
-    base = datetime.now(UTC).replace(microsecond=0)
-
-    with SessionFactory.get_session() as session:
-        settings_repo = AppSettingsRepository(session)
-        original_watchlist = settings_repo.get("watchlist")
-        repo = MarketDataRepository(session)
-
-        def _write(sym: str, start_close: float, end_close: float) -> None:
-            repo.upsert_snapshot(MarketSnapshot(
-                time=base, exchange=DataSource.BINANCE, symbol=sym, resolution=Resolution.M1,
-                open=start_close, high=max(start_close, end_close), low=min(start_close, end_close),
-                close=start_close, volume=1.0, source_version="test",
-            ))
-            repo.upsert_snapshot(MarketSnapshot(
-                time=base + timedelta(minutes=1), exchange=DataSource.BINANCE, symbol=sym,
-                resolution=Resolution.M1, open=end_close, high=max(start_close, end_close),
-                low=min(start_close, end_close), close=end_close, volume=1.0, source_version="test",
-            ))
-
-        _write(target, 100.0, 110.0)  # +%10
-        for peer, ret in zip(peers, peer_returns, strict=True):
-            _write(peer, 100.0, 100.0 * (1 + ret))
-
-        settings_repo.set("watchlist", ",".join([target, *peers]), updated_by="test")
-
-    try:
-        ctx = CognitiveCycleContext(market={"symbol": target})
-        result = ContextAdapter().to_relative_strength(ctx)
-
-        assert result.basket_size == 3
-        assert abs(result.symbol_return_pct - 0.10) < 1e-6
-        assert abs(result.basket_mean_return_pct - 0.0) < 1e-6
-        assert abs(result.relative_strength_pct - 0.10) < 1e-6
-    finally:
-        with SessionFactory.get_session() as session:
-            AppSettingsRepository(session).set("watchlist", original_watchlist, updated_by="test")
+    assert result.basket_size == 3
+    assert abs(result.symbol_return_pct - 0.10) < 1e-6
+    assert abs(result.basket_mean_return_pct - 0.0) < 1e-6
+    assert abs(result.relative_strength_pct - 0.10) < 1e-6
 
 
-def test_to_relative_strength_waits_when_fewer_than_three_peers_have_data():
-    from contracts.market_data import DataSource, MarketSnapshot, Resolution
-    from database.repositories.app_settings_repository import AppSettingsRepository
-    from database.repositories.market_data_repository import MarketDataRepository
-    from database.session_factory import SessionFactory
+def test_to_relative_strength_waits_when_fewer_than_three_peers_have_data(monkeypatch):
+    target = "RSTGTUSDT"
+    returns = {target: 0.05, "ONLYPEERUSDT": 0.05}
+    monkeypatch.setattr(
+        "services.market_breadth.fetch_market_wide_24h_returns", lambda **kwargs: returns
+    )
 
-    target = f"RSTGT{uuid4().hex[:6]}USDT"
-    peer = f"RSPEER{uuid4().hex[:6]}USDT"
-    base = datetime.now(UTC).replace(microsecond=0)
+    ctx = CognitiveCycleContext(market={"symbol": target})
+    result = ContextAdapter().to_relative_strength(ctx)
 
-    with SessionFactory.get_session() as session:
-        settings_repo = AppSettingsRepository(session)
-        original_watchlist = settings_repo.get("watchlist")
-        repo = MarketDataRepository(session)
-
-        for sym in (target, peer):
-            repo.upsert_snapshot(MarketSnapshot(
-                time=base, exchange=DataSource.BINANCE, symbol=sym, resolution=Resolution.M1,
-                open=100.0, high=100.0, low=100.0, close=100.0, volume=1.0, source_version="test",
-            ))
-            repo.upsert_snapshot(MarketSnapshot(
-                time=base + timedelta(minutes=1), exchange=DataSource.BINANCE, symbol=sym,
-                resolution=Resolution.M1, open=105.0, high=105.0, low=105.0, close=105.0,
-                volume=1.0, source_version="test",
-            ))
-
-        settings_repo.set("watchlist", f"{target},{peer}", updated_by="test")
-
-    try:
-        ctx = CognitiveCycleContext(market={"symbol": target})
-        result = ContextAdapter().to_relative_strength(ctx)
-
-        assert result.basket_size < 3
-        assert result.relative_strength_pct == 0.0
-    finally:
-        with SessionFactory.get_session() as session:
-            AppSettingsRepository(session).set("watchlist", original_watchlist, updated_by="test")
+    assert result.basket_size < 3
+    assert result.relative_strength_pct == 0.0
