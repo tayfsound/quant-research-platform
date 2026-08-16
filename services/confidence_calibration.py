@@ -13,8 +13,21 @@ düzeltme: gerçek geçmiş kararlardan ampirik bir kalibrasyon eğrisi
 (beyan edilen güven -> gerçekten gözlenen kazanma oranı) çıkarıp,
 DecisionFusion'a giden HER confidence değerini bu eğriden geçiriyoruz.
 Yeterli örneklem yoksa (fail-closed, fail-fake değil) HİÇBİR düzeltme
-uygulanmıyor — ham değer aynen kullanılıyor."""
+uygulanmıyor — ham değer aynen kullanılıyor.
+
+Faz 268-sonrası — kritik bulgu: bu eğri hiçbir zaman legacy-cutoff
+filtresi uygulamıyordu — WeightOptimizer ve SourceReliabilityAgent'ta
+(services/agent_memory.py::get_reliability_legacy_cutoff, "reliability_
+legacy_cutoff_at" ayarı) bulunup düzeltilen AYNI hata sınıfı burada
+unutulmuştu. 207 sembole çıkıp likidasyon/kuyruk sorunları yaşanan eski
+dönemin kapanmış işlemleri, düzeltmelerden sonraki yeni dönemin
+işlemleriyle karışıp EV hesabına giren confidence düzeltmesini hâlâ
+bozuyordu. Artık AYNI paylaşılan cutoff kullanılıyor — üç ayrı "ne zaman
+temiz başladık" tarihi tutmak yerine (kafa karıştırıcı), tek bir gerçek
+kaynak."""
 import time
+
+from services.agent_memory import get_reliability_legacy_cutoff
 
 _MIN_BUCKET_SAMPLES = 20
 _CACHE_TTL_SECONDS = 300
@@ -25,21 +38,28 @@ def compute_calibration_curve() -> list[tuple[float, float]]:
     """Gerçek kapanmış (ve kirli olarak işaretlenmemiş) kararlardan,
     beyan edilen güven kovası -> gerçekten gözlenen kazanma oranı eğrisi.
     Sadece yeterli örneklemi (>= _MIN_BUCKET_SAMPLES) olan kovalar
-    dahil edilir."""
+    dahil edilir. reliability_legacy_cutoff_at set edilmişse, bu
+    tarihten ÖNCE kapanmış kararlar eğriye hiç girmez (satır silinmiyor,
+    sadece dışarıda bırakılıyor — bkz. yukarıdaki modül dokümanı)."""
     from collections import defaultdict
 
     from sqlalchemy import text
 
     from database.session_factory import SessionFactory
 
+    cutoff = get_reliability_legacy_cutoff()
+    query = (
+        "SELECT confidence, pnl FROM decisions "
+        "WHERE status = 'closed' AND excluded_from_stats = false AND confidence IS NOT NULL"
+    )
+    params: dict = {}
+    if cutoff is not None:
+        query += " AND closed_at >= :cutoff"
+        params["cutoff"] = cutoff
+
     buckets: dict[float, list[float]] = defaultdict(list)
     with SessionFactory.get_session() as session:
-        rows = session.execute(text(
-            """
-            SELECT confidence, pnl FROM decisions
-            WHERE status = 'closed' AND excluded_from_stats = false AND confidence IS NOT NULL
-            """
-        )).fetchall()
+        rows = session.execute(text(query), params).fetchall()
 
     for confidence, pnl in rows:
         if confidence is None:

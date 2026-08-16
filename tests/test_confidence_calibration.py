@@ -48,6 +48,71 @@ def test_compute_calibration_curve_ignores_buckets_below_min_samples():
         confidence_calibration._MIN_BUCKET_SAMPLES = original
 
 
+def test_compute_calibration_curve_excludes_records_before_legacy_cutoff():
+    """Faz 268-sonrası — kullanıcı bulgusu: bu eğri hiçbir zaman legacy-
+    cutoff filtresi uygulamıyordu — WeightOptimizer/SourceReliabilityAgent'ta
+    (reliability_legacy_cutoff_at) düzeltilen AYNI hata sınıfı burada
+    unutulmuştu. Eski (kesimden önce kapanmış) kayıplı kararlar, yeni
+    (kesimden sonra kapanmış) kazançlı kararlarla karışmamalı."""
+    from datetime import UTC, datetime, timedelta
+    from uuid import uuid4
+
+    from contracts.decision_event import DecisionEvent
+    from database.repositories.app_settings_repository import AppSettingsRepository
+    from database.repositories.decision_persistor import DecisionPersistor
+    from database.session_factory import SessionFactory
+    from services import confidence_calibration
+
+    # Nadir kullanılan bir kova (0.1) seçildi — diğer testlerin sık
+    # kullandığı 0.5-0.9 aralığıyla çakışma riski en düşük.
+    bucket_confidence = 0.12
+    old_ts = datetime.now(UTC) - timedelta(days=2)
+    fresh_ts = datetime.now(UTC)
+    with SessionFactory.get_session() as session:
+        original_cutoff = AppSettingsRepository(session).get("reliability_legacy_cutoff_at")
+    try:
+        with SessionFactory.get_session() as session:
+            repo = DecisionPersistor(session)
+            for _ in range(25):
+                event = DecisionEvent(
+                    id=uuid4(), symbol="CALTEST", proposed_direction="LONG", final_action="LONG",
+                    final_size=1.0, confidence=bucket_confidence, status="open",
+                    entry_price=100.0, quantity=1.0,
+                )
+                repo.persist(event)
+                repo.close_position(decision_id=str(event.id), exit_price=90.0, pnl=-1.0, closed_at=old_ts)
+            for _ in range(25):
+                event = DecisionEvent(
+                    id=uuid4(), symbol="CALTEST", proposed_direction="LONG", final_action="LONG",
+                    final_size=1.0, confidence=bucket_confidence, status="open",
+                    entry_price=100.0, quantity=1.0,
+                )
+                repo.persist(event)
+                repo.close_position(decision_id=str(event.id), exit_price=110.0, pnl=1.0, closed_at=fresh_ts)
+
+        curve_without_cutoff = dict(confidence_calibration.compute_calibration_curve())
+
+        cutoff = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("reliability_legacy_cutoff_at", cutoff, updated_by="test")
+
+        curve_with_cutoff = dict(confidence_calibration.compute_calibration_curve())
+
+        # Kesim olmadan eski kayıplarla yeni kazançlar karışık -> düşük/orta.
+        # Kesimle SADECE taze kazançlı kayıtlar kalmalı -> belirgin yüksek.
+        assert curve_with_cutoff[0.1] > curve_without_cutoff[0.1]
+        assert curve_with_cutoff[0.1] >= 0.9
+    finally:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set(
+                "reliability_legacy_cutoff_at", original_cutoff, updated_by="test"
+            )
+        from sqlalchemy import text
+        with SessionFactory.get_session() as session:
+            session.execute(text("DELETE FROM decisions WHERE symbol = 'CALTEST'"))
+            session.commit()
+
+
 def test_compute_domain_calibration_curves_builds_one_curve_per_domain(tmp_path):
     """Faz 268al — "İsabeti artırmanın yolu daha akıllı kullanım" yol
     haritasının A fazı: her ajan KENDİ (confidence, was_correct)

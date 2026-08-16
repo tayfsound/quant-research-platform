@@ -92,7 +92,7 @@ def test_risk_target_stage_leaves_targets_unset_when_no_daily_atr():
     assert ctx.decision.take_profit is None
 
 
-def test_decision_fusion_no_longer_forces_wait_once_real_targets_are_set():
+def test_decision_fusion_no_longer_forces_wait_once_real_targets_are_set(monkeypatch):
     """Bu, gerçek bulgunun kanıtı: RiskTargetStage olmadan (take_profit/
     stop_loss None) DecisionFusion HER ZAMAN ev<=0 -> WAIT üretiyordu.
     RiskTargetStage'in günlük ATR'den kurduğu hedefle, makul bir
@@ -102,7 +102,20 @@ def test_decision_fusion_no_longer_forces_wait_once_real_targets_are_set():
     yüksek bir kazanma olasılığı gerektiriyor (~%64, eski 1:4 oranın
     %20'sinin tersine) — bu test artık daha yüksek bir confidence/
     strength kullanıyor, hâlâ pozitif EV'nin gerçekten üretildiğini
-    kanıtlamak için."""
+    kanıtlamak için.
+
+    Faz 268-sonrası (2) — kritik bulgu: bu test paylaşılan quantdb_test
+    içindeki decisions tablosundan GERÇEK ZAMANLI hesaplanan confidence
+    kalibrasyon eğrisine (services/confidence_calibration.py) yanlışlıkla
+    bağımlı hale gelmişti — bu testin amacı RiskTargetStage/DecisionFusion
+    EV mantığını doğrulamak, kalibrasyon eğrisinin o an DB'de ne olduğunu
+    DEĞİL. Başka testlerin bıraktığı kayıtlara göre eğri değişip bu testi
+    sırasına bağlı olarak kırabiliyordu. calibrate_confidence artık ham
+    değeri değiştirmeyecek şekilde (boş eğri = fail-closed, zaten
+    kalibrasyonun kendi davranışı) sabitleniyor — kalibrasyonun KENDİSİ
+    tests/test_confidence_calibration.py'de ayrıca test ediliyor."""
+    monkeypatch.setattr("services.decision_fusion.calibrate_confidence", lambda raw_confidence: raw_confidence)
+
     ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0, confidence=0.85)
     ctx = RiskTargetStage().execute(ctx)
 
