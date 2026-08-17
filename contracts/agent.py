@@ -102,7 +102,22 @@ class AgentOpinion(BaseModel):
             self.freshness * 0.15 +
             self.source_reliability * 0.20
         )
-        self.effective_influence = self.intrinsic_trust * self.performance_weight
+        # Kullanıcı bulgusu — gerçek örnek: order_flow %29 güvenle (kendi
+        # bu karara pek güvenmiyor) LONG dedi, ama geçmiş isabetinden gelen
+        # performance_weight sayesinde diğer ajanlar ters yöne işaret
+        # ederken nihai kararı çevirebildi. Kök neden: confidence intrinsic_
+        # trust'ın sadece %25'i — kalan %75 (data_quality/evidence_
+        # strength/freshness/source_reliability) o kararın kendi
+        # güveninden bağımsız hep yüksek kalıyor, performance_weight de bu
+        # şişirilmiş taban üzerine çarpılıyor. "Geçmişte iyiydin" ile "bu
+        # kararına ne kadar güveniyorsun" iki AYRI boyut — confidence'ı
+        # sadece intrinsic_trust'ın bir bileşeni yapmak yetmiyor, nihai
+        # etkiye de AYRICA (çarpımsal) kapı olarak uygulanıyor: bir ajan
+        # kendi kararına ne kadar az güveniyorsa, geçmiş performansı o
+        # kararı o kadar az kurtarabiliyor. intrinsic_trust'ın kendisi
+        # (dashboard'da "kanıt kalitesi" olarak ayrı gösteriliyor)
+        # DEĞİŞMEDİ — sadece oylama etkisine ek bir çarpan.
+        self.effective_influence = self.intrinsic_trust * self.performance_weight * self.confidence
         return self
 
 class AgentChallenge(BaseModel):
