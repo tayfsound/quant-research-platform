@@ -21,6 +21,7 @@ type Position = {
   liquidation_price: number | null;
   timeframe: string | null;
   pairs_trade: string | null;
+  trade_type: string | null;
   exit_reason: string | null;
   opened_at: string | null;
   closed_at: string | null;
@@ -76,8 +77,16 @@ const MEDIUM_TERM_TIMEFRAMES = new Set(["4h", "1d"]);
 // işlem verisindeki kümelerden kalibre edildi (~%4 scalp, ~%5-8 gün içi,
 // ~%14 swing kümeleri net ayrışıyor).
 function tradeTypeBadge(
-  p: Pick<Position, "timeframe" | "entry_price" | "stop_loss_price" | "pairs_trade">
+  p: Pick<Position, "timeframe" | "entry_price" | "stop_loss_price" | "pairs_trade" | "trade_type">
 ): { label: string; tone: "accent" | "warn" | "neutral"; title?: string } | null {
+  // Kullanıcı bulgusu: "Pump-Fade ile açtığı işlem var mı Transactions'ta
+  // göremedim." pump_fade_strategy.py'nin açtığı mekanik işlemler backend'de
+  // trade_type="pump_fade" olarak geliyor — diğer sezgisel (stop mesafesi
+  // tabanlı) sınıflandırmalardan ÖNCE kontrol edilmeli, aksi halde stop
+  // mesafesi tesadüfen scalp/swing aralığına denk gelip kimliğini kaybeder.
+  if (p.trade_type === "pump_fade") {
+    return { label: "Pump-Fade", tone: "warn" };
+  }
   if (p.pairs_trade) {
     return { label: "hedge", tone: "warn", title: `Pairs trade: ${p.pairs_trade}` };
   }

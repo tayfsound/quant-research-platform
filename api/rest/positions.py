@@ -45,6 +45,17 @@ _GUN_ICI_MAX_STOP_PCT = 9.0
 
 
 def _classify_trade_type(row: dict) -> str | None:
+    # Faz 268-sonrası — kullanıcı bulgusu: "Pump-Fade ile açtığı işlem var
+    # mı Transactions'ta göremedim." Kök neden: pump_fade_strategy.py bu
+    # işlemleri experiment_bucket="pump_fade_v1" ile etiketliyordu ama bu
+    # sütun ne burada ne de _serialize()'da hiç okunmuyordu — pump-fade
+    # işlemleri sessizce stop-mesafesi sezgiselliğine (scalp/gün içi/swing)
+    # düşüp normal AI işlemlerinden ayırt edilemez oluyordu. Diğer
+    # dallardan ÖNCE kontrol ediliyor çünkü mekanik strateji, stop mesafesi
+    # tesadüfen scalp/swing aralığına denk gelse bile kendi kimliğini
+    # korumalı.
+    if row.get("experiment_bucket") == "pump_fade_v1":
+        return "pump_fade"
     if _extract_pairs_trade(row):
         return "hedge"
     if row.get("timeframe") in ("4h", "1d"):
@@ -79,6 +90,7 @@ def _serialize(row: dict, current_price: float | None = None, net_unrealized_pnl
         "liquidation_price": row.get("liquidation_price"),
         "timeframe": row.get("timeframe"),
         "pairs_trade": _extract_pairs_trade(row),
+        "trade_type": _classify_trade_type(row),
         "exit_reason": outcome.get("exit_reason"),
         "realized_pnl": outcome.get("realized_pnl"),
         # Faz 268p — kullanıcı isteği: "pozisyon o an karda mı zararda mı
