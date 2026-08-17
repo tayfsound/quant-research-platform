@@ -681,6 +681,14 @@ class CognitiveOrchestrator:
                 p = self.propose_multi_timeframe(sym) if cascade_enabled else self.propose(sym)
             if p is not None:
                 proposals[sym] = p
+                # Shadow Mode (Faz 268-sonrası) — kullanıcıyla üzerinde
+                # anlaşılan 3 seçenekten A: macro'nun bu cycle'da GERÇEKTEN
+                # ne dediğini (council'in final kararından bağımsız) izole
+                # bir gölge pozisyon olarak kaydet. Council'in kendi
+                # kararını asla etkilemez, hata olursa sessizce yutulur
+                # (bkz. macro_shadow_tracker.py docstring'i).
+                from services.macro_shadow_tracker import process_symbol_opinion
+                process_symbol_opinion(sym, p["ctx"], p["data"][-1].close, data_provider=self.data_provider)
 
         directional = {
             sym: p for sym, p in proposals.items()

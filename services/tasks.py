@@ -494,6 +494,22 @@ def close_due_positions_task() -> dict:
     return {"closed_count": len(closed), "closed": closed}
 
 
+@celery_app.task(name="close_due_shadow_positions_task")
+def close_due_shadow_positions_task() -> dict:
+    """Shadow Mode (Faz 268-sonrası) — close_due_positions_task ile AYNI
+    cadence'te (bkz. celery_app.py:beat_schedule) macro-only gölge
+    pozisyonları gerçek güncel fiyatla kontrol edip stop/hedefe
+    ulaşanları kapatır. Gerçek pozisyonları asla etkilemez, ayrı bir
+    tablo (shadow_positions) üzerinde çalışır."""
+    from services.macro_shadow_tracker import close_due_positions
+
+    if _real_market_data_source_or_none() is None:
+        return {"skipped": "non_binance_market_data_source"}
+
+    closed = close_due_positions()
+    return {"closed_count": len(closed), "closed": closed}
+
+
     # Faz 268-sonrası — kullanıcı bulgusu: her deploy'da celery worker'ı
     # yeniden başlatıyoruz (yeni kod yüklensin diye); Celery'nin VARSAYILAN
     # davranışı task_acks_late=False'tur — yani worker mesajı ALINCA

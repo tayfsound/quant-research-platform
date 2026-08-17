@@ -61,6 +61,12 @@ celery_app.conf.beat_schedule = {
         "task": "close_due_positions_task",
         "schedule": 60.0,
     },
+    # Shadow Mode (Faz 268-sonrası) — gerçek pozisyonlarla AYNI cadence,
+    # ayrı bir tablo (shadow_positions) üzerinde çalışır.
+    "close-due-shadow-positions-every-minute": {
+        "task": "close_due_shadow_positions_task",
+        "schedule": 60.0,
+    },
     # Faz 190/194: "gerçek işlem alıyormuş gibi test başlasın" — AI'ın
     # sadece birisi dashboard'u açık tutunca değil, gerçekten bağımsız/
     # sürekli karar üretmesi. RiskEngine'in kendi cooldown'u (varsayılan
