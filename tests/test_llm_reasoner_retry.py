@@ -62,3 +62,36 @@ def test_post_with_retry_returns_immediately_on_first_success():
     assert result.status_code == 200
     assert mock_post.call_count == 1
     mock_sleep.assert_not_called()
+
+
+def test_post_with_retry_does_not_retry_timeout_by_default():
+    """Faz 268-sonrası — kullanıcı bulgusu: TEK çağrılık fonksiyonlarda
+    (ask/explain) dış asyncio.wait_for'un bütçesi dar, timeout'ta tekrar
+    denemek o sınırı anlamsızca aşar — varsayılan davranış hâlâ budur."""
+    mock_post = MagicMock(side_effect=httpx.ReadTimeout("timed out"))
+    with patch("httpx.post", mock_post), patch("time.sleep") as mock_sleep:
+        try:
+            _post_with_retry("https://example.test", headers={}, json_payload={}, timeout_seconds=5)
+            assert False, "httpx.ReadTimeout bekleniyordu"
+        except httpx.ReadTimeout:
+            pass
+
+    assert mock_post.call_count == 1
+    mock_sleep.assert_not_called()
+
+
+def test_post_with_retry_retries_timeout_when_explicitly_enabled():
+    """Gerçek log: ask_with_tools() içindeki bir iterasyon httpx.ReadTimeout
+    aldığında TÜM çok-adımlı konuşma çöküyordu — ask_with_tools'un geniş
+    bütçesi (timeout_ms × max_iterations) tek bir yavaş çağrıyı tolere
+    edecek kadar geniş, retry_on_timeout=True SADECE bu yüzden güvenli."""
+    responses = [httpx.ReadTimeout("timed out"), _response_with_status(200)]
+    mock_post = MagicMock(side_effect=responses)
+    with patch("httpx.post", mock_post), patch("time.sleep") as mock_sleep:
+        result = _post_with_retry(
+            "https://example.test", headers={}, json_payload={}, timeout_seconds=5, retry_on_timeout=True
+        )
+
+    assert result.status_code == 200
+    assert mock_post.call_count == 2
+    mock_sleep.assert_called_once()

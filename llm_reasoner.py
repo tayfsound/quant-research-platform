@@ -28,15 +28,26 @@ NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 # error '529 status code 529'" döndürdü — bu HIZLI başarısız olan, GEÇİCİ
 # bir hata (timeout değil, saniyeler içinde dönen bir hata yanıtı), kısa
 # bir bekleyip tekrar denemek genellikle işe yarar. Zaman aşımlarını
-# (httpx.TimeoutException/TransportError) KASITLI OLARAK yeniden
-# denemiyoruz — dış asyncio.wait_for zaten bir üst sınır uyguluyor, zaten
-# yavaş bir isteği tekrarlamak o sınırı gereksiz yere zorlar; sadece HIZLI
-# dönen sunucu hataları (429/500/502/503/504/529) için anlamlı.
+# (httpx.TimeoutException/TransportError) VARSAYILAN OLARAK yeniden
+# denemiyoruz — TEK çağrılık fonksiyonlarda (ask/explain) dış asyncio.
+# wait_for'un bütçesi timeout_ms + 0.5sn gibi dar bir pay bırakıyor,
+# zaten yavaş bir isteği tekrarlamak o sınırı anlamsızca aşardı.
+#
+# Kullanıcı bulgusu (sonraki bulgu) — gerçek log: "Respond" sekmesindeki
+# ask_with_tools() çok-adımlı araç döngüsünde TEK bir iterasyonun
+# httpx.ReadTimeout'a uğraması TÜM konuşmayı çöktürüyordu ("Hata: The
+# read operation timed out"), kullanıcı sıfırdan başlamak zorunda
+# kalıyordu. Ama ask_with_tools'un dış bütçesi TEK çağrılık fonksiyonların
+# aksine timeout_ms × max_iterations (5×120sn=600sn) — bir iterasyonun
+# ara sıra yavaş kalmasını tolere edecek kadar geniş. retry_on_timeout=
+# True SADECE oradan geçiliyor.
 _TRANSIENT_HTTP_STATUS_CODES = {429, 500, 502, 503, 504, 529}
 _RETRY_BACKOFF_SECONDS = (2.0, 5.0)
 
 
-def _post_with_retry(url: str, headers: dict, json_payload: dict, timeout_seconds: float):
+def _post_with_retry(
+    url: str, headers: dict, json_payload: dict, timeout_seconds: float, retry_on_timeout: bool = False
+):
     """Bu modüldeki HER httpx.post çağrısı için ortak, geçici-hata-
     farkında yeniden deneme sarmalayıcısı — hepsi periyodik arka plan
     görevleri (canlı karar döngüsünde gerçek zamanlı çağrılmıyor), bu
@@ -60,6 +71,14 @@ def _post_with_retry(url: str, headers: dict, json_payload: dict, timeout_second
             logger.warning(
                 "LLM API geçici sunucu hatası, tekrar denenecek",
                 extra={"status_code": exc.response.status_code, "attempt": attempt},
+            )
+        except httpx.TimeoutException as exc:
+            last_exc = exc
+            if not retry_on_timeout:
+                raise
+            logger.warning(
+                "LLM API zaman aşımı, tekrar denenecek (geniş bütçeli çağrı)",
+                extra={"attempt": attempt},
             )
     raise last_exc
 
@@ -243,6 +262,7 @@ class NvidiaDecisionCritic:
                     "max_tokens": 1500,
                 },
                 timeout_seconds=timeout_ms / 1000,
+                retry_on_timeout=True,
             )
             data = response.json()
             choices = data.get("choices") or []
