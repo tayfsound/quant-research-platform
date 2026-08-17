@@ -132,6 +132,18 @@ type ExplainData = {
   inner_critic: { risk_flags?: string[]; objections?: string[] } | null;
   decision_fusion: Record<string, unknown>[];
   weight_snapshot_id: string | null;
+  portfolio_confidence_discounts: {
+    reason: string;
+    confidence_before: number;
+    confidence_after: number;
+    multiplier: number;
+    effective_number_of_bets?: number;
+  }[];
+};
+
+const PORTFOLIO_DISCOUNT_REASON_LABELS: Record<string, string> = {
+  same_direction_correlation: "Aynı yönde, birbirine yüksek korele semboller",
+  low_effective_number_of_bets: "Portföyün genel çeşitlendirme kalitesi düşük (ENB)",
 };
 
 function ExplainModal({ decisionId, onClose }: { decisionId: string; onClose: () => void }) {
@@ -183,6 +195,21 @@ function ExplainModal({ decisionId, onClose }: { decisionId: string; onClose: ()
                   )}
                 </div>
               </div>
+
+              {data.portfolio_confidence_discounts.length > 0 && (
+                <div className="bg-canvas-soft rounded-lg p-2.5 border border-line-soft">
+                  <p className="text-xs text-ink-faint mb-1.5">
+                    ⚠ Bu güven, ajan oylarından SONRA portföy seviyesinde düşürüldü
+                  </p>
+                  {data.portfolio_confidence_discounts.map((d, i) => (
+                    <p key={i} className="text-xs text-ink-soft">
+                      {PORTFOLIO_DISCOUNT_REASON_LABELS[d.reason] ?? d.reason}: %{(d.confidence_before * 100).toFixed(1)} → %
+                      {(d.confidence_after * 100).toFixed(1)}
+                      {d.effective_number_of_bets != null && ` (ENB: ${d.effective_number_of_bets.toFixed(2)})`}
+                    </p>
+                  ))}
+                </div>
+              )}
 
               <div>
                 <p className="text-xs text-ink-faint mb-2">Ajan oyları ({data.agent_votes.length})</p>

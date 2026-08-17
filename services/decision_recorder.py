@@ -24,6 +24,7 @@ class DecisionRecorder:
         weight_snapshot_id=None,
         decision_fusion_entries=None,
         experiment_bucket=None,
+        portfolio_confidence_discounts=None,
     ) -> DecisionEvent:
 
         direction = (
@@ -61,6 +62,16 @@ class DecisionRecorder:
         for entry in (decision_fusion_entries or []):
             agent_opinions_data.append({
                 "type": "decision_fusion",
+                "data": entry,
+            })
+
+        # Kullanıcı bulgusu: explain sayfası tek bir confidence sayısı
+        # gösteriyordu, portföy korelasyon/ENB indiriminin confidence'ı
+        # MetaStage'in ACT/REDUCE kararından SONRA düşürdüğü hiç
+        # görünmüyordu — decision_fusion ile AYNI desen.
+        for entry in (portfolio_confidence_discounts or []):
+            agent_opinions_data.append({
+                "type": "portfolio_confidence_discount",
                 "data": entry,
             })
 

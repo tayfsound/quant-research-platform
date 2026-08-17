@@ -186,12 +186,20 @@ async def explain_position(decision_id: str, user: AuthContext = Depends(get_cur
     debate_result = next((i["data"] for i in contributions if isinstance(i, dict) and i.get("type") == "debate_result"), None)
     inner_critic = next((i["data"] for i in contributions if isinstance(i, dict) and i.get("type") == "inner_critic"), None)
     decision_fusion_entries = [i["data"] for i in contributions if isinstance(i, dict) and i.get("type") == "decision_fusion"]
+    # Kullanıcı bulgusu: "%74 güvenli bir ajan varken nihai karar neden
+    # %28 çıktı?" — bu indirim MetaStage'in ACT/REDUCE kararından SONRA
+    # uygulanıyor (services/orchestrator.py::_apply_portfolio_fusion),
+    # tek bir final_confidence sayısı bunu hiç açıklamıyordu.
+    portfolio_confidence_discounts = [
+        i["data"] for i in contributions if isinstance(i, dict) and i.get("type") == "portfolio_confidence_discount"
+    ]
 
     return {
         "id": str(row["id"]),
         "symbol": row["symbol"],
         "final_direction": row["direction"],
         "final_confidence": row.get("confidence"),
+        "portfolio_confidence_discounts": portfolio_confidence_discounts,
         "agent_votes": [
             {
                 "domain": v.get("domain"),

@@ -152,6 +152,19 @@ def build_cognitive_context(
     ctx.market.symbol = symbol
     ctx.market.timeframe = timeframe
 
+    # Kullanıcı isteği: onchain ajanının gerçek sinyali (network_activity_
+    # trend/hash_rate_trend/mvrv_zscore) SADECE Bitcoin zincirinden geliyor
+    # (bkz. agents/onchain_agent.py::is_btc kontrolü, mvrv_zscore da
+    # bitcoin-data.com'dan — BTC'ye özel bir API). Diğer sembollerde
+    # exchange_inflow/outflow ve whale sinyalleri de hiç uygulanmıyor
+    # (services/context_adapter.py'nin kendi notu) — yani BTC dışındaki
+    # her sembolde onchain'in söyleyecek GERÇEK hiçbir şeyi yok. Council'i
+    # hiç etkilemesin diye (bkz. data_unavailable_domains — backtest'te
+    # aynı mekanizma zaten kör WAIT'lerin total_weight'i şişirdiğini
+    # kanıtladı) BTC dışı sembollerde hiç çağrılmıyor.
+    if not symbol.upper().startswith("BTC"):
+        ctx.market.data_unavailable_domains = ["onchain"]
+
     # Kritik bulgu (2026-08-05): buradan sadece ham rsi/ema/macd sayıları
     # geçiyordu — TechnicalAgent'ın gerçekten skorladığı trend/momentum/
     # market_structure/ema_alignment/volatility_regime alanlarını HİÇBİR
@@ -751,7 +764,24 @@ class CognitiveOrchestrator:
         for sym, multiplier in conviction_multipliers.items():
             if multiplier < 1.0:
                 ctx = directional[sym]["ctx"]
-                ctx.decision.confidence = round((ctx.decision.confidence or 0.0) * multiplier, 4)
+                before = ctx.decision.confidence or 0.0
+                ctx.decision.confidence = round(before * multiplier, 4)
+                # Kullanıcı bulgusu: explain sayfası tek bir confidence
+                # sayısı gösteriyordu, "%74 güvenli bir ajan varken nihai
+                # karar neden %28 çıktı" sorusuna hiç cevap vermiyordu —
+                # bu indirim MetaStage'in ACT/REDUCE kararını verdiği
+                # confidence'tan SONRA uygulanıyor (aksiyon zaten
+                # kararlaştırılmış, sadece boyut/gösterilen güven küçülüyor).
+                # Artık nedeni ve öncesi/sonrası açıkça kaydediliyor.
+                ctx.cognition.relevant_knowledge.append({
+                    "type": "portfolio_confidence_discount",
+                    "data": {
+                        "reason": "same_direction_correlation",
+                        "confidence_before": round(before, 4),
+                        "confidence_after": ctx.decision.confidence,
+                        "multiplier": round(multiplier, 4),
+                    },
+                })
 
         # Faz 268-sonrası — kullanıcının paylaştığı bir incelemeyi
         # doğrularken bulunan gerçek bulgu: yukarıdaki aynı-yönlü
@@ -773,7 +803,18 @@ class CognitiveOrchestrator:
             enb_multiplier = 1.0 - shortfall * MAX_ENB_DISCOUNT
             for sym in returns:
                 ctx = directional[sym]["ctx"]
-                ctx.decision.confidence = round((ctx.decision.confidence or 0.0) * enb_multiplier, 4)
+                before = ctx.decision.confidence or 0.0
+                ctx.decision.confidence = round(before * enb_multiplier, 4)
+                ctx.cognition.relevant_knowledge.append({
+                    "type": "portfolio_confidence_discount",
+                    "data": {
+                        "reason": "low_effective_number_of_bets",
+                        "confidence_before": round(before, 4),
+                        "confidence_after": ctx.decision.confidence,
+                        "multiplier": round(enb_multiplier, 4),
+                        "effective_number_of_bets": enb_result["effective_number_of_bets"],
+                    },
+                })
 
         fusion = PortfolioFusionStage(PortfolioRiskEngine())
         result = fusion.fuse(

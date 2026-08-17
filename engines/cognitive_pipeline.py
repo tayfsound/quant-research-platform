@@ -621,12 +621,21 @@ class RecordingStage:
         # sorusunun cevabı DB'de hiç yoktu, her seferinde canlı kod
         # çalıştırıp yeniden üretmek gerekiyordu.
         decision_fusion_entries = []
+        # Kullanıcı bulgusu: explain sayfası tek bir confidence sayısı
+        # gösteriyordu, portföy korelasyon/ENB indiriminin (services/
+        # orchestrator.py::_apply_portfolio_fusion) confidence'ı MetaStage'in
+        # ACT/REDUCE kararından SONRA düşürdüğü hiç görünmüyordu — "%74
+        # güvenli bir ajan varken nihai karar neden %28 çıktı" sorusunun
+        # cevabı DB'de yoktu. decision_fusion_entries ile AYNI desen.
+        portfolio_confidence_discounts = []
         experiment_bucket = None
 
         if hasattr(ctx, "cognition"):
             for item in ctx.cognition.relevant_knowledge:
                 if item.get("type") == "decision_fusion":
                     decision_fusion_entries.append(item.get("data"))
+                if item.get("type") == "portfolio_confidence_discount":
+                    portfolio_confidence_discounts.append(item.get("data"))
 
             for item in reversed(ctx.cognition.relevant_knowledge):
                 if item.get("type") == "debate_result":
@@ -649,6 +658,7 @@ class RecordingStage:
             weight_snapshot_id,
             decision_fusion_entries,
             experiment_bucket,
+            portfolio_confidence_discounts,
         )
 
         from observability.metrics import decisions_total

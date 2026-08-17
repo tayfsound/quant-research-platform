@@ -127,6 +127,22 @@ def test_apply_portfolio_fusion_discounts_confidence_for_highly_correlated_same_
         assert directional["BTCUSDT"]["ctx"].decision.confidence < 0.8
         assert directional["ETHUSDT"]["ctx"].decision.confidence < 0.8
 
+        # Kullanıcı bulgusu: explain sayfası "%74 güvenli bir ajan varken
+        # nihai karar neden %28 çıktı" sorusuna cevap veremiyordu — bu
+        # indirim(ler) artık relevant_knowledge'a (ve oradan agent_
+        # contributions'a) neden/öncesi/sonrasıyla kaydediliyor. Bu
+        # senaryoda 2 sembol hem yüksek korele HEM de (sadece 2 bahis
+        # olduğu için) düşük ENB'li — ikisi de tetiklenip zincirleniyor.
+        btc_discounts = [
+            item["data"] for item in directional["BTCUSDT"]["ctx"].cognition.relevant_knowledge
+            if item.get("type") == "portfolio_confidence_discount"
+        ]
+        assert len(btc_discounts) == 2
+        assert btc_discounts[0]["reason"] == "same_direction_correlation"
+        assert btc_discounts[0]["confidence_before"] == 0.8
+        assert btc_discounts[1]["reason"] == "low_effective_number_of_bets"
+        assert btc_discounts[1]["confidence_after"] == directional["BTCUSDT"]["ctx"].decision.confidence
+
 
 def test_apply_portfolio_fusion_does_not_discount_confidence_for_uncorrelated_symbols():
     with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):

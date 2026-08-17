@@ -42,6 +42,15 @@ def _persist_decision_with_full_agent_contributions() -> DecisionEvent:
             {"type": "debate_result", "data": {"reasoning": "Final: LONG (conf 0.7)"}},
             {"type": "inner_critic", "data": {"risk_flags": ["high_volatility"], "objections": []}},
             {"type": "decision_fusion", "data": {"adjustment": "R/R too low, size halved", "rr": 0.4}},
+            {
+                "type": "portfolio_confidence_discount",
+                "data": {
+                    "reason": "same_direction_correlation",
+                    "confidence_before": 0.9,
+                    "confidence_after": 0.72,
+                    "multiplier": 0.8,
+                },
+            },
         ],
     )
     with SessionFactory.get_session() as session:
@@ -83,6 +92,15 @@ def test_explain_separates_agent_votes_from_special_entries():
     assert body["decision_fusion"] == [{"adjustment": "R/R too low, size halved", "rr": 0.4}]
     assert body["weight_snapshot_id"] is not None
 
+    # Kullanıcı bulgusu: "%74 güvenli bir ajan varken nihai karar neden
+    # %28 çıktı?" — bu indirim artık explain sayfasında açıkça görünüyor.
+    assert body["portfolio_confidence_discounts"] == [{
+        "reason": "same_direction_correlation",
+        "confidence_before": 0.9,
+        "confidence_after": 0.72,
+        "multiplier": 0.8,
+    }]
+
 
 def test_explain_handles_a_decision_with_no_agent_contributions_gracefully():
     now = datetime.now(UTC)
@@ -101,3 +119,4 @@ def test_explain_handles_a_decision_with_no_agent_contributions_gracefully():
     assert body["agent_votes"] == []
     assert body["council_belief"] is None
     assert body["decision_fusion"] == []
+    assert body["portfolio_confidence_discounts"] == []
