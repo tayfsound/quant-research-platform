@@ -35,9 +35,17 @@ export default function BacktestRuns() {
   // gerçek bir CognitiveEngine.run() (gerçek embedding dahil) çalıştırdığı
   // için dakikalarca sürüyordu; bu süre boyunca celery worker herhangi bir
   // sebeple yeniden başlarsa (WorkerLostError) çalışan backtest sessizce
-  // kayboluyordu. 300, interaktif kullanım için çok daha hızlı tamamlanıyor
-  // — büyük bir koşu isteyen kullanıcı alanı elle değiştirebilir.
-  const [barsCount, setBarsCount] = useState("300");
+  // kayboluyordu.
+  //
+  // Kullanıcı bulgusu — TEKRARLANAN "sıfır işlem" şikayeti: eski
+  // varsayılan (300), backend'in kendi varsayılan lookback (100) +
+  // max_forward_bars (200) ile birlikte yapısal olarak İMKANSIZ bir
+  // pencere kuruyordu — hiçbir karar noktası kapanma şansı bile
+  // bulamıyordu (backtest/real_historical_backtest.py::run_real_backtest
+  // artık bunu baştan tespit edip "warning" alanıyla dönüyor). 500,
+  // o pencerenin (301) rahat üstünde — hem interaktif hızda kalıyor hem
+  // gerçekten sonuçlanabilecek karar noktaları bırakıyor.
+  const [barsCount, setBarsCount] = useState("500");
   const [runningReal, setRunningReal] = useState(false);
   const [realStatus, setRealStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -299,6 +307,16 @@ export default function BacktestRuns() {
                     </>
                   )}
                 </div>
+                {/* Kullanıcı bulgusu — tekrarlanan "sıfır işlem" şikayeti:
+                    bars_count yapısal olarak yetersizse (lookback +
+                    max_forward_bars'ı geçmiyorsa) hiçbir karar kapanma
+                    şansı bulamaz — bu artık dashboard'da sessizce
+                    kaybolmuyor. */}
+                {isReal && r.metrics.warnings?.length > 0 && (
+                  <div className="text-xs text-fall mt-1">
+                    ⚠ {r.metrics.warnings.join(" ")}
+                  </div>
+                )}
               </Card>
             );
           })}

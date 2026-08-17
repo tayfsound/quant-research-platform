@@ -60,11 +60,17 @@ def test_run_real_backtest_async_endpoint_dispatches_and_persists():
 
 
 def test_run_real_backtest_produces_real_consistent_metrics():
+    # Kullanıcı bulgusu — TEKRARLANAN "sıfır işlem" şikayeti: bars_count
+    # lookback+max_forward_bars'ı geçmezse HİÇBİR karar kapanma şansı
+    # bulamaz (bkz. run_real_backtest'in başındaki fail-closed uyarı).
+    # Bu test GERÇEKTEN sonuçlanabilecek bir pencere kullanıyor —
+    # eski (120/100/20, min_required=121>120) parametreler zaten hep
+    # trade_count=0 verirdi, farkında olmadan.
     result = run_real_backtest(
-        "BTCUSDT", timeframe="15m", bars_count=120, lookback=100, max_forward_bars=20, capital_per_trade=1000.0,
+        "BTCUSDT", timeframe="15m", bars_count=200, lookback=100, max_forward_bars=20, capital_per_trade=1000.0,
     )
     assert result["symbol"] == "BTCUSDT"
-    assert result["num_bars"] == 120
+    assert result["num_bars"] == 200
     assert result["trade_count"] >= 0
 
     if result["trade_count"] > 0:
@@ -76,6 +82,31 @@ def test_run_real_backtest_produces_real_consistent_metrics():
         assert len(result["equity_curve"]) == result["trade_count"] + 1
         assert result["equity_curve"][0] == 1000.0
         assert abs(result["equity_curve"][-1] - (1000.0 + result["total_pnl_usd"])) < 0.01
+
+
+def test_run_real_backtest_warns_and_skips_when_bars_count_cannot_ever_resolve():
+    """Kullanıcı bulgusu — TEKRARLANAN "sıfır işlem" şikayeti: dashboard'un
+    eski varsayılanı (bars_count=300) backend'in kendi varsayılan lookback
+    (100) + max_forward_bars (200) ile birlikte yapısal olarak İMKANSIZ
+    bir pencere kuruyordu — hiçbir karar noktası kapanma şansı bile
+    bulamıyordu, dakikalarca süren bir çalışma hiçbir açıklama olmadan
+    "0 işlem" gösteriyordu. Artık gerçek veri hiç çekilmeden fail-closed
+    bir uyarıyla dönüyor."""
+    result = run_real_backtest(
+        "BTCUSDT", timeframe="15m", bars_count=300, lookback=100, max_forward_bars=200,
+    )
+    assert result["trade_count"] == 0
+    assert result["num_bars"] == 0
+    assert "warning" in result
+    assert "bars_count" in result["warning"]
+
+
+def test_run_real_backtest_does_not_warn_when_bars_count_is_sufficient():
+    result = run_real_backtest(
+        "BTCUSDT", timeframe="15m", bars_count=200, lookback=100, max_forward_bars=20,
+    )
+    assert "warning" not in result
+    assert result["num_bars"] == 200
 
 
 class _FixedDirectionEngine:

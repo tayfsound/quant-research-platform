@@ -297,6 +297,41 @@ def run_real_backtest(
     ediliyor."""
     engine = engine or CognitiveEngine()
 
+    # Kullanıcı bulgusu — TEKRARLANAN "sıfır işlem" şikayeti: dashboard'un
+    # varsayılan bars_count'u (300) ile bu fonksiyonun kendi varsayılan
+    # lookback (100) + max_forward_bars (200) kombinasyonu birlikte
+    # yapısal olarak İMKANSIZ bir pencere kuruyordu — walk-forward döngüsü
+    # t=lookback'ten başlıyor (en erken t=100), ama _simulate_real_exit'in
+    # bir sonuca ulaşabilmesi için t+max_forward_bars <= len(bars)-1
+    # gerekiyor (en geç t=99). Yani hiçbir karar noktası kapanma şansı
+    # bile BULAMIYORDU — sistem gerçekten pozisyon açıyordu (open_
+    # positions_never_closed doluyordu) ama trade_count her zaman 0
+    # kalıyordu, dakikalarca çalışan bir backtest hiçbir açıklama
+    # olmadan "sıfır işlem" gösteriyordu. Artık baştan, gerçek veri
+    # çekilmeden (zaman kaybetmeden) fail-closed uyarıyla dönüyor.
+    min_required_bars = lookback + max_forward_bars + 1
+    if bars_count <= min_required_bars:
+        return {
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "num_bars": 0,
+            "trade_count": 0,
+            "open_positions_never_closed": 0,
+            "total_pnl_usd": 0.0,
+            "metrics": {},
+            "equity_curve": [1.0],
+            "trades": [],
+            "kill_switch_tripped_at_bar": None,
+            "skipped_bars": 0,
+            "warning": (
+                f"bars_count ({bars_count}) yetersiz — lookback ({lookback}) + "
+                f"max_forward_bars ({max_forward_bars}) + 1 = {min_required_bars}'den büyük olmalı, "
+                "aksi halde HİÇBİR karar kapanma şansı bulamaz (hepsi 'açık kaldı' sayılır, "
+                "işlem sayısı her zaman 0 çıkar). En az "
+                f"{min_required_bars + 200} önerilir."
+            ),
+        }
+
     # GÜVENLİK — kritik, dikkatli okunmalı: RiskEngine._trip_kill_switch()
     # eşiğe ulaşınca app_settings.ai_enabled=false'ı GERÇEKTEN DB'ye yazıyor
     # (persist=False ile atlanmıyor). Bu fonksiyon canlı dashboard'dan
@@ -639,6 +674,12 @@ def persist_real_backtest_run(result: dict, session, lookback: int = DEFAULT_LOO
     per_symbol_pnl = {sym: r["total_pnl_usd"] for sym, r in result["per_symbol"].items()}
     per_symbol_metrics = {sym: r["metrics"] for sym, r in result["per_symbol"].items()}
     num_bars = sum(r["num_bars"] for r in result["per_symbol"].values())
+    # Kullanıcı bulgusu — TEKRARLANAN "sıfır işlem" şikayeti: bars_count
+    # yapısal olarak yetersizse (bkz. run_real_backtest'in üstündeki not)
+    # dashboard hiçbir açıklama olmadan "0 işlem" gösteriyordu. Bu uyarı
+    # (varsa) artık kalıcı kayda da geçiyor, sadece anlık API yanıtında
+    # kalmıyor.
+    warnings = sorted({r["warning"] for r in result["per_symbol"].values() if r.get("warning")})
 
     run = BacktestRun(
         symbols=result["symbols"],
@@ -654,6 +695,7 @@ def persist_real_backtest_run(result: dict, session, lookback: int = DEFAULT_LOO
             "total_trades": result["total_trades"],
             "overall_win_rate": result["overall_win_rate"],
             "per_symbol": per_symbol_metrics,
+            "warnings": warnings,
         },
         equity_curve=result["combined_equity_curve"],
     )
