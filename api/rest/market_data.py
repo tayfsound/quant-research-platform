@@ -25,18 +25,33 @@ async def get_ohlcv(
             DataSource.BINANCE, symbol, Resolution(resolution), limit=limit
         )
 
-    # Faz 215: gerçek bulgu — market_snapshots tablosu SADECE Binance
-    # sembolleri için besleniyor (ingest_candles_task kripto-filtreli).
-    # Hisse/endeks/emtia (AAPL/NVDA/^IXIC/GC=F) için bu tabloda hiçbir
-    # zaman satır olmuyordu — Market sayfasında grafik hep boş kalıyordu.
-    # Gerçek trading pipeline'ının zaten yaptığı gibi (RoutingProvider),
-    # kripto olmayan ve DB'de hiç verisi olmayan semboller için canlı
-    # Yahoo Finance çağrısına düşülüyor — ayrı bir ingestion/depolama
-    # hattı kurmaya gerek yok, Yahoo verisi zaten anlık ve hızlı.
-    if not rows and not looks_like_binance_pair(symbol):
-        from market_data.ingestion.yahoo_provider import YahooProvider
+    # Faz 215: gerçek bulgu — market_snapshots tablosu SADECE watchlist'teki
+    # Binance sembolleri için besleniyor (ingest_candles_task watchlist'e
+    # sabit). Hisse/endeks/emtia (AAPL/NVDA/^IXIC/GC=F) için bu tabloda
+    # hiçbir zaman satır olmuyordu — Market sayfasında grafik hep boş
+    # kalıyordu. Kripto olmayan semboller için canlı Yahoo Finance
+    # çağrısına düşülüyordu.
+    #
+    # Kullanıcı bulgusu (sonraki bulgu): AYNI boşluk watchlist DIŞI kripto
+    # semboller için de vardı — pump_fade_strategy.py watchlist'ten
+    # bağımsız TÜM USDT-perpetual evrenini tarıyor (bkz. api/rest/
+    # positions.py), yani PORTALUSDT gibi bir sembolde gerçek bir işlem
+    # açılabiliyor ama grafiği hiç çekilemiyordu (looks_like_binance_pair
+    # doğru olduğu için Yahoo'ya da düşmüyordu, market_snapshots'ta da
+    # hiç satırı yoktu — sessizce boş bars döndürüyordu). RoutingProvider
+    # zaten sembol tipine göre doğru borsaya yönlendiriyor (gerçek trading
+    # pipeline'ının kullandığı AYNI sınıf) — DB'de veri yoksa artık HER
+    # sembol için canlı çağrıya düşülüyor, ayrı bir ingestion hattı
+    # kurmaya gerek yok.
+    if not rows:
+        if looks_like_binance_pair(symbol):
+            from market_data.ingestion.data_provider import RoutingProvider
+            provider = RoutingProvider()
+        else:
+            from market_data.ingestion.yahoo_provider import YahooProvider
+            provider = YahooProvider()
 
-        bars = YahooProvider().get_ohlcv(symbol, resolution, limit=limit)
+        bars = provider.get_ohlcv(symbol, resolution, limit=limit)
         return {
             "symbol": symbol,
             "resolution": resolution,

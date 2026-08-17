@@ -19,15 +19,23 @@ function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(hasToken);
   const [view, setView] = useState('dashboard');
   // Faz 266: kullanıcı isteği — Transactions'ta bir işlem satırına
-  // tıklayınca direkt o varlığın grafiğine (Tokens sayfasındaki detay
-  // görünümü) gitsin. Tokens kendi "seçili sembol" durumunu kendi
-  // içinde tutuyor (App.tsx'in "view" mantığıyla aynı basit desen) —
-  // dışarıdan bir sembol "aşılamak" için bunu buraya taşıyoruz.
+  // tıklayınca direkt o varlığın grafiğine gitsin. MarketOverview kendi
+  // "seçili sembol" durumunu kendi içinde tutuyor (App.tsx'in "view"
+  // mantığıyla aynı basit desen) — dışarıdan bir sembol "aşılamak" için
+  // bunu buraya taşıyoruz.
+  //
+  // Kullanıcı bulgusu (sonraki bulgu): Tokens sayfası watchlist dışı
+  // sembollerde (ör. Pump-Fade'in açtığı PORTALUSDT) 404 veriyordu VE
+  // zaten gerçek bir mum grafiği hiç göstermiyordu. MarketOverview HER
+  // sembol için (watchlist'te olsun olmasın, RoutingProvider gerçek
+  // veriyi doğrudan borsadan çekiyor) gerçek bir candlestick grafiği +
+  // order book + haber duyarlılığı gösteriyor — "her zaman market
+  // bilgisi veren bir sayfa" isteğine uyan asıl hedef burası.
   const [tokenDetailSymbol, setTokenDetailSymbol] = useState<string | null>(null);
 
   const navigateToToken = (symbol: string) => {
     setTokenDetailSymbol(symbol);
-    setView('tokens');
+    setView('market');
   };
 
   if (!isLoggedIn) {
@@ -46,8 +54,8 @@ function App() {
         <div className="max-w-6xl mx-auto px-8 py-8">
           {view === 'dashboard' && <Dashboard />}
           {view === 'transactions' && <Transactions onSelectSymbol={navigateToToken} />}
-          {view === 'market' && <MarketOverview />}
-          {view === 'tokens' && <Tokens initialSymbol={tokenDetailSymbol} onSymbolConsumed={() => setTokenDetailSymbol(null)} />}
+          {view === 'market' && <MarketOverview initialSymbol={tokenDetailSymbol} onSymbolConsumed={() => setTokenDetailSymbol(null)} />}
+          {view === 'tokens' && <Tokens />}
           {view === 'predictions' && <Predictions />}
           {view === 'strategies' && <Strategies />}
           {view === 'settings' && <Settings />}

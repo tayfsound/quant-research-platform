@@ -6,8 +6,14 @@ import { useCurrency } from "../lib/currency";
 
 const RESOLUTIONS = ["1m", "5m", "15m", "1h", "4h", "1d"];
 
-export default function MarketOverview() {
-  const [symbol, setSymbol] = useState("BTCUSDT");
+export default function MarketOverview({
+  initialSymbol,
+  onSymbolConsumed,
+}: {
+  initialSymbol?: string | null;
+  onSymbolConsumed?: () => void;
+} = {}) {
+  const [symbol, setSymbol] = useState(initialSymbol || "BTCUSDT");
   const [resolution, setResolution] = useState("1m");
   const [barCount, setBarCount] = useState(0);
   const [orderBook, setOrderBook] = useState<any>(null);
@@ -111,6 +117,18 @@ export default function MarketOverview() {
     load(symbol, resolution);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol, resolution]);
+
+  // Kullanıcı bulgusu: Transactions'ta bir işlemin sembolüne tıklayınca
+  // (özellikle watchlist dışı Pump-Fade sembollerinde) her zaman gerçek
+  // grafik/market bilgisi gösteren bir sayfaya gitmeli — Tokens.tsx'in
+  // AYNI initialSymbol/onSymbolConsumed deseni, burada da.
+  useEffect(() => {
+    if (initialSymbol) {
+      setSymbol(initialSymbol);
+      onSymbolConsumed?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSymbol]);
 
   return (
     <div>
