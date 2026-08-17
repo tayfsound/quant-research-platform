@@ -164,6 +164,15 @@ def _build_backtest_context(
         "last_bar_timestamp": window[-1].timestamp.isoformat(),
         **pattern,
     }
+    # Kullanıcı bulgusu — kök neden bulundu: bu fonksiyon sentiment/onchain/
+    # order_flow/relative_strength için HİÇ gerçek veri kurmuyor (Fear&Greed,
+    # borsa akışı, order book, watchlist basket'i — hiçbiri tek-sembollü
+    # geçmiş bar replay'inden üretilemez). Bu 4 ajan önceden yine de
+    # çağrılıyordu, "gerçek veri yok" WAIT'i "gerçek veri var, nötr" WAIT'i
+    # gibi yüksek epistemik metadata ile raporlanıyordu — bkz. contracts/
+    # contexts/market.py::data_unavailable_domains docstring'i, bu artık
+    # CouncilStage'e o 4 domain'i HİÇ çağırmamasını söylüyor.
+    ctx.market.data_unavailable_domains = ["sentiment", "onchain", "order_flow", "relative_strength"]
 
     ctx.risk.limits = {
         "max_position_size": RiskLimitEntry(value=capital_per_trade * 10, hash=""),

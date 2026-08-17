@@ -69,6 +69,15 @@ class CouncilStage:
             AgentDomain.RELATIVE_STRENGTH: self.adapter.to_relative_strength(ctx),
         }
 
+        # Kullanıcı bulgusu — bkz. contracts/contexts/market.py::
+        # data_unavailable_domains docstring'i: gerçek veri kaynağı
+        # olmayan domain'ler hiç çağrılmasın, kör bir WAIT üretip
+        # BeliefEngine'in total_weight paydasını şişirmesin.
+        for domain_value in ctx.market.data_unavailable_domains:
+            for domain in list(contexts.keys()):
+                if domain.value == domain_value:
+                    contexts[domain] = None
+
         # Faz 268b — Regime-Aware Learning: PositionCloser._record_agent_
         # learning'in kapanmış işlemleri etiketlediği AYNI format
         # ("trend_volatility") — bu ikisi eşleşmezse regime-özel
