@@ -1,5 +1,8 @@
 """Probability Calibration ve Uncertainty (ECE) testleri — Faz 544-568 (Cognitive Core 2.0 / M4)."""
-from analytics.calibration_uncertainty import compute_expected_calibration_error
+from analytics.calibration_uncertainty import (
+    compute_expected_calibration_error,
+    extract_predictions_from_closed_trades,
+)
 
 
 def test_perfectly_calibrated_predictions_score_zero_ece():
@@ -35,3 +38,18 @@ def test_low_and_high_bins_isolate_the_same_calibration_quality_differently_from
     predictions = [(0.2, False)] * 8 + [(0.2, True)] * 2  # %20 dediğinde gerçekten %20 doğru
     result = compute_expected_calibration_error(predictions, n_bins=10)
     assert result["expected_calibration_error"] < 0.05
+
+
+def test_extract_predictions_skips_trades_missing_confidence_or_win():
+    trades = [
+        {"confidence": 0.8, "outcome": {"win": True}},
+        {"confidence": None, "outcome": {"win": True}},
+        {"confidence": 0.6, "outcome": {}},
+        {"confidence": 0.5, "outcome": {"win": False}},
+    ]
+    predictions = extract_predictions_from_closed_trades(trades)
+    assert predictions == [(0.8, True), (0.5, False)]
+
+
+def test_extract_predictions_from_empty_list_is_empty():
+    assert extract_predictions_from_closed_trades([]) == []

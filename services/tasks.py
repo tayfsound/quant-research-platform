@@ -352,6 +352,39 @@ def refresh_feature_ic_report_task() -> dict:
     return {"id": str(report.id), "feature_count": len(features), "total_closed_trades": len(closed_trades)}
 
 
+@celery_app.task(name="refresh_calibration_report_task")
+def refresh_calibration_report_task() -> dict:
+    """Cognitive Core 2.0 / M4 — kullanıcı isteği: council'i hiç etkilemeyen,
+    ölçüm-only roadmap modüllerini birer birer canlıya (izlenebilir hale)
+    alalım, ilk aday olarak ECE seçildi (en düşük eşik, en düşük risk).
+    analytics/calibration_uncertainty.py::compute_expected_calibration_error()
+    zaten gerçek zamanlı çalışıyordu (GET /calibration/) ama hiçbir GEÇMİŞİ
+    yoktu. feature_ic_report_task/llm_audit_run ile AYNI desen. SADECE
+    ölçüm/kayıt — hiçbir ajanın confidence'ını otomatik düzeltmiyor."""
+    from analytics.calibration_uncertainty import (
+        compute_expected_calibration_error,
+        extract_predictions_from_closed_trades,
+    )
+    from contracts.calibration_report import CalibrationReport
+    from database.repositories.calibration_report_repository import CalibrationReportRepository
+    from database.repositories.decision_persistor import DecisionPersistor
+    from database.session_factory import SessionFactory
+
+    with SessionFactory.get_session() as session:
+        closed_trades = DecisionPersistor(session).list_closed_trades(limit=100_000)
+        predictions = extract_predictions_from_closed_trades(closed_trades)
+        result = compute_expected_calibration_error(predictions)
+        report = CalibrationReport(result=result, total_closed_trades=len(closed_trades))
+        CalibrationReportRepository(session).save(report)
+
+    return {
+        "id": str(report.id),
+        "ece": (result or {}).get("expected_calibration_error"),
+        "sample_size": (result or {}).get("sample_size"),
+        "total_closed_trades": len(closed_trades),
+    }
+
+
 @celery_app.task(name="ingest_order_book_task")
 def ingest_order_book_task() -> dict:
     """Faz 201: gerçek bulgu — market_data/ingestion/pipeline.py::

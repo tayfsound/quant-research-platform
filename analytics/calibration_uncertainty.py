@@ -56,3 +56,20 @@ def compute_expected_calibration_error(
         "sample_size": n,
         "bins": bin_details,
     }
+
+
+def extract_predictions_from_closed_trades(closed_trades: list[dict]) -> list[tuple[float, bool]]:
+    """Gerçek kapanmış işlemlerden (confidence, win) çiftlerini çıkarır —
+    direction_prediction_v2.py::compute_brier_score ile AYNI girdi şekli,
+    AYNI veri kaynağı (decisions.confidence + outcome->>'win'). confidence
+    veya outcome.win eksikse (fail-closed) o satır sessizce atlanır,
+    uydurma bir değer asla üretilmez."""
+    predictions = []
+    for trade in closed_trades:
+        confidence = trade.get("confidence")
+        outcome = trade.get("outcome") or {}
+        win = outcome.get("win")
+        if confidence is None or win is None:
+            continue
+        predictions.append((float(confidence), bool(win)))
+    return predictions

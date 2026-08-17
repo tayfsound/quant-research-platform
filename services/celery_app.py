@@ -202,4 +202,10 @@ celery_app.conf.beat_schedule = {
         "task": "refresh_feature_ic_report_task",
         "schedule": 604800.0,
     },
+    # Cognitive Core 2.0 / M4 — council'i hiç etkilemeyen ölçüm-only
+    # roadmap modüllerinin canlıya alınan ilk adayı (ECE).
+    "refresh-calibration-report-weekly": {
+        "task": "refresh_calibration_report_task",
+        "schedule": 604800.0,
+    },
 }
