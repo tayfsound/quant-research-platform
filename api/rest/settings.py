@@ -204,6 +204,13 @@ def _validate(key: str, value: str) -> None:
                 raise ValueError
         except ValueError:
             raise HTTPException(400, "pump_fade_stop_distance_pct must be a number in (0, 1)")
+    elif key == "pump_fade_take_profit_pct":
+        try:
+            v = float(value)
+            if not (0 < v < 1):
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "pump_fade_take_profit_pct must be a number in (0, 1)")
     elif key == "pairs_trading_leg_capital_usd":
         try:
             if float(value) <= 0:

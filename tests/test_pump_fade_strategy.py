@@ -10,9 +10,18 @@ from sqlalchemy import text
 
 from database.repositories.app_settings_repository import AppSettingsRepository
 from database.repositories.decision_persistor import DecisionPersistor
+from database.repositories.risk_limit_repository import RiskLimitModel, RiskLimitRepository
 from database.session_factory import SessionFactory
 from market_data.ingestion.ohlcv import OHLCV
 from services.pump_fade_strategy import EXPERIMENT_BUCKET, PumpFadeStrategy, find_pump_candidates
+
+
+def _seed_max_position_size(value: float) -> None:
+    with SessionFactory.get_session() as session:
+        RiskLimitRepository(session).save(RiskLimitModel(
+            id=uuid4(), scope="global", limit_type="max_position_size",
+            value=value, hash="", created_by="test", created_at=datetime.now(UTC),
+        ))
 
 
 def _bar(low: float, close: float) -> OHLCV:
@@ -35,6 +44,12 @@ def _cleanup_symbol(symbol: str) -> None:
         session.commit()
 
 
+def _cleanup_max_position_size() -> None:
+    with SessionFactory.get_session() as session:
+        session.execute(text("DELETE FROM risk_limits WHERE limit_type = 'max_position_size'"))
+        session.commit()
+
+
 def _set_pump_fade_settings(**overrides) -> None:
     defaults = {
         "pump_fade_enabled": "false",
@@ -50,6 +65,18 @@ def _set_pump_fade_settings(**overrides) -> None:
         repo = AppSettingsRepository(session)
         for key, value in defaults.items():
             repo.set(key, value, updated_by="test")
+
+    # Kullanıcı bulgusu — tam paket çalışırken (tek başına değil) bu
+    # dosyadaki bir test başarısız oluyordu: risk_limits tablosu TÜM test
+    # dosyaları arasında paylaşılıyor (ör. test_orchestrator_risk_limits.py
+    # kendi max_position_size=1.0 satırını hiç temizlemiyor) — pump_fade_
+    # strategy.py artık bu AYNI global max_position_size'ı okuduğu için
+    # (bkz. _try_open'daki güvenlik tavanı kontrolü), başka bir test
+    # dosyasından kalan bir satır burayı sessizce etkileyebiliyordu. Her
+    # pump-fade testi "limit yok" temiz durumuyla başlasın diye burada
+    # temizleniyor — bir test kendi limitini seçmek isterse _seed_max_
+    # position_size'ı BUNDAN SONRA çağırır.
+    _cleanup_max_position_size()
 
 
 def test_find_pump_candidates_identifies_symbol_meeting_gain_threshold():
@@ -115,6 +142,104 @@ def test_run_cycle_opens_short_position_with_leverage_clamped_by_safety_lock(mon
         # Çıkış kuralı: "%100 kâr ettiğinde" -> fiyat AŞAĞI inince kâr.
         assert row["take_profit_price"] < row["entry_price"]
         assert row["quantity"] > 0
+    finally:
+        _cleanup_symbol(symbol)
+        _set_pump_fade_settings(pump_fade_enabled="false")
+
+
+def test_run_cycle_clamps_leverage_when_notional_would_exceed_max_position_size(monkeypatch):
+    """Kullanıcı bulgusu — gerçek olay: PORTALUSDT'de $25.000 marjin ×
+    4,35x kaldıraç = $108.695 notional açıldı, ama RiskEngine'in gerçek
+    max_position_size tavanı $100.000'di; bu strateji izole olduğu için
+    hiç kontrol edilmemişti. margin=$50, hedef kaldıraç güvenlik kilidiyle
+    ~4.35x'e kırpılır (varsayılan %15 stop mesafesi) -> kırpılmamış
+    notional ~$217.4. max_position_size=$100 verilince kaldıraç 100/50=2.0'a
+    kırpılmalı."""
+    symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    try:
+        _set_pump_fade_settings(pump_fade_enabled="true")
+        _seed_max_position_size(100.0)
+        monkeypatch.setattr(
+            "services.pump_fade_strategy.fetch_usdt_perpetual_symbols", lambda: [symbol]
+        )
+        provider = _FakeProvider({symbol: [_bar(10.0, 10.0), _bar(10.0, 22.0)]})
+
+        result = PumpFadeStrategy(data_provider=provider).run_cycle()
+
+        assert len(result["opened"]) == 1
+        opened = result["opened"][0]
+        assert opened["leverage"] == pytest.approx(2.0)
+
+        with SessionFactory.get_session() as session:
+            rows = DecisionPersistor(session).list_open_positions(limit=50)
+        row = next(r for r in rows if r["symbol"] == symbol)
+        notional = row["quantity"] * row["entry_price"]
+        assert notional == pytest.approx(100.0, rel=1e-3)
+    finally:
+        _cleanup_symbol(symbol)
+        _cleanup_max_position_size()
+        _set_pump_fade_settings(pump_fade_enabled="false")
+
+
+def test_run_cycle_does_not_open_position_when_margin_alone_exceeds_max_position_size(monkeypatch):
+    """Margin (1x kaldıraçta bile) tavanı aşıyorsa pozisyon HİÇ açılmamalı
+    — "sinyal limitleri gevşetemez, sadece küçültebilir/reddedebilir"
+    ilkesi, kırpmanın bir noktadan sonra anlamsız kaldığı durum."""
+    symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    try:
+        _set_pump_fade_settings(pump_fade_enabled="true")
+        _seed_max_position_size(25.0)  # margin=$50 > $25 tavanı, 1x'te bile sığmaz
+        monkeypatch.setattr(
+            "services.pump_fade_strategy.fetch_usdt_perpetual_symbols", lambda: [symbol]
+        )
+        provider = _FakeProvider({symbol: [_bar(10.0, 10.0), _bar(10.0, 22.0)]})
+
+        result = PumpFadeStrategy(data_provider=provider).run_cycle()
+
+        assert result["opened"] == []
+        with SessionFactory.get_session() as session:
+            rows = DecisionPersistor(session).list_open_positions(limit=50)
+        assert not any(r["symbol"] == symbol for r in rows)
+    finally:
+        _cleanup_symbol(symbol)
+        _cleanup_max_position_size()
+        _set_pump_fade_settings(pump_fade_enabled="false")
+
+
+def test_run_cycle_take_profit_is_independent_of_leverage(monkeypatch):
+    """Kullanıcı bulgusu: eski kural take_profit = entry*(1-1/leverage)
+    idi — stop mesafesi genişleyip güvenlik kilidi leverage'ı düşürünce bu
+    ham hedef SESSİZCE kayardı (198 gerçek pump olayında ölçülen en iyi
+    ham hedeften, %25'ten, uzaklaşırdı). Artık pump_fade_take_profit_pct
+    doğrudan kullanılıyor — leverage ne olursa olsun (burada geniş stopla
+    düşük bir leverage'a zorlanıyor) ham hedef SABİT kalmalı."""
+    symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    try:
+        _set_pump_fade_settings(
+            pump_fade_enabled="true",
+            pump_fade_stop_distance_pct="0.30",  # leverage'ı düşüğe zorlar
+            pump_fade_take_profit_pct="0.25",
+        )
+        monkeypatch.setattr(
+            "services.pump_fade_strategy.fetch_usdt_perpetual_symbols", lambda: [symbol]
+        )
+        provider = _FakeProvider({symbol: [_bar(10.0, 10.0), _bar(10.0, 22.0)]})
+
+        result = PumpFadeStrategy(data_provider=provider).run_cycle()
+
+        assert len(result["opened"]) == 1
+        opened = result["opened"][0]
+        assert opened["leverage"] < 3.0  # %30 stopla leverage düşük olmalı (eski 1/leverage ~%45 hedef verirdi)
+
+        with SessionFactory.get_session() as session:
+            rows = DecisionPersistor(session).list_open_positions(limit=50)
+        row = next(r for r in rows if r["symbol"] == symbol)
+        entry = row["entry_price"]
+        expected_tp = entry * (1 - 0.25)
+        assert row["take_profit_price"] == pytest.approx(expected_tp, rel=1e-6)
+        # Eski formülle (1/leverage) hedef ~%45 olurdu — bunun ÇOK altında olmalı.
+        old_formula_tp = entry * (1 - 1 / opened["leverage"])
+        assert row["take_profit_price"] > old_formula_tp
     finally:
         _cleanup_symbol(symbol)
         _set_pump_fade_settings(pump_fade_enabled="false")

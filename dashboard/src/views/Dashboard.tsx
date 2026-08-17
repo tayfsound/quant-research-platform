@@ -203,10 +203,18 @@ const TRADE_TYPE_LABELS: Record<string, string> = {
   swing: "Swing",
   orta_vadeli: "Orta vadeli",
   hedge: "Hedge",
+  pump_fade: "Pump-Fade",
 };
 // En dar stoptan en genişe, sonra katman-tabanlı türler — okuma sırası
 // anlamlı olsun diye (rastgele obje key sırası değil).
-const TRADE_TYPE_ORDER = ["scalp", "gun_ici", "swing", "orta_vadeli", "hedge"];
+//
+// Kullanıcı bulgusu: backend api/rest/positions.py::_classify_trade_type
+// "pump_fade" türünü zaten döndürüyordu (gerçek 2 kapanmış işlem, ikisi
+// de kârlı) ama bu sabit liste dışında kaldığı için tabloda hiç
+// görünmüyordu — TRADE_TYPE_ORDER.filter(...) listede olmayan hiçbir
+// key'i render etmiyor, backend'in döndürdüğü YENİ bir tür sessizce
+// kayboluyordu.
+const TRADE_TYPE_ORDER = ["scalp", "gun_ici", "swing", "orta_vadeli", "hedge", "pump_fade"];
 
 export default function Dashboard() {
   const [settings, setSettings] = useState<SettingsMap>({});

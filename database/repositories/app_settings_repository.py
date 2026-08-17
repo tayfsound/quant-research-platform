@@ -280,13 +280,29 @@ DEFAULTS: dict[str, str] = {
     # kâr ettiğinde") onayladı ama KORUYUCU stop-loss mesafesini
     # belirtmedi (sadece "max_safe_leverage ile aynı güvenlik kilidi
     # uygulansın" dedi — bu, BİR stop mesafesi varsayımı gerektiriyor).
-    # %15: fiyat girişten sonra %15 daha yükselirse (short'un aleyhine,
-    # pump'ın devam ettiği/fade tezinin geçersiz olduğu anlamına gelir)
-    # pozisyon kapanır. 5x hedef kaldıraçla max_safe_leverage(0.15) ≈
-    # 4.3x'e kırpar (likidasyon mesafesi bu stop'un en az 1.5 katı kalsın
-    # diye) — 5x'in neredeyse tamamı korunur, tam 5x DEĞİL. Bu değer
-    # sabit kodlanmadı, burada AppSettings üzerinden ayarlanabilir.
-    "pump_fade_stop_distance_pct": "0.15",
+    # Kullanıcı bulgusu — gerçek olay: PORTALUSDT/GPSUSDT pump-fade
+    # pozisyonları %15 stop'a rağmen sürekli tetiklenme riskiyle karşı
+    # karşıyaydı ("pump yapmış bir token inanılmaz volatil olabilir").
+    # 198 gerçek pump olayında (fetch_usdt_perpetual_symbols evreni,
+    # son ~250 gün) gün-gün SL/TP yarış simülasyonu yapıldı: %15 stopla
+    # kazanma oranı %39, ORTALAMA GETİRİ HAM FİYATTA NEGATİF (-%0.15,
+    # kaldıraçlı marjin üzerinde -%0.64) — dar stop, gerçek geri dönüş
+    # gelmeden normal pump-sonrası volatiliteyle tetikleniyordu. %30
+    # stop + %25 hedef kombinasyonu en iyi kaldıraçlı EV'i verdi (kazanma
+    # oranı %58.4, ham getiri +%2.13, kaldıraçlı ~+%4.68) — bkz.
+    # pump_fade_take_profit_pct'in üstündeki not, TP artık bu ham %'den
+    # BAĞIMSIZ ayarlanıyor (leverage'dan türetilmiyor, aksi halde stop
+    # genişledikçe leverage düşüp TP sessizce çok uzağa kayardı).
+    "pump_fade_stop_distance_pct": "0.30",
+    # AYNI 198-olaylık simülasyondan: hedef, kaldıraçtan TÜRETİLMİYOR
+    # (eski davranış: take_profit = entry*(1-1/leverage), yani "%100
+    # marjin kârı" — stop genişleyip leverage düştükçe bu ham hedefi
+    # sessizce %45+'e kaydırıyordu, simülasyonun en iyi bulduğu %25'in
+    # çok üstüne). Artık doğrudan bu ham %'ye göre kuruluyor — leverage
+    # ne olursa olsun sabit kalır, sadece kaç KATINA denk geldiği
+    # (marjin kârı = bu % × gerçek leverage) değişir, o da salt bilgi
+    # amaçlı raporlanır.
+    "pump_fade_take_profit_pct": "0.25",
     # Faz 268-sonrası — kullanıcı bulgusu: "15 hedge pozisyondan gelen
     # kayıp 400 dolardan fazla, scalp'te 1109 işlem sadece 16 dolar
     # kaybettirmiş — acayip bir dengesizlik." Kök neden: services/

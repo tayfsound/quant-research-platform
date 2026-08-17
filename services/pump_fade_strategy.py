@@ -108,6 +108,7 @@ class PumpFadeStrategy:
             min_gain_pct = float(settings_repo.get("pump_fade_min_gain_pct"))
             lookback_hours = int(settings_repo.get("pump_fade_lookback_hours"))
             stop_distance_pct = float(settings_repo.get("pump_fade_stop_distance_pct"))
+            take_profit_pct = float(settings_repo.get("pump_fade_take_profit_pct"))
             starting_capital = float(settings_repo.get("starting_capital"))
 
         symbols = fetch_usdt_perpetual_symbols()
@@ -119,7 +120,8 @@ class PumpFadeStrategy:
         opened = []
         for candidate in candidates:
             result = self._try_open(
-                candidate, capital_pct, target_leverage, stop_distance_pct, starting_capital, lookback_hours
+                candidate, capital_pct, target_leverage, stop_distance_pct, take_profit_pct,
+                starting_capital, lookback_hours
             )
             if result is not None:
                 opened.append(result)
@@ -132,6 +134,7 @@ class PumpFadeStrategy:
         capital_pct: float,
         target_leverage: float,
         stop_distance_pct: float,
+        take_profit_pct: float,
         starting_capital: float,
         lookback_hours: int,
     ) -> dict | None:
@@ -155,18 +158,41 @@ class PumpFadeStrategy:
                 leverage = max(1.0, min(target_leverage, safe_leverage))
 
             margin = starting_capital * capital_pct
+
+            # Kullanıcı bulgusu — gerçek olay: PORTALUSDT'de $25.000 marjin
+            # × 4,35x kaldıraç = $108.695 notional açıldı, ama RiskEngine'in
+            # gerçek max_position_size tavanı $100.000'di. Bu strateji
+            # council/RiskEngine zincirinden BİLİNÇLİ olarak izole (AI onayı
+            # gerektirmesin diye) — ama bu izolasyon yanlışlıkla güvenlik
+            # tavanını da atlıyordu. "Sinyal limitleri gevşetemez, sadece
+            # küçültebilir" ilkesi burada da geçerli: notional tavanı
+            # aşıyorsa kaldıraç (yukarıdaki likidasyon güvenlik kilidiyle
+            # AYNI şekilde) kırpılır; margin'in KENDİSİ bile tavanı
+            # aşıyorsa (1x kaldıraçta bile sığmıyor) pozisyon hiç açılmaz.
+            from database.repositories.risk_limit_repository import RiskLimitRepository
+            max_position_size = RiskLimitRepository(session).get_active("global", "max_position_size")
+            if max_position_size is not None:
+                if margin > max_position_size.value:
+                    return None
+                max_leverage_for_cap = max_position_size.value / margin
+                leverage = max(1.0, min(leverage, max_leverage_for_cap))
+
             quantity = (margin * leverage) / entry_price
             final_size = margin / entry_price
 
             stop_loss_price = entry_price * (1 + stop_distance_pct)
-            # Kullanıcının onayladığı çıkış kuralı: "pozisyon %100 kâr
-            # ettiğinde." SHORT'ta gross_pnl = margin*leverage*price_drop_pct
-            # — bu, margin*1.0'a (yani %100 ROI'ye) price_drop_pct=1/leverage
-            # olduğunda ulaşır. GERÇEK uygulanan (yukarıda kırpılmış olabilen)
-            # leverage'a göre hesaplanıyor, hedef (nominal) kaldıraca göre
-            # DEĞİL — aksi halde "%100 kâr" iddiası leverage kırpıldığında
-            # yanlış olurdu.
-            take_profit_price = entry_price * (1 - 1 / leverage)
+            # Kullanıcı bulgusu — gerçek olay: eski kural "%100 marjin kârında
+            # çık" idi (take_profit = entry*(1-1/leverage)) — stop mesafesi
+            # genişleyip güvenlik kilidi leverage'ı düşürdükçe bu ham hedef
+            # SESSİZCE çok uzağa kayardı (198 gerçek pump olayında ölçüldü:
+            # %30 stopta 1/leverage ≈ %45.5, simülasyonun bulduğu en iyi
+            # ham hedeften — %25 — çok uzak, EV'i düşürüyordu). Artık hedef
+            # doğrudan pump_fade_take_profit_pct'ten (ham %, leverage'dan
+            # BAĞIMSIZ) kuruluyor — leverage ne olursa olsun sabit kalır.
+            # margin_profit_pct (kaç KATINA denk geldiği) sadece bilgi
+            # amaçlı, hiçbir hesaba girmiyor.
+            take_profit_price = entry_price * (1 - take_profit_pct)
+            margin_profit_pct = take_profit_pct * leverage
             liquidation_price = compute_liquidation_price(entry_price, "SHORT", leverage)
 
             now = datetime.now(UTC)
@@ -185,6 +211,8 @@ class PumpFadeStrategy:
                         "stop_distance_pct": stop_distance_pct,
                         "target_leverage": target_leverage,
                         "applied_leverage": leverage,
+                        "take_profit_pct": take_profit_pct,
+                        "margin_profit_pct": margin_profit_pct,
                     },
                 }],
                 status="open",
