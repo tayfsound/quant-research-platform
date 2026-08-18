@@ -270,6 +270,53 @@ def test_apply_portfolio_fusion_does_not_collapse_realistic_quantities_to_near_z
         assert directional["ALGOUSDT"]["ctx"].decision.final_size > 5000.0
 
 
+def test_apply_portfolio_fusion_considers_real_existing_open_positions_not_just_this_cycle():
+    """Kullanıcı isteği: "orta-vadeli katmanı portföy VaR'ına dahil et...
+    tam birleşik portföy VaR'ı." Öncesinde SADECE bu cycle'daki eşzamanlı
+    yeni öneriler kovaryans matrisine giriyordu — saatler önce açılmış
+    büyük, korele bir pozisyon (kısa-vadeli VEYA orta-vadeli katmandan,
+    ayrım yapılmıyor) hiç görülmüyordu, ve TEK bir yeni öneriyle
+    (len(directional)==1) eski kod hiç çalışmıyordu bile. Burada
+    GERÇEKTEN açık, çok büyük ve yeni öneriyle MÜKEMMEL korele bir
+    pozisyon var — tek başına yeni öneri bunu görüp küçülmeli."""
+    from uuid import uuid4
+
+    from contracts.decision_event import DecisionEvent
+    from database.repositories.decision_persistor import DecisionPersistor
+    from database.session_factory import SessionFactory
+
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        orch = CognitiveOrchestrator()
+
+        existing_symbol = f"EXISTFUSE{uuid4().hex[:8]}"
+        now = datetime.now(UTC)
+        with SessionFactory.get_session() as session:
+            DecisionPersistor(session).persist(DecisionEvent(
+                id=uuid4(), timestamp=now, symbol=existing_symbol,
+                proposed_direction="LONG", final_action="LONG", final_size=1000.0, confidence=0.7,
+                status="open", entry_price=100.0, quantity=1000.0, opened_at=now,
+            ))
+
+        new_symbol = f"NEWFUSE{uuid4().hex[:8]}"
+        bars = _correlated_bars(seed=7)
+        directional = {
+            new_symbol: {"ctx": _fake_ctx(new_symbol, "LONG", 1.0), "data": bars, "direction": "LONG"},
+        }
+
+        with patch("database.repositories.app_settings_repository.AppSettingsRepository.get") as mock_get:
+            # Küçük bir kasa (1000) + çok büyük mevcut pozisyon (notional
+            # 100.000, kasanın 100 katı) — tek başına bile VaR'ı çok
+            # aşar; aynı yönde/mükemmel korele yeni öneri bunu ARTIRIR.
+            mock_get.side_effect = lambda key: {"starting_capital": "1000", "max_portfolio_var_pct": "0.001"}[key]
+            with patch.object(orch.data_provider, "get_ohlcv", return_value=bars):
+                orch._apply_portfolio_fusion(directional)
+
+        # Eski kodda len(directional)==1 olduğu için fusion hiç
+        # çalışmazdı, final_size hep 1.0 kalırdı. Artık gerçek açık
+        # pozisyonla birlikte değerlendirilip küçülmüş olmalı.
+        assert directional[new_symbol]["ctx"].decision.final_size < 1.0
+
+
 def test_run_portfolio_aware_cycle_finalizes_every_symbol_and_applies_fusion_when_multiple_directional():
     with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
         orch = CognitiveOrchestrator()

@@ -551,18 +551,36 @@ class CognitiveOrchestrator:
         return {"ctx": ctx, "data": data, "fee": fee, "direction": direction}
 
     def run_medium_term_cycle(self, symbols: list[str], seed: int = 42) -> list[dict[str, Any]]:
-        """Faz 259: portföy VaR füzyonu (run_portfolio_aware_cycle) kasıtlı
-        olarak burada YOK — orta-vadeli katman zaten ayrı bir sermaye
-        havuzunda, kısa-vadelinin korelasyon/VaR hesabına karışması ekstra
-        bir karmaşıklık, ilk sürümde gerekli değil."""
-        results = []
+        """Faz 259: önceden portföy VaR füzyonu kasıtlı olarak burada YOK
+        idi — "orta-vadeli katman zaten ayrı bir sermaye havuzunda,
+        kısa-vadelinin korelasyon/VaR hesabına karışması ekstra bir
+        karmaşıklık" gerekçesiyle. Faz 268-sonrası — kullanıcı isteği:
+        "tam birleşik portföy VaR'ı" — gerçek risk (drawdown) hangi
+        katmanın sermaye muhasebesini kullandığını önemsemez; kısa-
+        vadeli VE orta-vadelinin AYNI ANDA açık, birbirine korele
+        pozisyonları GERÇEKTE aynı portföyün riskidir. _apply_portfolio_
+        fusion artık kısa-vadeli/orta-vadeli ayrımı yapmadan TÜM gerçek
+        açık pozisyonları (decision_persistor.py::open_notional_by_
+        symbol) kovaryans matrisine dahil ediyor — burada da AYNI
+        metodu çağırıyoruz, ayrı bir kopya mantık yerine."""
+        proposals: dict[str, dict] = {}
         for sym in symbols:
             p = self.propose_medium_term(sym)
-            if p is None:
-                results.append({"symbol": sym, "direction": "NEUTRAL", "error": "no_data_or_disabled"})
-                continue
-            results.append(self.finalize_proposal(p, seed=seed))
-        return results
+            if p is not None:
+                proposals[sym] = p
+
+        directional = {
+            sym: p for sym, p in proposals.items()
+            if p["direction"] in ("LONG", "SHORT") and (p["ctx"].decision.final_size or 0) > 0
+        }
+        if len(directional) >= 1:
+            self._apply_portfolio_fusion(directional)
+
+        return [
+            self.finalize_proposal(proposals[sym], seed=seed) if sym in proposals
+            else {"symbol": sym, "direction": "NEUTRAL", "error": "no_data_or_disabled"}
+            for sym in symbols
+        ]
 
     def finalize_proposal(self, proposal: dict, seed: int = 42) -> dict[str, Any]:
         """propose()'un çıktısını (portföy fusion varsa ctx.decision.
@@ -708,7 +726,13 @@ class CognitiveOrchestrator:
             if p["direction"] in ("LONG", "SHORT") and (p["ctx"].decision.final_size or 0) > 0
         }
 
-        if len(directional) >= 2:
+        # Faz 268-sonrası — kullanıcı isteği: "tam birleşik portföy
+        # VaR'ı." _apply_portfolio_fusion artık GERÇEK açık pozisyonları
+        # da kovaryans matrisine dahil ediyor (bkz. kendi docstring'i) —
+        # bu yüzden tek bir yeni öneri de (zaten açık pozisyonlarla
+        # birlikte) anlamlı bir VaR/korelasyon kontrolüne girebiliyor,
+        # eskisi gibi "bu cycle'da 2+ eşzamanlı öneri" şartı gerekmiyor.
+        if len(directional) >= 1:
             self._apply_portfolio_fusion(directional)
 
         return [
@@ -719,6 +743,7 @@ class CognitiveOrchestrator:
 
     def _apply_portfolio_fusion(self, directional: dict[str, dict]) -> None:
         from database.repositories.app_settings_repository import AppSettingsRepository
+        from database.repositories.decision_persistor import DecisionPersistor
         from database.session_factory import SessionFactory
         from risk.limits.portfolio import PortfolioRiskEngine
         from services.portfolio_fusion import PortfolioFusionStage
@@ -727,6 +752,7 @@ class CognitiveOrchestrator:
             settings_repo = AppSettingsRepository(session)
             starting_capital = float(settings_repo.get("starting_capital"))
             max_var_pct = float(settings_repo.get("max_portfolio_var_pct"))
+            existing_notional = DecisionPersistor(session).open_notional_by_symbol()
 
         returns: dict[str, list[float]] = {}
         proposed_sizes: dict[str, float] = {}
@@ -759,6 +785,56 @@ class CognitiveOrchestrator:
             notional = quantity * entry_price_estimates[sym]
             proposed_sizes[sym] = sign * (notional / starting_capital) if starting_capital else 0.0
 
+        # Faz 268-sonrası — kullanıcı isteği: "orta-vadeli katmanı portföy
+        # VaR'ına dahil et... tam birleşik portföy VaR'ı." Öncesinde
+        # SADECE bu cycle'daki eşzamanlı YENİ önerilere bakılıyordu — 10
+        # dakika önce (ya da orta-vadeli katmandan saatler önce) açılmış
+        # büyük, korele bir pozisyon grubu VaR hesabına hiç girmiyordu;
+        # tek bir yeni öneri varsa (medium-term'de neredeyse hep böyle)
+        # `len(directional)>=2` şartı hiç sağlanmadığı için fusion
+        # baştan çalışmıyordu. Artık kısa-vadeli VE orta-vadelinin
+        # GERÇEKTEN açık olan net maruziyeti (decision_persistor.py::
+        # open_notional_by_symbol, ayrı sermaye havuzu muhasebesinden
+        # bağımsız) de AYNI kovaryans matrisine dahil — sadece BAĞLAM
+        # olarak: zaten açık pozisyonların boyutu/güveni burada asla
+        # geriye dönük değiştirilmiyor, SADECE bu cycle'ın yeni
+        # önerilerinin (directional) boyutu/güveni ayarlanıyor. 1h bar'lar
+        # _get_risk_bars_cached ile (15 dakikalık önbellek, zaten risk
+        # ATR hesabı için kurulu) çekiliyor. GERÇEK canlıda doğrulanan
+        # ölçek: 150+ farklı sembolde açık pozisyon var — bunları SIRALI
+        # çekmek (152 × ağ gecikmesi) her cycle'a onlarca saniye eklerdi;
+        # api/rest/positions.py::_fetch_current_prices'ın AYNI gerçek
+        # bulgusuyla (Faz 268w) çözdüğü sorun — ThreadPoolExecutor ile
+        # GERÇEKTEN paralel çekiliyor, toplam süre en yavaş TEK isteğe
+        # iniyor.
+        symbols_needing_bars = [
+            row["symbol"] for row in existing_notional
+            if row["symbol"] not in returns and starting_capital
+        ]
+        if symbols_needing_bars:
+            from concurrent.futures import ThreadPoolExecutor
+
+            def _fetch_one(sym: str) -> tuple[str, list]:
+                try:
+                    return sym, _get_risk_bars_cached(self.data_provider, sym, timeframe="1h", limit=100)
+                except Exception:
+                    return sym, []
+
+            with ThreadPoolExecutor(max_workers=min(len(symbols_needing_bars), 16)) as pool:
+                fetched_bars = dict(pool.map(_fetch_one, symbols_needing_bars))
+
+            notional_by_symbol = {row["symbol"]: row["signed_notional"] for row in existing_notional}
+            for sym, bars in fetched_bars.items():
+                closes = [bar.close for bar in bars]
+                rets = [
+                    (closes[i] - closes[i - 1]) / closes[i - 1]
+                    for i in range(1, len(closes)) if closes[i - 1]
+                ]
+                if len(rets) < 2:
+                    continue
+                returns[sym] = rets
+                proposed_sizes[sym] = float(notional_by_symbol.get(sym) or 0.0) / starting_capital
+
         if len(returns) < 2:
             return
 
@@ -776,9 +852,20 @@ class CognitiveOrchestrator:
         # düzeyine taşınmış hali.
         from risk.cross_symbol_correlation import compute_same_direction_correlation_discount
 
-        directions = {sym: directional[sym]["direction"] for sym in returns}
+        # directions artık SADECE bu cycle'ın yeni önerilerini değil,
+        # zaten açık pozisyonları da kapsıyor (proposed_sizes'ın işareti
+        # üzerinden — pozitif ağırlık=LONG, negatif=SHORT) — korelasyon/
+        # ENB hesabı GERÇEK tüm maruziyeti görsün diye.
+        directions = {
+            sym: (directional[sym]["direction"] if sym in directional else ("LONG" if proposed_sizes[sym] >= 0 else "SHORT"))
+            for sym in returns
+        }
         conviction_multipliers = compute_same_direction_correlation_discount(returns, directions)
         for sym, multiplier in conviction_multipliers.items():
+            # Zaten açık pozisyonlar burada asla geriye dönük değiştirilmiyor
+            # — SADECE bu cycle'ın yeni önerilerinin (directional) güveni.
+            if sym not in directional:
+                continue
             if multiplier < 1.0:
                 ctx = directional[sym]["ctx"]
                 before = ctx.decision.confidence or 0.0
@@ -819,6 +906,8 @@ class CognitiveOrchestrator:
             shortfall = min(max(shortfall, 0.0), 1.0)
             enb_multiplier = 1.0 - shortfall * MAX_ENB_DISCOUNT
             for sym in returns:
+                if sym not in directional:
+                    continue
                 ctx = directional[sym]["ctx"]
                 before = ctx.decision.confidence or 0.0
                 ctx.decision.confidence = round(before * enb_multiplier, 4)

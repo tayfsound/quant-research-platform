@@ -197,6 +197,31 @@ class DecisionPersistor:
 
         return [dict(r) for r in rows]
 
+    def open_notional_by_symbol(self) -> list[dict]:
+        """Faz 268-sonrası — kullanıcı isteği: "orta-vadeli katmanı
+        portföy VaR'ına dahil et... tam birleşik portföy VaR'ı." Kısa-
+        vadeli VE orta-vadeli katmanlardaki (ayrı sermaye havuzu
+        muhasebesinden bağımsız) TÜM gerçekten açık pozisyonları sembol
+        bazında toplar — services/orchestrator.py::_apply_portfolio_
+        fusion() artık SADECE bu cycle'ın eşzamanlı yeni önerilerine değil,
+        GERÇEK mevcut portföy maruziyetine göre korelasyon/VaR hesaplıyor.
+        Aynı sembolde hem LONG hem SHORT açık pozisyon varsa (hedge)
+        net (birbirini götüren) maruziyet doğru olan — VaR gerçek net
+        riski önemser, brüt pozisyon sayısını değil."""
+        rows = self.session.execute(
+            text("""
+                SELECT symbol,
+                    sum(
+                        CASE WHEN direction = 'LONG' THEN entry_price * quantity
+                             ELSE -(entry_price * quantity) END
+                    ) AS signed_notional
+                FROM decisions
+                WHERE status = 'open' AND entry_price IS NOT NULL AND quantity IS NOT NULL
+                GROUP BY symbol
+            """)
+        ).mappings().all()
+        return [dict(r) for r in rows]
+
     def open_position_breakdown_by_trade_type(self) -> list[dict]:
         """Faz 268-sonrası — kullanıcı isteği: "scalp, gün içi, orta vade
         vs. farklı işlem türlerinin ne kadarı short ne kadarı long

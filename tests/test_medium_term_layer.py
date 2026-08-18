@@ -74,6 +74,43 @@ def test_medium_term_enabled_uses_its_own_timeframe_and_capital_settings():
                 AppSettingsRepository(session).set("medium_term_enabled", "false", updated_by="test")
 
 
+def test_run_medium_term_cycle_now_applies_portfolio_fusion():
+    """Faz 268-sonrası — kullanıcı isteği: "orta-vadeli katmanı portföy
+    VaR'ına dahil et... tam birleşik portföy VaR'ı." Önceden bu
+    metodun kendi docstring'i "portföy VaR füzyonu kasıtlı olarak
+    burada YOK" diyordu — artık kısa-vadeli katmanla AYNI _apply_
+    portfolio_fusion çağrılıyor, gerçek yönlü bir öneri üretildiğinde."""
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        symbol = f"MEDTERM{uuid4().hex[:6]}USDT"
+        with SessionFactory.get_session() as session:
+            repo = AppSettingsRepository(session)
+            repo.set("medium_term_enabled", "true", updated_by="test")
+            repo.set("medium_term_timeframe", "1d", updated_by="test")
+
+        try:
+            orch = CognitiveOrchestrator(data_provider=_FakeProvider(_real_looking_bars()))
+            with patch.object(orch, "_apply_portfolio_fusion") as mock_fusion, \
+                    patch.object(orch, "propose_medium_term") as mock_propose, \
+                    patch.object(orch, "finalize_proposal", return_value={"symbol": symbol, "direction": "LONG"}):
+                from contracts.context import CognitiveCycleContext
+                from contracts.contexts.decision import ActionType
+
+                ctx = CognitiveCycleContext()
+                ctx.decision.proposed_direction = "LONG"
+                ctx.decision.final_size = 1.0
+                ctx.decision.action = ActionType.ENTER_LONG
+                mock_propose.return_value = {"ctx": ctx, "data": _real_looking_bars(), "direction": "LONG", "fee": 0.0}
+
+                orch.run_medium_term_cycle([symbol])
+
+            mock_fusion.assert_called_once()
+            called_directional = mock_fusion.call_args[0][0]
+            assert symbol in called_directional
+        finally:
+            with SessionFactory.get_session() as session:
+                AppSettingsRepository(session).set("medium_term_enabled", "false", updated_by="test")
+
+
 def test_run_medium_term_cycle_skips_symbols_with_no_data():
     with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
         with SessionFactory.get_session() as session:
