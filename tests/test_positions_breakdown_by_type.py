@@ -1,0 +1,96 @@
+"""GET /api/v1/positions/breakdown-by-type — kullanıcı isteği: "scalp,
+gün içi, orta vade vs. farklı işlem türlerinin ne kadarı short ne kadarı
+long pozisyonmuş, dashboard'da bir tabloda göreyim." Bu testler, SQL
+agregasyonunun api/rest/positions.py::_classify_trade_type() ile AYNI
+önceliklendirme sırasını (pump_fade > hedge > orta_vadeli > scalp/gün
+içi/swing) uyguladığını, gerçek verilerle önce/sonra farkı üzerinden
+doğruluyor — paylaşılan dev DB'deki ambient veriden etkilenmez."""
+from datetime import UTC, datetime
+from uuid import uuid4
+
+import pytest
+
+from contracts.auth import Role
+from contracts.decision_event import DecisionEvent
+from database.repositories.decision_persistor import DecisionPersistor
+from database.session_factory import SessionFactory
+from tests.auth_helpers import make_authed_headers
+
+
+@pytest.fixture
+def client():
+    from fastapi.testclient import TestClient
+    from api.main import app
+    return TestClient(app)
+
+
+def _open(symbol: str, direction: str, **kwargs) -> DecisionEvent:
+    now = datetime.now(UTC)
+    event = DecisionEvent(
+        id=uuid4(), timestamp=now, symbol=symbol,
+        proposed_direction=direction, final_action=direction, final_size=1.0, confidence=0.7,
+        status="open", entry_price=100.0, quantity=1.0, opened_at=now,
+        **kwargs,
+    )
+    with SessionFactory.get_session() as session:
+        DecisionPersistor(session).persist(event)
+    return event
+
+
+def _counts(client) -> dict[tuple[str, str], int]:
+    response = client.get("/api/v1/positions/breakdown-by-type", headers=make_authed_headers(Role.VIEWER))
+    assert response.status_code == 200
+    return {(r["trade_type"], r["direction"]): r["position_count"] for r in response.json()["breakdown"]}
+
+
+def test_requires_auth(client):
+    response = client.get("/api/v1/positions/breakdown-by-type")
+    assert response.status_code in (401, 403)
+
+
+def test_classifies_pump_fade_before_stop_distance_heuristic(client):
+    before = _counts(client)
+    symbol = f"BRKPF{uuid4().hex[:8]}"
+    # Stop mesafesi kasıtlı olarak scalp aralığında (%2) — pump_fade
+    # etiketinin ondan ÖNCE geldiğini kanıtlamak için.
+    _open(symbol, "SHORT", stop_loss_price=102.0, take_profit_price=95.0, experiment_bucket="pump_fade_v1")
+
+    after = _counts(client)
+    assert after.get(("pump_fade", "SHORT"), 0) == before.get(("pump_fade", "SHORT"), 0) + 1
+
+
+def test_classifies_medium_term_timeframe(client):
+    before = _counts(client)
+    symbol = f"BRKMT{uuid4().hex[:8]}"
+    _open(symbol, "LONG", stop_loss_price=98.0, take_profit_price=105.0, timeframe="4h")
+
+    after = _counts(client)
+    assert after.get(("orta_vadeli", "LONG"), 0) == before.get(("orta_vadeli", "LONG"), 0) + 1
+
+
+def test_classifies_scalp_gun_ici_swing_by_stop_distance(client):
+    before = _counts(client)
+    scalp_symbol = f"BRKSC{uuid4().hex[:8]}"
+    gun_ici_symbol = f"BRKGI{uuid4().hex[:8]}"
+    swing_symbol = f"BRKSW{uuid4().hex[:8]}"
+
+    _open(scalp_symbol, "LONG", stop_loss_price=98.0, take_profit_price=105.0)  # %2 -> scalp
+    _open(gun_ici_symbol, "LONG", stop_loss_price=94.0, take_profit_price=110.0)  # %6 -> gün içi
+    _open(swing_symbol, "SHORT", stop_loss_price=112.0, take_profit_price=80.0)  # %12 -> swing
+
+    after = _counts(client)
+    assert after.get(("scalp", "LONG"), 0) == before.get(("scalp", "LONG"), 0) + 1
+    assert after.get(("gun_ici", "LONG"), 0) == before.get(("gun_ici", "LONG"), 0) + 1
+    assert after.get(("swing", "SHORT"), 0) == before.get(("swing", "SHORT"), 0) + 1
+
+
+def test_position_without_stop_or_timeframe_is_excluded_not_miscategorized(client):
+    """entry_price/stop_loss_price yoksa (ve orta-vadeli/pump_fade da
+    değilse) NULL trade_type üretir — bu satırlar toplamda YOK sayılır,
+    icat edilmiş bir kategoriye düşmez."""
+    before_total = sum(_counts(client).values())
+    symbol = f"BRKNULL{uuid4().hex[:8]}"
+    _open(symbol, "LONG", stop_loss_price=None, take_profit_price=None)
+
+    after_total = sum(_counts(client).values())
+    assert after_total == before_total

@@ -6,6 +6,14 @@ import { useCurrency } from "../lib/currency";
 
 type SettingsMap = Record<string, string>;
 
+// Faz 268-sonrası — kullanıcı isteği: "scalp, gün içi, orta vade vs.
+// farklı işlem türlerinin ne kadarı short ne kadarı long pozisyonmuş."
+// Aşağıdaki TRADE_TYPE_LABELS/TRADE_TYPE_ORDER (bu dosyada zaten var,
+// "İşlem Tipine Göre Performans" tablosunda kullanılıyor) BURADA da
+// tekrar kullanılıyor — aynı kategoriler, aynı Türkçe etiketler, tek
+// gerçek kaynak.
+type TradeTypeBreakdownRow = { trade_type: string; direction: "LONG" | "SHORT"; position_count: number };
+
 // Faz 242: kullanıcı isteği — pasif banner yetmiyor, sayfaya bakılmadığı
 // sürece fark edilmiyor. Web Audio API ile (dışarıdan ses dosyası
 // gerektirmeden) kısa bir alarm sesi + Notification API ile sekme
@@ -221,6 +229,7 @@ export default function Dashboard() {
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openCount, setOpenCount] = useState(0);
+  const [typeBreakdown, setTypeBreakdown] = useState<TradeTypeBreakdownRow[]>([]);
   const [perf, setPerf] = useState<PerformanceData | null>(null);
   const [periodTab, setPeriodTab] = useState<"daily" | "weekly" | "monthly" | "yearly">("daily");
   // Faz 268f-sonrası: kullanıcı bulgusu — zero-fill düzeltmesiyle her
@@ -300,6 +309,10 @@ export default function Dashboard() {
       // (o an 1074) hiç yansımıyordu. summary.open_count limitsiz, gerçek
       // toplam.
       .then((data) => setOpenCount(data.summary?.open_count ?? (data.positions || []).length));
+    fetch("/api/v1/positions/breakdown-by-type", { headers: authHeaders() })
+      .then((r) => r.json())
+      .then((data) => setTypeBreakdown(data.breakdown || []))
+      .catch(() => setTypeBreakdown([]));
     fetch("/api/v1/performance", { headers: authHeaders() })
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -497,6 +510,45 @@ export default function Dashboard() {
               sub={`kullanılan: ${format(perf.all_time.deployed_notional)}`}
             />
           </div>
+
+          {typeBreakdown.length > 0 && (
+            <Card className="mb-6">
+              <h3 className="text-sm font-semibold text-ink mb-1">İşlem türüne göre açık pozisyonlar</h3>
+              <p className="text-xs text-ink-soft mb-3">
+                Scalp/gün içi/orta vadeli/swing stop mesafesine ve zaman dilimine göre; Pump-Fade ve hedge
+                kendi mekanik stratejilerinin etiketiyle ayrılıyor (bkz. Transactions'taki aynı rozetler).
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-left text-ink-faint border-b border-line-soft">
+                      <th className="py-2 pr-4">İşlem türü</th>
+                      <th className="py-2 pr-4">Long</th>
+                      <th className="py-2 pr-4">Short</th>
+                      <th className="py-2 pr-4">Toplam</th>
+                      <th className="py-2 pr-4">Long oranı</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {TRADE_TYPE_ORDER.filter((t) => typeBreakdown.some((r) => r.trade_type === t)).map((type) => {
+                      const long = typeBreakdown.find((r) => r.trade_type === type && r.direction === "LONG")?.position_count ?? 0;
+                      const short = typeBreakdown.find((r) => r.trade_type === type && r.direction === "SHORT")?.position_count ?? 0;
+                      const total = long + short;
+                      return (
+                        <tr key={type} className="border-b border-line-soft/50">
+                          <td className="py-2 pr-4 text-ink font-medium">{TRADE_TYPE_LABELS[type] || type}</td>
+                          <td className="py-2 pr-4 text-rise">{long}</td>
+                          <td className="py-2 pr-4 text-fall">{short}</td>
+                          <td className="py-2 pr-4 text-ink-soft">{total}</td>
+                          <td className="py-2 pr-4 text-ink-soft">{total > 0 ? `%${((long / total) * 100).toFixed(0)}` : "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
 
           <p className="text-xs text-ink-soft mb-4">
             Kasa büyüklüğüne göre ROI: %{(perf.all_time.roi_pct * 100).toFixed(6)} (sermaye:{" "}

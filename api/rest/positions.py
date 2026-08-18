@@ -165,6 +165,19 @@ async def list_open_positions(
     }
 
 
+@router.get("/positions/breakdown-by-type")
+async def positions_breakdown_by_type(user: AuthContext = Depends(get_current_user)):
+    """Faz 268-sonrası — kullanıcı isteği: "scalp, gün içi, orta vade vs.
+    farklı işlem türlerinin ne kadarı short ne kadarı long pozisyonmuş."
+    _classify_trade_type() ile AYNI sınıflandırma, ama TÜM açık
+    pozisyonları (2000+) tek tek serialize etmek yerine tek bir SQL
+    agregasyonu — bkz. decision_persistor.py::open_position_breakdown_
+    by_trade_type()."""
+    with SessionFactory.get_session() as session:
+        rows = DecisionPersistor(session).open_position_breakdown_by_trade_type()
+    return {"breakdown": rows}
+
+
 @router.get("/positions/{decision_id}/explain")
 async def explain_position(decision_id: str, user: AuthContext = Depends(get_current_user)):
     """Faz 268-sonrası — kullanıcı isteği: "hangi ajandan ne karar geldiğini

@@ -197,6 +197,50 @@ class DecisionPersistor:
 
         return [dict(r) for r in rows]
 
+    def open_position_breakdown_by_trade_type(self) -> list[dict]:
+        """Faz 268-sonrası — kullanıcı isteği: "scalp, gün içi, orta vade
+        vs. farklı işlem türlerinin ne kadarı short ne kadarı long
+        pozisyonmuş" dashboard'da bir tabloda görünsün. api/rest/
+        positions.py::_classify_trade_type() ile AYNI sınıflandırma
+        mantığı — orada Python'da satır satır (agent_contributions JSONB'
+        sinden hedge çıkarımı dahil) yapılıyor, burada 2457+ açık
+        pozisyonun TAMAMINI Python'a çekip serialize etmek yerine (ağır)
+        tek bir SQL agregasyonuyla aynı önceliklendirme sırasıyla
+        (pump_fade > hedge > orta_vadeli > scalp/gün içi/swing)
+        tekrarlanıyor — sonuç grup sayıları, tek tek pozisyon değil."""
+        rows = self.session.execute(
+            text("""
+                SELECT trade_type, direction, count(*) AS position_count
+                FROM (
+                    SELECT
+                        direction,
+                        CASE
+                            WHEN experiment_bucket = 'pump_fade_v1' THEN 'pump_fade'
+                            WHEN EXISTS (
+                                SELECT 1 FROM jsonb_array_elements(COALESCE(agent_contributions, '[]'::jsonb)) elem
+                                WHERE elem->>'type' = 'market_snapshot'
+                                  AND elem->'data'->'raw_snapshot'->>'pairs_trade' IS NOT NULL
+                            ) THEN 'hedge'
+                            WHEN timeframe IN ('4h', '1d') THEN 'orta_vadeli'
+                            WHEN entry_price IS NOT NULL AND stop_loss_price IS NOT NULL AND entry_price != 0 THEN
+                                CASE
+                                    WHEN abs(entry_price - stop_loss_price) / entry_price * 100 < 4.5 THEN 'scalp'
+                                    WHEN abs(entry_price - stop_loss_price) / entry_price * 100 < 9.0 THEN 'gun_ici'
+                                    ELSE 'swing'
+                                END
+                            ELSE NULL
+                        END AS trade_type
+                    FROM decisions
+                    WHERE status = 'open'
+                ) classified
+                WHERE trade_type IS NOT NULL
+                GROUP BY trade_type, direction
+                ORDER BY trade_type, direction
+            """)
+        ).mappings().all()
+
+        return [dict(r) for r in rows]
+
     def has_open_position_for_experiment(self, symbol: str, experiment_bucket: str) -> bool:
         """Faz 268-sonrası — kullanıcı isteği: pump-fade gibi AI konseyinden
         yalıtık, kendi experiment_bucket etiketiyle çalışan mekanik
