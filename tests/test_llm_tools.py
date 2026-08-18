@@ -3,7 +3,9 @@ erişimi veren araçlar. Bunlar OLMADAN LLM'in "kodu taradım" deyip
 tamamen uydurma sayılar ürettiği (stop/TP mesafeleri, gerçekte olmayan
 bir R/R oranı) bu oturumda gerçekten yakalandı — bu testler her aracın
 GERÇEK veri döndürdüğünü, hiçbir zaman uydurmadığını doğruluyor."""
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from uuid import uuid4
 
 import llm_tools
 
@@ -14,6 +16,46 @@ def test_get_recent_performance_summary_returns_real_shape():
     assert "manually_closed_trades" in result
     assert "current_stop_atr_mult" in result
     assert result["window_hours"] == 24
+
+
+def test_get_recent_performance_summary_counts_by_closed_at_not_opened_at():
+    """Gerçek canlı bulgu (2026-08-18): pozisyonlar günlerce açık
+    kalabiliyor — sorgu opened_at'a göre filtrelenirse, GÜNLER önce
+    açılıp BUGÜN kapanan bir işlem "son 24 saatteki performans"tan
+    tamamen kayboluyor (kullanıcı: "son 24 saatte kapanan bir sürü işlem
+    var, tp olan da var sl olan da var" — ama eski kod bunları hiç
+    saymıyordu). 10 gün önce açılıp AZ ÖNCE take_profit ile kapanmış bir
+    işlem, 24 saatlik pencerede SAYILMALI."""
+    from contracts.decision_event import DecisionEvent
+    from database.repositories.decision_persistor import DecisionPersistor
+    from database.session_factory import SessionFactory
+
+    symbol = f"LLMTOOLS{uuid4().hex[:8]}"
+    old_open = datetime.now(UTC) - timedelta(days=10)
+    now = datetime.now(UTC)
+
+    with SessionFactory.get_session() as session:
+        repo = DecisionPersistor(session)
+        event = DecisionEvent(
+            id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+            final_size=1.0, confidence=0.7, status="open",
+            entry_price=100.0, quantity=1.0, opened_at=old_open,
+        )
+        repo.persist(event)
+
+    before = llm_tools.get_recent_performance_summary(hours=24)
+
+    with SessionFactory.get_session() as session:
+        repo = DecisionPersistor(session)
+        repo.close_position(
+            decision_id=str(event.id), exit_price=105.0, pnl=5.0, closed_at=now,
+            outcome={"exit_reason": "take_profit"},
+        )
+
+    after = llm_tools.get_recent_performance_summary(hours=24)
+
+    assert after["take_profit_exits"] == before["take_profit_exits"] + 1
+    assert after["ai_automatic_closed_trades"] == before["ai_automatic_closed_trades"] + 1
 
 
 def test_classify_recent_stop_loss_failures_returns_real_shape():

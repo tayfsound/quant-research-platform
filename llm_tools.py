@@ -41,20 +41,29 @@ def get_recent_performance_summary(hours: int = 24) -> dict:
     from sqlalchemy import text
 
     with SessionFactory.get_session() as session:
-        cutoff = text("now() - (:hours || ' hours')::interval")
+        # Faz 268-sonrası — gerçek kullanıcı bulgusu: bu sorgu opened_at'a
+        # göre filtreliyordu, yani sadece "son N saatte AÇILMIŞ VE ZATEN
+        # kapanmış" pozisyonları sayıyordu — pozisyonlar günlerce açık
+        # kalabildiği için son 24 saatte KAPANAN (TP/SL dahil) işlemlerin
+        # büyük çoğunluğu, GÜNLER önce açılmış oldukları için tamamen
+        # görünmez oluyordu ("get_recent_performance_summary" adının
+        # vaat ettiği "son dönem performansı" sorusuna yanlış cevap).
+        # Artık kapanışla ilgili her sayaç closed_at'a göre filtreleniyor
+        # — "ne zaman kapandı" sorusu "ne zaman açıldı"dan ayrıştırıldı.
+        # open_count ise zaman penceresinden bağımsız, o ANKİ gerçek açık
+        # pozisyon sayısı.
         row = session.execute(
             text(
                 "SELECT "
                 "count(*) FILTER (WHERE status = 'open') AS open_count, "
-                "count(*) FILTER (WHERE status = 'closed' AND outcome ->> 'exit_reason' NOT IN ('manual_full','manual_partial')) AS ai_closed_count, "
-                "count(*) FILTER (WHERE status = 'closed' AND outcome ->> 'exit_reason' NOT IN ('manual_full','manual_partial') AND pnl > 0) AS ai_wins, "
-                "count(*) FILTER (WHERE status = 'closed' AND outcome ->> 'exit_reason' = 'take_profit') AS tp_count, "
-                "count(*) FILTER (WHERE status = 'closed' AND outcome ->> 'exit_reason' = 'stop_loss') AS sl_count, "
-                "count(*) FILTER (WHERE status = 'closed' AND outcome ->> 'exit_reason' = 'breakeven_stop') AS breakeven_count, "
-                "count(*) FILTER (WHERE status = 'closed' AND outcome ->> 'exit_reason' IN ('manual_full','manual_partial')) AS manual_count "
+                "count(*) FILTER (WHERE status = 'closed' AND closed_at >= now() - (:hours || ' hours')::interval AND outcome ->> 'exit_reason' NOT IN ('manual_full','manual_partial')) AS ai_closed_count, "
+                "count(*) FILTER (WHERE status = 'closed' AND closed_at >= now() - (:hours || ' hours')::interval AND outcome ->> 'exit_reason' NOT IN ('manual_full','manual_partial') AND pnl > 0) AS ai_wins, "
+                "count(*) FILTER (WHERE status = 'closed' AND closed_at >= now() - (:hours || ' hours')::interval AND outcome ->> 'exit_reason' = 'take_profit') AS tp_count, "
+                "count(*) FILTER (WHERE status = 'closed' AND closed_at >= now() - (:hours || ' hours')::interval AND outcome ->> 'exit_reason' = 'stop_loss') AS sl_count, "
+                "count(*) FILTER (WHERE status = 'closed' AND closed_at >= now() - (:hours || ' hours')::interval AND outcome ->> 'exit_reason' = 'breakeven_stop') AS breakeven_count, "
+                "count(*) FILTER (WHERE status = 'closed' AND closed_at >= now() - (:hours || ' hours')::interval AND outcome ->> 'exit_reason' IN ('manual_full','manual_partial')) AS manual_count "
                 "FROM decisions "
-                "WHERE opened_at >= now() - (:hours || ' hours')::interval "
-                "AND (excluded_from_stats IS NULL OR excluded_from_stats = false)"
+                "WHERE (excluded_from_stats IS NULL OR excluded_from_stats = false)"
             ),
             {"hours": hours},
         ).mappings().one()

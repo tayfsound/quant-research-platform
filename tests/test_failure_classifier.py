@@ -52,3 +52,47 @@ def test_summarize_stop_loss_failures_returns_real_shape():
     assert result["direction_error_count"] + result["barrier_error_count"] + result["insufficient_data_count"] == result["total_stop_loss_trades"]
     if result["total_stop_loss_trades"] > 0:
         assert 0.0 <= (result["direction_error_pct"] or 0.0) <= 1.0
+
+
+def test_summarize_stop_loss_failures_counts_by_closed_at_not_opened_at():
+    """Gerçek canlı bulgu (2026-08-18): pozisyonlar günlerce açık
+    kalabiliyor — opened_at'a göre filtrelemek, GÜNLER önce açılıp
+    BUGÜN stop'a takılmış bir işlemi "son dönem stop-loss'ları"ndan
+    tamamen düşürüyordu. 10 gün önce açılıp AZ ÖNCE stop_loss ile
+    kapanmış bir işlem, 90 saatlik pencerede SAYILMALI."""
+    from datetime import UTC, datetime, timedelta
+    from uuid import uuid4
+
+    from contracts.decision_event import DecisionEvent
+    from database.repositories.decision_persistor import DecisionPersistor
+    from database.session_factory import SessionFactory
+
+    symbol = f"FAILCLS{uuid4().hex[:8]}"
+    old_open = datetime.now(UTC) - timedelta(days=10)
+    now = datetime.now(UTC)
+
+    with SessionFactory.get_session() as session:
+        repo = DecisionPersistor(session)
+        event = DecisionEvent(
+            id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+            final_size=1.0, confidence=0.7, status="open",
+            entry_price=100.0, quantity=1.0, opened_at=old_open,
+            stop_loss_price=99.0, take_profit_price=102.0,
+        )
+        repo.persist(event)
+
+    before = summarize_stop_loss_failures(hours=90)
+
+    with SessionFactory.get_session() as session:
+        repo = DecisionPersistor(session)
+        # planned_target_pct=0.02, mfe_pct=0.008 -> reachability=0.4,
+        # eşiğin altında -> direction_error (test_scenario_a ile aynı girdi).
+        repo.close_position(
+            decision_id=str(event.id), exit_price=99.0, pnl=-1.0, closed_at=now,
+            outcome={"exit_reason": "stop_loss", "mae_pct": -0.015, "mfe_pct": 0.008},
+        )
+
+    after = summarize_stop_loss_failures(hours=90)
+
+    assert after["total_stop_loss_trades"] == before["total_stop_loss_trades"] + 1
+    assert after["direction_error_count"] == before["direction_error_count"] + 1

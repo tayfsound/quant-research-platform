@@ -57,12 +57,17 @@ def summarize_stop_loss_failures(hours: int = 90) -> dict:
     from sqlalchemy import text
 
     with SessionFactory.get_session() as session:
+        # Faz 268-sonrası — gerçek kullanıcı bulgusu: opened_at'a göre
+        # filtrelemek "son N saatte AÇILMIŞ VE stop'a takılmış" işlemleri
+        # sayıyordu — pozisyonlar günlerce açık kalabildiği için "son
+        # dönemde KAPANAN stop-loss'lar" sorusuna (fonksiyonun kendi
+        # amacı) yanlış cevap veriyordu. closed_at'a göre filtreleniyor.
         rows = session.execute(
             text(
                 "SELECT entry_price, stop_loss_price, take_profit_price, outcome "
                 "FROM decisions "
                 "WHERE status = 'closed' AND outcome ->> 'exit_reason' = 'stop_loss' "
-                "AND opened_at >= now() - (:hours || ' hours')::interval "
+                "AND closed_at >= now() - (:hours || ' hours')::interval "
                 "AND (excluded_from_stats IS NULL OR excluded_from_stats = false)"
             ),
             {"hours": hours},
