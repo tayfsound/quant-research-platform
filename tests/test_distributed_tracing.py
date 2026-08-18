@@ -146,3 +146,80 @@ def test_clear_task_context_clears_everything_bound():
     structlog.contextvars.bind_contextvars(cycle_id="whatever", celery_task_id="x")
     _clear_task_context()
     assert structlog.contextvars.get_contextvars() == {}
+
+
+def test_finalize_proposal_logs_a_real_line_carrying_this_symbols_cycle_id():
+    """Kullanıcı isteği: normal (olaysız) bir cycle'da da cycle_id'nin
+    canlı loglarda GERÇEKTEN görünmesi — önceden risk red sebepleri
+    sadece dönüş verisinde duruyordu, hiçbir şey loglanmıyordu."""
+    from unittest.mock import patch
+
+    from structlog.testing import capture_logs
+
+    from contracts.context import CognitiveCycleContext
+    from services.orchestrator import CognitiveOrchestrator
+
+    structlog.contextvars.clear_contextvars()
+    try:
+        orch = CognitiveOrchestrator()
+        ctx = CognitiveCycleContext()
+        ctx.market.symbol = "TRACEFINALIZEUSDT"
+        ctx.risk.evaluation.verdict = "rejected"
+        structlog.contextvars.bind_contextvars(cycle_id=str(ctx.cycle_id), symbol=ctx.market.symbol)
+
+        proposal = {"ctx": ctx, "data": _bars(), "fee": 0.0, "direction": "NEUTRAL"}
+        with patch.object(orch.forward, "calculate", return_value={"pnl": 0.0, "win": False}), \
+                patch.object(orch.engine, "finalize", side_effect=lambda c: c):
+            with capture_logs(processors=[structlog.contextvars.merge_contextvars]) as logs:
+                orch.finalize_proposal(proposal, seed=1)
+
+        matching = [entry for entry in logs if entry["event"] == "cognitive_cycle_completed"]
+        assert len(matching) == 1
+        assert matching[0]["cycle_id"] == str(ctx.cycle_id)
+        assert matching[0]["risk_verdict"] == "rejected"
+    finally:
+        structlog.contextvars.clear_contextvars()
+
+
+def test_run_trading_cycle_task_logs_a_task_level_summary_line():
+    """Kullanıcı isteği: "cycle tamamlandı, N sembol işlendi, M reddedildi"
+    tarzı bir özet — task'ın işlediği TÜM sembolleri tek satırda özetler
+    (celery_task_id/celery_task_name zaten task_prerun sinyaliyle bağlı).
+
+    lock:run_trading_cycle_task GERÇEK Redis'te celery beat'in canlı,
+    aynı anda çalışan kopyasıyla PAYLAŞILAN bir anahtar — test öncesi
+    temizlenmezse, canlı bir cycle tam o sırada kilidi tutuyorsa bu test
+    'skipped: previous_cycle_still_running' ile flaky şekilde geçebilir."""
+    import redis
+
+    from config import get_settings
+    from unittest.mock import MagicMock, patch
+
+    from structlog.testing import capture_logs
+
+    redis.from_url(get_settings().REDIS_URL).delete("lock:run_trading_cycle_task")
+
+    with patch("database.repositories.app_settings_repository.AppSettingsRepository") as mock_repo_cls, \
+            patch("market_data.market_hours.is_market_open", return_value=True), \
+            patch("services.orchestrator.CognitiveOrchestrator") as mock_orch_cls:
+        mock_repo = mock_repo_cls.return_value
+        mock_repo.get.side_effect = lambda key: {
+            "ai_enabled": "true", "watchlist": "TRACETASKAUSDT,TRACETASKBUSDT",
+        }[key]
+
+        mock_orch = mock_orch_cls.return_value
+        mock_orch.run_portfolio_aware_cycle.return_value = [
+            {"symbol": "TRACETASKAUSDT", "direction": "NEUTRAL", "risk_verdict": "rejected"},
+            {"symbol": "TRACETASKBUSDT", "direction": "LONG", "risk_verdict": "approved"},
+        ]
+
+        from services.tasks import run_trading_cycle_task
+
+        with capture_logs(processors=[structlog.contextvars.merge_contextvars]) as logs:
+            result = run_trading_cycle_task()
+
+    matching = [entry for entry in logs if entry["event"] == "trading_cycle_task_completed"]
+    assert len(matching) == 1
+    assert matching[0]["total_symbols"] == 2
+    assert matching[0]["rejected"] == 1
+    assert len(result["cycles"]) == 2

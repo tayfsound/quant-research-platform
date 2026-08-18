@@ -119,6 +119,22 @@ def run_trading_cycle_task(symbol: str | None = None) -> dict:
         cycles = orch.run_portfolio_aware_cycle(open_symbols) if open_symbols else []
         cycles += [{"symbol": s, "skipped": "market_closed"} for s in closed_symbols]
 
+    # Faz 269-sonrası — kullanıcı isteği: distributed tracing'in görünür
+    # olması için task-seviyesi bir özet log satırı — celery_task_id
+    # (task_prerun sinyaliyle zaten bağlı) üzerinden bu task çalışmasının
+    # TÜM sembollerini tek satırda özetler. Her sembolün KENDİ cycle_id'si
+    # ayrıca cognitive_cycle_completed satırında (orchestrator.py) var —
+    # burası N sembol / kaç reddedildi özeti, tek bir cycle_id'ye
+    # indirgenemeyecek toplu bir görünüm.
+    import structlog
+
+    structlog.get_logger().info(
+        "trading_cycle_task_completed",
+        total_symbols=len(cycles),
+        rejected=sum(1 for c in cycles if c.get("risk_verdict") == "rejected"),
+        skipped=sum(1 for c in cycles if c.get("skipped")),
+    )
+
     return {"cycles": [
         {
             "symbol": c.get("symbol"),

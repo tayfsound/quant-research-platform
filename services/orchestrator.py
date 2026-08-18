@@ -653,6 +653,18 @@ class CognitiveOrchestrator:
                 "direction": direction,
             })
 
+        # Faz 269-sonrası — kullanıcı isteği: distributed tracing'in
+        # gerçek log çıktısında görünür olması. build_cognitive_context'in
+        # bind ettiği cycle_id'yi (contextvars) taşıyan, bu sembolün
+        # işlendiği her cycle'da GERÇEKTEN üretilen tek log satırı —
+        # önceden risk red sebepleri sadece dönüş verisinde duruyordu,
+        # normal (olaysız) bir cycle'da hiçbir şey loglanmıyordu.
+        structlog.get_logger().info(
+            "cognitive_cycle_completed",
+            direction=direction,
+            risk_verdict=ctx.risk.evaluation.verdict if ctx.risk.evaluation else "unknown",
+        )
+
         return {
             "direction": direction,
             "size": size,
