@@ -265,6 +265,29 @@ def test_adaptive_barrier_still_respects_the_min_stop_pct_floor(monkeypatch):
         _set_adaptive_barrier_enabled("true")
 
 
+def test_risk_target_stage_skips_all_work_when_final_size_is_zero(monkeypatch):
+    """3. taraf inceleme bulgusu, doğrulandı: MetaStage WAIT dediğinde
+    (final_size=0) bile proposed_direction genelde LONG/SHORT kalıyordu
+    (belief.direction her zaman set edilir) — bu, watchlist'teki her WAIT
+    kararında 2 gereksiz DB sorgusuna (_load_multipliers + _try_adaptive_
+    barrier) yol açıyordu. Artık final_size<=0 anında çıkmalı, hiçbir DB
+    sorgusu yapmamalı."""
+    called = []
+    monkeypatch.setattr(
+        "database.repositories.app_settings_repository.AppSettingsRepository.get",
+        lambda self, key: called.append(key) or "0",
+    )
+
+    ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
+    ctx.decision.final_size = 0.0  # MetaStage WAIT'i taklit ediyor
+
+    result = RiskTargetStage().execute(ctx)
+
+    assert result.decision.stop_loss is None
+    assert result.decision.take_profit is None
+    assert called == []
+
+
 def test_decision_fusion_still_forces_wait_without_risk_target_stage():
     """Regresyon kilidi: RiskTargetStage atlanırsa (eski, bug'lı davranış)
     DecisionFusion hâlâ her zaman WAIT'e zorlamalı — bu testin kendisi

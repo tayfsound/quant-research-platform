@@ -475,6 +475,20 @@ class RiskTargetStage:
     DEFAULT_MIN_STOP_PCT = 0.045
 
     def execute(self, ctx: CognitiveCycleContext) -> CognitiveCycleContext:
+        # 3. taraf inceleme bulgusu — gerçek: PredictiveRiskStage ve
+        # DrawdownSizingStage final_size<=0 (MetaStage WAIT dediğinde,
+        # ör. strong_dissent/sideways_market gate'i) ise hemen çıkıyordu
+        # ama burası SADECE proposed_direction'a bakıyordu — belief.
+        # direction (MetaStage'in WAIT dese bile HER ZAMAN set ettiği,
+        # bkz. MetaStage.execute() sonundaki ctx.decision.proposed_
+        # direction = belief.direction) LONG/SHORT olduğu her WAIT
+        # kararında, sonucu zaten kullanılmayacak stop/target için 2
+        # gereksiz DB sorgusu (_load_multipliers + _try_adaptive_barrier)
+        # çalışıyordu — watchlist'teki her sembol her cycle'da genelde
+        # WAIT olduğu için bu, gerçek bir tekrarlayan israf.
+        if (ctx.decision.final_size or 0.0) <= 0:
+            return ctx
+
         direction = (ctx.decision.proposed_direction or "").upper()
         if direction not in ("LONG", "SHORT"):
             return ctx
