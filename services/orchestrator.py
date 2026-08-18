@@ -730,6 +730,7 @@ class CognitiveOrchestrator:
 
         returns: dict[str, list[float]] = {}
         proposed_sizes: dict[str, float] = {}
+        entry_price_estimates: dict[str, float] = {}
         for sym, p in directional.items():
             closes = [bar.close for bar in p["data"]]
             rets = [
@@ -739,8 +740,24 @@ class CognitiveOrchestrator:
             if len(rets) < 2:
                 continue
             returns[sym] = rets
+            # ctx.decision.final_size bu noktada base-varlık MİKTARI
+            # (örn. kaç adet VET) — orchestrator.py:287'de
+            # capital_per_trade/current_price olarak kuruluyor.
+            # PortfolioFusionStage.fuse() ise proposed_sizes'ı "portföy
+            # DEĞERİNİN fraksiyonu" (0-1 arası ağırlık) olarak bekliyor
+            # (bkz. portfolio_fusion.py docstring'i) — miktarı doğrudan
+            # ağırlık gibi VaR hesabına (weights @ cov @ weights) sokmak
+            # portfolio_var'ı gerçek dışı şişiriyor, scale-down çarpanı
+            # neredeyse sıfıra çöküyor ve HER pozisyon boyutu centin
+            # altına düşüyor (gerçek bulgu: notional $0.01-$0.20 arası,
+            # olması gereken ~$40-250 yerine). Fusion'a girmeden önce
+            # notional'a (miktar*fiyat) çevirip starting_capital'a
+            # bölerek gerçek bir ağırlık fraksiyonu üretiyoruz.
+            entry_price_estimates[sym] = closes[-1]
             sign = 1.0 if p["direction"] == "LONG" else -1.0
-            proposed_sizes[sym] = sign * (p["ctx"].decision.final_size or 0.0)
+            quantity = p["ctx"].decision.final_size or 0.0
+            notional = quantity * entry_price_estimates[sym]
+            proposed_sizes[sym] = sign * (notional / starting_capital) if starting_capital else 0.0
 
         if len(returns) < 2:
             return
@@ -825,8 +842,11 @@ class CognitiveOrchestrator:
         )
 
         if result.scaled_down:
-            for sym, signed_size in result.final_sizes.items():
-                directional[sym]["ctx"].decision.final_size = abs(signed_size)
+            for sym, signed_weight in result.final_sizes.items():
+                price = entry_price_estimates.get(sym)
+                if not price:
+                    continue
+                directional[sym]["ctx"].decision.final_size = abs(signed_weight) * starting_capital / price
 
     def _build_context(
         self,

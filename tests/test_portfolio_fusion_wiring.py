@@ -234,6 +234,42 @@ def test_apply_portfolio_fusion_does_not_discount_confidence_when_effective_numb
         assert directional["ETHUSDT"]["ctx"].decision.confidence == 0.8
 
 
+def test_apply_portfolio_fusion_does_not_collapse_realistic_quantities_to_near_zero():
+    """Gerçek canlı bulgu (2026-08-18): final_size bu noktada base-varlık
+    MİKTARI (örn. 10000 VET), ama PortfolioFusionStage.fuse() proposed_
+    sizes'ı "portföy değerinin fraksiyonu" (0-1 ağırlık) olarak bekliyor.
+    Miktarı doğrudan ağırlık gibi weights@cov@weights VaR hesabına sokmak
+    (eski davranış) portfolio_var'ı gerçek dışı şişiriyordu (örn. 10000
+    büyüklüğünde bir "ağırlık" tek başına VaR limitini binlerce kat aşar),
+    scale-down çarpanı neredeyse sıfıra çöküyor ve GERÇEK açık
+    pozisyonlarda notional $0.01-$0.20 arasına düşüyordu (olması gereken
+    ~$50 yerine). Ucuz bir sembol (fiyat ~0.005, VET'e benzer) ve makul
+    bir sermaye/limit ile: gevşek bir VaR limitinde bu miktarlar
+    KIRPILMAMALI."""
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        orch = CognitiveOrchestrator()
+
+        directional = {
+            "VETUSDT": {
+                "ctx": _fake_ctx("VETUSDT", "LONG", 10000.0),
+                "data": _correlated_bars(base=0.005, seed=1), "direction": "LONG",
+            },
+            "ALGOUSDT": {
+                "ctx": _fake_ctx("ALGOUSDT", "SHORT", 10000.0),
+                "data": _correlated_bars(base=0.005, seed=2), "direction": "SHORT",
+            },
+        }
+
+        with patch("database.repositories.app_settings_repository.AppSettingsRepository.get") as mock_get:
+            mock_get.side_effect = lambda key: {"starting_capital": "1000", "max_portfolio_var_pct": "0.5"}[key]
+            orch._apply_portfolio_fusion(directional)
+
+        # Gevşek limitte hiç ölçeklenmemeli — miktar 10000'e yakın kalmalı,
+        # eski birim hatasındaki gibi ~30'a çökmemeli.
+        assert directional["VETUSDT"]["ctx"].decision.final_size > 5000.0
+        assert directional["ALGOUSDT"]["ctx"].decision.final_size > 5000.0
+
+
 def test_run_portfolio_aware_cycle_finalizes_every_symbol_and_applies_fusion_when_multiple_directional():
     with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
         orch = CognitiveOrchestrator()
