@@ -17,6 +17,7 @@ const GROUPS: { label: string; items: { key: string; label: string }[] }[] = [
       { key: "feature-ic", label: "Feature IC" },
       { key: "self-model", label: "Self-Model" },
       { key: "causal-inference", label: "Causal Inference" },
+      { key: "collective-intelligence", label: "Collective Intelligence" },
       { key: "llm-critic", label: "Respond" },
     ],
   },

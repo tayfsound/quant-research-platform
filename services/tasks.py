@@ -429,6 +429,31 @@ def refresh_causal_inference_report_task() -> dict:
     return {"id": str(report.id), "significant_relationship_count": len(result.get("significant_relationships", []))}
 
 
+@celery_app.task(name="refresh_collective_intelligence_report_task")
+def refresh_collective_intelligence_report_task() -> dict:
+    """Cognitive Core 10.0 — kullanıcı isteği: council'i hiç etkilemeyen,
+    ölçüm-only roadmap modüllerini birer birer canlıya alalım. Causal
+    Inference'tan sonraki Grup B adayı: Collective Intelligence
+    (analytics/collective_intelligence.py, Faz 971-1000) — Condorcet'in
+    Jüri Teoremi ile 10-ajanlı council'in toplamının GERÇEKTEN en iyi
+    tekil ajandan daha isabetli olup olmadığını doğrular. SADECE ölçüm/
+    kayıt — hiçbir ajan ağırlığını değiştirmiyor."""
+    from contracts.collective_intelligence_report import CollectiveIntelligenceReport
+    from database.repositories.collective_intelligence_report_repository import (
+        CollectiveIntelligenceReportRepository,
+    )
+    from database.session_factory import SessionFactory
+    from services.collective_intelligence_gatherer import gather_collective_intelligence
+
+    result = gather_collective_intelligence()
+    with SessionFactory.get_session() as session:
+        report = CollectiveIntelligenceReport(result=result)
+        CollectiveIntelligenceReportRepository(session).save(report)
+
+    condorcet = result.get("condorcet") or {}
+    return {"id": str(report.id), "collective_beats_best_individual": condorcet.get("collective_beats_best_individual")}
+
+
 @celery_app.task(name="ingest_order_book_task")
 def ingest_order_book_task() -> dict:
     """Faz 201: gerçek bulgu — market_data/ingestion/pipeline.py::

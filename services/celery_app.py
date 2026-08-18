@@ -220,4 +220,10 @@ celery_app.conf.beat_schedule = {
         "task": "refresh_causal_inference_report_task",
         "schedule": 604800.0,
     },
+    # Cognitive Core 10.0 — Collective Intelligence: Causal Inference'tan
+    # sonraki dördüncü ölçüm-only Grup B adayı (Condorcet'in Jüri Teoremi).
+    "refresh-collective-intelligence-report-weekly": {
+        "task": "refresh_collective_intelligence_report_task",
+        "schedule": 604800.0,
+    },
 }
