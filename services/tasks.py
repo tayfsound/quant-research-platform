@@ -454,6 +454,29 @@ def refresh_collective_intelligence_report_task() -> dict:
     return {"id": str(report.id), "collective_beats_best_individual": condorcet.get("collective_beats_best_individual")}
 
 
+@celery_app.task(name="refresh_mae_mfe_confidence_report_task")
+def refresh_mae_mfe_confidence_report_task() -> dict:
+    """Cognitive Core 2.0 (Faz 469-493) — kullanıcı isteği: council'i hiç
+    etkilemeyen, ölçüm-only roadmap modüllerini birer birer canlıya
+    alalım. Collective Intelligence'tan sonraki Grup B adayı: MAE/MFE
+    Bootstrap Güven Aralığı (analytics/mae_mfe_scientific.py) — mevcut
+    nokta tahminlerinin (p90 MAE gibi) GERÇEK belirsizliğini raporlar.
+    SADECE ölçüm/kayıt — hiçbir SL/TP kararını değiştirmiyor."""
+    from contracts.mae_mfe_confidence_report import MaeMfeConfidenceReport
+    from database.repositories.mae_mfe_confidence_report_repository import (
+        MaeMfeConfidenceReportRepository,
+    )
+    from database.session_factory import SessionFactory
+    from services.mae_mfe_confidence_gatherer import gather_mae_mfe_confidence
+
+    result = gather_mae_mfe_confidence()
+    with SessionFactory.get_session() as session:
+        report = MaeMfeConfidenceReport(result=result)
+        MaeMfeConfidenceReportRepository(session).save(report)
+
+    return {"id": str(report.id), "total_trades": result.get("total_trades"), "group_count": len(result.get("confidence_intervals") or {})}
+
+
 @celery_app.task(name="ingest_order_book_task")
 def ingest_order_book_task() -> dict:
     """Faz 201: gerçek bulgu — market_data/ingestion/pipeline.py::

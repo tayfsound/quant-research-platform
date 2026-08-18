@@ -62,6 +62,11 @@ def _extract_real_trades_for_barrier_table(window: int = DEFAULT_WINDOW) -> list
             "mfe_pct": outcome.get("mfe_pct"),
             "time_to_mae_seconds": outcome.get("time_to_mae_seconds"),
             "time_to_mfe_seconds": outcome.get("time_to_mfe_seconds"),
+            # compute_optimal_barrier bunu kullanmıyor ama compute_
+            # conditional_mae_distribution (services/mae_mfe_confidence_
+            # gatherer.py) win_rate için gerektiriyor — tek gerçek veri
+            # kaynağı, iki tüketici.
+            "win": outcome.get("win"),
         })
 
     return trades

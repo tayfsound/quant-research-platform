@@ -15,6 +15,7 @@ import FeatureIC from './views/FeatureIC';
 import SelfModel from './views/SelfModel';
 import CausalInference from './views/CausalInference';
 import CollectiveIntelligence from './views/CollectiveIntelligence';
+import MaeMfeConfidence from './views/MaeMfeConfidence';
 import Sidebar from './components/Sidebar';
 import { clearToken, hasToken } from './api/auth';
 
@@ -70,6 +71,7 @@ function App() {
           {view === 'self-model' && <SelfModel />}
           {view === 'causal-inference' && <CausalInference />}
           {view === 'collective-intelligence' && <CollectiveIntelligence />}
+          {view === 'mae-mfe-confidence' && <MaeMfeConfidence />}
         </div>
       </main>
     </div>

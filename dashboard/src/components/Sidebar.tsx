@@ -18,6 +18,7 @@ const GROUPS: { label: string; items: { key: string; label: string }[] }[] = [
       { key: "self-model", label: "Self-Model" },
       { key: "causal-inference", label: "Causal Inference" },
       { key: "collective-intelligence", label: "Collective Intelligence" },
+      { key: "mae-mfe-confidence", label: "MAE/MFE Güven Aralığı" },
       { key: "llm-critic", label: "Respond" },
     ],
   },

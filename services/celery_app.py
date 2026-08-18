@@ -226,4 +226,10 @@ celery_app.conf.beat_schedule = {
         "task": "refresh_collective_intelligence_report_task",
         "schedule": 604800.0,
     },
+    # Cognitive Core 2.0 (Faz 469-493) — MAE/MFE Bootstrap Güven Aralığı:
+    # Collective Intelligence'tan sonraki beşinci ölçüm-only Grup B adayı.
+    "refresh-mae-mfe-confidence-report-weekly": {
+        "task": "refresh_mae_mfe_confidence_report_task",
+        "schedule": 604800.0,
+    },
 }
