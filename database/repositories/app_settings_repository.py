@@ -271,9 +271,20 @@ DEFAULTS: dict[str, str] = {
     # bir değere kırpılabilir — AskUserQuestion ile onaylanan "aynı
     # güvenlik kilidi uygulansın" kararı.
     "pump_fade_leverage": "5",
-    # "%100 yapmış" — min_gain_pct=1.0, lookback penceresindeki EN DÜŞÜK
-    # kapanıştan güncel kapanışa göre ölçülen kazanç oranı.
-    "pump_fade_min_gain_pct": "1.0",
+    # Faz 268-sonrası — kullanıcı isteği: "pump işlemlerinde girmek için
+    # matematiksel olarak makul bir seviye." Gerçek piyasa-geneli analiz
+    # (527 USDT perpetual, hem 90 günlük hem sembol başına mevcut TÜM
+    # geçmiş — 456 gün ortalama, TOPLAM 58.706 gerçek pump olayı, swing-
+    # low'dan swing-high'a %10+ hareketler) gösterdi ki eski %100 eşiği
+    # gerçekleşen pump'ların ~%99'unu, hatta önceki %50 eşiği bile
+    # ~%90'ını hiç yakalamıyordu — medyan pump SADECE %15.1-15.4
+    # (iki bağımsız örneklemde tutarlı) civarında tepe yapıp kâr
+    # realizasyonuna dönüyor (p25=%12, p75=%22, p90=%35-39). %15 —
+    # medyan pump'ın tam yarısının zaten tepe yaptığı, istatistiksel
+    # olarak savunulabilir bir eşik. min_gain_pct=1.0, lookback
+    # penceresindeki EN DÜŞÜK kapanıştan güncel kapanışa göre ölçülen
+    # kazanç oranı (1.0 = %100).
+    "pump_fade_min_gain_pct": "0.15",
     # "son iki gün" — 48 saat, 1 saatlik mumlarla taranıyor.
     "pump_fade_lookback_hours": "48",
     # Faz 268-sonrası — kritik tasarım kararı: kullanıcı çıkışı ("%100
