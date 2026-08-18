@@ -224,12 +224,57 @@ const TRADE_TYPE_LABELS: Record<string, string> = {
 // kayboluyordu.
 const TRADE_TYPE_ORDER = ["scalp", "gun_ici", "swing", "orta_vadeli", "hedge", "pump_fade"];
 
+// Kullanıcı isteği: "işlem türüne göre açık pozisyonlar diye bir yer
+// eklemişsin güzel ama kapanmış işlemlerin olduğu kısıma ratioları
+// eklememişsin oradaki bilgiye de ihtiyacım var." Açık pozisyonlar için
+// yazılan tablo, hem açık hem kapanmış için tekrar kullanılabilsin diye
+// ortak bir bileşene çıkarıldı.
+function TradeTypeBreakdownTable({ title, description, rows }: { title: string; description: string; rows: TradeTypeBreakdownRow[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <Card className="mb-6">
+      <h3 className="text-sm font-semibold text-ink mb-1">{title}</h3>
+      <p className="text-xs text-ink-soft mb-3">{description}</p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-left text-ink-faint border-b border-line-soft">
+              <th className="py-2 pr-4">İşlem türü</th>
+              <th className="py-2 pr-4">Long</th>
+              <th className="py-2 pr-4">Short</th>
+              <th className="py-2 pr-4">Toplam</th>
+              <th className="py-2 pr-4">Long oranı</th>
+            </tr>
+          </thead>
+          <tbody>
+            {TRADE_TYPE_ORDER.filter((t) => rows.some((r) => r.trade_type === t)).map((type) => {
+              const long = rows.find((r) => r.trade_type === type && r.direction === "LONG")?.position_count ?? 0;
+              const short = rows.find((r) => r.trade_type === type && r.direction === "SHORT")?.position_count ?? 0;
+              const total = long + short;
+              return (
+                <tr key={type} className="border-b border-line-soft/50">
+                  <td className="py-2 pr-4 text-ink font-medium">{TRADE_TYPE_LABELS[type] || type}</td>
+                  <td className="py-2 pr-4 text-rise">{long}</td>
+                  <td className="py-2 pr-4 text-fall">{short}</td>
+                  <td className="py-2 pr-4 text-ink-soft">{total}</td>
+                  <td className="py-2 pr-4 text-ink-soft">{total > 0 ? `%${((long / total) * 100).toFixed(0)}` : "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
 export default function Dashboard() {
   const [settings, setSettings] = useState<SettingsMap>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openCount, setOpenCount] = useState(0);
   const [typeBreakdown, setTypeBreakdown] = useState<TradeTypeBreakdownRow[]>([]);
+  const [closedTypeBreakdown, setClosedTypeBreakdown] = useState<TradeTypeBreakdownRow[]>([]);
   const [perf, setPerf] = useState<PerformanceData | null>(null);
   const [periodTab, setPeriodTab] = useState<"daily" | "weekly" | "monthly" | "yearly">("daily");
   // Faz 268f-sonrası: kullanıcı bulgusu — zero-fill düzeltmesiyle her
@@ -313,6 +358,10 @@ export default function Dashboard() {
       .then((r) => r.json())
       .then((data) => setTypeBreakdown(data.breakdown || []))
       .catch(() => setTypeBreakdown([]));
+    fetch("/api/v1/trades/breakdown-by-type", { headers: authHeaders() })
+      .then((r) => r.json())
+      .then((data) => setClosedTypeBreakdown(data.breakdown || []))
+      .catch(() => setClosedTypeBreakdown([]));
     fetch("/api/v1/performance", { headers: authHeaders() })
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -511,44 +560,17 @@ export default function Dashboard() {
             />
           </div>
 
-          {typeBreakdown.length > 0 && (
-            <Card className="mb-6">
-              <h3 className="text-sm font-semibold text-ink mb-1">İşlem türüne göre açık pozisyonlar</h3>
-              <p className="text-xs text-ink-soft mb-3">
-                Scalp/gün içi/orta vadeli/swing stop mesafesine ve zaman dilimine göre; Pump-Fade ve hedge
-                kendi mekanik stratejilerinin etiketiyle ayrılıyor (bkz. Transactions'taki aynı rozetler).
-              </p>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="text-left text-ink-faint border-b border-line-soft">
-                      <th className="py-2 pr-4">İşlem türü</th>
-                      <th className="py-2 pr-4">Long</th>
-                      <th className="py-2 pr-4">Short</th>
-                      <th className="py-2 pr-4">Toplam</th>
-                      <th className="py-2 pr-4">Long oranı</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {TRADE_TYPE_ORDER.filter((t) => typeBreakdown.some((r) => r.trade_type === t)).map((type) => {
-                      const long = typeBreakdown.find((r) => r.trade_type === type && r.direction === "LONG")?.position_count ?? 0;
-                      const short = typeBreakdown.find((r) => r.trade_type === type && r.direction === "SHORT")?.position_count ?? 0;
-                      const total = long + short;
-                      return (
-                        <tr key={type} className="border-b border-line-soft/50">
-                          <td className="py-2 pr-4 text-ink font-medium">{TRADE_TYPE_LABELS[type] || type}</td>
-                          <td className="py-2 pr-4 text-rise">{long}</td>
-                          <td className="py-2 pr-4 text-fall">{short}</td>
-                          <td className="py-2 pr-4 text-ink-soft">{total}</td>
-                          <td className="py-2 pr-4 text-ink-soft">{total > 0 ? `%${((long / total) * 100).toFixed(0)}` : "—"}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          )}
+          <TradeTypeBreakdownTable
+            title="İşlem türüne göre açık pozisyonlar"
+            description="Scalp/gün içi/orta vadeli/swing stop mesafesine ve zaman dilimine göre; Pump-Fade ve hedge kendi mekanik stratejilerinin etiketiyle ayrılıyor (bkz. Transactions'taki aynı rozetler)."
+            rows={typeBreakdown}
+          />
+
+          <TradeTypeBreakdownTable
+            title="İşlem türüne göre kapanmış işlemler"
+            description="Aynı sınıflandırma, kapanmış işlemler üzerinden — hangi türün ne kadarı long/short olarak alınmış, gerçekleşmiş."
+            rows={closedTypeBreakdown}
+          />
 
           <p className="text-xs text-ink-soft mb-4">
             Kasa büyüklüğüne göre ROI: %{(perf.all_time.roi_pct * 100).toFixed(6)} (sermaye:{" "}

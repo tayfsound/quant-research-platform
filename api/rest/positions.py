@@ -178,6 +178,18 @@ def positions_breakdown_by_type(user: AuthContext = Depends(get_current_user)):
     return {"breakdown": rows}
 
 
+@router.get("/trades/breakdown-by-type")
+def trades_breakdown_by_type(user: AuthContext = Depends(get_current_user)):
+    """Kullanıcı isteği: "kapanmış işlemlerin olduğu kısıma ratioları
+    eklememişsin oradaki bilgiye de ihtiyacım var" — yukarıdaki açık
+    pozisyon kırılımının kapanmış işlemler karşılığı, AYNI SQL
+    agregasyonu (bkz. decision_persistor.py::closed_trade_breakdown_
+    by_trade_type())."""
+    with SessionFactory.get_session() as session:
+        rows = DecisionPersistor(session).closed_trade_breakdown_by_trade_type()
+    return {"breakdown": rows}
+
+
 @router.get("/positions/{decision_id}/explain")
 def explain_position(decision_id: str, user: AuthContext = Depends(get_current_user)):
     """Faz 268-sonrası — kullanıcı isteği: "hangi ajandan ne karar geldiğini

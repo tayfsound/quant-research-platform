@@ -208,6 +208,16 @@ class DecisionPersistor:
         tek bir SQL agregasyonuyla aynı önceliklendirme sırasıyla
         (pump_fade > hedge > orta_vadeli > scalp/gün içi/swing)
         tekrarlanıyor — sonuç grup sayıları, tek tek pozisyon değil."""
+        return self._breakdown_by_trade_type("open")
+
+    def closed_trade_breakdown_by_trade_type(self) -> list[dict]:
+        """Kullanıcı isteği: "kapanmış işlemlerin olduğu kısıma ratioları
+        eklememişsin oradaki bilgiye de ihtiyacım var" — açık pozisyonlar
+        için yazılan open_position_breakdown_by_trade_type() ile AYNI
+        agregasyon, sadece status='closed' üzerinde."""
+        return self._breakdown_by_trade_type("closed")
+
+    def _breakdown_by_trade_type(self, status: str) -> list[dict]:
         rows = self.session.execute(
             text("""
                 SELECT trade_type, direction, count(*) AS position_count
@@ -231,12 +241,13 @@ class DecisionPersistor:
                             ELSE NULL
                         END AS trade_type
                     FROM decisions
-                    WHERE status = 'open'
+                    WHERE status = :status
                 ) classified
                 WHERE trade_type IS NOT NULL
                 GROUP BY trade_type, direction
                 ORDER BY trade_type, direction
-            """)
+            """),
+            {"status": status},
         ).mappings().all()
 
         return [dict(r) for r in rows]
