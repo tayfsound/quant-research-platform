@@ -265,6 +265,85 @@ def test_adaptive_barrier_still_respects_the_min_stop_pct_floor(monkeypatch):
         _set_adaptive_barrier_enabled("true")
 
 
+def _set_adaptive_barrier_ab_test_enabled(value: str) -> None:
+    from database.repositories.app_settings_repository import AppSettingsRepository
+    from database.session_factory import SessionFactory
+
+    with SessionFactory.get_session() as session:
+        AppSettingsRepository(session).set("adaptive_barrier_ab_test_enabled", value, updated_by="test")
+
+
+def test_adaptive_barrier_ab_test_tags_control_bucket_and_falls_back_to_static(monkeypatch):
+    """3. taraf inceleme bulgusu, kullanıcı isteği: adaptive_barrier_
+    enabled varsayılan AÇIK olduğu için, barrier tablosu ilk kez
+    dolduğu an sistem hiç karşılaştırma fırsatı olmadan %100 adaptive'e
+    geçecekti. ab_test açıkken control kovasına düşen bir karar, tablo
+    gerçekten var ve eşleşse bile İSTATİSTİKSEL BASELINE için statik
+    ATR'ye düşmeli — ve decisions.experiment_bucket'a etiketlenmeli."""
+    from analytics.barrier_table_repository import BarrierTableRepository
+
+    stored = {
+        "sample_count": 250,
+        "group_by": ["direction", "regime", "volatility_regime"],
+        "table": {"direction=LONG|regime=bull_trend|volatility_regime=normal": {"sl_pct": 0.06, "tp_pct": 0.05}},
+    }
+    monkeypatch.setattr(BarrierTableRepository, "get_latest", lambda self: stored)
+    monkeypatch.setattr("services.ab_testing.assign_bucket", lambda control_weight=0.5: "control")
+    _set_adaptive_barrier_ab_test_enabled("true")
+    try:
+        ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
+        ctx.market.features = {
+            "daily_atr_pct": 0.02, "long_term_trend_regime": "bull_trend", "volatility_regime": "normal",
+        }
+        ctx = RiskTargetStage().execute(ctx)
+
+        assert abs(ctx.decision.stop_loss - 5.0) < 1e-9  # statik: 100 * 2.5 * 0.02, adaptive DEĞİL (6.0)
+        entries = [i for i in ctx.cognition.relevant_knowledge if i.get("type") == "experiment_bucket"]
+        assert len(entries) == 1
+        assert entries[0]["data"]["bucket"] == "adaptive_barrier_v1:control"
+    finally:
+        _set_adaptive_barrier_ab_test_enabled("false")
+
+
+def test_adaptive_barrier_ab_test_tags_treatment_bucket_and_uses_adaptive(monkeypatch):
+    """AYNI test, treatment kovası — gerçekten adaptive öneriyi kullanmalı
+    ve 'adaptive_barrier_v1:treatment' olarak etiketlenmeli."""
+    from analytics.barrier_table_repository import BarrierTableRepository
+
+    stored = {
+        "sample_count": 250,
+        "group_by": ["direction", "regime", "volatility_regime"],
+        "table": {"direction=LONG|regime=bull_trend|volatility_regime=normal": {"sl_pct": 0.06, "tp_pct": 0.05}},
+    }
+    monkeypatch.setattr(BarrierTableRepository, "get_latest", lambda self: stored)
+    monkeypatch.setattr("services.ab_testing.assign_bucket", lambda control_weight=0.5: "treatment")
+    _set_adaptive_barrier_ab_test_enabled("true")
+    try:
+        ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
+        ctx.market.features = {
+            "daily_atr_pct": 0.02, "long_term_trend_regime": "bull_trend", "volatility_regime": "normal",
+        }
+        ctx = RiskTargetStage().execute(ctx)
+
+        assert abs(ctx.decision.stop_loss - 6.0) < 1e-9  # adaptive: 100 * 0.06
+        entries = [i for i in ctx.cognition.relevant_knowledge if i.get("type") == "experiment_bucket"]
+        assert len(entries) == 1
+        assert entries[0]["data"]["bucket"] == "adaptive_barrier_v1:treatment"
+    finally:
+        _set_adaptive_barrier_ab_test_enabled("false")
+
+
+def test_adaptive_barrier_ab_test_disabled_by_default_no_tagging():
+    """Varsayılan (ab_test kapalı) — hiçbir experiment_bucket etiketi
+    eklenmemeli, mevcut statik davranış hiç değişmemeli (regresyon
+    kilidi)."""
+    ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
+    ctx = RiskTargetStage().execute(ctx)
+
+    entries = [i for i in ctx.cognition.relevant_knowledge if i.get("type") == "experiment_bucket"]
+    assert entries == []
+
+
 def test_risk_target_stage_skips_all_work_when_final_size_is_zero(monkeypatch):
     """3. taraf inceleme bulgusu, doğrulandı: MetaStage WAIT dediğinde
     (final_size=0) bile proposed_direction genelde LONG/SHORT kalıyordu

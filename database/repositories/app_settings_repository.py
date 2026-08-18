@@ -267,6 +267,17 @@ DEFAULTS: dict[str, str] = {
     # Bu yüzden varsayılan AÇIK — kendi kendine, veri birikince devreye
     # girecek (bkz. services/tasks.py::refresh_barrier_table_task).
     "adaptive_barrier_enabled": "true",
+    # Faz 269-sonrası — 3. taraf inceleme bulgusu: adaptive_barrier_enabled
+    # AÇIK olduğu için, barrier tablosu ilk kez dolduğu an (şu an 100/200
+    # gerçek kapanış — yakında) sistem HİÇ karşılaştırma fırsatı olmadan
+    # anında %100 adaptive'e geçecekti. multi_timeframe_cascade_ab_test_
+    # enabled ile AYNI desen: açıksa statik anahtarın yerine HER karar
+    # bağımsız rastgele control (statik ATR)/treatment (adaptive, tablo
+    # varsa) kovasına atanır, decisions.experiment_bucket'a etiketlenir —
+    # services/ab_testing.py::evaluate_experiment gerçek kapanmış
+    # işlemlerle karşılaştırabilsin diye. Varsayılan kapalı — opt-in,
+    # tablo dolana kadar zaten hiçbir fark yaratmaz.
+    "adaptive_barrier_ab_test_enabled": "false",
     # Faz 268-sonrası — kullanıcı isteği: "farklı bir tipte işlem takip
     # edecek bir modül... AI karar/confidence ile işi olmayan, mevcut
     # sistemden yalıtık." bkz. services/pump_fade_strategy.py — market

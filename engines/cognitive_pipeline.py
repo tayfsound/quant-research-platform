@@ -529,14 +529,36 @@ class RiskTargetStage:
         yoksa, ya da kararın düştüğü koşul kovası (yön/rejim/volatilite)
         için yeterli örneklemli/kararlı bir öneri yoksa None — çağıran
         taraf statik ATR hesabına düşer. Hiçbir hata burada yukarı
-        fırlatılmaz (fail-closed, adaptive öneri asla zorunlu değil)."""
+        fırlatılmaz (fail-closed, adaptive öneri asla zorunlu değil).
+
+        Faz 269-sonrası — 3. taraf inceleme bulgusu: adaptive_barrier_
+        enabled varsayılan AÇIK olduğu için, barrier tablosu ilk kez
+        dolduğu an sistem hiç karşılaştırma fırsatı olmadan %100
+        adaptive'e geçecekti. adaptive_barrier_ab_test_enabled açıksa
+        (multi_timeframe_cascade_ab_test_enabled ile AYNI desen), statik
+        anahtarın yerine HER karar bağımsız rastgele control (statik
+        ATR)/treatment (adaptive) kovasına atanır ve decisions.
+        experiment_bucket'a etiketlenir."""
         try:
             from database.repositories.app_settings_repository import AppSettingsRepository
             from database.session_factory import SessionFactory
 
             with SessionFactory.get_session() as session:
-                enabled = AppSettingsRepository(session).get("adaptive_barrier_enabled") == "true"
-            if not enabled:
+                settings_repo = AppSettingsRepository(session)
+                enabled = settings_repo.get("adaptive_barrier_enabled") == "true"
+                ab_test_enabled = settings_repo.get("adaptive_barrier_ab_test_enabled") == "true"
+
+            if ab_test_enabled:
+                from services.ab_testing import assign_bucket
+
+                bucket = assign_bucket()
+                ctx.cognition.relevant_knowledge.append({
+                    "type": "experiment_bucket",
+                    "data": {"bucket": f"adaptive_barrier_v1:{bucket}"},
+                })
+                if bucket == "control":
+                    return None
+            elif not enabled:
                 return None
 
             from analytics.adaptive_barrier_engine import recommend_barrier
