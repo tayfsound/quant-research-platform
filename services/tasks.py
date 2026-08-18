@@ -588,7 +588,7 @@ def run_real_backtest_task(
     timeframe: str = "15m",
     bars_count: int = 1000,
     lookback: int = 100,
-    max_forward_bars: int = 200,
+    max_forward_bars: int | None = None,
     capital_per_trade: float = 1000.0,
 ) -> dict:
     """Faz 236: kullanıcı isteği — "Backtests'i gerçek veri ile çalışır
@@ -628,7 +628,7 @@ def run_portfolio_backtest_task(
     timeframe: str = "15m",
     bars_count: int = 1000,
     lookback: int = 100,
-    max_forward_bars: int = 200,
+    max_forward_bars: int | None = None,
     starting_capital: float = 10000.0,
     max_concurrent_positions: int = 5,
     max_capital_pct: float = 0.5,

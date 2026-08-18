@@ -110,6 +110,34 @@ _TIMEFRAME_TO_TIMEDELTA: dict[str, timedelta] = {
     "1d": timedelta(days=1),
 }
 
+# Kullanıcı bulgusu — TEKRARLANAN "sıfır işlem" şikayeti (Faz 268d'nin
+# yukarıdaki düzeltmesinden SONRA bile devam ediyordu): risk hedefi artık
+# doğru bar setinden (1h/4h ATR) kuruluyordu, ama max_forward_bars=200
+# HER zaman diliminde AYNI SABİT bar sayısıydı — bu sayının temsil ettiği
+# GERÇEK SÜRE zaman dilimine göre 16 kat farklılaşıyor (15m'de 50 saat,
+# 4h'de 33 gün). Gerçek fiyat verisiyle ölçüldü (BTCUSDT, %2.18'lik
+# hedefe 200 bar içinde ulaşma oranı): 5m -> %0, 15m -> %45, 1h/4h ->
+# %100. Yani hedef günlük ATR ölçeğinde bir hareket gerektiriyor ama
+# hızlı zaman dilimlerinde 200 bar buna yetecek gerçek zamanı hiç
+# vermiyor — sistem pozisyon AÇIYOR ama hiçbiri kapanma şansı bulamıyor.
+#
+# Çözüm: max_forward_bars artık zaman dilimine göre, GERÇEK SÜREYİ sabit
+# tutacak şekilde ölçekleniyor (10 gün — 1h'nin kendi 200-bar'lık
+# penceresinin (8.3 gün) hafif üstünde, ölçülen ihtiyacı karşılıyor).
+# max_forward_bars'ın kendisi backtest hızını YAVAŞLATMAZ — sadece
+# _simulate_real_exit'in (tek seferde çekilmiş bar dizisi üzerinde
+# çalışan, ağ çağrısı yapmayan) arama penceresini genişletir; gerçek
+# CognitiveEngine çağrı sayısı bars_count/lookback'e bağlı, buna değil.
+# 1h/4h/1d'de zaten ölçülen %100 başarıyı bozmamak için ASLA eski sabit
+# (200) DEĞERİN ALTINA inmiyor, sadece hızlı zaman dilimlerinde artırıyor.
+DEFAULT_MAX_FORWARD_WINDOW = timedelta(days=10)
+
+
+def _default_max_forward_bars(timeframe: str) -> int:
+    bar_duration = _TIMEFRAME_TO_TIMEDELTA.get(timeframe, timedelta(days=1))
+    scaled = int(DEFAULT_MAX_FORWARD_WINDOW / bar_duration)
+    return max(scaled, DEFAULT_MAX_FORWARD_BARS)
+
 
 async def fetch_real_history(symbol: str, timeframe: str, limit: int) -> list[OHLCV]:
     adapter = BinanceAdapter()
@@ -254,7 +282,7 @@ def run_real_backtest(
     timeframe: str = "15m",
     bars_count: int = 1000,
     lookback: int = DEFAULT_LOOKBACK,
-    max_forward_bars: int = DEFAULT_MAX_FORWARD_BARS,
+    max_forward_bars: int | None = None,
     capital_per_trade: float = 1000.0,
     engine: CognitiveEngine | None = None,
     agent_memory=None,
@@ -295,6 +323,14 @@ def run_real_backtest(
     burada da devrede. Kill switch'in KENDİSİ (GÜVENLİK: bkz. aşağıdaki
     not) RiskEngine üzerinden DEĞİL, bu döngünün kendi seviyesinde simüle
     ediliyor."""
+    # Kullanıcı bulgusu — bkz. DEFAULT_MAX_FORWARD_WINDOW'un üstündeki not:
+    # max_forward_bars verilmezse zaman dilimine göre (GERÇEK süreyi sabit
+    # tutacak şekilde) ölçeklenir — 200'lük eski sabit sadece 1h/4h/1d'de
+    # yeterliydi, 5m/15m'de hiçbir kararın kapanma şansı bulamamasına
+    # yol açıyordu.
+    if max_forward_bars is None:
+        max_forward_bars = _default_max_forward_bars(timeframe)
+
     engine = engine or CognitiveEngine()
 
     # Kullanıcı bulgusu — TEKRARLANAN "sıfır işlem" şikayeti: dashboard'un
@@ -592,7 +628,7 @@ def run_real_backtest_multi(
     timeframe: str = "15m",
     bars_count: int = 1000,
     lookback: int = DEFAULT_LOOKBACK,
-    max_forward_bars: int = DEFAULT_MAX_FORWARD_BARS,
+    max_forward_bars: int | None = None,
     capital_per_trade: float = 1000.0,
     feed_agent_learning: bool = False,
 ) -> dict:
@@ -707,7 +743,7 @@ def run_portfolio_backtest(
     timeframe: str = "15m",
     bars_count: int = 1000,
     lookback: int = DEFAULT_LOOKBACK,
-    max_forward_bars: int = DEFAULT_MAX_FORWARD_BARS,
+    max_forward_bars: int | None = None,
     starting_capital: float = 10000.0,
     max_concurrent_positions: int = 5,
     max_capital_pct: float = 0.5,
@@ -731,6 +767,9 @@ def run_portfolio_backtest(
     olarak hizalıdır (hepsi aynı :00/:15/:30 UTC'de başlar), bu yüzden
     pratikte doğru, ama hiçbir sembolde eksik/boş bar olmadığı varsayımına
     dayanıyor."""
+    if max_forward_bars is None:
+        max_forward_bars = _default_max_forward_bars(timeframe)
+
     engine = CognitiveEngine()
     fee_engine = FeeEngine()
     slippage_model = SlippageModel()

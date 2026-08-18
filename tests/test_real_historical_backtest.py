@@ -5,11 +5,46 @@ Küçük bar sayısı: her walk-forward adımı gerçek bir CognitiveEngine.run(
 (gerçek embedding hesaplaması dahil) çalıştırıyor, testin makul sürede
 bitmesi için."""
 from backtest.real_historical_backtest import (
+    DEFAULT_MAX_FORWARD_BARS,
+    _default_max_forward_bars,
     fetch_real_history,
     run_portfolio_backtest,
     run_real_backtest,
     run_real_backtest_multi,
 )
+
+
+def test_default_max_forward_bars_scales_up_for_fast_timeframes():
+    """Kullanıcı bulgusu — TEKRARLANAN "sıfır işlem" şikayeti (Faz 268d'nin
+    risk-tabanı düzeltmesinden SONRA bile devam ediyordu): max_forward_bars
+    sabit 200 iken 15m'de sadece 50 saat, 5m'de sadece 16.7 saat gerçek
+    zaman temsil ediyordu — günlük ATR ölçekli bir hedefe ulaşmaya
+    yetmiyordu. Artık GERÇEK süreyi (10 gün) sabit tutacak şekilde
+    ölçekleniyor."""
+    assert _default_max_forward_bars("5m") > _default_max_forward_bars("15m") > _default_max_forward_bars("1h")
+
+
+def test_default_max_forward_bars_never_goes_below_the_proven_baseline():
+    """1h/4h/1d'de eski sabit (200) zaten gerçek veriyle %100 sonuçlanma
+    oranı veriyordu (bkz. yukarıdaki test'in bulgusu) — ölçekleme bunu
+    ASLA küçültmemeli, sadece hızlı zaman dilimlerinde büyütmeli."""
+    for tf in ("1h", "4h", "1d"):
+        assert _default_max_forward_bars(tf) >= DEFAULT_MAX_FORWARD_BARS
+
+
+def test_default_max_forward_bars_represents_a_roughly_constant_real_duration():
+    from datetime import timedelta
+
+    tf_to_minutes = {"5m": 5, "15m": 15, "1h": 60}
+    real_days = {
+        tf: _default_max_forward_bars(tf) * tf_to_minutes[tf] / (60 * 24)
+        for tf in tf_to_minutes
+    }
+    # Hepsi kabaca aynı gerçek gün sayısını (10 gün civarı) temsil etmeli —
+    # 1h'de 200 tabanı zaten 10 günden az olduğu için (200/24≈8.3) 10'a
+    # yakınsar, 5m/15m tam 10 gün verir.
+    for tf, days in real_days.items():
+        assert 8 <= days <= 11, f"{tf}: {days} gün beklenen aralıkta değil"
 
 
 def test_fetch_real_history_returns_real_binance_bars():
@@ -107,6 +142,19 @@ def test_run_real_backtest_does_not_warn_when_bars_count_is_sufficient():
     )
     assert "warning" not in result
     assert result["num_bars"] == 200
+
+
+def test_run_real_backtest_resolves_max_forward_bars_automatically_when_omitted():
+    """Kullanıcı bulgusu — bars_count yeterli olsa bile eski sabit
+    max_forward_bars=200, 15m'de sadece 50 saatlik gerçek zamana denk
+    geliyordu (ölçülen: hedefe ulaşma oranı %45). max_forward_bars hiç
+    verilmezse artık zaman dilimine göre otomatik büyütülüyor — bars_count
+    çok küçükse bunu YANSITAN bir uyarı dönmeli (200 sabitiyle değil)."""
+    result = run_real_backtest("BTCUSDT", timeframe="15m", bars_count=300, lookback=100)
+    assert "warning" in result
+    # Eski sabitle (200) uyarı "301'den büyük olmalı" derdi — artık
+    # ölçeklenmiş (>=960) bir eşiğe göre uyarı vermeli.
+    assert "301" not in result["warning"]
 
 
 class _FixedDirectionEngine:

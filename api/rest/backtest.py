@@ -63,7 +63,7 @@ async def run_real_backtest_async(
     timeframe: str = "15m",
     bars_count: int = 1000,
     lookback: int = 100,
-    max_forward_bars: int = 200,
+    max_forward_bars: int | None = None,
     capital_per_trade: float = 1000.0,
     user: AuthContext = Depends(require_role(Role.OPERATOR)),
 ):
@@ -73,7 +73,13 @@ async def run_real_backtest_async(
     council'i kullanarak walk-forward çalışıyor — bkz. backtest/
     real_historical_backtest.py. Her adım gerçek bir CognitiveEngine.run()
     çalıştırdığı için dakikalar sürebilir, bu yüzden her zaman async
-    (celery) — senkron bir "/run-real" kasıtlı olarak yok."""
+    (celery) — senkron bir "/run-real" kasıtlı olarak yok.
+
+    max_forward_bars=None (varsayılan) ise zaman dilimine göre GERÇEK
+    süreyi sabit tutacak şekilde otomatik ölçeklenir (bkz. backtest/
+    real_historical_backtest.py::_default_max_forward_bars) — 200'lük
+    eski sabit sadece 1h/4h/1d'de yeterliydi, 5m/15m'de hiçbir kararın
+    kapanma şansı bulamamasına yol açıyordu (kullanıcı bulgusu)."""
     from services.tasks import run_real_backtest_task
 
     symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
@@ -89,7 +95,7 @@ async def run_portfolio_backtest_async(
     timeframe: str = "15m",
     bars_count: int = 1000,
     lookback: int = 100,
-    max_forward_bars: int = 200,
+    max_forward_bars: int | None = None,
     starting_capital: float = 10000.0,
     max_concurrent_positions: int = 5,
     max_capital_pct: float = 0.5,

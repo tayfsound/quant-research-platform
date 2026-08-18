@@ -5,6 +5,28 @@ import { useCurrency } from "../lib/currency";
 
 const TIMEFRAMES = ["5m", "15m", "1h", "4h", "1d"];
 
+// Kullanıcı bulgusu — TEKRARLANAN "sıfır işlem" şikayeti: backend artık
+// max_forward_bars'ı zaman dilimine göre ölçekliyor (backtest/real_
+// historical_backtest.py::_default_max_forward_bars, AYNI mantık burada
+// da tekrarlanıyor) — 5m/15m gibi hızlı zaman dilimlerinde gerekli
+// pencere çok büyüyor (5m'de ~2981 bar). Sabit bir barsCount varsayılanı
+// (500) artık 15m/5m'de HER ZAMAN "yetersiz" uyarısını tetiklerdi —
+// bars sayısı artık zaman dilimi değişince otomatik öneriliyor.
+const TIMEFRAME_TO_MINUTES: Record<string, number> = {
+  "1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30,
+  "1h": 60, "2h": 120, "4h": 240, "1d": 1440,
+};
+const DEFAULT_MAX_FORWARD_WINDOW_MINUTES = 10 * 24 * 60; // 10 gün
+const BACKTEST_DEFAULT_LOOKBACK = 100; // api/rest/backtest.py'nin kendi varsayılanıyla AYNI
+
+function recommendedBarsCount(timeframe: string): number {
+  const tfMinutes = TIMEFRAME_TO_MINUTES[timeframe] ?? 1440;
+  const scaledMaxForwardBars = Math.floor(DEFAULT_MAX_FORWARD_WINDOW_MINUTES / tfMinutes);
+  const maxForwardBars = Math.max(scaledMaxForwardBars, 200);
+  const minRequired = BACKTEST_DEFAULT_LOOKBACK + maxForwardBars + 1;
+  return minRequired + 200; // backend'in kendi "en az X+200 önerilir" payı
+}
+
 // Faz 268am — kullanıcı bulgusu: "arka planda hali hazırda çalışan bir
 // test olduğunda ben bunu göremiyorum." Gerçek sebep: runningReal/
 // realStatus sadece bileşenin kendi local state'iydi, hiçbir yerde
@@ -37,15 +59,16 @@ export default function BacktestRuns() {
   // sebeple yeniden başlarsa (WorkerLostError) çalışan backtest sessizce
   // kayboluyordu.
   //
-  // Kullanıcı bulgusu — TEKRARLANAN "sıfır işlem" şikayeti: eski
-  // varsayılan (300), backend'in kendi varsayılan lookback (100) +
-  // max_forward_bars (200) ile birlikte yapısal olarak İMKANSIZ bir
-  // pencere kuruyordu — hiçbir karar noktası kapanma şansı bile
-  // bulamıyordu (backtest/real_historical_backtest.py::run_real_backtest
-  // artık bunu baştan tespit edip "warning" alanıyla dönüyor). 500,
-  // o pencerenin (301) rahat üstünde — hem interaktif hızda kalıyor hem
-  // gerçekten sonuçlanabilecek karar noktaları bırakıyor.
-  const [barsCount, setBarsCount] = useState("500");
+  // Kullanıcı bulgusu — TEKRARLANAN "sıfır işlem" şikayeti, İKİ ayrı kök
+  // nedeni vardı: (1) eski sabit varsayılan (300) backend'in eski sabit
+  // lookback(100)+max_forward_bars(200) penceresine sığmıyordu — bu artık
+  // baştan "warning" ile tespit ediliyor; (2) max_forward_bars=200 SABİTİ
+  // her zaman diliminde AYNI GERÇEK SÜREYİ temsil etmiyordu (15m'de 50
+  // saat, 4h'de 33 gün) — hızlı zaman dilimlerinde hiçbir karar kapanma
+  // şansı bulamıyordu. İkisi de düzeltildi: max_forward_bars artık zaman
+  // dilimine göre ölçekleniyor, barsCount da recommendedBarsCount() ile
+  // seçili zaman dilimine göre otomatik öneriliyor (varsayılan: 15m).
+  const [barsCount, setBarsCount] = useState(String(recommendedBarsCount("15m")));
   const [runningReal, setRunningReal] = useState(false);
   const [realStatus, setRealStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -251,7 +274,10 @@ export default function BacktestRuns() {
             {TIMEFRAMES.map((tf) => (
               <button
                 key={tf}
-                onClick={() => setTimeframe(tf)}
+                onClick={() => {
+                  setTimeframe(tf);
+                  setBarsCount(String(recommendedBarsCount(tf)));
+                }}
                 className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
                   timeframe === tf
                     ? "bg-accent text-white border-accent"
