@@ -118,6 +118,14 @@ def test_run_real_backtest_produces_real_consistent_metrics():
         assert result["equity_curve"][0] == 1000.0
         assert abs(result["equity_curve"][-1] - (1000.0 + result["total_pnl_usd"])) < 0.01
 
+        # Faz 268-sonrası — kullanıcı bulgusu: win_rate tek başına, hiçbir
+        # barajı görmeden terk edilen sinyalleri (open_positions_never_
+        # closed) sessizce dışlıyordu (gerçek bir çalıştırmada %77'si).
+        # resolution_rate/win_rate_of_all_signals artık HER ZAMAN yanında.
+        total_signals = result["trade_count"] + result["open_positions_never_closed"]
+        assert m["resolution_rate"] == result["trade_count"] / total_signals
+        assert 0.0 <= m["win_rate_of_all_signals"] <= m["win_rate"]
+
 
 def test_run_real_backtest_warns_and_skips_when_bars_count_cannot_ever_resolve():
     """Kullanıcı bulgusu — TEKRARLANAN "sıfır işlem" şikayeti: dashboard'un

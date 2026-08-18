@@ -593,8 +593,21 @@ def _summarize(
     for t in trades:
         equity.append(equity[-1] + t["net_pnl_usd"])
 
+    # Faz 268-sonrası — kullanıcı bulgusu: "%69.9 kazanma oranı" derken
+    # bunun sadece ÇÖZÜLMÜŞ (stop ya da hedefe ulaşmış) sinyallere göre
+    # hesaplandığı, açılıp hiçbir barajı görmeden max_forward_bars sonunda
+    # terk edilen sinyallerin (open_positions_never_closed) SESSİZCE
+    # dışlandığı fark edilmedi — gerçek bir çalıştırmada üretilen
+    # sinyallerin %77'si bu şekilde dışlanmıştı, win_rate'i suni şekilde
+    # yükseltiyordu (çözülmeyenler eğer ortalamadan daha kötü sonuçlanma
+    # eğilimindeyse). resolution_rate ve win_rate_of_all_signals artık
+    # HER ZAMAN win_rate'in yanında raporlanıyor — hiçbir sayı gizlenmiyor.
+    total_signals = len(trades) + open_positions_never_closed
+
     metrics = {
         "win_rate": wins / len(trades),
+        "resolution_rate": len(trades) / total_signals if total_signals else 0.0,
+        "win_rate_of_all_signals": wins / total_signals if total_signals else 0.0,
         "avg_return_pct": sum(returns) / len(returns),
         # numpy skalerleri JSON/Postgres JSON kolonuna sessizce yazılamıyor
         # (FastAPI/pydantic serileştirmesi patlıyor) — düz Python float'a
@@ -675,6 +688,12 @@ def run_real_backtest_multi(
     total_trades = sum(r["trade_count"] for r in per_symbol.values())
     all_trades = [t for r in per_symbol.values() for t in r.get("trades", [])]
     all_wins = sum(1 for t in all_trades if t["win"])
+    # Faz 268-sonrası — bkz. _summarize()'daki bulgu: win_rate tek başına
+    # açılıp hiçbir barajı görmeden terk edilen sinyalleri (open_positions_
+    # never_closed) sessizce dışlıyordu — gerçek bir çalıştırmada bu
+    # sinyallerin %77'siydi. Toplamda da aynı şeffaflık uygulanıyor.
+    total_never_closed = sum(r.get("open_positions_never_closed", 0) for r in per_symbol.values())
+    total_signals = total_trades + total_never_closed
 
     # Sembol bazlı equity curve'ler kendi bar indekslerine göre — ortak bir
     # zaman ekseni yok. Gerçek, birleşik bir eşitlik eğrisi için tüm
@@ -691,6 +710,9 @@ def run_real_backtest_multi(
         "total_trades": total_trades,
         "total_pnl_usd": total_pnl_usd,
         "overall_win_rate": (all_wins / total_trades) if total_trades else 0.0,
+        "total_open_positions_never_closed": total_never_closed,
+        "overall_resolution_rate": (total_trades / total_signals) if total_signals else 0.0,
+        "overall_win_rate_of_all_signals": (all_wins / total_signals) if total_signals else 0.0,
         "combined_equity_curve": combined_equity,
         "per_symbol": per_symbol,
         "failed_symbols": failed_symbols,
@@ -948,9 +970,15 @@ def _summarize_portfolio(
     wins = sum(1 for t in trades if t["win"])
     total_pnl_usd = sum(t["net_pnl_usd"] for t in trades)
     returns = [t["net_return_pct"] for t in trades]
+    # Faz 268-sonrası — bkz. _summarize()'daki AYNI bulgu: win_rate tek
+    # başına, hiçbir barajı görmeden terk edilen sinyalleri (open_
+    # positions_never_closed) sessizce dışlıyor.
+    total_signals = len(trades) + open_positions_never_closed
 
     metrics = {
         "win_rate": wins / len(trades),
+        "resolution_rate": len(trades) / total_signals if total_signals else 0.0,
+        "win_rate_of_all_signals": wins / total_signals if total_signals else 0.0,
         "avg_return_pct": sum(returns) / len(returns),
         "sharpe_ratio": float(MetricsEngine.sharpe_ratio(returns)),
         "sortino_ratio": float(MetricsEngine.sortino_ratio(returns)),

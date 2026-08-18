@@ -333,6 +333,26 @@ export default function BacktestRuns() {
                     </>
                   )}
                 </div>
+                {/* Kullanıcı bulgusu — kazanma oranı tek başına, hiçbir
+                    barajı görmeden max_forward_bars sonunda terk edilen
+                    sinyalleri (çözülmemiş) sessizce dışlıyordu; gerçek bir
+                    çalıştırmada üretilen sinyallerin %77'si buydu. Artık
+                    her zaman yanında gösteriliyor — hiçbir sayı gizli
+                    değil. */}
+                {isReal && typeof r.metrics.total_open_positions_never_closed === "number" && (
+                  <div className="text-xs text-ink-faint mt-1">
+                    {r.metrics.total_open_positions_never_closed > 0 ? (
+                      <>
+                        + {r.metrics.total_open_positions_never_closed} sinyal hiç stop/hedefe ulaşmadı, çözülmemiş
+                        sayılıp kazanma oranından dışlandı ({((r.metrics.overall_resolution_rate ?? 1) * 100).toFixed(0)}%
+                        çözülme oranı) — tüm sinyaller üzerinden kazanma oranı{" "}
+                        {((r.metrics.overall_win_rate_of_all_signals ?? 0) * 100).toFixed(1)}%
+                      </>
+                    ) : (
+                      "Üretilen tüm sinyaller çözüldü (hiçbiri çözülmemiş bırakılmadı)."
+                    )}
+                  </div>
+                )}
                 {/* Kullanıcı bulgusu — tekrarlanan "sıfır işlem" şikayeti:
                     bars_count yapısal olarak yetersizse (lookback +
                     max_forward_bars'ı geçmiyorsa) hiçbir karar kapanma
