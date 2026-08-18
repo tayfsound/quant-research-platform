@@ -74,6 +74,17 @@ class WeightApprovalRepository:
         )
         self.session.commit()
 
+        from uuid import UUID as PyUUID
+
+        from database.repositories.event_log_repository import EventLogRepository
+
+        EventLogRepository(self.session).record(
+            event_type="weight_approved",
+            entity_type="weight_approval",
+            entity_id=PyUUID(str(approval_id)),
+            payload={"approved_by": approved_by},
+        )
+
     def auto_reject_stale(self, max_age_seconds: float = 3600) -> int:
         """Reject pending approvals older than max_age_seconds. Returns rejected count."""
         cutoff = datetime.now() - timedelta(seconds=max_age_seconds)

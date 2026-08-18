@@ -129,6 +129,20 @@ class DecisionPersistor:
 
         self.session.commit()
 
+        # Faz 269 event store devamı — kullanıcı isteği "Event sourcing":
+        # sadece gerçekten açılmış (status="open") bir pozisyon bir olay
+        # sayılır; no_trade/WAIT gürültü olur. Payload'da fiyat/miktar
+        # tekrarlanmıyor, entity_id zaten decisions.id'ye işaret ediyor.
+        if event.status == "open":
+            from database.repositories.event_log_repository import EventLogRepository
+
+            EventLogRepository(self.session).record(
+                event_type="position_opened",
+                entity_type="decision",
+                entity_id=event.id,
+                payload={"symbol": event.symbol, "direction": event.proposed_direction or event.final_action},
+            )
+
     def get_by_id(self, decision_id: str):
         # Gerçek bulgu: geçersiz bir UUID string'i (örn. dashboard'dan yanlışlıkla
         # bir session_id yapıştırılırsa) Postgres'te "invalid input syntax for
@@ -522,6 +536,15 @@ class DecisionPersistor:
         )
 
         self.session.commit()
+
+        from database.repositories.event_log_repository import EventLogRepository
+
+        EventLogRepository(self.session).record(
+            event_type="position_closed",
+            entity_type="decision",
+            entity_id=UUID(str(decision_id)),
+            payload={"exit_price": exit_price, "pnl": pnl},
+        )
 
     def close_position_partial(
         self,
