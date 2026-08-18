@@ -389,33 +389,55 @@ class PositionCloser:
         değişmiyordu (bkz. update_stop_loss_price docstring) — kârlı
         açılıp geri dönen pozisyonlar tam stop mesafesini yiyordu.
 
-        Klasik "1R kâra ulaşınca stopu girişe çek" kuralı: fiyat, ilk
-        risk mesafesi (|entry-stop|) kadar LEHTE hareket ettiyse stop
-        girişe (başabaş) çekilir. SADECE bir kez tetiklenir (stop zaten
-        girişe eşitse tekrar işlem yapmaz) ve SADECE sıkılaştırır, asla
-        gevşetmez — riski hiçbir zaman artırmıyor."""
+        "N kâra ulaşınca stopu girişe çek" kuralı: fiyat, ilk risk
+        mesafesinin (|entry-stop|) breakeven_trigger_r_multiple katı
+        kadar LEHTE hareket ettiyse stop girişe (başabaş) çekilir.
+        SADECE bir kez tetiklenir (stop zaten girişe eşitse tekrar işlem
+        yapmaz) ve SADECE sıkılaştırır, asla gevşetmez — riski hiçbir
+        zaman artırmıyor.
+
+        Faz 269-sonrası — kullanıcı bulgusu: TAM 1R (multiplier=1.0)
+        gerçek veride bazı pozisyonlar (ör. pump_fade_v1, 5x kaldıraçlı
+        az likit coinler) için hiç ulaşılamayan bir eşikti — sadece
+        %1-1.8 lehte gidip ters dönüp likidasyona kadar gitti, koruma
+        hiç devreye giremedi. Eşik artık AppSettings'ten okunuyor
+        (varsayılan 0.5R) — redeploy gerekmeden hızla ayarlanabilir."""
         entry_price = pos.get("entry_price")
         stop_loss_price = pos.get("stop_loss_price")
         direction = (pos.get("direction") or "").upper()
         if entry_price is None or stop_loss_price is None or direction not in ("LONG", "SHORT"):
             return stop_loss_price
 
+        trigger_r_multiple = self._load_breakeven_trigger_r_multiple()
+
         if direction == "LONG":
             risk = entry_price - stop_loss_price
             if risk <= 0:
                 return stop_loss_price  # stop zaten girişte/üstünde
-            if current_price >= entry_price + risk:
+            if current_price >= entry_price + risk * trigger_r_multiple:
                 decision_repo.update_stop_loss_price(str(pos["id"]), entry_price)
                 return entry_price
         else:
             risk = stop_loss_price - entry_price
             if risk <= 0:
                 return stop_loss_price
-            if current_price <= entry_price - risk:
+            if current_price <= entry_price - risk * trigger_r_multiple:
                 decision_repo.update_stop_loss_price(str(pos["id"]), entry_price)
                 return entry_price
 
         return stop_loss_price
+
+    @staticmethod
+    def _load_breakeven_trigger_r_multiple() -> float:
+        try:
+            from database.repositories.app_settings_repository import AppSettingsRepository
+            from database.session_factory import SessionFactory
+
+            with SessionFactory.get_session() as session:
+                value = float(AppSettingsRepository(session).get("breakeven_trigger_r_multiple") or 0.5)
+            return value if 0.0 < value <= 1.0 else 0.5
+        except Exception:
+            return 0.5
 
     def close_due_positions(self, decision_repo: DecisionPersistor, timeframe: str = "1m") -> list[dict]:
         """Açık pozisyonları gerçek güncel fiyatla kontrol eder: fiyat gerçek

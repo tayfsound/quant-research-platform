@@ -118,6 +118,18 @@ DEFAULTS: dict[str, str] = {
     # RiskTargetStage artık hesaplanan stop bu tabanın altına düşerse SL/
     # TP'yi ORANI KORUYARAK genişletiyor (asla daraltmıyor).
     "min_stop_pct": "0.045",
+    # Faz 269-sonrası — kullanıcı bulgusu: pump_fade_v1 (5x kaldıraçlı,
+    # az likit/pompalanmış coinlerde SHORT) pozisyonları, stop'u girişe
+    # çekmek için gereken TAM 1R (|entry-stop|) mesafeye ulaşmadan —
+    # gerçek veride sadece %1-1.8 lehte gidip — ters dönüp likidasyona
+    # kadar gitti (bkz. services/position_closer.py::_apply_breakeven_
+    # stop). 60sn'lik kontrol aralığında oynak bir coin hem stop'u hem
+    # likidasyonu tek sıçramada aşabiliyor. Eşik düşürüldü: artık TAM
+    # 1R değil, bu oranın (varsayılan %50) kadar lehte gidiş yeterli —
+    # koruma daha erken devreye giriyor, riski azaltıyor. 1.0 = eski
+    # davranış (tam 1R), asla >1.0 olmamalı (stop'u girişten daha kötü
+    # bir noktaya erken çekmiş olur).
+    "breakeven_trigger_r_multiple": "0.5",
     # Drawdown-Based Position Sizing (gambler's ruin koruması) — kill
     # switch'in kullandığı AYNI gerçek ardışık kayıp sayacıyla, sert
     # durmadan ÖNCE devreye giren kademeli bir fren. 3. ardışık kayıptan

@@ -361,6 +361,82 @@ def test_breakeven_stop_never_loosens_and_is_symmetric_for_short():
     assert row["stop_loss_price"] == entry  # hâlâ girişte, gevşemedi
 
 
+def test_breakeven_stop_trigger_threshold_is_configurable_and_lower_than_full_1r():
+    """Faz 269-sonrası — kullanıcı bulgusu: pump_fade_v1 (5x kaldıraçlı,
+    az likit coinlerde SHORT) pozisyonları TAM 1R'a (eski sabit eşik)
+    hiç ulaşmadan (gerçek veride sadece %1-1.8 lehte gidip) ters dönüp
+    likidasyona kadar gitti — koruma hiç devreye giremedi. Eşik artık
+    AppSettings'ten okunuyor (varsayılan 0.5R); bu test SADECE 0.5R
+    kadar lehte giden bir fiyatın (eski sabit 1.0R kuralında HİÇ
+    tetiklenmeyecek bir mesafe) artık breakeven'i tetiklediğini
+    kanıtlıyor."""
+    from contracts.decision_event import DecisionEvent
+    from database.repositories.app_settings_repository import AppSettingsRepository
+
+    symbol = f"POSBELOW{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    entry, old_stop, target = 100.0, 90.0, 140.0  # risk = 10 (1R)
+
+    with SessionFactory.get_session() as session:
+        event = DecisionEvent(
+            id=uuid4(), timestamp=now, symbol=symbol,
+            proposed_direction="LONG", final_action="LONG", final_size=1.0, confidence=0.7,
+            status="open", entry_price=entry, quantity=1.0, opened_at=now,
+            stop_loss_price=old_stop, take_profit_price=target,
+        )
+        DecisionPersistor(session).persist(event)
+        AppSettingsRepository(session).set("breakeven_trigger_r_multiple", "0.5", updated_by="test")
+
+    try:
+        # Sadece 0.5R (5.0) kadar lehte — eski sabit 1.0R kuralında bu
+        # fiyat breakeven'i HİÇ tetiklemezdi.
+        closer = PositionCloser(_FixedPriceProvider(entry + (entry - old_stop) * 0.5))
+        with SessionFactory.get_session() as session:
+            closer.close_due_positions(DecisionPersistor(session))
+
+        with SessionFactory.get_session() as session:
+            row = DecisionPersistor(session).get_by_id(str(event.id))
+        assert row["status"] == "open"
+        assert row["stop_loss_price"] == entry  # 0.5R'de bile stop girişe çekildi
+    finally:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("breakeven_trigger_r_multiple", "0.5", updated_by="test")
+
+
+def test_breakeven_stop_does_not_trigger_below_the_configured_threshold():
+    """Eşiğin altındaki bir hareket (0.3R < ayarlanan 0.5R eşiği) hâlâ
+    tetiklememeli — bu, eşiğin gerçekten UYGULANDIĞININ (her zaman
+    tetiklenmediğinin) kanıtı."""
+    from contracts.decision_event import DecisionEvent
+    from database.repositories.app_settings_repository import AppSettingsRepository
+
+    symbol = f"POSBENOTRIG{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    entry, old_stop, target = 100.0, 90.0, 140.0
+
+    with SessionFactory.get_session() as session:
+        event = DecisionEvent(
+            id=uuid4(), timestamp=now, symbol=symbol,
+            proposed_direction="LONG", final_action="LONG", final_size=1.0, confidence=0.7,
+            status="open", entry_price=entry, quantity=1.0, opened_at=now,
+            stop_loss_price=old_stop, take_profit_price=target,
+        )
+        DecisionPersistor(session).persist(event)
+        AppSettingsRepository(session).set("breakeven_trigger_r_multiple", "0.5", updated_by="test")
+
+    try:
+        closer = PositionCloser(_FixedPriceProvider(entry + (entry - old_stop) * 0.3))
+        with SessionFactory.get_session() as session:
+            closer.close_due_positions(DecisionPersistor(session))
+
+        with SessionFactory.get_session() as session:
+            row = DecisionPersistor(session).get_by_id(str(event.id))
+        assert row["stop_loss_price"] == old_stop  # eşiğin altında, tetiklenmedi
+    finally:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("breakeven_trigger_r_multiple", "0.5", updated_by="test")
+
+
 def test_take_profit_exit_is_charged_the_cheaper_maker_fee_not_taker():
     """Faz 223: kullanıcı isteği — "işlem ücretlerinden kurtulmanın ya da
     minimize etmenin yolları var mı." Gerçek bulgu: çıkış her zaman taker
