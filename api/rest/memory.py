@@ -8,19 +8,19 @@ router = APIRouter(prefix="/memory", tags=["memory"])
 memory_service = MemoryService()
 
 @router.get("/stats")
-async def memory_stats(user: AuthContext = Depends(get_current_user)):
+def memory_stats(user: AuthContext = Depends(get_current_user)):
     return memory_service.stats()
 
 @router.get("/episodes")
-async def recent_episodes(limit: int = 50, user: AuthContext = Depends(get_current_user)):
+def recent_episodes(limit: int = 50, user: AuthContext = Depends(get_current_user)):
     return memory_service.get_recent_episodes(limit)
 
 @router.get("/beliefs")
-async def beliefs(user: AuthContext = Depends(get_current_user)):
+def beliefs(user: AuthContext = Depends(get_current_user)):
     return memory_service.get_beliefs()
 
 @router.get("/similar")
-async def similar_episodes(
+def similar_episodes(
     rsi: float = Query(default=50),
     atr: float = Query(default=1),
     volatility: float = Query(default=0.02),

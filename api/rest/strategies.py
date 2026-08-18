@@ -9,7 +9,7 @@ from services.auth_service import AuthContext, get_current_user, require_role
 router = APIRouter(prefix="/strategies", tags=["strategies"])
 
 @router.post("/{id}/simulate")
-async def simulate_strategy(
+def simulate_strategy(
     id: UUID,
     symbol: str,
     timeframe: str,
@@ -21,5 +21,5 @@ async def simulate_strategy(
     return {"run_id": uuid4(), "strategy_id": id, "status": "queued"}
 
 @router.get("/{id}/results")
-async def get_results(id: UUID, user: AuthContext = Depends(get_current_user)):
+def get_results(id: UUID, user: AuthContext = Depends(get_current_user)):
     return {"strategy_id": id, "sharpe": 1.5, "total_return": 0.25}

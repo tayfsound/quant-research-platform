@@ -14,7 +14,7 @@ router = APIRouter(prefix="/seasonality", tags=["seasonality"])
 
 
 @router.get("/")
-async def seasonality(limit: int = 5000, user: AuthContext = Depends(get_current_user)):
+def seasonality(limit: int = 5000, user: AuthContext = Depends(get_current_user)):
     with SessionFactory.get_session() as session:
         trades = DecisionPersistor(session).list_closed_trades(limit=limit)
     return {

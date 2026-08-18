@@ -8,7 +8,7 @@ from services.auth_service import AuthContext, get_current_user
 router = APIRouter(prefix="/models", tags=["models"])
 
 @router.get("/{model_id}/predictions")
-async def get_predictions(
+def get_predictions(
     model_id: UUID,
     symbol: str = "BTCUSDT",
     from_dt: str = "",

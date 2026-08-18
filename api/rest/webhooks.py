@@ -44,7 +44,7 @@ async def tradingview_webhook(request: Request):
 
 
 @router.get("/tradingview/recent")
-async def recent_tradingview_signals(
+def recent_tradingview_signals(
     symbol: str | None = None,
     limit: int = 50,
     user: AuthContext = Depends(get_current_user),

@@ -65,7 +65,7 @@ def _council_comparison_summary(session, min_sample_size: int) -> dict:
 
 
 @router.get("/comparison")
-async def shadow_comparison(min_sample_size: int = 100, user: AuthContext = Depends(get_current_user)):
+def shadow_comparison(min_sample_size: int = 100, user: AuthContext = Depends(get_current_user)):
     with SessionFactory.get_session() as session:
         macro_only = ShadowPositionRepository(session).comparison_summary(
             source="macro", min_sample_size=min_sample_size

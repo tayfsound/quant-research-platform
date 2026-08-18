@@ -123,6 +123,15 @@ async def test_ask_with_tools_executes_real_tool_function_and_feeds_result_back(
 
 @pytest.mark.asyncio
 async def test_ask_with_tools_stops_after_max_iterations_without_crashing():
+    """Gerçek bulgu (2026-08-18): model kendiliğinden ne zaman duracağını
+    bilmiyordu, tüm iterasyonları araç çağırmakla tüketip hiç sonuç
+    yazmadan bitebiliyordu (llm_system_audit_task'ta gerçekten yaşandı).
+    Artık SON iterasyonda tool_choice="none" gönderiliyor — model daha
+    fazla araç çağıramaz. Bu mock (kasıtlı olarak) tool_choice'u hiç
+    saymayan "dümdüz döngüye giren" bir model simüle ediyor — max_
+    iterations=2 için SADECE 1 gerçek araç çağrısı (ilk iterasyon)
+    yürütülmeli, ikinci (son) iterasyon aracı YOK SAYIP zorunlu bir metin
+    cevabı üretmeli (bkz. llm_reasoner.py::_ask_with_tools_sync)."""
     critic = NvidiaDecisionCritic(api_key="fake-key")
     looping_response = MagicMock()
     looping_response.json.return_value = {
@@ -136,7 +145,7 @@ async def test_ask_with_tools_stops_after_max_iterations_without_crashing():
         result = await critic.ask_with_tools("sonsuz döngü testi", max_iterations=2)
 
     assert "sınırına ulaşıldı" in result["response"]
-    assert len(result["tool_calls"]) == 2
+    assert len(result["tool_calls"]) == 1
 
 
 @pytest.mark.asyncio

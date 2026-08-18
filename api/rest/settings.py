@@ -232,7 +232,7 @@ def _validate(key: str, value: str) -> None:
 
 
 @router.get("/")
-async def get_settings_(user: AuthContext = Depends(get_current_user)):
+def get_settings_(user: AuthContext = Depends(get_current_user)):
     with SessionFactory.get_session() as session:
         repo = AppSettingsRepository(session)
         # Faz 268-sonrası: kullanıcı isteği — dashboard'un kill switch'in
@@ -245,12 +245,12 @@ async def get_settings_(user: AuthContext = Depends(get_current_user)):
 
 
 @router.get("/defaults")
-async def get_defaults(user: AuthContext = Depends(get_current_user)):
+def get_defaults(user: AuthContext = Depends(get_current_user)):
     return {"defaults": DEFAULTS, "trade_horizon_risk_timeframe": TRADE_HORIZON_TO_RISK_TIMEFRAME}
 
 
 @router.get("/currency-rates")
-async def get_currency_rates(user: AuthContext = Depends(get_current_user)):
+def get_currency_rates(user: AuthContext = Depends(get_current_user)):
     """Faz 224: kullanıcı isteği — PnL/fiyatları USD dışında (BTC/TRY)
     görebilme. Gerçek, canlı oranlar — Binance'in kendi piyasalarından
     (BTCUSDT, USDTTRY), ayrı bir FX API'sine gerek yok."""
@@ -259,7 +259,7 @@ async def get_currency_rates(user: AuthContext = Depends(get_current_user)):
 
 
 @router.post("/reset-defaults")
-async def reset_to_defaults(user: AuthContext = Depends(require_role(Role.OPERATOR))):
+def reset_to_defaults(user: AuthContext = Depends(require_role(Role.OPERATOR))):
     """Faz 215: kullanıcı isteği — tek tuşla, komisyona ezilmeden $1-5
     net kâr hedefleyecek şekilde matematiksel olarak hesaplanmış
     varsayılanlara dönüş (bkz. DEFAULTS'taki gerekçe).
@@ -274,7 +274,7 @@ async def reset_to_defaults(user: AuthContext = Depends(require_role(Role.OPERAT
 
 
 @router.post("/{key}")
-async def set_setting(key: str, value: str, user: AuthContext = Depends(require_role(Role.OPERATOR))):
+def set_setting(key: str, value: str, user: AuthContext = Depends(require_role(Role.OPERATOR))):
     # Faz 192 düzeltmesi: bunlar risk_limits.py'deki hash-imzalı, çok
     # kullanıcılı onay gerektiren eşiklerden farklı — Dashboard'daki
     # Start/Stop ve Test/Live gibi günlük operasyonel anahtarlar. ADMIN

@@ -12,7 +12,7 @@ router = APIRouter(prefix="/system-events", tags=["system-events"])
 
 
 @router.get("/")
-async def system_events(
+def system_events(
     event_type: str | None = None,
     limit: int = 100,
     user: AuthContext = Depends(get_current_user),

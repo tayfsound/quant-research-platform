@@ -20,7 +20,7 @@ router = APIRouter(prefix="/calibration", tags=["calibration"])
 
 
 @router.get("/")
-async def calibration(user: AuthContext = Depends(get_current_user)):
+def calibration(user: AuthContext = Depends(get_current_user)):
     with SessionFactory.get_session() as session:
         closed_trades = DecisionPersistor(session).list_closed_trades(limit=100_000)
     predictions = extract_predictions_from_closed_trades(closed_trades)
@@ -28,7 +28,7 @@ async def calibration(user: AuthContext = Depends(get_current_user)):
 
 
 @router.get("/reports")
-async def calibration_reports(limit: int = 20, user: AuthContext = Depends(get_current_user)):
+def calibration_reports(limit: int = 20, user: AuthContext = Depends(get_current_user)):
     """Yukarıdaki / (canlı, her istekte taze hesaplanır) her zaman O ANKİ
     durumu gösterir — "kalibrasyon zamanla nasıl değişti" sorusu bu geçmiş
     olmadan cevaplanamaz. services/tasks.py::refresh_calibration_report_

@@ -10,7 +10,7 @@ from services.auth_service import AuthContext, require_role
 router = APIRouter(prefix="/weights", tags=["weights"])
 
 @router.get("/pending")
-async def list_pending(limit: int = 10):
+def list_pending(limit: int = 10):
     with SessionFactory.get_session() as session:
         repo = WeightApprovalRepository(session)
         rows = repo.get_pending(limit=limit)
@@ -30,7 +30,7 @@ async def list_pending(limit: int = 10):
         }
 
 @router.post("/{approval_id}/approve")
-async def approve(approval_id: str, user: AuthContext = Depends(require_role(Role.OPERATOR))):
+def approve(approval_id: str, user: AuthContext = Depends(require_role(Role.OPERATOR))):
     with SessionFactory.get_session() as session:
         repo = WeightApprovalRepository(session)
         approval = session.query(WeightApprovalModel).filter_by(id=approval_id).first()
@@ -57,7 +57,7 @@ async def approve(approval_id: str, user: AuthContext = Depends(require_role(Rol
         return {"approval_id": approval_id, "status": "approved", "weights_applied": True}
 
 @router.post("/{approval_id}/reject")
-async def reject(approval_id: str, user: AuthContext = Depends(require_role(Role.OPERATOR))):
+def reject(approval_id: str, user: AuthContext = Depends(require_role(Role.OPERATOR))):
     with SessionFactory.get_session() as session:
         approval = session.query(WeightApprovalModel).filter_by(id=approval_id).first()
         if not approval:
@@ -70,7 +70,7 @@ async def reject(approval_id: str, user: AuthContext = Depends(require_role(Role
 
 
 @router.post("/auto-reject")
-async def auto_reject_stale(max_age_hours: float = 24, user: AuthContext = Depends(require_role(Role.OPERATOR))):
+def auto_reject_stale(max_age_hours: float = 24, user: AuthContext = Depends(require_role(Role.OPERATOR))):
     """Reject pending approvals older than max_age_hours."""
     with SessionFactory.get_session() as session:
         repo = WeightApprovalRepository(session)
@@ -79,7 +79,7 @@ async def auto_reject_stale(max_age_hours: float = 24, user: AuthContext = Depen
 
 
 @router.get("/metrics")
-async def approval_metrics():
+def approval_metrics():
     """Approval latency metrics."""
     with SessionFactory.get_session() as session:
         repo = WeightApprovalRepository(session)

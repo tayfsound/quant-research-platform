@@ -15,12 +15,12 @@ router = APIRouter(prefix="/self-model", tags=["self-model"])
 
 
 @router.get("/")
-async def self_model(user: AuthContext = Depends(get_current_user)):
+def self_model(user: AuthContext = Depends(get_current_user)):
     return {"result": gather_self_reliability_snapshot()}
 
 
 @router.get("/reports")
-async def self_model_reports(limit: int = 20, user: AuthContext = Depends(get_current_user)):
+def self_model_reports(limit: int = 20, user: AuthContext = Depends(get_current_user)):
     """Yukarıdaki / (canlı, her istekte taze) her zaman O ANKİ durumu
     gösterir — "sistem kendi güvenilirliğini zaman içinde nasıl
     değerlendirdi" sorusu bu geçmiş olmadan cevaplanamaz. services/

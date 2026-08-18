@@ -12,7 +12,7 @@ router = APIRouter(prefix="/backtest", tags=["backtest"])
 
 
 @router.post("/run")
-async def run_backtest(
+def run_backtest(
     symbols: str = "BTCUSDT",
     bars: int = 200,
     seed: int = 42,
@@ -39,7 +39,7 @@ async def run_backtest(
 
 
 @router.post("/run-async")
-async def run_backtest_async(
+def run_backtest_async(
     symbols: str = "BTCUSDT",
     bars: int = 200,
     seed: int = 42,
@@ -58,7 +58,7 @@ async def run_backtest_async(
 
 
 @router.post("/run-real-async")
-async def run_real_backtest_async(
+def run_real_backtest_async(
     symbols: str = "BTCUSDT",
     timeframe: str = "15m",
     bars_count: int = 1000,
@@ -90,7 +90,7 @@ async def run_real_backtest_async(
 
 
 @router.post("/run-portfolio-async")
-async def run_portfolio_backtest_async(
+def run_portfolio_backtest_async(
     symbols: str = "BTCUSDT,ETHUSDT",
     timeframe: str = "15m",
     bars_count: int = 1000,
@@ -120,7 +120,7 @@ async def run_portfolio_backtest_async(
 
 
 @router.get("/tasks/{task_id}")
-async def get_backtest_task(task_id: str, user: AuthContext = Depends(get_current_user)):
+def get_backtest_task(task_id: str, user: AuthContext = Depends(get_current_user)):
     from services.celery_app import celery_app
     from celery.result import AsyncResult
 
@@ -134,7 +134,7 @@ async def get_backtest_task(task_id: str, user: AuthContext = Depends(get_curren
 
 
 @router.get("/active")
-async def active_backtest_tasks(user: AuthContext = Depends(get_current_user)):
+def active_backtest_tasks(user: AuthContext = Depends(get_current_user)):
     """Faz 268c — kullanıcı bulgusu: "arka planda hali hazırda çalışan
     bir test olduğunda ben bunu göremiyorum." Önceki çözüm (dashboard'da
     task_id'yi localStorage'a yazmak) sadece AYNI tarayıcıda, task'ı
@@ -171,7 +171,7 @@ async def active_backtest_tasks(user: AuthContext = Depends(get_current_user)):
 
 
 @router.get("/runs")
-async def list_runs(limit: int = 20, user: AuthContext = Depends(get_current_user)):
+def list_runs(limit: int = 20, user: AuthContext = Depends(get_current_user)):
     with SessionFactory.get_session() as session:
         rows = BacktestRunRepository(session).list_recent(limit=limit)
         return {

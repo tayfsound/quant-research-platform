@@ -9,7 +9,7 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 _orch = CognitiveOrchestrator()
 
 @router.get("/latest")
-async def latest_cycle(user: AuthContext = Depends(require_role(Role.OPERATOR))):
+def latest_cycle(user: AuthContext = Depends(require_role(Role.OPERATOR))):
     result = _orch.run_cycle(seed=42)
     return {
         "direction": result.get("direction"),
@@ -20,12 +20,12 @@ async def latest_cycle(user: AuthContext = Depends(require_role(Role.OPERATOR)))
     }
 
 @router.get("/health")
-async def health(user: AuthContext = Depends(get_current_user)):
+def health(user: AuthContext = Depends(get_current_user)):
     return {"status": "ok", "tests": 222}
 
 
 @router.get("/concept-drift-status")
-async def concept_drift_status(user: AuthContext = Depends(get_current_user)):
+def concept_drift_status(user: AuthContext = Depends(get_current_user)):
     """Faz 268-sonrası — kullanıcı isteği: "Concept Drift aktif olduğunda
     panelden göreyim, sistem neden pozisyon almıyor bilmeden kalmayayım."
     Aynı eşiği/hesabı kullanır (services/risk_state.py::get_concept_

@@ -13,5 +13,5 @@ router = APIRouter(prefix="/experiments", tags=["experiments"])
 
 
 @router.get("/{experiment_name}/evaluate")
-async def evaluate(experiment_name: str, user: AuthContext = Depends(get_current_user)):
+def evaluate(experiment_name: str, user: AuthContext = Depends(get_current_user)):
     return evaluate_experiment(experiment_name)

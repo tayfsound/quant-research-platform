@@ -14,7 +14,7 @@ router = APIRouter(prefix="/market-data", tags=["market-data"])
 
 
 @router.get("/ohlcv")
-async def get_ohlcv(
+def get_ohlcv(
     symbol: str = "BTCUSDT",
     resolution: str = "1m",
     limit: int = 200,
@@ -86,7 +86,7 @@ async def get_ohlcv(
 
 
 @router.get("/news-sentiment")
-async def get_news_sentiment(user: AuthContext = Depends(get_current_user)):
+def get_news_sentiment(user: AuthContext = Depends(get_current_user)):
     """Faz 268-sonrası: Reddit'in yerine geçen LLM tabanlı gerçek haber
     sentiment'i (bkz. market_data/sentiment/llm_news_sentiment_provider.py).
     SADECE önbelleği okur (asla burada LLM çağırmaz) — periyodik Celery
@@ -102,7 +102,7 @@ async def get_news_sentiment(user: AuthContext = Depends(get_current_user)):
 
 
 @router.get("/order-book")
-async def get_order_book_snapshot(
+def get_order_book_snapshot(
     symbol: str = "BTCUSDT",
     user: AuthContext = Depends(get_current_user),
 ):

@@ -14,16 +14,16 @@ class CycleRequest(BaseModel):
     symbol: str | None = None
 
 @router.post("/cycle")
-async def run_cycle(req: CycleRequest, user: AuthContext = Depends(require_role(Role.OPERATOR))):
+def run_cycle(req: CycleRequest, user: AuthContext = Depends(require_role(Role.OPERATOR))):
     result = _orchestrator.run_cycle(seed=req.seed, symbol=req.symbol)
     return result
 
 @router.get("/status")
-async def status(user: AuthContext = Depends(get_current_user)):
+def status(user: AuthContext = Depends(get_current_user)):
     return {"status": "ok", "version": "1.0.0"}
 
 @router.get("/metrics")
-async def metrics(user: AuthContext = Depends(get_current_user)):
+def metrics(user: AuthContext = Depends(get_current_user)):
     return {
         "memory_size": len(_orchestrator.memory.memory),
         "max_position_size": _orchestrator.max_position_size,

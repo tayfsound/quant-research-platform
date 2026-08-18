@@ -27,7 +27,7 @@ _ROLE: dict[AgentDomain, str] = {d: "vote" for d in _DESCRIPTIONS}
 
 
 @router.get("/")
-async def list_agents(user: AuthContext = Depends(get_current_user)):
+def list_agents(user: AuthContext = Depends(get_current_user)):
     registry = AgentRegistry.create_default()
     domains = registry.list_domains()
     return {

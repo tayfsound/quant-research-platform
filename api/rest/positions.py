@@ -143,7 +143,7 @@ def _fetch_current_prices(symbols: set[str]) -> dict[str, float]:
 
 
 @router.get("/positions")
-async def list_open_positions(
+def list_open_positions(
     limit: int = 100, offset: int = 0, user: AuthContext = Depends(get_current_user)
 ):
     with SessionFactory.get_session() as session:
@@ -166,7 +166,7 @@ async def list_open_positions(
 
 
 @router.get("/positions/breakdown-by-type")
-async def positions_breakdown_by_type(user: AuthContext = Depends(get_current_user)):
+def positions_breakdown_by_type(user: AuthContext = Depends(get_current_user)):
     """Faz 268-sonrası — kullanıcı isteği: "scalp, gün içi, orta vade vs.
     farklı işlem türlerinin ne kadarı short ne kadarı long pozisyonmuş."
     _classify_trade_type() ile AYNI sınıflandırma, ama TÜM açık
@@ -179,7 +179,7 @@ async def positions_breakdown_by_type(user: AuthContext = Depends(get_current_us
 
 
 @router.get("/positions/{decision_id}/explain")
-async def explain_position(decision_id: str, user: AuthContext = Depends(get_current_user)):
+def explain_position(decision_id: str, user: AuthContext = Depends(get_current_user)):
     """Faz 268-sonrası — kullanıcı isteği: "hangi ajandan ne karar geldiğini
     gösteren açıklayan bir fonksiyon." decisions.agent_contributions'ta
     bu bilginin TAMAMI zaten kayıtlı (her ajanın gerçek AgentOpinion'ı +
@@ -234,7 +234,7 @@ async def explain_position(decision_id: str, user: AuthContext = Depends(get_cur
 
 
 @router.get("/trades")
-async def list_closed_trades(limit: int = 100, user: AuthContext = Depends(get_current_user)):
+def list_closed_trades(limit: int = 100, user: AuthContext = Depends(get_current_user)):
     """Faz 224: kritik bulgu — "summary" artık `limit`'e (tablo için kaç
     satır gösterileceği) bağlı DEĞİL, gerçek toplam üzerinden hesaplanıyor
     (closed_trades_summary — /performance'ın all_time'ıyla AYNI sorgu).
@@ -260,7 +260,7 @@ async def list_closed_trades(limit: int = 100, user: AuthContext = Depends(get_c
 
 
 @router.get("/performance")
-async def performance_summary(user: AuthContext = Depends(get_current_user)):
+def performance_summary(user: AuthContext = Depends(get_current_user)):
     """Faz 215: kullanıcı isteği — "dün ne kadar ROI yapmış, haftalık/
     aylık/yıllık ne olmuş" görebilmek. ROI, kullanıcının Settings'te
     belirlediği starting_capital'a göre (gerçek referans sermaye,
@@ -360,7 +360,7 @@ async def performance_summary(user: AuthContext = Depends(get_current_user)):
 
 
 @router.post("/positions/close-due")
-async def close_due_positions(
+def close_due_positions(
     user: AuthContext = Depends(require_role(Role.OPERATOR)),
 ):
     """Prod'da celery beat periyodik çalıştırır (close_due_positions_task);
@@ -379,7 +379,7 @@ class PartialCloseRequest(BaseModel):
 
 
 @router.post("/positions/{decision_id}/partial-close")
-async def partial_close_position(
+def partial_close_position(
     decision_id: str,
     body: PartialCloseRequest,
     user: AuthContext = Depends(require_role(Role.OPERATOR)),
@@ -399,7 +399,7 @@ async def partial_close_position(
 
 
 @router.post("/positions/close-profitable")
-async def close_profitable_positions(
+def close_profitable_positions(
     user: AuthContext = Depends(require_role(Role.OPERATOR)),
 ):
     """Faz 268p — kullanıcı isteği: "kârda olan pozisyonları toplu kapatma

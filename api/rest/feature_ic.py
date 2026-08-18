@@ -15,14 +15,14 @@ router = APIRouter(prefix="/feature-ic", tags=["feature-ic"])
 
 
 @router.get("/")
-async def feature_ic(min_sample_size: int = 20, user: AuthContext = Depends(get_current_user)):
+def feature_ic(min_sample_size: int = 20, user: AuthContext = Depends(get_current_user)):
     with SessionFactory.get_session() as session:
         closed_trades = DecisionPersistor(session).list_closed_trades(limit=100_000)
     return {"features": compute_feature_ic(closed_trades, min_sample_size=min_sample_size)}
 
 
 @router.get("/reports")
-async def feature_ic_reports(limit: int = 20, user: AuthContext = Depends(get_current_user)):
+def feature_ic_reports(limit: int = 20, user: AuthContext = Depends(get_current_user)):
     """Faz 268-sonrası — kullanıcı isteği: "Feature IC'yi karar hattına
     bağlama." Yukarıdaki / (canlı, her istekte taze hesaplanır) her zaman
     O ANKİ durumu gösterir — "zamanla nasıl değişti" sorusu bu geçmiş

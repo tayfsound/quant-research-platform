@@ -14,7 +14,7 @@ engine = CognitiveEngine()
 
 
 @router.post("/run")
-async def run_cognitive_cycle(
+def run_cognitive_cycle(
     symbol: str | None = None,
     user: AuthContext = Depends(require_role(Role.OPERATOR)),
 ):

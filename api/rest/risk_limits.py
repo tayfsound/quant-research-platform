@@ -19,7 +19,7 @@ router = APIRouter(prefix="/risk-limits", tags=["risk-limits"])
 
 
 @router.post("/{limit_type}")
-async def set_risk_limit(
+def set_risk_limit(
     limit_type: str,
     value: float,
     scope: str = "global",
@@ -55,7 +55,7 @@ async def set_risk_limit(
 
 
 @router.get("/")
-async def list_risk_limits(scope: str = "global", user: AuthContext = Depends(get_current_user)):
+def list_risk_limits(scope: str = "global", user: AuthContext = Depends(get_current_user)):
     with SessionFactory.get_session() as session:
         rows = RiskLimitRepository(session).list_active(scope=scope)
         return {

@@ -31,7 +31,7 @@ class LoginRequest(BaseModel):
 
 
 @router.post("/register")
-async def register(req: RegisterRequest):
+def register(req: RegisterRequest):
     if len(req.password) < 8:
         raise HTTPException(status_code=400, detail="password must be at least 8 characters")
 
@@ -62,7 +62,7 @@ async def register(req: RegisterRequest):
 
 
 @router.post("/login")
-async def login(req: LoginRequest):
+def login(req: LoginRequest):
     with SessionFactory.get_session() as session:
         row = UserRepository(session).get_by_username(req.username)
         if row is None or row.disabled or not verify_password(req.password, row.password_hash):
@@ -73,12 +73,12 @@ async def login(req: LoginRequest):
 
 
 @router.get("/me")
-async def me(user: AuthContext = Depends(get_current_user)):
+def me(user: AuthContext = Depends(get_current_user)):
     return {"id": str(user.id), "username": user.username, "role": user.role.name}
 
 
 @router.post("/api-keys")
-async def create_api_key(label: str = "", user: AuthContext = Depends(get_current_user)):
+def create_api_key(label: str = "", user: AuthContext = Depends(get_current_user)):
     from contracts.auth import APIKey
 
     raw_key, key_hash = generate_api_key()
@@ -89,7 +89,7 @@ async def create_api_key(label: str = "", user: AuthContext = Depends(get_curren
 
 
 @router.get("/audit-log")
-async def audit_log(limit: int = 100, user: AuthContext = Depends(require_role(Role.ADMIN))):
+def audit_log(limit: int = 100, user: AuthContext = Depends(require_role(Role.ADMIN))):
     with SessionFactory.get_session() as session:
         rows = AuditLogRepository(session).list_recent(limit=limit)
         return {

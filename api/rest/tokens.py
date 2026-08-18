@@ -77,13 +77,13 @@ def build_tokens_list(session) -> list[dict]:
 
 
 @router.get("/")
-async def list_tokens(user: AuthContext = Depends(get_current_user)):
+def list_tokens(user: AuthContext = Depends(get_current_user)):
     with SessionFactory.get_session() as session:
         return {"tokens": build_tokens_list(session)}
 
 
 @router.get("/{symbol}/risk-profile")
-async def token_risk_profile(symbol: str, user: AuthContext = Depends(get_current_user)):
+def token_risk_profile(symbol: str, user: AuthContext = Depends(get_current_user)):
     """Faz 260: kullanıcı bulgusu — yüksek kaldıraç + geniş ATR
     kombinasyonunda likidasyon, planlanan stop-loss'tan ÖNCE
     tetiklenebiliyor (pozisyon %5 kayıp görmeden tüm teminatı
@@ -119,7 +119,7 @@ async def token_risk_profile(symbol: str, user: AuthContext = Depends(get_curren
 
 
 @router.get("/{symbol}")
-async def token_detail(symbol: str, user: AuthContext = Depends(get_current_user)):
+def token_detail(symbol: str, user: AuthContext = Depends(get_current_user)):
     with SessionFactory.get_session() as session:
         watchlist = [
             s.strip() for s in AppSettingsRepository(session).get("watchlist").split(",") if s.strip()

@@ -33,7 +33,7 @@ async def ask(body: AskRequest, user: AuthContext = Depends(get_current_user)):
 
 
 @router.get("/audit-runs")
-async def list_audit_runs(limit: int = 20, user: AuthContext = Depends(get_current_user)):
+def list_audit_runs(limit: int = 20, user: AuthContext = Depends(get_current_user)):
     """Faz 271 — kullanıcı isteği: LLM'in periyodik sistem denetiminin
     (services/llm_system_audit.py, her 6 saatte bir) GEÇMİŞİNİ göster —
     "hiçbir şey bulamadım" dahil, çünkü aksi halde denetimin gerçekten
@@ -47,7 +47,7 @@ async def list_audit_runs(limit: int = 20, user: AuthContext = Depends(get_curre
 
 
 @router.get("/proposals")
-async def list_proposals(status: str | None = None, limit: int = 50, user: AuthContext = Depends(get_current_user)):
+def list_proposals(status: str | None = None, limit: int = 50, user: AuthContext = Depends(get_current_user)):
     from database.repositories.code_change_proposal_repository import CodeChangeProposalRepository
     from database.session_factory import SessionFactory
 
@@ -58,7 +58,7 @@ async def list_proposals(status: str | None = None, limit: int = 50, user: AuthC
 
 
 @router.post("/proposals/{proposal_id}/approve")
-async def approve_proposal(proposal_id: str, user: AuthContext = Depends(require_role(Role.OPERATOR))):
+def approve_proposal(proposal_id: str, user: AuthContext = Depends(require_role(Role.OPERATOR))):
     from database.repositories.code_change_proposal_repository import CodeChangeProposalRepository
     from database.session_factory import SessionFactory
 
@@ -71,7 +71,7 @@ async def approve_proposal(proposal_id: str, user: AuthContext = Depends(require
 
 
 @router.post("/proposals/{proposal_id}/reject")
-async def reject_proposal(proposal_id: str, user: AuthContext = Depends(require_role(Role.OPERATOR))):
+def reject_proposal(proposal_id: str, user: AuthContext = Depends(require_role(Role.OPERATOR))):
     from database.repositories.code_change_proposal_repository import CodeChangeProposalRepository
     from database.session_factory import SessionFactory
 

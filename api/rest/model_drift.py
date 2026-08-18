@@ -14,7 +14,7 @@ router = APIRouter(prefix="/model-drift", tags=["model-drift"])
 
 
 @router.get("/")
-async def model_drift(
+def model_drift(
     limit: int = 2000, split_frac: float = 0.5, user: AuthContext = Depends(get_current_user)
 ):
     with SessionFactory.get_session() as session:

@@ -13,5 +13,5 @@ router = APIRouter(prefix="/feature-registry", tags=["feature-registry"])
 
 
 @router.get("/")
-async def feature_registry(user: AuthContext = Depends(get_current_user)):
+def feature_registry(user: AuthContext = Depends(get_current_user)):
     return {"features": {name: asdict(spec) for name, spec in FEATURE_REGISTRY.items()}}
