@@ -33,6 +33,95 @@ def test_weight_optimizer_proposes_weights():
     assert snapshot.weights["technical"] > snapshot.weights["macro"]
 
 
+def test_domain_with_no_previous_weight_and_no_fresh_data_falls_back_to_peer_median_not_flat_one(tmp_path):
+    """Kullanıcı bulgusu — gerçek olay: bir öneride onchain/time/
+    epistemology/relative_strength "— (yeni)" diye 1.000'e sabitlenmişti,
+    AYNI öneride technical/macro gibi GERÇEK veriye dayanan ajanlar
+    0.2-0.3'e kesilmişti — hiç kanıtlanmamış bir ajan, o an aktif
+    değerlendirilip cezalandırılan ajanlardan DAHA GÜVENİLİR görünüyordu.
+    Artık önceki ağırlığı hiç olmayan bir domain, sabit 1.0 yerine BU
+    RUNDAKİ gerçek verili ağırlıkların medyanına düşüyor."""
+    import shutil
+
+    from services.weight_repository import WeightRepository
+
+    name = str(tmp_path / "weights_no_previous_test")
+    try:
+        memory = AgentMemory(storage_path=str(tmp_path / "agent_memory_no_previous"))
+        # technical: neredeyse hep başarısız -> düşük gerçek ağırlık.
+        for _ in range(30):
+            memory.record(AgentPerformanceRecord(
+                agent_domain="technical", direction="LONG", confidence=0.8, was_correct=False,
+            ))
+        # macro: neredeyse hep başarılı -> yüksek gerçek ağırlık.
+        for _ in range(30):
+            memory.record(AgentPerformanceRecord(
+                agent_domain="macro", direction="LONG", confidence=0.8, was_correct=True,
+            ))
+        # onchain: memory.domains() içinde görünmesi için birkaç kayıt var
+        # (AgentMemory.domains() sadece en az 1 kaydı olan domain'leri
+        # döndürür) ama MIN_SAMPLES_FOR_PROPOSAL(10)'un altında -> yetersiz
+        # taze veri sayılır.
+        for _ in range(3):
+            memory.record(AgentPerformanceRecord(
+                agent_domain="onchain", direction="LONG", confidence=0.8, was_correct=True,
+            ))
+
+        # weight_repository'de HİÇBİR önceki onaylanmış ağırlık yok (ilk çalıştırma).
+        repo = WeightRepository(storage_path=name)
+
+        optimizer = WeightOptimizer(memory, weight_repository=repo)
+        snapshot = optimizer.propose_weights(evaluation_window=100)
+
+        assert snapshot.weights["technical"] < snapshot.weights["macro"]
+        assert "onchain" in snapshot.weights
+        # Sabit 1.0 DEĞİL — technical (düşük) ve macro (yüksek)
+        # arasındaki gerçek medyana düşmeli, ikisinin arasında kalmalı.
+        assert snapshot.weights["technical"] <= snapshot.weights["onchain"] <= snapshot.weights["macro"]
+        assert snapshot.weights["onchain"] != 1.0
+    finally:
+        shutil.rmtree(name, ignore_errors=True)
+
+
+def test_domain_with_previous_weight_but_no_fresh_data_still_keeps_its_own_previous_weight(tmp_path):
+    """Az önceki testin karşıtı: önceki ağırlığı OLAN bir domain, medyan
+    fallback'e DEĞİL, kendi önceki değerine düşmeye devam etmeli — bu
+    zaten doğru çalışıyordu (bkz. test_insufficient_fresh_samples_keeps_
+    previous_weight_instead_of_crushing_to_near_zero), medyan fallback'i
+    eklerken bunu bozmadığımızı doğruluyoruz."""
+    import shutil
+
+    from contracts.agent_weight_snapshot import AgentWeightSnapshot
+    from services.weight_repository import WeightRepository
+
+    name = str(tmp_path / "weights_has_previous_test")
+    try:
+        memory = AgentMemory(storage_path=str(tmp_path / "agent_memory_has_previous"))
+        for _ in range(30):
+            memory.record(AgentPerformanceRecord(
+                agent_domain="technical", direction="LONG", confidence=0.8, was_correct=False,
+            ))
+        for _ in range(30):
+            memory.record(AgentPerformanceRecord(
+                agent_domain="macro", direction="LONG", confidence=0.8, was_correct=True,
+            ))
+        for _ in range(3):
+            memory.record(AgentPerformanceRecord(
+                agent_domain="onchain", direction="LONG", confidence=0.8, was_correct=True,
+            ))
+        # onchain'in az veriyle bile GERÇEK bir önceki onaylı ağırlığı var: 0.05.
+        repo = WeightRepository(storage_path=name)
+        repo.save(AgentWeightSnapshot(weights={"onchain": 0.05}, evaluation_window=100).finalize())
+
+        optimizer = WeightOptimizer(memory, weight_repository=repo)
+        snapshot = optimizer.propose_weights(evaluation_window=100)
+
+        assert "onchain" in snapshot.weights
+        assert snapshot.weights["onchain"] == 0.05
+    finally:
+        shutil.rmtree(name, ignore_errors=True)
+
+
 def test_get_summary_with_regime_only_counts_matching_regime_records(tmp_path):
     """Faz 268b — Regime-Aware Learning: aynı ajan farklı rejimlerde
     çok farklı performans gösterebilir (rapor: "TechnicalAgent trending

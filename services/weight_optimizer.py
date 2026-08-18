@@ -104,6 +104,19 @@ class WeightOptimizer:
 
         proposed = {}
         window_breakdown: dict[str, dict[str, float]] = {}
+        # Kullanıcı bulgusu — gerçek olay: onchain/time/epistemology/
+        # relative_strength bir öneride "— (yeni)" diye 1.000'e
+        # sıfırlanıyordu, AYNI öneride technical/macro gibi GERÇEK veriye
+        # dayanan ajanlar 0.2-0.3'e kesiliyordu — veri eksikliği yüzünden
+        # hiç kanıtlanmamış bir ajan, tam da o an aktif olarak
+        # değerlendirilip cezalandırılan ajanlardan DAHA GÜVENİLİR
+        # görünüyordu. "Veri yok" nötr 1.0 anlamına gelmeli ama "nötr"ün
+        # ANLAMI o rundaki GERÇEK verili ajanların ortancasına göre
+        # olmalı — sabit 1.0, diğer herkes 1.0'ın altına çekilirken bile
+        # değişmiyordu. domains_needing_fallback ilk geçişte toplanır,
+        # gerçek veriye dayanan ağırlıkların medyanı hesaplandıktan SONRA
+        # (previous_weights önceliği KORUNARAK) çözülür.
+        domains_needing_fallback: list[str] = []
 
         for domain in domains:
             component_scores = {}
@@ -150,11 +163,29 @@ class WeightOptimizer:
             # ÖNERİLMİYOR — mevcut ağırlık (varsa) ya da nötr 1.0 aynen
             # korunuyor.
             if medium_total < MIN_SAMPLES_FOR_PROPOSAL:
-                proposed[domain] = previous_weights.get(domain, 1.0)
+                if domain in previous_weights:
+                    proposed[domain] = previous_weights[domain]
+                else:
+                    domains_needing_fallback.append(domain)
             else:
                 proposed[domain] = round(
                     sum(component_scores.values()) / len(component_scores), 3
                 )
+
+        # Kullanıcı bulgusu — bkz. domains_needing_fallback'in üstündeki
+        # not: önceki ağırlığı OLMAYAN (gerçekten yeni/hiç veri
+        # biriktirememiş) domain'ler artık sabit 1.0 yerine BU RUNDAKİ
+        # gerçek verili ağırlıkların medyanına düşüyor — "kanıtlanmamış"
+        # olmak, o an aktif değerlendirilen ajanlardan daha güvenilir
+        # görünmeyi sağlamamalı. Bu rundaki HİÇBİR domain'de yeterli veri
+        # yoksa (aşırı uç durum, ör. sistemin ilk hiç çalışması) son çare
+        # olarak 1.0'a düşülür — o zaman gerçekten karşılaştırılacak bir
+        # emsal yok.
+        if domains_needing_fallback:
+            data_driven_weights = [w for d, w in proposed.items() if d not in domains_needing_fallback]
+            fallback = round(sorted(data_driven_weights)[len(data_driven_weights) // 2], 3) if data_driven_weights else 1.0
+            for domain in domains_needing_fallback:
+                proposed[domain] = fallback
 
         snapshot = AgentWeightSnapshot(
             weights=proposed,
