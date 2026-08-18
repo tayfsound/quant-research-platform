@@ -106,6 +106,205 @@ function fmt(n: number | null | undefined, digits = 2) {
   return n === null || n === undefined ? "—" : n.toFixed(digits);
 }
 
+// Kullanıcı isteği: "işlemleri sürekli tamamen açık görüntülemek yerine
+// tıklayınca balon gibi açılıp şişecek, ilk sayfaya girişte üzerine
+// tıklayana kadar görüş alanına sığacak iki üç satırlık bir yapı —
+// kapanan işlemlere gitmek için çok fazla kaydırma yapmak zorunda
+// kalıyorum." Native <details>/<summary> — LLMCritic.tsx::ToolCallTrace
+// ile AYNI desen (bu kod tabanında zaten kurulu bir alışkanlık),
+// varsayılan kapalı: sadece sembol/yön/güncel fiyat/anlık PnL (2 satır)
+// görünür, tıklayınca giriş/miktar/kaldıraç/stop-hedef/aşamalı kapama
+// gibi geri kalan her şey açılır.
+function OpenPositionRow({
+  p, format, onSelectSymbol, closingId, onPartialClose, onExplain,
+}: {
+  p: Position;
+  format: (n: number | null | undefined) => string;
+  onSelectSymbol?: (symbol: string) => void;
+  closingId: string | null;
+  onPartialClose: (id: string, fraction: number) => void;
+  onExplain: () => void;
+}) {
+  const badge = tradeTypeBadge(p);
+  const pnl = p.net_unrealized_pnl;
+  return (
+    <details className="group border border-line-soft rounded-lg bg-canvas-soft open:bg-canvas open:shadow-sm">
+      <summary className="cursor-pointer list-none px-3 py-2 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-ink-faint text-xs transition-transform group-open:rotate-90">▶</span>
+          <span className="font-mono text-ink font-medium truncate">{p.symbol}</span>
+          {badge && <Badge tone={badge.tone}>{badge.label}</Badge>}
+          <Badge tone={p.direction === "LONG" ? "rise" : "fall"}>{p.direction}</Badge>
+        </div>
+        <div className="flex items-center gap-4 shrink-0 text-xs">
+          <span className="font-mono text-ink-soft hidden sm:inline">
+            {p.current_price != null ? format(p.current_price) : "—"}
+          </span>
+          <span className={`font-mono font-medium ${pnl != null && pnl > 0 ? "text-rise" : pnl != null && pnl < 0 ? "text-fall" : "text-ink-faint"}`}>
+            {pnl != null ? `${pnl > 0 ? "+" : ""}${format(pnl)}` : "—"}
+          </span>
+        </div>
+      </summary>
+
+      <div className="px-3 pb-3 pt-1 border-t border-line-soft/60 grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2 text-xs">
+        <div>
+          <div className="text-ink-faint">Giriş fiyatı</div>
+          <div className="font-mono text-ink-soft">{format(p.entry_price)}</div>
+        </div>
+        <div>
+          <div className="text-ink-faint">Miktar</div>
+          <div className="font-mono text-ink-soft">{fmt(p.quantity, 4)}</div>
+        </div>
+        <div>
+          <div className="text-ink-faint">Pozisyon büyüklüğü</div>
+          <div className="font-mono text-ink-soft">
+            {p.entry_price != null && p.quantity != null ? format(p.entry_price * p.quantity) : "—"}
+          </div>
+        </div>
+        <div>
+          <div className="text-ink-faint">Kaldıraç</div>
+          {p.leverage && p.leverage > 1 ? (
+            <Badge tone="accent">{p.leverage}x</Badge>
+          ) : (
+            <span className="text-ink-faint">spot</span>
+          )}
+        </div>
+        <div>
+          <div className="text-ink-faint">Stop / Hedef</div>
+          <div className="font-mono">
+            <span className="text-fall">{format(p.stop_loss_price)}</span>
+            {" / "}
+            <span className="text-rise">{format(p.take_profit_price)}</span>
+          </div>
+          {p.liquidation_price != null && (
+            <div className="text-fall/70 font-mono mt-0.5">likidasyon: {format(p.liquidation_price)}</div>
+          )}
+        </div>
+        <div>
+          <div className="text-ink-faint">Açıldı</div>
+          <div className="text-ink-soft">{p.opened_at ? new Date(p.opened_at).toLocaleString() : "—"}</div>
+        </div>
+        {p.realized_pnl != null && (
+          <div>
+            <div className="text-ink-faint">Realize edilen</div>
+            <div className={`font-mono ${p.realized_pnl > 0 ? "text-rise" : p.realized_pnl < 0 ? "text-fall" : "text-ink-soft"}`}>
+              {format(p.realized_pnl)}
+            </div>
+          </div>
+        )}
+        <div className="col-span-2 md:col-span-4 flex flex-wrap items-center gap-1.5 mt-1">
+          {onSelectSymbol && (
+            <button
+              onClick={() => onSelectSymbol(p.symbol)}
+              className="text-accent hover:underline mr-2"
+            >
+              {p.symbol} grafiğini aç
+            </button>
+          )}
+          {PARTIAL_CLOSE_OPTIONS.map((opt) => (
+            <Button
+              key={opt.label}
+              variant={opt.fraction === 1.0 ? "danger" : "secondary"}
+              disabled={closingId === p.id}
+              onClick={() => onPartialClose(p.id, opt.fraction)}
+              className="!px-2 !py-1 text-xs"
+            >
+              {opt.label}
+            </Button>
+          ))}
+          <button onClick={onExplain} className="text-accent hover:underline ml-auto">
+            Açıkla
+          </button>
+        </div>
+      </div>
+    </details>
+  );
+}
+
+function ClosedTradeRow({
+  t, format, onSelectSymbol, onExplain,
+}: {
+  t: Position;
+  format: (n: number | null | undefined) => string;
+  onSelectSymbol?: (symbol: string) => void;
+  onExplain: () => void;
+}) {
+  const badge = tradeTypeBadge(t);
+  const reason = effectiveExitReason(t.exit_reason, t.pnl);
+  return (
+    <details className="group border border-line-soft rounded-lg bg-canvas-soft open:bg-canvas open:shadow-sm">
+      <summary className="cursor-pointer list-none px-3 py-2 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-ink-faint text-xs transition-transform group-open:rotate-90">▶</span>
+          <span className="font-mono text-ink font-medium truncate">{t.symbol}</span>
+          {badge && <Badge tone={badge.tone}>{badge.label}</Badge>}
+          <Badge tone={t.direction === "LONG" ? "rise" : "fall"}>{t.direction}</Badge>
+          {reason && (
+            <Badge tone={reason === "take_profit" ? "rise" : (reason === "stop_loss" || reason === "liquidation") ? "fall" : "neutral"}>
+              {EXIT_REASON_LABELS[reason] || reason}
+            </Badge>
+          )}
+        </div>
+        <div className="flex items-center gap-4 shrink-0 text-xs">
+          <span className="text-ink-faint hidden sm:inline">
+            {t.closed_at ? new Date(t.closed_at).toLocaleString() : "—"}
+          </span>
+          <span className={`font-mono font-medium ${t.pnl && t.pnl > 0 ? "text-rise" : t.pnl && t.pnl < 0 ? "text-fall" : "text-ink-soft"}`}>
+            {format(t.pnl)}
+          </span>
+        </div>
+      </summary>
+
+      <div className="px-3 pb-3 pt-1 border-t border-line-soft/60 grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2 text-xs">
+        <div>
+          <div className="text-ink-faint">Giriş</div>
+          <div className="font-mono text-ink-soft">{format(t.entry_price)}</div>
+        </div>
+        <div>
+          <div className="text-ink-faint">Çıkış</div>
+          <div className="font-mono text-ink-soft">{format(t.exit_price)}</div>
+        </div>
+        <div>
+          <div className="text-ink-faint">Stop / Hedef</div>
+          <div className="font-mono">
+            <span className="text-fall">{format(t.stop_loss_price)}</span>
+            {" / "}
+            <span className="text-rise">{format(t.take_profit_price)}</span>
+          </div>
+          {t.liquidation_price != null && (
+            <div className="text-fall/70 font-mono mt-0.5">likidasyon: {format(t.liquidation_price)}</div>
+          )}
+        </div>
+        <div>
+          <div className="text-ink-faint">Pozisyon büyüklüğü</div>
+          <div className="font-mono text-ink-soft">
+            {t.entry_price != null && t.quantity != null ? format(t.entry_price * t.quantity) : "—"}
+          </div>
+        </div>
+        {t.leverage && t.leverage > 1 && (
+          <div>
+            <div className="text-ink-faint">Kaldıraç</div>
+            <Badge tone="accent">{t.leverage}x</Badge>
+          </div>
+        )}
+        <div className="col-span-2 md:col-span-4 flex items-center gap-1.5 mt-1">
+          {onSelectSymbol && (
+            <button
+              onClick={() => onSelectSymbol(t.symbol)}
+              className="text-accent hover:underline mr-2"
+            >
+              {t.symbol} grafiğini aç
+            </button>
+          )}
+          <button onClick={onExplain} className="text-accent hover:underline ml-auto">
+            Açıkla
+          </button>
+        </div>
+      </div>
+    </details>
+  );
+}
+
 // Faz 268-sonrası — kullanıcı isteği: "hangi ajandan ne karar geldiğini
 // gösteren açıklayan bir fonksiyon." decisions.agent_contributions'ta
 // zaten kayıtlı olan veriyi GET /positions/{id}/explain ayrıştırıp
@@ -482,119 +681,18 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
       {open.length === 0 ? (
         <EmptyState label="Şu an açık pozisyon yok." />
       ) : (
-        <div className="overflow-x-auto mb-8">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-ink-faint text-xs uppercase tracking-wide">
-                <th className="py-2 pr-4">Sembol</th>
-                <th className="py-2 pr-4">Yön</th>
-                <th className="py-2 pr-4">Giriş Fiyatı</th>
-                <th className="py-2 pr-4">Güncel Fiyat</th>
-                <th className="py-2 pr-4">Miktar</th>
-                <th className="py-2 pr-4">Pozisyon Büyüklüğü</th>
-                <th className="py-2 pr-4">Kaldıraç</th>
-                <th className="py-2 pr-4">Stop / Hedef</th>
-                <th className="py-2 pr-4">Açıldı</th>
-                <th className="py-2 pr-4">Aşamalı Kapama</th>
-                <th className="py-2 pr-4"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {open.map((p) => {
-                const badge = tradeTypeBadge(p);
-                return (
-                <tr key={p.id} className="border-t border-line-soft">
-                  <td className="py-2 pr-4 font-mono text-ink">
-                    {onSelectSymbol ? (
-                      <button
-                        onClick={() => onSelectSymbol(p.symbol)}
-                        className="hover:underline hover:text-accent transition-colors"
-                        title={`${p.symbol} grafiğini aç`}
-                      >
-                        {p.symbol}
-                      </button>
-                    ) : (
-                      p.symbol
-                    )}
-                    {badge && (
-                      <span className="ml-1" title={badge.title}><Badge tone={badge.tone}>{badge.label}</Badge></span>
-                    )}
-                    {/* Faz 268p — kullanıcı isteği: "pozisyon o an karda mı
-                        zararda mı göremiyorum, sembol adının altında pnl
-                        yazsın." Komisyon düşülmüş net rakam — "kârdakileri
-                        toplu kapat" butonunun kullandığı AYNI sayı. */}
-                    {p.net_unrealized_pnl != null ? (
-                      <div className={`text-xs font-mono mt-0.5 ${p.net_unrealized_pnl > 0 ? "text-rise" : p.net_unrealized_pnl < 0 ? "text-fall" : "text-ink-faint"}`}>
-                        {p.net_unrealized_pnl > 0 ? "+" : ""}{format(p.net_unrealized_pnl)}
-                      </div>
-                    ) : (
-                      <div className="text-xs text-ink-faint mt-0.5">—</div>
-                    )}
-                  </td>
-                  <td className="py-2 pr-4">
-                    <Badge tone={p.direction === "LONG" ? "rise" : "fall"}>{p.direction}</Badge>
-                  </td>
-                  <td className="py-2 pr-4 font-mono text-ink-soft">{format(p.entry_price)}</td>
-                  {/* Faz 268-sonrası — kullanıcı bulgusu: current_price API'den
-                      geliyordu (GET /positions zaten döndürüyordu) ama hiçbir
-                      sütunda gösterilmiyordu — "mevcut token fiyatları
-                      görünmüyor" tam olarak bu eksiklikti. */}
-                  <td className="py-2 pr-4 font-mono text-ink">
-                    {p.current_price != null ? format(p.current_price) : "—"}
-                  </td>
-                  <td className="py-2 pr-4 font-mono text-ink-soft">{fmt(p.quantity, 4)}</td>
-                  <td className="py-2 pr-4 font-mono text-ink-soft">
-                    {p.entry_price != null && p.quantity != null ? format(p.entry_price * p.quantity) : "—"}
-                  </td>
-                  <td className="py-2 pr-4">
-                    {p.leverage && p.leverage > 1 ? (
-                      <Badge tone="accent">{p.leverage}x</Badge>
-                    ) : (
-                      <span className="text-ink-faint text-xs">spot</span>
-                    )}
-                  </td>
-                  <td className="py-2 pr-4 font-mono text-xs">
-                    <span className="text-fall">{format(p.stop_loss_price)}</span>
-                    {" / "}
-                    <span className="text-rise">{format(p.take_profit_price)}</span>
-                    {p.liquidation_price != null && (
-                      <div className="text-fall/70 mt-0.5">likidasyon: {format(p.liquidation_price)}</div>
-                    )}
-                  </td>
-                  <td className="py-2 pr-4 text-ink-faint">{p.opened_at ? new Date(p.opened_at).toLocaleString() : "—"}</td>
-                  <td className="py-2 pr-4">
-                    <div className="flex flex-wrap gap-1.5">
-                      {PARTIAL_CLOSE_OPTIONS.map((opt) => (
-                        <Button
-                          key={opt.label}
-                          variant={opt.fraction === 1.0 ? "danger" : "secondary"}
-                          disabled={closingId === p.id}
-                          onClick={() => partialClose(p.id, opt.fraction)}
-                          className="!px-2 !py-1 text-xs"
-                        >
-                          {opt.label}
-                        </Button>
-                      ))}
-                    </div>
-                    {p.realized_pnl != null && (
-                      <div className="text-xs text-ink-faint mt-1">
-                        Realize edilen: <span className={p.realized_pnl > 0 ? "text-rise" : p.realized_pnl < 0 ? "text-fall" : ""}>{format(p.realized_pnl)}</span>
-                      </div>
-                    )}
-                  </td>
-                  <td className="py-2 pr-4">
-                    <button
-                      onClick={() => setExplainId(p.id)}
-                      className="text-xs text-accent hover:underline"
-                    >
-                      Açıkla
-                    </button>
-                  </td>
-                </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="flex flex-col gap-1.5 mb-8">
+          {open.map((p) => (
+            <OpenPositionRow
+              key={p.id}
+              p={p}
+              format={format}
+              onSelectSymbol={onSelectSymbol}
+              closingId={closingId}
+              onPartialClose={partialClose}
+              onExplain={() => setExplainId(p.id)}
+            />
+          ))}
         </div>
       )}
 
@@ -665,90 +763,16 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
       {filteredTrades.length === 0 ? (
         <EmptyState label={sinceMinutes === null ? "Henüz kapanmış işlem yok." : "Bu aralıkta kapanmış işlem yok."} />
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-ink-faint text-xs uppercase tracking-wide">
-                <th className="py-2 pr-4">Sembol</th>
-                <th className="py-2 pr-4">Yön</th>
-                <th className="py-2 pr-4">Giriş</th>
-                <th className="py-2 pr-4">Çıkış</th>
-                <th className="py-2 pr-4">Stop / Hedef</th>
-                <th className="py-2 pr-4">Pozisyon Büyüklüğü</th>
-                <th className="py-2 pr-4">PnL</th>
-                <th className="py-2 pr-4">Nasıl Kapandı</th>
-                <th className="py-2 pr-4">Kapandı</th>
-                <th className="py-2 pr-4"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredTrades.map((t) => {
-                const badge = tradeTypeBadge(t);
-                return (
-                <tr key={t.id} className="border-t border-line-soft">
-                  <td className="py-2 pr-4 font-mono text-ink">
-                    {onSelectSymbol ? (
-                      <button
-                        onClick={() => onSelectSymbol(t.symbol)}
-                        className="hover:underline hover:text-accent transition-colors"
-                        title={`${t.symbol} grafiğini aç`}
-                      >
-                        {t.symbol}
-                      </button>
-                    ) : (
-                      t.symbol
-                    )}
-                    {badge && (
-                      <span className="ml-1" title={badge.title}><Badge tone={badge.tone}>{badge.label}</Badge></span>
-                    )}
-                  </td>
-                  <td className="py-2 pr-4">
-                    <Badge tone={t.direction === "LONG" ? "rise" : "fall"}>{t.direction}</Badge>
-                    {t.leverage && t.leverage > 1 && (
-                      <span className="ml-1 text-xs text-accent font-medium">{t.leverage}x</span>
-                    )}
-                  </td>
-                  <td className="py-2 pr-4 font-mono text-ink-soft">{format(t.entry_price)}</td>
-                  <td className="py-2 pr-4 font-mono text-ink-soft">{format(t.exit_price)}</td>
-                  <td className="py-2 pr-4 font-mono text-xs">
-                    <span className="text-fall">{format(t.stop_loss_price)}</span>
-                    {" / "}
-                    <span className="text-rise">{format(t.take_profit_price)}</span>
-                    {t.liquidation_price != null && (
-                      <div className="text-fall/70 mt-0.5">likidasyon: {format(t.liquidation_price)}</div>
-                    )}
-                  </td>
-                  <td className="py-2 pr-4 font-mono text-ink-soft">
-                    {t.entry_price != null && t.quantity != null ? format(t.entry_price * t.quantity) : "—"}
-                  </td>
-                  <td className={`py-2 pr-4 font-mono ${t.pnl && t.pnl > 0 ? "text-rise" : t.pnl && t.pnl < 0 ? "text-fall" : "text-ink-soft"}`}>
-                    {format(t.pnl)}
-                  </td>
-                  <td className="py-2 pr-4">
-                    {(() => {
-                      const reason = effectiveExitReason(t.exit_reason, t.pnl);
-                      if (!reason) return null;
-                      return (
-                        <Badge tone={reason === "take_profit" ? "rise" : (reason === "stop_loss" || reason === "liquidation") ? "fall" : "neutral"}>
-                          {EXIT_REASON_LABELS[reason] || reason}
-                        </Badge>
-                      );
-                    })()}
-                  </td>
-                  <td className="py-2 pr-4 text-ink-faint">{t.closed_at ? new Date(t.closed_at).toLocaleString() : "—"}</td>
-                  <td className="py-2 pr-4">
-                    <button
-                      onClick={() => setExplainId(t.id)}
-                      className="text-xs text-accent hover:underline"
-                    >
-                      Açıkla
-                    </button>
-                  </td>
-                </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="flex flex-col gap-1.5">
+          {filteredTrades.map((t) => (
+            <ClosedTradeRow
+              key={t.id}
+              t={t}
+              format={format}
+              onSelectSymbol={onSelectSymbol}
+              onExplain={() => setExplainId(t.id)}
+            />
+          ))}
         </div>
       )}
 
