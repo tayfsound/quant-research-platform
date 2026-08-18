@@ -51,6 +51,16 @@ def asset_class_of_symbol(symbol: str) -> str:
     return "other"
 
 
+def _effective_decision_timestamp(record: AgentPerformanceRecord):
+    """decision_opened_at (DB'den, tz-aware/UTC) ile timestamp (datetime.now(),
+    tz-naive) AYNI kayıt kümesinde karışabiliyor — Python ikisini doğrudan
+    karşılaştıramaz (TypeError). Karşılaştırmayı hep tz-naive'e indirger;
+    birkaç saatlik yerel/UTC farkı bu "en yeni N kayıt" penceresinin amacı
+    için (gün mertebesinde doğru sıralama) önemsiz."""
+    ts = record.decision_opened_at or record.timestamp
+    return ts.replace(tzinfo=None) if ts.tzinfo is not None else ts
+
+
 def get_reliability_legacy_cutoff():
     """Faz 268-sonrası — kullanıcı isteği: "başlangıç olarak her ajanın
     kararda eşit ağırlığı olsun." reliability_legacy_cutoff_at (kill_
@@ -206,6 +216,17 @@ class AgentMemory:
             if (r.direction or "").upper() in ("LONG", "SHORT")
         ]
 
+        # Faz 268-sonrası — gerçek bulgu: kayıtlar record() çağrıldığı sırada
+        # (pozisyon KAPANDIĞINDA) dosyaya ekleniyor — insertion sırası kapanış
+        # sırasıdır, kararın VERİLDİĞİ sıra değil. Eski (haftalar önce açılmış)
+        # bir pozisyon grubu aynı gün toplu kapanınca, aşağıdaki window/
+        # min_timestamp/"son 20" mantığı o günün gerçek yeni kararları yerine
+        # o eski/bozuk dönemde verilmiş kararları görüyordu (bkz. contracts/
+        # agent_performance.py::decision_opened_at yorumu). Artık "en yeni"
+        # her zaman kararın VERİLDİĞİ ana göre — decision_opened_at yoksa
+        # (bu alan eklenmeden önceki eski kayıtlar) timestamp'e düşülüyor.
+        records = sorted(records, key=_effective_decision_timestamp)
+
         # Faz 268b — Regime-Aware Learning: regime verilirse, SADECE o
         # piyasa rejiminde alınmış gerçek kararlar sayılır. window (aşağıda)
         # bu filtreden SONRA uygulanıyor — "bu rejimin en yeni N kaydı",
@@ -232,7 +253,8 @@ class AgentMemory:
         # dönemi yeni hesaba hiç karışmıyor (satırlar silinmiyor, sadece
         # dışarıda bırakılıyor).
         if min_timestamp is not None:
-            records = [r for r in records if r.timestamp >= min_timestamp]
+            cutoff = min_timestamp.replace(tzinfo=None) if min_timestamp.tzinfo is not None else min_timestamp
+            records = [r for r in records if _effective_decision_timestamp(r) >= cutoff]
 
         # Faz 263 — kritik bulgu: WeightOptimizer.propose_weights() bu
         # metodu window'suz çağırıyordu, yani ağırlıklar HER ZAMAN tüm

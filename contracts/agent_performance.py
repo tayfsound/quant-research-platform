@@ -13,6 +13,18 @@ class AgentPerformanceRecord(BaseModel):
     agent_domain: str
     timestamp: datetime = Field(default_factory=datetime.now)
 
+    # Faz 268-sonrası — gerçek bulgu: timestamp burada KAYIT anını (pozisyon
+    # KAPANDIĞINDA record() çağrılır) temsil ediyor, ajanın kararı VERDİĞİ
+    # anı değil. Eski (ör. bir hafta önce açılmış) pozisyonların büyük bir
+    # grubu AYNI GÜN kapanınca (backlog), get_summary()'nin "en yeni N kayıt"
+    # penceresi o günün GERÇEK yeni kararlarını değil, o eski/bozuk dönemde
+    # verilmiş kararları görüyordu — hem sahte-yüksek hem sahte-düşük
+    # güvenilirlik üretiyordu (bkz. get_summary yorumu). decision_opened_at,
+    # pozisyonun GERÇEKTEN açıldığı (kararın verildiği) an — None ise (bu
+    # alan eklenmeden önceki eski kayıtlar) timestamp'e düşülüyor, geriye
+    # dönük uyumlu.
+    decision_opened_at: datetime | None = None
+
     direction: str
     confidence: float
     was_correct: bool

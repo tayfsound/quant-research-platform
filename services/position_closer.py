@@ -192,6 +192,7 @@ class PositionCloser:
                 pnl=pnl,
                 symbol=symbol,
                 market_regime=market_regime,
+                decision_opened_at=pos.get("opened_at"),
             ))
             recorded = True
 

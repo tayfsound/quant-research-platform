@@ -1,4 +1,6 @@
 """Agent Performance testleri."""
+from datetime import UTC, datetime, timedelta
+
 from contracts.agent_performance import AgentPerformanceRecord
 from services.agent_memory import AgentMemory
 
@@ -64,6 +66,60 @@ def test_get_summary_window_only_counts_the_most_recent_records(tmp_path):
     windowed = memory.get_summary("technical", window=5)
     assert windowed.total_predictions == 5
     assert windowed.overall_accuracy == 0.2  # sadece son 5 kayıt: 1/5
+
+
+def test_get_summary_window_uses_decision_time_not_recording_order(tmp_path):
+    """Gerçek canlı bulgu (2026-08-18): kayıtlar record() çağrıldığında
+    (pozisyon KAPANDIĞINDA) dosyaya ekleniyor. Haftalar önce açılmış eski
+    (bozuk döneme ait) bir pozisyon grubu bugün toplu kapanıp EN SON
+    insertion sırasını alsa bile, bunlar 'en yeni karar' SAYILMAMALI —
+    gerçekten bugün AÇILIP kapanmış taze kararlar, insertion sırasında
+    daha ÖNCE gelseler bile öncelikli olmalı."""
+    memory = AgentMemory(storage_path=str(tmp_path / "memory"))
+    now = datetime.now(UTC)
+    old_open = now - timedelta(days=10)
+
+    # Bugün GERÇEKTEN açılıp kapanmış 5 taze karar — hepsi doğru.
+    # decision_opened_at'ı OLMAYAN eski backlog'dan ÖNCE insert ediliyor.
+    for _ in range(5):
+        memory.record(AgentPerformanceRecord(
+            agent_domain="technical", direction="LONG", confidence=0.8,
+            was_correct=True, decision_opened_at=now,
+        ))
+
+    # 10 gün önce açılmış (bozuk dönem), ama BUGÜN toplu kapanan 15 eski
+    # pozisyon — insertion sırasında SONRA geliyor (en yeni gibi görünür),
+    # ama kararlar gerçekte çok daha eski. Hepsi yanlış.
+    for _ in range(15):
+        memory.record(AgentPerformanceRecord(
+            agent_domain="technical", direction="LONG", confidence=0.8,
+            was_correct=False, decision_opened_at=old_open,
+        ))
+
+    # Insertion sırasına göre "son 5" tamamen eski/bozuk backlog olurdu
+    # (hepsi yanlış, %0) — decision_opened_at'a göre sıralanınca gerçek
+    # en yeni 5 karar (bugünkü, hepsi doğru) görünmeli.
+    windowed = memory.get_summary("technical", window=5)
+    assert windowed.total_predictions == 5
+    assert windowed.overall_accuracy == 1.0
+
+
+def test_get_summary_falls_back_to_timestamp_for_legacy_records_without_decision_opened_at(tmp_path):
+    """decision_opened_at eklenmeden ÖNCEKİ eski kayıtlar (None) hâlâ
+    timestamp'e göre sıralanabilmeli — geriye dönük uyumluluk, tz-aware/
+    tz-naive karışımı TypeError patlatmamalı."""
+    memory = AgentMemory(storage_path=str(tmp_path / "memory"))
+
+    memory.record(AgentPerformanceRecord(
+        agent_domain="macro", direction="LONG", confidence=0.7, was_correct=False,
+    ))
+    memory.record(AgentPerformanceRecord(
+        agent_domain="macro", direction="LONG", confidence=0.7, was_correct=True,
+        decision_opened_at=datetime.now(UTC),
+    ))
+
+    summary = memory.get_summary("macro")
+    assert summary.total_predictions == 2
 
 
 def test_contextual_confidence(tmp_path):
