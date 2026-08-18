@@ -3,11 +3,18 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from contracts.auth import Role
+from market_data.ingestion.data_provider import RoutingProvider
 from services.auth_service import AuthContext, get_current_user, require_role
 from services.orchestrator import CognitiveOrchestrator
 
 router = APIRouter(prefix="/orchestrator", tags=["orchestrator"])
-_orchestrator = CognitiveOrchestrator()
+# Faz 269-sonrası — kullanıcı bulgusu: Predictions sayfası GC=F/SI=F/^IXIC/
+# AAPL gibi Binance-dışı sembollerde hiç veri getirmiyordu. Sebep: bu
+# singleton varsayılan data_provider'la (get_ohlcv_provider() -> düz
+# BinanceProvider) kuruluyordu, sembol formatına bakmaksızın her şeyi
+# Binance'e gönderiyordu. Gerçek trading cycle görevleri (services/tasks.py)
+# zaten RoutingProvider kullanıyor — aynı yönlendirme burada da lazım.
+_orchestrator = CognitiveOrchestrator(data_provider=RoutingProvider())
 
 class CycleRequest(BaseModel):
     seed: int = 42
