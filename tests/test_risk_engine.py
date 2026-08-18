@@ -148,6 +148,30 @@ def test_kill_switch_trip_is_recorded_as_a_real_system_event():
     assert events[0]["payload"]["threshold"] == 10
 
 
+def test_kill_switch_trip_event_is_correlated_to_the_triggering_cycle_id():
+    """Faz 269-sonrası — distributed tracing: entity_id artık position_
+    opened/position_closed ile AYNI desen, hangi cycle'ın bu switch'i
+    tetiklediği DB'den doğrudan sorgulanabilir olmalı."""
+    from database.repositories.event_log_repository import EventLogRepository
+    from database.session_factory import SessionFactory
+
+    ctx = CognitiveCycleContext(
+        risk={
+            "limits": {"max_position_size": RiskLimitEntry(value=1.0)},
+            "ai_enabled": True,
+            "consecutive_losses": 25,
+            "kill_switch_consecutive_losses": 10,
+        },
+        decision={"proposed_size": 0.5, "proposed_direction": "LONG"},
+    )
+    engine = RiskEngine()
+    engine.execute(ctx)
+
+    with SessionFactory.get_session() as session:
+        events = EventLogRepository(session).list_events(event_type="kill_switch_tripped", limit=5)
+    assert events[0]["entity_id"] == str(ctx.cycle_id)
+
+
 def test_kill_switch_does_not_trip_below_threshold():
     ctx = CognitiveCycleContext(
         risk={

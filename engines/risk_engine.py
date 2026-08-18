@@ -8,7 +8,7 @@ class RiskEngine:
     def __init__(self, secret: str = ""):
         self.secret = secret
 
-    def _trip_kill_switch(self, consecutive_losses: int, threshold: int) -> None:
+    def _trip_kill_switch(self, consecutive_losses: int, threshold: int, cycle_id=None) -> None:
         """ai_enabled'ı GERÇEKTEN kalıcı olarak false'a çeker (app_settings'e
         yazar) — sadece bu cycle'ı reddetmek yeterli değil, aksi halde bir
         sonraki cycle aynı gerçek geçmişle yeniden hesaplayıp aynı sonuca
@@ -30,11 +30,16 @@ class RiskEngine:
                 # üzerinden dolaylı görülebiliyordu ("son değeri kim/ne
                 # yazdı" — NE ZAMAN tetiklendiği, kaç kayıpla, bir önceki
                 # tetiklenmeyle arada ne kadar geçtiği sorgulanamıyordu).
+                # Faz 269-sonrası — distributed tracing: entity_id artık
+                # position_opened/position_closed ile AYNI desen, hangi
+                # cycle'ın (hangi kararın) bu switch'i tetiklediği DB'den
+                # doğrudan sorgulanabilir.
                 from database.repositories.event_log_repository import EventLogRepository
 
                 EventLogRepository(session).record(
                     event_type="kill_switch_tripped",
                     entity_type="risk",
+                    entity_id=cycle_id,
                     payload={"consecutive_losses": consecutive_losses, "threshold": threshold},
                 )
             structlog.get_logger().error(
@@ -74,7 +79,7 @@ class RiskEngine:
             ctx.risk.kill_switch_consecutive_losses > 0
             and ctx.risk.consecutive_losses >= ctx.risk.kill_switch_consecutive_losses
         ):
-            self._trip_kill_switch(ctx.risk.consecutive_losses, ctx.risk.kill_switch_consecutive_losses)
+            self._trip_kill_switch(ctx.risk.consecutive_losses, ctx.risk.kill_switch_consecutive_losses, cycle_id=ctx.cycle_id)
             ctx.risk.ai_enabled = False
             ctx.risk.evaluation.verdict = "rejected"
             ctx.risk.evaluation.reasons = [RiskReason(

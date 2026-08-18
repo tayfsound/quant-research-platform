@@ -5,12 +5,60 @@ session with nothing actually using it — config/settings.py already had
 REDIS_URL provisioned.
 """
 from celery import Celery
+from celery.signals import before_task_publish, task_postrun, task_prerun
 
 from config import get_settings
+from observability.logger import setup_logging
 
 settings = get_settings()
+# Faz 269-sonrası — bkz. api/main.py'deki AYNI bulgu: setup_logging()
+# hiçbir yerden çağrılmıyordu. Worker/beat süreçlerinde de contextvars
+# merge'in (distributed tracing) gerçekten aktif olması için burada da
+# çağrılıyor.
+setup_logging()
 
 celery_app = Celery("qrp", broker=settings.REDIS_URL, backend=settings.REDIS_URL)
+
+# Faz 269-sonrası — kullanıcı isteği: distributed tracing (cycle_id).
+# services/orchestrator.py::build_cognitive_context() her sembol için
+# cycle_id'yi contextvars'a bind ediyor (o sembolün işlenmesi süresince
+# TÜM log satırları otomatik taşır). Burdaki üç sinyal, standart Celery
+# correlation-ID deseni: (1) bir task BAŞKA bir task'ı tetiklerse (bugün
+# hiçbiri tetiklemiyor, ama services/tasks.py'ye ileride eklenebilir),
+# yayınlanan mesajın header'ına o anki cycle_id'yi otomatik taşır; (2)
+# her task başlarken worker sürecinin bir önceki task'tan kalma
+# contextvars'ını temizleyip header'da bir cycle_id varsa onu bind eder,
+# yoksa en azından celery_task_id/celery_task_name bağlar; (3) task
+# bitince temizler — aynı worker süreci bir SONRAKİ tamamen alakasız
+# task'ın loglarına eski cycle_id'yi asla sızdırmaz.
+@before_task_publish.connect
+def _propagate_cycle_id_to_task_headers(headers=None, **kwargs):
+    if headers is None:
+        return
+    import structlog
+
+    cycle_id = structlog.contextvars.get_contextvars().get("cycle_id")
+    if cycle_id:
+        headers["cycle_id"] = cycle_id
+
+
+@task_prerun.connect
+def _bind_task_context(task_id=None, task=None, **kwargs):
+    import structlog
+
+    structlog.contextvars.clear_contextvars()
+    bind = {"celery_task_id": task_id, "celery_task_name": getattr(task, "name", None)}
+    task_headers = getattr(getattr(task, "request", None), "headers", None) or {}
+    if task_headers.get("cycle_id"):
+        bind["cycle_id"] = task_headers["cycle_id"]
+    structlog.contextvars.bind_contextvars(**bind)
+
+
+@task_postrun.connect
+def _clear_task_context(**kwargs):
+    import structlog
+
+    structlog.contextvars.clear_contextvars()
 
 celery_app.conf.update(
     task_serializer="json",

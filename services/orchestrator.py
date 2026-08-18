@@ -2,6 +2,8 @@
 from datetime import UTC, datetime
 from typing import Any
 
+import structlog
+
 from observability.metrics import decision_pipeline_latency_seconds
 from database.repositories.app_settings_repository import TRADE_HORIZON_TO_RISK_TIMEFRAME
 from database.repositories.risk_limit_repository import load_active_limits
@@ -151,6 +153,16 @@ def build_cognitive_context(
     ctx = CognitiveCycleContext()
     ctx.market.symbol = symbol
     ctx.market.timeframe = timeframe
+
+    # Faz 269-sonrası — kullanıcı isteği: distributed tracing. cycle_id
+    # zaten decisions.id ile AYNI (services/decision_recorder.py) — eksik
+    # olan, bu ID'nin log satırlarına hiç yansımamasıydı. Bu sembolün
+    # işlendiği süre boyunca (risk red sebepleri, hata logları, pozisyon
+    # kapanışı vb.) TÜM log satırları artık otomatik bu cycle_id'yi taşır
+    # — bir sonraki sembolün build_cognitive_context çağrısı kendi
+    # cycle_id'siyle bunun üzerine yazar (contextvars overwrite, sızıntı
+    # yok).
+    structlog.contextvars.bind_contextvars(cycle_id=str(ctx.cycle_id), symbol=symbol)
 
     # Kullanıcı isteği: onchain ajanının gerçek sinyali (network_activity_
     # trend/hash_rate_trend/mvrv_zscore) SADECE Bitcoin zincirinden geliyor
