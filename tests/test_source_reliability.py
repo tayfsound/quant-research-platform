@@ -169,6 +169,90 @@ def test_annotate_without_symbol_uses_global_summary_unchanged(tmp_path):
     assert result[0]["benched"] is True
 
 
+def test_concept_drift_benches_an_agent_even_above_the_reliability_threshold(tmp_path):
+    """3. taraf inceleme bulgusu, kullanıcı isteği: analytics/concept_
+    drift.py şu ana kadar SADECE sistem-geneli çalışıyordu, hiçbir
+    ajanın benching'ine bağlı değildi. Bu test: reliability (SADECE son
+    20 karara bakar, %60 -> smoothed ~0.567) HÂLÂ eşiğin (0.35) ÜSTÜNDE
+    kalacak kadar yüksek olsa bile, baseline'dan (%100) recent'a (%60)
+    istatistiksel olarak anlamlı bir düşüş varsa ajan benched olmalı —
+    reliability TEK BAŞINA bu düşüşü yakalayamaz, drift kontrolü şart."""
+    memory = AgentMemory(storage_path=str(tmp_path))
+    # Baseline (eski) pencere: 20 karar, %100 doğru — GERÇEKTEN kusursuz geçmiş.
+    for i in range(20):
+        memory.record(AgentPerformanceRecord(
+            agent_domain="order_flow", direction="LONG", confidence=0.8, was_correct=True,
+        ))
+    # Recent (yeni) pencere: 20 karar, %60 doğru — reliability eşiğinin
+    # (0.35) hâlâ ÜSTÜNDE ama baseline'a göre anlamlı bir düşüş.
+    for i in range(20):
+        memory.record(AgentPerformanceRecord(
+            agent_domain="order_flow", direction="LONG", confidence=0.8, was_correct=i < 12,
+        ))
+
+    agent = SourceReliabilityAgent(memory=memory)
+    result = agent.annotate([{"domain": "order_flow", "confidence": 0.8}])
+
+    assert result[0]["source_reliability"] > 0.35  # reliability TEK BAŞINA benchlemezdi
+    assert result[0]["benched"] is True
+    assert agent.is_benched("order_flow") is True
+
+
+def test_concept_drift_does_not_bench_when_recent_performance_is_stable(tmp_path):
+    """Aynı (istikrarlı) doğruluk oranıyla iki pencere — istatistiksel
+    olarak anlamlı bir fark YOK, drift tetiklenmemeli (yanlış pozitif
+    olmamalı)."""
+    memory = AgentMemory(storage_path=str(tmp_path))
+    for i in range(40):
+        memory.record(AgentPerformanceRecord(
+            agent_domain="pattern", direction="LONG", confidence=0.7, was_correct=i % 2 == 0,
+        ))
+
+    agent = SourceReliabilityAgent(memory=memory)
+    result = agent.annotate([{"domain": "pattern", "confidence": 0.7}])
+
+    assert result[0]["benched"] is False
+
+
+def test_concept_drift_does_not_bench_on_improvement():
+    """Doğruluk YÜKSELİYORSA (baseline kötü, recent iyi) bu bir
+    iyileşme — benching kuralı sadece GERİLEMEYİ (regresyon) cezalandırmalı,
+    iyileşmeyi değil."""
+    from services.agent_memory import AgentMemory as _AgentMemory
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        memory = _AgentMemory(storage_path=tmp)
+        for i in range(20):
+            memory.record(AgentPerformanceRecord(
+                agent_domain="epistemology_test", direction="LONG", confidence=0.6, was_correct=i < 4,
+            ))
+        for i in range(20):
+            memory.record(AgentPerformanceRecord(
+                agent_domain="epistemology_test", direction="LONG", confidence=0.6, was_correct=i < 18,
+            ))
+
+        agent = SourceReliabilityAgent(memory=memory)
+        result = agent.annotate([{"domain": "epistemology_test", "confidence": 0.6}])
+
+        assert result[0]["benched"] is False
+
+
+def test_concept_drift_requires_at_least_two_full_windows(tmp_path):
+    """<2*DRIFT_WINDOW gerçek yönlü kayıt varsa (fail-closed) drift
+    kontrolü hiç çalışmamalı, sadece reliability eşiği geçerli olmalı."""
+    memory = AgentMemory(storage_path=str(tmp_path))
+    for i in range(15):
+        memory.record(AgentPerformanceRecord(
+            agent_domain="relative_strength", direction="LONG", confidence=0.7, was_correct=i < 12,
+        ))
+
+    agent = SourceReliabilityAgent(memory=memory)
+    result = agent.annotate([{"domain": "relative_strength", "confidence": 0.7}])
+
+    assert result[0]["benched"] is False
+
+
 def test_legacy_records_before_cutoff_do_not_count(tmp_path, monkeypatch):
     """Kullanıcı isteği: "başlangıç olarak her ajanın kararda eşit
     ağırlığı olsun." reliability_legacy_cutoff_at set edildiğinde, o

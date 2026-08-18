@@ -18,6 +18,7 @@ kayıtlarından hesaplanıyor — confidence_calibration.py'nin zaten kullandı�
 AYNI veri kaynağı. Tamamen stateless: her annotate() çağrısı diskten taze
 okur, hiçbir in-process hafıza tutmaz — "her 2 dakikada bir sıfırlanma"
 hata sınıfı yapısal olarak ortadan kalkar."""
+from analytics.concept_drift import compute_concept_drift
 from services.agent_memory import (
     AgentMemory,
     asset_class_of_symbol,
@@ -46,6 +47,16 @@ class SourceReliabilityAgent:
     # zaten Bayesian (Beta-prior) yumuşatma ile çözmüştü; aynı disiplin
     # (aynı prior_strength=5) burada da uygulanıyor.
     PRIOR_STRENGTH = 5
+
+    # Faz 269-sonrası — kullanıcı isteği: analytics/concept_drift.py
+    # (2x2 ki-kare bağımsızlık testi) şu ana kadar SADECE sistem-geneli
+    # (tüm ajanlar/semboller karışık, services/risk_state.py) çalışıyordu
+    # — bir ajanın GERÇEKTEN, istatistiksel olarak anlamlı şekilde
+    # çökmekte olduğu tespit edilse bile, reliability henüz BENCH_
+    # THRESHOLD'un altına düşmemişse hiçbir şey değişmiyordu (3. taraf
+    # inceleme bulgusu). concept_drift.MIN_SAMPLE_SIZE (20) her iki
+    # pencerede de gerekli — WINDOW ile AYNI büyüklük, tutarlı.
+    DRIFT_WINDOW = 20
 
     def __init__(self, memory: AgentMemory | None = None):
         self.memory = memory or AgentMemory()
@@ -82,6 +93,39 @@ class SourceReliabilityAgent:
                 return class_summary
         return self.memory.get_summary(domain, window=self.WINDOW, min_timestamp=cutoff)
 
+    def _records_for_drift(self, domain: str, symbol: str | None, cutoff):
+        """_summary_for ile AYNI sembol/varlık-sınıfı öncelik sırası
+        (yeterli örneklemli sembole özel geçmiş varsa o, yoksa global) —
+        ama özetlenmemiş ham kayıtlar (Concept Drift'in baseline/recent
+        iki AYRI pencereye ihtiyacı var, tek bir özet yetmiyor)."""
+        if symbol:
+            asset_class = asset_class_of_symbol(symbol)
+            class_records = self.memory.get_filtered_records(
+                domain, min_timestamp=cutoff, asset_class=asset_class
+            )
+            if len(class_records) >= self.DRIFT_WINDOW * 2:
+                return class_records
+        return self.memory.get_filtered_records(domain, min_timestamp=cutoff)
+
+    def _domain_drift_detected(self, domain: str, symbol: str | None, cutoff) -> bool:
+        """Son DRIFT_WINDOW karar (recent) ile ondan hemen önceki AYNI
+        büyüklükteki pencere (baseline) arasında istatistiksel olarak
+        anlamlı VE GERİLEYEN (iyileşme değil) bir doğruluk düşüşü varsa
+        True — reliability eşiğinin üstünde kalsa bile. <2*DRIFT_WINDOW
+        gerçek yönlü kayıt varsa (fail-closed) her zaman False."""
+        records = self._records_for_drift(domain, symbol, cutoff)
+        if len(records) < self.DRIFT_WINDOW * 2:
+            return False
+        recent = records[-self.DRIFT_WINDOW:]
+        baseline = records[-self.DRIFT_WINDOW * 2:-self.DRIFT_WINDOW]
+        drift = compute_concept_drift(
+            [r.was_correct for r in baseline],
+            [r.was_correct for r in recent],
+        )
+        if drift is None:
+            return False
+        return drift["drift_detected"] and drift["recent_win_rate"] < drift["baseline_win_rate"]
+
     def annotate(self, opinions: list[dict], symbol: str | None = None) -> list[dict]:
         """Her opinion'a GERÇEK isabet oranından hesaplanan source_
         reliability ve benched durumunu ekler. symbol verilirse (bu
@@ -97,6 +141,8 @@ class SourceReliabilityAgent:
             else:
                 reliability = round(self._smoothed_reliability(summary), 3)
                 benched = reliability < self.BENCH_THRESHOLD
+            if not benched and self._domain_drift_detected(domain, symbol, cutoff):
+                benched = True
             op["source_reliability"] = reliability
             op["data_freshness_hours"] = 0.0
             op["source_count"] = summary.total_predictions
@@ -104,10 +150,11 @@ class SourceReliabilityAgent:
         return opinions
 
     def is_benched(self, domain: str, symbol: str | None = None) -> bool:
-        summary = self._summary_for(domain, symbol, get_reliability_legacy_cutoff())
-        if summary.total_predictions < self.MIN_SAMPLES:
-            return False
-        return self._smoothed_reliability(summary) < self.BENCH_THRESHOLD
+        cutoff = get_reliability_legacy_cutoff()
+        summary = self._summary_for(domain, symbol, cutoff)
+        if summary.total_predictions >= self.MIN_SAMPLES and self._smoothed_reliability(summary) < self.BENCH_THRESHOLD:
+            return True
+        return self._domain_drift_detected(domain, symbol, cutoff)
 
     def get_domain_reliability(self, domain: str, symbol: str | None = None) -> float:
         summary = self._summary_for(domain, symbol, get_reliability_legacy_cutoff())

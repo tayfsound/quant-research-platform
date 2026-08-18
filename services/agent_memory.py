@@ -193,6 +193,34 @@ class AgentMemory:
         return list(self._records.keys())
 
 
+    def get_filtered_records(
+        self,
+        domain: str,
+        regime: str | None = None,
+        min_timestamp=None,
+        asset_class: str | None = None,
+    ) -> list[AgentPerformanceRecord]:
+        """get_summary()'nin filtreleme/sıralama mantığıyla AYNI (SADECE
+        gerçek yönlü kayıtlar, kararın VERİLDİĞİ ana göre sıralı) ama
+        özetlenmemiş, ham kayıt listesi döner — Concept Drift'in (baseline
+        vs recent iki AYRI pencere) ihtiyaç duyduğu ham win/loss dizisini
+        oluşturmak için (bkz. agents/source_reliability_agent.py::
+        _domain_drift_detected). get_summary() kasıtlı olarak DEĞİŞTİRİLMEDİ
+        — mevcut, çok test edilmiş davranışı bozma riski sıfır."""
+        records = [
+            r for r in self._records.get(domain, [])
+            if (r.direction or "").upper() in ("LONG", "SHORT")
+        ]
+        records = sorted(records, key=_effective_decision_timestamp)
+        if regime is not None:
+            records = [r for r in records if (r.market_regime or "unknown") == regime]
+        if asset_class is not None:
+            records = [r for r in records if asset_class_of_symbol(r.symbol) == asset_class]
+        if min_timestamp is not None:
+            cutoff = min_timestamp.replace(tzinfo=None) if min_timestamp.tzinfo is not None else min_timestamp
+            records = [r for r in records if _effective_decision_timestamp(r) >= cutoff]
+        return records
+
     def get_summary(
         self,
         domain: str,
