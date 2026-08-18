@@ -130,6 +130,17 @@ DEFAULTS: dict[str, str] = {
     # davranış (tam 1R), asla >1.0 olmamalı (stop'u girişten daha kötü
     # bir noktaya erken çekmiş olur).
     "breakeven_trigger_r_multiple": "0.5",
+    # Faz 269-sonrası — kullanıcı bulgusu: pump_fade pozisyonları ~$2k
+    # kârdayken piyasa tersine dönüp ~-$2k zarara kadar gidebiliyordu —
+    # breakeven (yukarıdaki) TEK BAŞINA yetersiz, çünkü SADECE net zararı
+    # önlüyor, GERÇEK kârı hiç KİLİTLEMİYOR (girişe çekilen stop yine de
+    # $0 sonuç demek). services/position_closer.py::_apply_breakeven_stop
+    # artık buna ek olarak entry_price'a göre SABİT yüzdelik bir trailing
+    # stop da uyguluyor — fiyat lehte gittikçe stop arkadan takip eder,
+    # SADECE gerçek kâr bölgesinde (breakeven'in ÖTESİNDE) devreye girer.
+    # 0.0 = trailing kapalı (sadece breakeven). Varsayılan %5 — min_stop_pct
+    # (%4.5) tabanıyla tutarlı, redeploy gerekmeden ayarlanabilir.
+    "trailing_stop_distance_pct": "0.05",
     # Drawdown-Based Position Sizing (gambler's ruin koruması) — kill
     # switch'in kullandığı AYNI gerçek ardışık kayıp sayacıyla, sert
     # durmadan ÖNCE devreye giren kademeli bir fren. 3. ardışık kayıptan

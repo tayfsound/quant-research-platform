@@ -401,7 +401,19 @@ class PositionCloser:
         az likit coinler) için hiç ulaşılamayan bir eşikti — sadece
         %1-1.8 lehte gidip ters dönüp likidasyona kadar gitti, koruma
         hiç devreye giremedi. Eşik artık AppSettings'ten okunuyor
-        (varsayılan 0.5R) — redeploy gerekmeden hızla ayarlanabilir."""
+        (varsayılan 0.5R) — redeploy gerekmeden hızla ayarlanabilir.
+
+        Faz 269-sonrası (2) — kullanıcı bulgusu: pump_fade pozisyonları
+        ~$2k kârdayken piyasa tersine dönüp ~-$2k zarara kadar gidebiliyordu
+        — breakeven TEK BAŞINA yetersiz, çünkü SADECE net zararı önlüyor,
+        GERÇEK kârı hiç KİLİTLEMİYOR (girişe çekilen stop yine de $0
+        sonuç demek). Artık buna ek olarak sabit yüzdelik bir trailing
+        stop da uygulanıyor — entry_price'a göre SABİT mesafe (mutasyona
+        uğrayan stop_loss_price'a göre DEĞİL, entry_price hiç değişmeyen
+        güvenilir bir referans): fiyat lehte gittikçe stop (current_price
+        ∓ entry_price*trailing_pct) olarak arkadan takip eder. Breakeven
+        ve trailing'in ürettiği adaylardan HANGİSİ daha sıkıysa (daha çok
+        kâr koruyorsa) o kullanılır — ikisi de SADECE sıkılaştırır."""
         entry_price = pos.get("entry_price")
         stop_loss_price = pos.get("stop_loss_price")
         direction = (pos.get("direction") or "").upper()
@@ -409,23 +421,53 @@ class PositionCloser:
             return stop_loss_price
 
         trigger_r_multiple = self._load_breakeven_trigger_r_multiple()
+        trailing_pct = self._load_trailing_stop_distance_pct()
 
         if direction == "LONG":
-            risk = entry_price - stop_loss_price
-            if risk <= 0:
-                return stop_loss_price  # stop zaten girişte/üstünde
-            if current_price >= entry_price + risk * trigger_r_multiple:
-                decision_repo.update_stop_loss_price(str(pos["id"]), entry_price)
-                return entry_price
+            original_risk = entry_price - stop_loss_price
+            candidates = [stop_loss_price]
+            if original_risk > 0 and current_price >= entry_price + original_risk * trigger_r_multiple:
+                candidates.append(entry_price)
+            if trailing_pct > 0:
+                trailing_candidate = current_price - entry_price * trailing_pct
+                # Trailing SADECE gerçek kâr bölgesinde (entry_price'ın
+                # ÜSTÜNDE bir aday) devreye girer — aksi halde henüz hiç
+                # lehte hareket olmadan (ya da zarardayken) trailing_pct,
+                # RiskTargetStage'in özenle hesapladığı geniş ATR-tabanlı
+                # stop'u erken ve haksız yere sıkılaştırabilirdi.
+                if trailing_candidate > entry_price:
+                    candidates.append(trailing_candidate)
+            new_stop = max(candidates)
         else:
-            risk = stop_loss_price - entry_price
-            if risk <= 0:
-                return stop_loss_price
-            if current_price <= entry_price - risk * trigger_r_multiple:
-                decision_repo.update_stop_loss_price(str(pos["id"]), entry_price)
-                return entry_price
+            original_risk = stop_loss_price - entry_price
+            candidates = [stop_loss_price]
+            if original_risk > 0 and current_price <= entry_price - original_risk * trigger_r_multiple:
+                candidates.append(entry_price)
+            if trailing_pct > 0:
+                trailing_candidate = current_price + entry_price * trailing_pct
+                if trailing_candidate < entry_price:
+                    candidates.append(trailing_candidate)
+            new_stop = min(candidates)
 
-        return stop_loss_price
+        if new_stop != stop_loss_price:
+            decision_repo.update_stop_loss_price(str(pos["id"]), new_stop)
+        return new_stop
+
+    @staticmethod
+    def _load_trailing_stop_distance_pct() -> float:
+        """0.0 = trailing kapalı (sadece breakeven). entry_price'a göre
+        sabit mesafe — min_stop_pct (%4.5) tabanıyla tutarlı bir varsayılan
+        (%5): kâr kilitlemeyi hızlandıracak kadar sıkı, pump-fade'in doğal
+        oynaklığıyla anında tetiklenmeyecek kadar geniş."""
+        try:
+            from database.repositories.app_settings_repository import AppSettingsRepository
+            from database.session_factory import SessionFactory
+
+            with SessionFactory.get_session() as session:
+                value = float(AppSettingsRepository(session).get("trailing_stop_distance_pct") or 0.05)
+            return value if value >= 0.0 else 0.05
+        except Exception:
+            return 0.05
 
     @staticmethod
     def _load_breakeven_trigger_r_multiple() -> float:
