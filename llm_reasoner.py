@@ -249,15 +249,36 @@ class NvidiaDecisionCritic:
         ]
         tool_call_log: list[dict] = []
 
-        for _ in range(max_iterations):
+        # Faz 268-sonrası — gerçek bulgu: model her iterasyonda YENİ bir
+        # araç çağırmaya devam edip max_iterations'a "sessizce" çarpabiliyor
+        # — kendiliğinden ne zaman duracağını bilmiyor (gerçek örnek:
+        # llm_system_audit_task, 15 iterasyonun TAMAMINI dosya okumakla
+        # geçirip hiç sonuç yazmadan bitti). Prompt'a "özet yaz" demek
+        # (denendi) modelin kendi takdirine bırakıyor, garantili değil.
+        # Artık SON iterasyonda tool_choice="none" ile model API düzeyinde
+        # daha fazla araç çağıramıyor — o ana kadar topladığı gerçek
+        # bulgularla ZORUNLU olarak bir metin cevabı üretiyor.
+        for i in range(max_iterations):
+            is_last_iteration = i == max_iterations - 1
+            request_messages = messages
+            if is_last_iteration:
+                request_messages = messages + [{
+                    "role": "user",
+                    "content": (
+                        "Artık araç çağıramazsın. Şimdiye kadar topladığın "
+                        "GERÇEK bulgulara dayanarak nihai, somut bir özet "
+                        "yaz. Hiçbir şey bulamadıysan bunu dürüstçe söyle."
+                    ),
+                }]
+
             response = _post_with_retry(
                 NVIDIA_API_URL,
                 headers={"Authorization": f"Bearer {api_key}"},
                 json_payload={
                     "model": self.model,
-                    "messages": messages,
+                    "messages": request_messages,
                     "tools": TOOL_SCHEMAS,
-                    "tool_choice": "auto",
+                    "tool_choice": "none" if is_last_iteration else "auto",
                     "temperature": 0.2,
                     "max_tokens": 1500,
                 },
@@ -269,9 +290,12 @@ class NvidiaDecisionCritic:
             assistant_message = choices[0].get("message", {}) if choices else {}
             tool_calls = assistant_message.get("tool_calls") or []
 
-            if not tool_calls:
+            if not tool_calls or is_last_iteration:
                 content = (assistant_message.get("content") or "").strip()
-                return {"response": content or "(boş yanıt)", "tool_calls": tool_call_log}
+                return {
+                    "response": content or "Araç çağrı döngüsü sınırına ulaşıldı, net bir cevap üretemedim.",
+                    "tool_calls": tool_call_log,
+                }
 
             messages.append(assistant_message)
             for call in tool_calls:

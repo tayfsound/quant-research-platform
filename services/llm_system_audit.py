@@ -43,7 +43,6 @@ somut şekilde özetle."""
 
 
 async def _run_audit_async() -> dict:
-    critic = NvidiaDecisionCritic()
     # Faz 268-sonrası — kritik bulgu: bu görev canlıda kayıtlı denetim
     # (llm_audit_runs) hiç üretmiyordu. Kök neden bulundu: NVIDIA API'nin
     # bu model için gecikmesi çok değişken — gerçek ölçüm, "sadece tamam
@@ -54,7 +53,30 @@ async def _run_audit_async() -> dict:
     # bir) ve artık kendi "slow" kuyruğunda (bkz. celery_app.py) —
     # gecikmeye duyarlı hiçbir şeyi bloklamıyor, bu yüzden cömert bir
     # üst sınır (300s/çağrı) güvenle uygulanabilir.
-    return await critic.ask_with_tools(AUDIT_PROMPT, timeout_ms=300000, max_iterations=6)
+    #
+    # Faz 268-sonrası (ikinci bulgu) — 300s/çağrı + 3 deneme hakkı bile
+    # yetmedi: gerçek llm_audit_runs geçmişi (9/9 çalıştırma) hiç
+    # başarılı olmadı — hep "read operation timed out", "529 sunucu
+    # hatası" ya da 6 iterasyonun tükenmesiyle bitti. deepseek-v4-flash
+    # (varsayılan, "Respond" sekmesinde KALMAYA devam ediyor — orada
+    # kullanıcı gerçek zamanlı bekliyor, kalite önceliği bilinçli bir
+    # tercih) bu 6-araç-çağrılı döngü yükünde güvenilir değil. Kod
+    # içindeki A/B test bulgusuna göre (yukarıdaki NvidiaDecisionCritic
+    # yorumu) openai/gpt-oss-20b aynı görevi ~5sn'de tamamlıyor — sadece
+    # BU periyodik arka plan denetimi için, döngünün gerçekten
+    # tamamlanma ihtimalini büyük ölçüde artırmak amacıyla kullanılıyor.
+    #
+    # Faz 268-sonrası (üçüncü bulgu) — model değişince zaman aşımı bitti
+    # (6 iterasyon ~6sn'de tamamlandı) ama YENİ bir örüntü ortaya çıktı:
+    # gerçek bir çalıştırmada model kendi llm_tools.py dosyasını üst üste
+    # binen satır aralıklarıyla 3 kez okuyup 6 iterasyonu hiç sonuca
+    # varmadan tüketti — A/B testinin öngördüğü "daha sığ" davranışın bir
+    # başka yüzü (daha az verimli araç kullanımı). Artık her iterasyon
+    # ~1sn (önceden ~90sn) sürdüğüne göre iterasyon sayısını ciddi
+    # artırmanın maliyeti neredeyse sıfır — modelin dolaşıp yine de
+    # sonuca varabilmesi için pay büyütüldü.
+    critic = NvidiaDecisionCritic(model="openai/gpt-oss-20b")
+    return await critic.ask_with_tools(AUDIT_PROMPT, timeout_ms=300000, max_iterations=15)
 
 
 def run_system_audit() -> dict:
