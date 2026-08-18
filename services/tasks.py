@@ -407,6 +407,28 @@ def refresh_self_model_report_task() -> dict:
     return {"id": str(report.id), "overall_reliability": result.get("overall_reliability")}
 
 
+@celery_app.task(name="refresh_causal_inference_report_task")
+def refresh_causal_inference_report_task() -> dict:
+    """Cognitive Core 4.0 — kullanıcı isteği: council'i hiç etkilemeyen,
+    ölçüm-only roadmap modüllerini birer birer canlıya alalım. Self-
+    Model'den sonraki Grup B adayı: Causal Inference (analytics/causal_
+    inference.py, Faz 861-900) — Granger causality, sistemdeki diğer
+    TÜM ilişki sinyallerinin (korelasyon tabanlı) aksine standart bir
+    "öngörücü nedensellik" testi. SADECE ölçüm/kayıt — hiçbir karar/risk
+    parametresini değiştirmiyor."""
+    from contracts.causal_inference_report import CausalInferenceReport
+    from database.repositories.causal_inference_report_repository import CausalInferenceReportRepository
+    from database.session_factory import SessionFactory
+    from services.causal_inference_gatherer import gather_causal_relationships
+
+    result = gather_causal_relationships()
+    with SessionFactory.get_session() as session:
+        report = CausalInferenceReport(result=result)
+        CausalInferenceReportRepository(session).save(report)
+
+    return {"id": str(report.id), "significant_relationship_count": len(result.get("significant_relationships", []))}
+
+
 @celery_app.task(name="ingest_order_book_task")
 def ingest_order_book_task() -> dict:
     """Faz 201: gerçek bulgu — market_data/ingestion/pipeline.py::

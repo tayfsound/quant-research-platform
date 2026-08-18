@@ -44,15 +44,17 @@ def compute_granger_causality(
     data = np.column_stack([effect_series, cause_series])  # statsmodels: [etki, sebep] sırası
 
     try:
-        results = grangercausalitytests(data, maxlag=max_lag)
+        results = grangercausalitytests(data, maxlag=max_lag, verbose=False)
     except Exception:
         return None
 
+    # statsmodels'in lag anahtarları numpy int64 — JSON'a (ve JSONB
+    # kolonlarına) sessizce yazılamıyor, düz Python int'e çevriliyor.
     p_values_by_lag = {}
     for lag, (test_results, _) in results.items():
         p_value = test_results.get("ssr_ftest", (None, None))[1]
         if p_value is not None:
-            p_values_by_lag[lag] = round(float(p_value), 6)
+            p_values_by_lag[int(lag)] = round(float(p_value), 6)
 
     if not p_values_by_lag:
         return None
@@ -62,7 +64,7 @@ def compute_granger_causality(
 
     return {
         "p_values_by_lag": p_values_by_lag,
-        "best_lag": best_lag,
+        "best_lag": int(best_lag),
         "best_p_value": best_p_value,
         "granger_causes": bool(best_p_value < SIGNIFICANCE_LEVEL),
         "sample_size": len(cause_series),

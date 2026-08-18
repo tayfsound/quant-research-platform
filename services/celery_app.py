@@ -214,4 +214,10 @@ celery_app.conf.beat_schedule = {
         "task": "refresh_self_model_report_task",
         "schedule": 604800.0,
     },
+    # Cognitive Core 4.0 — Causal Inference: Self-Model'den sonraki
+    # üçüncü ölçüm-only Grup B adayı (Granger causality).
+    "refresh-causal-inference-report-weekly": {
+        "task": "refresh_causal_inference_report_task",
+        "schedule": 604800.0,
+    },
 }

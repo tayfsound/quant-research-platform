@@ -16,6 +16,7 @@ const GROUPS: { label: string; items: { key: string; label: string }[] }[] = [
       { key: "backtest", label: "Backtests" },
       { key: "feature-ic", label: "Feature IC" },
       { key: "self-model", label: "Self-Model" },
+      { key: "causal-inference", label: "Causal Inference" },
       { key: "llm-critic", label: "Respond" },
     ],
   },

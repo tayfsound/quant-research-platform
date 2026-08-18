@@ -13,6 +13,7 @@ import ResearchWorkspace from './views/ResearchWorkspace';
 import LLMCritic from './views/LLMCritic';
 import FeatureIC from './views/FeatureIC';
 import SelfModel from './views/SelfModel';
+import CausalInference from './views/CausalInference';
 import Sidebar from './components/Sidebar';
 import { clearToken, hasToken } from './api/auth';
 
@@ -66,6 +67,7 @@ function App() {
           {view === 'llm-critic' && <LLMCritic />}
           {view === 'feature-ic' && <FeatureIC />}
           {view === 'self-model' && <SelfModel />}
+          {view === 'causal-inference' && <CausalInference />}
         </div>
       </main>
     </div>
