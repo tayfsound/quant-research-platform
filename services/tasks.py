@@ -385,6 +385,28 @@ def refresh_calibration_report_task() -> dict:
     }
 
 
+@celery_app.task(name="refresh_self_model_report_task")
+def refresh_self_model_report_task() -> dict:
+    """Cognitive Core 3.0 — kullanıcı isteği: council'i hiç etkilemeyen,
+    ölçüm-only roadmap modüllerini birer birer canlıya alalım. ECE'den
+    sonraki Grup B adayı: Self-Model (analytics/self_model.py, Faz
+    769-800) — kalibrasyon, DSR, kill switch, feature/concept drift gibi
+    ZATEN GERÇEKTEN hesaplanan bağımsız sinyalleri TEK bir öz-değerlendirme
+    anlık görüntüsünde birleştirir. calibration_report_task ile AYNI desen
+    — SADECE ölçüm/kayıt, hiçbir karar/risk parametresini değiştirmiyor."""
+    from contracts.self_model_report import SelfModelReport
+    from database.repositories.self_model_report_repository import SelfModelReportRepository
+    from database.session_factory import SessionFactory
+    from services.self_model_gatherer import gather_self_reliability_snapshot
+
+    result = gather_self_reliability_snapshot()
+    with SessionFactory.get_session() as session:
+        report = SelfModelReport(result=result)
+        SelfModelReportRepository(session).save(report)
+
+    return {"id": str(report.id), "overall_reliability": result.get("overall_reliability")}
+
+
 @celery_app.task(name="ingest_order_book_task")
 def ingest_order_book_task() -> dict:
     """Faz 201: gerçek bulgu — market_data/ingestion/pipeline.py::

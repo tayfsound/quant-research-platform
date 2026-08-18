@@ -208,4 +208,10 @@ celery_app.conf.beat_schedule = {
         "task": "refresh_calibration_report_task",
         "schedule": 604800.0,
     },
+    # Cognitive Core 3.0 — Self-Model: ECE'den sonraki, council'i hiç
+    # etkilemeyen ikinci ölçüm-only Grup B adayı.
+    "refresh-self-model-report-weekly": {
+        "task": "refresh_self_model_report_task",
+        "schedule": 604800.0,
+    },
 }
