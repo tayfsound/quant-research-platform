@@ -160,11 +160,24 @@ def _compute_density_size_multiplier(session, candidates_found: int) -> float:
     yoksa (<50 kayıt, fail-closed) çarpan 1.0 — mevcut davranış hiç
     değişmez. Yoğunluk kendi geçmişinin üst %10'unda (p90+) ise margin
     lineer olarak [1.0, 0.5] aralığında küçültülüyor — SADECE küçültür,
-    asla büyütmez (CPPI/Kelly ile AYNI ilke)."""
+    asla büyütmez (CPPI/Kelly ile AYNI ilke).
+
+    Faz 306 — kullanıcı isteği: "dominans'ı entegre ettiğimizde buraya da
+    bağlayalım." BTC dominansı (market_data/onchain/onchain_provider.py::
+    fetch_btc_dominance_pct) her cycle'da AYNI olaya kaydediliyor — ama
+    çarpan formülü HENÜZ bunu kullanmıyor, sadece gözlem/birikim. Sezonun
+    başında kaçınılan hatayı (2-of-3 Hurst vote'un ampirik doğrulama
+    olmadan %41.5 tetikleme oranına çıkması) tekrarlamamak için: dominans
+    trendiyle yoğunluk arasındaki gerçek ilişki yeterli geçmiş birikene
+    kadar (bu alan hiç yoksa henüz) ölçülmeden çarpana KARIŞTIRILMIYOR."""
     from database.repositories.event_log_repository import EventLogRepository
+    from market_data.onchain.onchain_provider import fetch_btc_dominance_pct
 
     repo = EventLogRepository(session)
-    repo.record("pump_fade_candidate_density", payload={"candidates_found": candidates_found})
+    repo.record(
+        "pump_fade_candidate_density",
+        payload={"candidates_found": candidates_found, "btc_dominance_pct": fetch_btc_dominance_pct()},
+    )
 
     history = repo.list_events(event_type="pump_fade_candidate_density", limit=_DENSITY_HISTORY_LIMIT)
     counts = [

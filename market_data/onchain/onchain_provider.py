@@ -34,6 +34,16 @@ logger = logging.getLogger(__name__)
 
 _BLOCKCHAIN_INFO_CHARTS_URL = "https://api.blockchain.info/charts/{chart}"
 _BITCOIN_DATA_MVRV_ZSCORE_URL = "https://bitcoin-data.com/v1/mvrv-zscore/last"
+# Faz 306 — kullanıcı isteği: pump-fade'in gerçek risk sürücüsünün BTC
+# yönü değil "kaç coin aynı anda pompalanıyor" yoğunluğu olduğu (bkz.
+# services/pump_fade_strategy.py::_compute_density_size_multiplier)
+# tespit edildikten sonra, bunu BTC dominansı/"altseason" göstergesiyle
+# birleştirme niyeti konuşuldu. CoinGecko'nun ücretsiz, API-key
+# gerektirmeyen /global uç noktası TEK istekte hem BTC dominansını hem
+# TOTAL2/TOTAL3'ü (TradingView'in yaygın kullandığı, BTC/BTC+ETH hariç
+# toplam piyasa değeri endeksleri) türetmeye yetecek ham veriyi veriyor —
+# ayrı bir endeks API'sine gerek yok.
+_COINGECKO_GLOBAL_URL = "https://api.coingecko.com/api/v3/global"
 
 # Faz 268v: bitcoin-data.com'un ücretsiz katmanı 8 istek/saat, 15 istek/gün
 # ile sınırlı — MVRV zaten günlük değişen bir metrik, agresif bir önbellek
@@ -218,3 +228,48 @@ def fetch_mvrv_zscore() -> float | None:
         # zaten sıkı olan 8/saat limitini tüketmeyelim.
         _MVRV_CACHE["mvrv_zscore"] = (time.monotonic(), None)
         return None
+
+
+def _fetch_global_market_data() -> dict | None:
+    def _do_fetch() -> dict | None:
+        try:
+            response = httpx.get(_COINGECKO_GLOBAL_URL, timeout=10)
+            response.raise_for_status()
+            return response.json()["data"]
+        except Exception as exc:
+            logger.warning("CoinGecko global market data fetch failed: %s", exc)
+            return None
+
+    return _cached("coingecko_global", _do_fetch)
+
+
+def fetch_btc_dominance_pct() -> float | None:
+    """BTC'nin toplam kripto piyasa değeri içindeki payı (%) — "altseason"
+    (BTC dışı coinlerin BTC'ye göre güçlendiği dönem) tespitinin temel
+    girdisi. Düşen dominans, sermayenin altcoin'lere aktığının klasik
+    göstergesidir — pump-fade'in "kaç coin aynı anda pompalanıyor"
+    yoğunluk sinyaliyle (services/pump_fade_strategy.py) BİRLİKTE
+    yorumlanması gereken, ayrı ve bağımsız bir kanıt."""
+    data = _fetch_global_market_data()
+    if not data:
+        return None
+    return data.get("market_cap_percentage", {}).get("btc")
+
+
+def fetch_total2_total3_market_cap_usd() -> dict | None:
+    """TOTAL2 (BTC hariç toplam piyasa değeri) ve TOTAL3 (BTC+ETH hariç) —
+    TradingView'in yaygın kullanılan endeksleriyle AYNI tanım, CoinGecko'nun
+    ham total_market_cap + market_cap_percentage'ından türetilmiş."""
+    data = _fetch_global_market_data()
+    if not data:
+        return None
+    total = data.get("total_market_cap", {}).get("usd")
+    pct = data.get("market_cap_percentage", {})
+    btc_pct = pct.get("btc")
+    eth_pct = pct.get("eth")
+    if total is None or btc_pct is None or eth_pct is None:
+        return None
+    return {
+        "total2_usd": total * (1 - btc_pct / 100),
+        "total3_usd": total * (1 - (btc_pct + eth_pct) / 100),
+    }

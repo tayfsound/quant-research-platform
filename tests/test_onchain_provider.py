@@ -2,11 +2,13 @@
 (Binance/Yahoo testlerinde kurulmuş konvansiyonla tutarlı)."""
 import market_data.onchain.onchain_provider as onchain_provider
 from market_data.onchain.onchain_provider import (
+    fetch_btc_dominance_pct,
     fetch_eth_gas_price_gwei,
     fetch_hash_rate_trend,
     fetch_mvrv_zscore,
     fetch_network_activity_trend,
     fetch_solana_tps,
+    fetch_total2_total3_market_cap_usd,
     fetch_usdt_total_supply,
 )
 
@@ -143,3 +145,46 @@ def test_fetch_mvrv_zscore_uses_the_cache_not_a_fresh_network_call(monkeypatch):
 
     assert calls["count"] == 1
     onchain_provider._MVRV_CACHE.clear()
+
+
+def test_fetch_btc_dominance_returns_a_real_plausible_value():
+    """Faz 306 — kullanıcı isteği: pump-fade'in altseason/dominans
+    korelasyon riski için gerçek BTC dominans verisi. Tarihsel olarak
+    BTC dominansı hiç %20'nin altına ya da %95'in üstüne çıkmadı — icat
+    edilmiş bir sayı değil, gerçek CoinGecko yanıtı."""
+    onchain_provider._generic_cache.clear()
+    dominance = fetch_btc_dominance_pct()
+    assert dominance is not None
+    assert 20.0 < dominance < 95.0
+    onchain_provider._generic_cache.clear()
+
+
+def test_fetch_total2_total3_returns_real_plausible_values():
+    onchain_provider._generic_cache.clear()
+    result = fetch_total2_total3_market_cap_usd()
+    assert result is not None
+    # TOTAL3 (BTC+ETH hariç) her zaman TOTAL2'den (sadece BTC hariç) küçük
+    # ya da eşit olmalı — ETH'nin payı asla negatif olamaz.
+    assert 0 < result["total3_usd"] <= result["total2_usd"]
+    onchain_provider._generic_cache.clear()
+
+
+def test_btc_dominance_and_total2_total3_share_the_same_cached_call(monkeypatch):
+    """TEK bir CoinGecko isteği hem dominansı hem TOTAL2/TOTAL3'ü besliyor
+    — Faz 268j'nin (bar başına tekrar ağ isteği atmama) AYNI disiplini."""
+    onchain_provider._generic_cache.clear()
+    calls = {"get": 0}
+    real_get = onchain_provider.httpx.get
+
+    def counting_get(*args, **kwargs):
+        calls["get"] += 1
+        return real_get(*args, **kwargs)
+
+    monkeypatch.setattr(onchain_provider.httpx, "get", counting_get)
+
+    fetch_btc_dominance_pct()
+    fetch_total2_total3_market_cap_usd()
+    fetch_btc_dominance_pct()
+
+    assert calls["get"] == 1
+    onchain_provider._generic_cache.clear()

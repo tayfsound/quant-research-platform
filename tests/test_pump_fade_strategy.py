@@ -424,6 +424,30 @@ def test_density_multiplier_is_1_when_history_insufficient():
         _cleanup_density_events()
 
 
+def test_density_event_records_btc_dominance_for_future_correlation_study():
+    """Faz 306 — kullanıcı isteği: dominans/altseason verisi her cycle'da
+    yoğunluk olayına EKLENİYOR (gözlem amaçlı) ama çarpan formülü henüz
+    bunu KULLANMIYOR — bu test sadece kaydın gerçekten olduğunu doğruluyor.
+    Ağ erişimi olmasa bile fail-closed None kabul edilebilir; anahtarın
+    KENDİSİ her zaman payload'da bulunmalı."""
+    from database.repositories.event_log_repository import EventLogRepository
+
+    _cleanup_density_events()
+    try:
+        with SessionFactory.get_session() as session:
+            _compute_density_size_multiplier(session, candidates_found=3)
+            events = EventLogRepository(session).list_events(
+                event_type="pump_fade_candidate_density", limit=1
+            )
+        assert len(events) == 1
+        payload = events[0]["payload"]
+        assert "btc_dominance_pct" in payload
+        if payload["btc_dominance_pct"] is not None:
+            assert 20.0 < payload["btc_dominance_pct"] < 95.0
+    finally:
+        _cleanup_density_events()
+
+
 def test_density_multiplier_is_1_for_typical_density_with_sufficient_history():
     _cleanup_density_events()
     try:
