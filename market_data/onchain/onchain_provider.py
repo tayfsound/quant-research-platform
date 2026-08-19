@@ -7,6 +7,15 @@ Infura/Alchemy/Helius'un ücretsiz RPC erişimiyle dürüstçe hesaplanamaz):
 exchange_inflow/outflow, whale accumulation/distribution. Bunlar
 contracts/onchain.py'de hâlâ varsayılan (0.0/False) — icat edilmedi.
 
+Faz 308 — kullanıcı isteği: Glassnode tarzı ileri düzey bir metrik listesi
+(MVRV bantları, STH/LTH davranış kohortları, cost basis dağılım heatmap'i,
+HODL waves, "percent supply in profit", realized cap/liveliness) araştırıldı.
+AYNI ilkeyle bilinçli olarak YAPILMADI: bunların hepsi UTXO-yaş kohort
+analizi gerektirir — tam bir Bitcoin node + özel bir indexer (ya da
+Glassnode/CryptoQuant'ın ücretli katmanı) olmadan dürüstçe hesaplanamaz,
+ücretsiz/kimliksiz bir API'de gerçek karşılığı yok. MVRV Z-Score (Faz
+268v, aşağıda) bu ailenin ücretsiz/dürüst şekilde erişilebilen TEK üyesi.
+
 Gerçekten hesaplanan metrikler:
 - ETH gas price (Infura eth_gasPrice) — ağ talebinin doğrudan ölçüsü.
 - USDT toplam arzı (Infura eth_call, ERC20 totalSupply()) — 24 saatlik
@@ -273,3 +282,59 @@ def fetch_total2_total3_market_cap_usd() -> dict | None:
         "total2_usd": total * (1 - btc_pct / 100),
         "total3_usd": total * (1 - (btc_pct + eth_pct) / 100),
     }
+
+
+# Faz 308 — kullanıcı isteği: stabilcoin dominansı (USDT+USDC+... payı) vs
+# ETH — "sermaye stabile mi kaçıyor yoksa altcoin'lere mi (ETH temsilci)
+# akıyor" sorusunu, TEK bir kova yerine gerçek bileşenleriyle (CoinGecko
+# market_cap_percentage'da zaten ayrı ayrı listeleniyor) ölçmek için.
+# AYNI önbelleklenmiş /global çağrısını paylaşıyor — sıfır ek ağ maliyeti.
+_STABLECOIN_SYMBOLS = ("usdt", "usdc", "usde", "dai", "fdusd", "usds", "usdt0")
+
+
+def fetch_stablecoin_dominance_vs_eth_pct() -> dict | None:
+    """market_cap_percentage'daki bilinen stabilcoin sembollerinin toplamı
+    ile ETH'nin payını yan yana döner — hangisinin büyüdüğü, "risk-off'a
+    (stabile) mi yoksa risk-on'a (altcoin, ETH temsilci) mi kaçış var"
+    sorusuna kaba ama gerçek bir cevap verir. Bilinmeyen/yeni bir stabilcoin
+    listede çıkarsa (icat edilmiş bir tahmin yerine) sessizce dışarıda
+    kalır — toplam hafifçe eksik sayılabilir, asla fazla değil."""
+    data = _fetch_global_market_data()
+    if not data:
+        return None
+    pct = data.get("market_cap_percentage", {})
+    eth_pct = pct.get("eth")
+    if eth_pct is None:
+        return None
+    stablecoin_pct = sum(pct.get(sym, 0.0) for sym in _STABLECOIN_SYMBOLS)
+    return {"stablecoin_dominance_pct": round(stablecoin_pct, 4), "eth_dominance_pct": eth_pct}
+
+
+def fetch_mayer_multiple() -> float | None:
+    """Mayer Multiple = güncel BTC fiyatı / 200 günlük basit hareketli
+    ortalama. Klasik bir piyasa-döngüsü göstergesi (>2.4 tarihsel olarak
+    aşırı ısınmış, <0.8 tarihsel olarak aşırı soğuk bölge) — ama GERÇEKTE
+    bir on-chain metrik DEĞİL, sadece fiyattan türetilir. Burada
+    gruplanmasının nedeni: kullanıcının istediği "BTC makro-döngü"
+    göstergeleri (MVRV, dominans vb.) ile AYNI yorumlama bağlamında
+    kullanılıyor olması — ama hiçbir yeni harici API'ye ihtiyaç duymuyor,
+    zaten var olan OHLCV sağlayıcısından (market_data/ingestion) hesaplanır.
+    <200 günlük gerçek veri varsa fail-closed None (icat edilmiş bir
+    ortalama asla üretilmez)."""
+    from market_data.ingestion.data_provider import get_ohlcv_provider
+
+    def _do_compute() -> float | None:
+        try:
+            bars = get_ohlcv_provider().get_ohlcv("BTCUSDT", "1d", limit=200)
+        except Exception as exc:
+            logger.warning("Mayer Multiple fetch failed: %s", exc)
+            return None
+        if len(bars) < 200:
+            return None
+        closes = [b.close for b in bars]
+        sma_200 = sum(closes) / len(closes)
+        if sma_200 == 0:
+            return None
+        return closes[-1] / sma_200
+
+    return _cached("mayer_multiple", _do_compute)
