@@ -195,19 +195,29 @@ class DecisionPersistor:
 
         return [dict(r) for r in rows]
 
-    def list_open_positions(self, limit: int = 200, offset: int = 0):
+    def list_open_positions(self, limit: int | None = 200, offset: int = 0):
         # Faz 268y — kullanıcı bulgusu: 869 açık pozisyonun sadece ilk
         # 100'ünü (limit sabit, offset hiç yoktu) görebiliyordu, "diğerlerini
         # göremiyorum" — offset eklendi ki Transactions gerçek sayfalama
         # yapabilsin, tüm açık pozisyonlar (sadece en yeni 100'ü değil)
         # görülebilsin.
-        rows = self.session.execute(
-            text(
-                "SELECT * FROM decisions WHERE status = 'open' "
-                "ORDER BY opened_at DESC LIMIT :limit OFFSET :offset"
-            ),
-            {"limit": limit, "offset": offset},
-        ).mappings().all()
+        #
+        # Faz 269-sonrası — KRİTİK bulgu, kullanıcı raporuyla canlıda
+        # yakalandı: services/position_closer.py::close_due_positions()
+        # bu metodu HİÇ argüman vermeden (varsayılan limit=200) çağırıyordu
+        # — ama sistemde GERÇEKTEN 2631 açık pozisyon vardı. ORDER BY
+        # opened_at DESC LIMIT 200 yüzünden en eski ~2431 pozisyon
+        # (GPSUSDT/TUTUSDT/HEMIUSDT/PORTALUSDT dahil — bazıları %20+
+        # kârdaydı) close_due_positions'ın döngüsüne HİÇ girmiyordu:
+        # stop/hedef/likidasyon/breakeven/trailing kontrolü SIFIR —
+        # sonsuza kadar izlenmeden kalabilirlerdi. limit=None artık
+        # LIMIT'i tamamen kaldırıyor — close_due_positions bunu kullanıyor.
+        query = "SELECT * FROM decisions WHERE status = 'open' ORDER BY opened_at DESC"
+        params: dict = {}
+        if limit is not None:
+            query += " LIMIT :limit OFFSET :offset"
+            params = {"limit": limit, "offset": offset}
+        rows = self.session.execute(text(query), params).mappings().all()
 
         return [dict(r) for r in rows]
 

@@ -49,6 +49,29 @@ def test_open_position_count_and_capital_used_pct_reflect_real_open_positions():
         _cleanup_symbol(symbol)
 
 
+def test_load_position_risk_state_counts_all_open_positions_not_just_the_default_1000_cap(monkeypatch):
+    """KRİTİK regresyon kilidi — gerçek olay (2026-08-19, canlıda
+    yakalandı): sistemde GERÇEKTEN 2631 açık pozisyon varken, burası
+    list_open_positions(limit=1000) çağırıyordu — open_position_count/
+    capital_used_pct (max_concurrent_positions VE kapital-yüzdesi risk
+    kontrollerinin GİRDİSİ) gerçek maruziyetin yarısından azını
+    görüyordu. Artık limit=None ile TÜM açık pozisyonlar sayılmalı.
+    Gerçek DB/settings'e karşı çalışır — sadece list_open_positions'a
+    hangi limit'in geçildiğini casusluk yapıyor."""
+    captured = {}
+    original = DecisionPersistor.list_open_positions
+
+    def _spy(self, limit=1000, offset=0):
+        captured["limit"] = limit
+        return original(self, limit=limit, offset=offset)
+
+    monkeypatch.setattr(DecisionPersistor, "list_open_positions", _spy)
+
+    load_position_risk_state()
+
+    assert captured["limit"] is None
+
+
 def test_trading_mode_defaults_to_test_when_never_set():
     with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
         with SessionFactory.get_session() as session:

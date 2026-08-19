@@ -171,7 +171,13 @@ def load_position_risk_state(
                 break
             fetch_limit *= 2
 
-        open_positions = decision_repo.list_open_positions(limit=1000)
+        # Faz 269-sonrası — KRİTİK bulgu: limit=1000 sabitti ama gerçek
+        # açık pozisyon sayısı 1000'i çoktan aşmıştı (2631) — open_count/
+        # capital_used_pct (max_concurrent_positions ve kapital yüzdesi
+        # risk kontrollerinin GİRDİSİ) gerçek maruziyetin yarısından
+        # azını görüyordu. limit=None ile artık TÜM açık pozisyonlar
+        # sayılıyor.
+        open_positions = decision_repo.list_open_positions(limit=None)
         if timeframe_filter is not None:
             open_positions = [p for p in open_positions if p.get("timeframe") == timeframe_filter]
         elif exclude_timeframe is not None:

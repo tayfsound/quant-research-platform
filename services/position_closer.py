@@ -504,7 +504,14 @@ class PositionCloser:
         learned_any = False
         regimes_seen: set[str] = set()
 
-        for pos in decision_repo.list_open_positions():
+        # Faz 269-sonrası — KRİTİK bulgu: burası varsayılan limit=200 ile
+        # çağrılıyordu ama gerçek açık pozisyon sayısı 200'ü çoktan
+        # aşmıştı (2631) — ORDER BY opened_at DESC yüzünden en eski
+        # binlerce pozisyon (bazıları %20+ kârda) bu döngüye HİÇ
+        # girmiyordu, stop/hedef/likidasyon/breakeven/trailing kontrolü
+        # sonsuza kadar atlanıyordu. limit=None artık TÜM açık
+        # pozisyonları kontrol ediyor.
+        for pos in decision_repo.list_open_positions(limit=None):
             opened_at = pos.get("opened_at")
             entry_price = pos.get("entry_price")
             if opened_at is None or entry_price is None:

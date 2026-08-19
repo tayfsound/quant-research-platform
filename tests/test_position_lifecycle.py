@@ -10,6 +10,66 @@ from database.session_factory import SessionFactory
 from services.position_closer import PositionCloser
 
 
+def test_close_due_positions_checks_all_open_positions_not_just_the_default_200_cap():
+    """KRİTİK regresyon kilidi — gerçek olay (2026-08-19, canlıda
+    yakalandı): sistemde GERÇEKTEN 2631 açık pozisyon varken, close_due_
+    positions() decision_repo.list_open_positions()'ı hiç argüman
+    vermeden (varsayılan limit=200) çağırıyordu. ORDER BY opened_at DESC
+    yüzünden en eski ~2431 pozisyon (bazıları %20+ kârda, GPSUSDT/
+    TUTUSDT/HEMIUSDT/PORTALUSDT dahil) bu döngüye HİÇ girmiyordu — stop/
+    hedef/likidasyon/breakeven/trailing kontrolü sonsuza kadar
+    atlanıyordu. Artık limit=None ile TÜM açık pozisyonlar taranmalı."""
+    captured = {}
+
+    class _FakeRepo:
+        def list_open_positions(self, limit=200, offset=0):
+            captured["limit"] = limit
+            captured["offset"] = offset
+            return []
+
+    closer = PositionCloser(_FixedPriceProvider(100.0))
+    closer.close_due_positions(_FakeRepo())
+
+    assert captured["limit"] is None
+
+
+def test_list_open_positions_with_limit_none_returns_every_row_not_just_the_default_cap():
+    """decision_persistor.py::list_open_positions'ın limit=None desteğini
+    gerçek veriyle doğrular — LIMIT ifadesi tamamen kaldırılmalı,
+    limit verilen küçük bir sayıdan daha FAZLA satır dönmeli."""
+    from contracts.decision_event import DecisionEvent
+
+    symbol_prefix = f"POSALL{uuid4().hex[:6]}"
+    now = datetime.now(UTC)
+    ids = []
+    with SessionFactory.get_session() as session:
+        persistor = DecisionPersistor(session)
+        for i in range(3):
+            event = DecisionEvent(
+                id=uuid4(), timestamp=now, symbol=f"{symbol_prefix}{i}",
+                proposed_direction="LONG", final_action="LONG", final_size=1.0, confidence=0.7,
+                status="open", entry_price=100.0, quantity=1.0, opened_at=now,
+                stop_loss_price=90.0, take_profit_price=140.0,
+            )
+            persistor.persist(event)
+            ids.append(str(event.id))
+
+    try:
+        with SessionFactory.get_session() as session:
+            persistor = DecisionPersistor(session)
+            limited = persistor.list_open_positions(limit=1)
+            unlimited = persistor.list_open_positions(limit=None)
+
+        assert len(limited) == 1
+        unlimited_ids = {p["id"] if isinstance(p["id"], str) else str(p["id"]) for p in unlimited}
+        assert set(ids).issubset(unlimited_ids)
+    finally:
+        with SessionFactory.get_session() as session:
+            from sqlalchemy import text
+            session.execute(text("DELETE FROM decisions WHERE symbol LIKE :p"), {"p": f"{symbol_prefix}%"})
+            session.commit()
+
+
 def test_risk_approved_directional_decision_opens_a_real_position_with_entry_price_and_no_pnl_yet():
     """DecisionRecorder seviyesinde, doğrudan: gerçek Council'in (boş ctx.market
     ile hep WAIT üretmesi — ayrı, bilinen bir davranış) değişkenliğine bağlı
