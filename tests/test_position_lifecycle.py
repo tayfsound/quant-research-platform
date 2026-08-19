@@ -803,6 +803,53 @@ def test_pump_fade_trailing_stop_closes_as_trailing_stop_profit_not_stop_loss():
     assert row["outcome"]["win"] is True
 
 
+def test_pump_fade_trailing_stop_with_tiny_favorable_move_eaten_by_fees_closes_as_breakeven_not_profit():
+    """Faz 294 — kullanıcı bulgusu (gerçek XAIUSDT örneği): stop ham
+    fiyatta entry'nin az ötesine (kâr yönünde) taşınmıştı ama ücret+funding
+    maliyeti net pnl'i NEGATİFE çekmişti — dashboard yine de "kârda
+    kapandı" (trailing_stop_profit) diye etiketlemişti, PNL eksi
+    gösterirken. exit_reason artık NİHAİ pnl'e göre belirleniyor:
+    pnl<=0 ise "trailing_stop_profit" ASLA kullanılmıyor, hiçbir zaman
+    gösterilen pnl işaretiyle çelişmiyor."""
+    from contracts.decision_event import DecisionEvent
+
+    symbol = f"POSPFFEEATE{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    entry, wide_stop, target = 100.0, 130.0, 75.0
+
+    with SessionFactory.get_session() as session:
+        event = DecisionEvent(
+            id=uuid4(), timestamp=now, symbol=symbol,
+            proposed_direction="SHORT", final_action="SHORT", final_size=1.0, confidence=0.7,
+            status="open", entry_price=entry, quantity=1.0, opened_at=now,
+            stop_loss_price=wide_stop, take_profit_price=target,
+            experiment_bucket="pump_fade_v1",
+        )
+        DecisionPersistor(session).persist(event)
+
+    # 1. adım: %0.72 lehte (99.28) -> trailing stop 99.98'e çekiliyor
+    # (entry'nin SADECE %0.02 altında — round-trip ücretten (~%0.1) DAHA KÜÇÜK
+    # bir kâr marjı).
+    closer_step1 = PositionCloser(_FixedPriceProvider(99.28))
+    with SessionFactory.get_session() as session:
+        closer_step1.close_due_positions(DecisionPersistor(session))
+
+    with SessionFactory.get_session() as session:
+        mid_row = DecisionPersistor(session).get_by_id(str(event.id))
+    assert mid_row["stop_loss_price"] == pytest.approx(99.98, abs=1e-6)
+
+    # 2. adım: fiyat 99.98'e geri sıçrıyor -> stop tetikleniyor, ham fiyatta
+    # entry'nin az altında (mekanizma "kâr" diyor) ama ücret bu küçük
+    # marjini yiyor -> GERÇEK net pnl negatif.
+    closer_step2 = PositionCloser(_FixedPriceProvider(99.98))
+    with SessionFactory.get_session() as session:
+        closed = closer_step2.close_due_positions(DecisionPersistor(session))
+
+    assert closed[0]["pnl"] < 0
+    assert closed[0]["exit_reason"] == "breakeven_stop"
+    assert closed[0]["win"] is False
+
+
 def test_non_pump_fade_position_with_same_wide_stop_is_unaffected_by_pump_fade_thresholds():
     """İzolasyon kanıtı: AYNI geniş stop mesafesine (SHORT, %30) sahip
     ama pump_fade_v1 OLMAYAN bir pozisyon, %1.5 lehte gidişte pump_fade'in

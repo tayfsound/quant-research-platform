@@ -652,27 +652,6 @@ class PositionCloser:
                 if exit_reason is None:
                     continue
                 exit_price = current_price
-                # Kullanıcı bulgusu (2026-08-19, gerçek CHIPUSDT örneği):
-                # dashboard "stop_loss" etiketini her zaman zarar sanıyordu,
-                # ama breakeven/trailing stop (pump_fade_v1 dahil, bkz.
-                # _apply_breakeven_stop) fiyatı KÂRA doğru da taşıyabiliyor —
-                # tetiklenen stop bu durumda gerçek bir zarar değil, kilitlenmiş
-                # bir kâr. Önceki kod SADECE tam breakeven'i (stop==entry) ayırt
-                # ediyordu; stop entry'den daha İYİ bir noktaya taşınmışsa hâlâ
-                # düz "stop_loss" kaydediliyordu — "karlı ayrıldı ama dashboard
-                # stop oldu gösteriyor" çelişkisinin kök nedeni buydu. Artık
-                # stop fiyatının entry'ye göre KONUMU (mekanizma, fee
-                # gürültüsünden etkilenmeyen bir sinyal — nihai pnl'e değil
-                # stop'un NEREYE taşındığına bakıyor) üç yönlü ayrım yapıyor.
-                if exit_reason == "stop_loss":
-                    stop_price = pos["stop_loss_price"]
-                    epsilon = max(1e-9, abs(entry_price) * 1e-9)
-                    if abs(stop_price - entry_price) < epsilon:
-                        exit_reason = "breakeven_stop"
-                    elif (direction == "LONG" and stop_price > entry_price) or (
-                        direction == "SHORT" and stop_price < entry_price
-                    ):
-                        exit_reason = "trailing_stop_profit"
 
             if direction == "LONG":
                 gross_pnl = (exit_price - entry_price) * quantity
@@ -711,6 +690,33 @@ class PositionCloser:
                 )
 
             pnl = gross_pnl - fee - funding_cost
+
+            # Kullanıcı bulgusu (2026-08-19, gerçek CHIPUSDT örneği): dashboard
+            # "stop_loss" etiketini her zaman zarar sanıyordu, ama breakeven/
+            # trailing stop (pump_fade_v1 dahil, bkz. _apply_breakeven_stop)
+            # fiyatı KÂRA doğru da taşıyabiliyor. İlk düzeltme SADECE stop
+            # fiyatının entry'ye göre KONUMUNA bakıyordu (mekanizma) — ama
+            # gerçek bir XAIUSDT örneği bunun da yanlış olduğunu gösterdi:
+            # stop ham fiyatta entry'nin az ötesine (kâr yönünde) taşınmıştı
+            # ama ücret+funding maliyeti net pnl'i -$54.95'e (gerçek zarar)
+            # çekmişti — dashboard "kârda kapandı" diye etiketlemişti, PNL
+            # eksi gösterirken. Artık NİHAİ (ücret+funding sonrası GERÇEK)
+            # pnl birincil sinyal — "trailing_stop_profit" SADECE pnl
+            # gerçekten pozitifken kullanılıyor, hiçbir zaman gösterilen
+            # pnl işaretiyle çelişmiyor. Stop'un entry'ye doğru/ötesine
+            # taşınmış olması (mekanizma) SADECE pnl<=0 kaldığında "gerçek
+            # tam-mesafe zarar" ile "sadece maliyetlerin yediği neredeyse-
+            # başabaş çıkış"ı ayırt etmek için ikincil sinyal olarak kalıyor.
+            if exit_reason == "stop_loss":
+                stop_price = pos["stop_loss_price"]
+                stop_moved_toward_or_past_entry = (
+                    (direction == "LONG" and stop_price >= entry_price)
+                    or (direction == "SHORT" and stop_price <= entry_price)
+                )
+                if pnl > 0:
+                    exit_reason = "trailing_stop_profit"
+                elif stop_moved_toward_or_past_entry:
+                    exit_reason = "breakeven_stop"
 
             # Faz 268-sonrası: SADECE burada (pozisyon fiilen kapanırken,
             # her check cycle'ında değil) gerçek MAE/MFE hesaplanıyor —
