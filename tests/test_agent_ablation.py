@@ -84,9 +84,32 @@ def test_summarize_ablation_by_domain_aggregates_correctly():
     assert stats["votes_cast"] == 4
     assert stats["caused_trade_count"] == 2
     assert stats["caused_trade_total_pnl"] == 7.0
-    assert stats["caused_trade_win_rate"] == 0.5
     assert stats["flipped_direction_count"] == 1
     assert stats["not_pivotal_count"] == 1
+
+
+def test_summarize_ablation_by_domain_win_rate_is_none_below_min_samples():
+    """Faz 298 — kullanıcı isteği: minimum evidence gate. caused_trade_
+    total_pnl (kesin bir tutar) her zaman raporlanır ama caused_trade_
+    win_rate (bir ORAN) örneklem <10 iken yanıltıcı kesinlik verir —
+    fail-closed None."""
+    records = [{"domain": "pattern", "impact": "caused_trade", "pnl": 1.0} for _ in range(8)]
+    summary = summarize_ablation_by_domain(records)
+    stats = summary["pattern"]
+    assert stats["caused_trade_count"] == 8
+    assert stats["caused_trade_total_pnl"] == 8.0
+    assert stats["caused_trade_win_rate"] is None
+
+
+def test_summarize_ablation_by_domain_win_rate_reported_at_min_samples():
+    records = (
+        [{"domain": "macro", "impact": "caused_trade", "pnl": 1.0} for _ in range(7)]
+        + [{"domain": "macro", "impact": "caused_trade", "pnl": -1.0} for _ in range(3)]
+    )
+    summary = summarize_ablation_by_domain(records)
+    stats = summary["macro"]
+    assert stats["caused_trade_count"] == 10
+    assert stats["caused_trade_win_rate"] == 0.7
 
 
 def test_summarize_ablation_by_domain_win_rate_is_none_with_no_caused_trades():

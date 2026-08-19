@@ -93,6 +93,9 @@ def compute_leave_one_out_impact(
     return "not_pivotal"
 
 
+MIN_SAMPLES_FOR_WIN_RATE = 10
+
+
 def summarize_ablation_by_domain(records: list[dict]) -> dict:
     """records: her biri {'domain', 'impact', 'pnl'} olan GERÇEK
     sonuçlar (compute_leave_one_out_impact'in her gerçek karar için
@@ -100,7 +103,16 @@ def summarize_ablation_by_domain(records: list[dict]) -> dict:
     "caused_trade" (o kararların TOPLAM gerçek pnl'i — bu ajan
     olmasaydı bu kâr/zarar HİÇ gerçekleşmezdi, gerçek bir nedensel
     atıf) ve kaçında "flipped_direction" (sadece sayım, pnl atfedilmiyor)
-    oldu."""
+    oldu.
+
+    Faz 298 — kullanıcı isteği: "minimum evidence gate'leri karar
+    eşiğiyle daha sıkı hizalanmalı." caused_trade_total_pnl (toplam
+    gerçek nedensel katkı, KESİN bir para tutarı) her zaman raporlanıyor
+    — ama caused_trade_win_rate (bir ORAN) örneklem küçükken (ör. n=8
+    ile "%100") yanıltıcı kesinlik izlenimi verebiliyordu. WeightOptimizer/
+    SourceReliabilityAgent'ın zaten kullandığı AYNI MIN_SAMPLES=10
+    eşiğiyle hizalandı — altında fail-closed None (icat edilmiş bir
+    güven aralığı değil, sadece "henüz yeterli kanıt yok")."""
     by_domain: dict[str, list[dict]] = defaultdict(list)
     for r in records:
         by_domain[r["domain"]].append(r)
@@ -110,11 +122,12 @@ def summarize_ablation_by_domain(records: list[dict]) -> dict:
         caused = [r for r in domain_records if r["impact"] == "caused_trade"]
         flipped = [r for r in domain_records if r["impact"] == "flipped_direction"]
         caused_wins = sum(1 for r in caused if r["pnl"] > 0)
+        has_enough_samples = len(caused) >= MIN_SAMPLES_FOR_WIN_RATE
         summary[domain] = {
             "votes_cast": len(domain_records),
             "caused_trade_count": len(caused),
             "caused_trade_total_pnl": round(sum(r["pnl"] for r in caused), 4),
-            "caused_trade_win_rate": round(caused_wins / len(caused), 4) if caused else None,
+            "caused_trade_win_rate": round(caused_wins / len(caused), 4) if has_enough_samples else None,
             "flipped_direction_count": len(flipped),
             "not_pivotal_count": len(domain_records) - len(caused) - len(flipped),
         }
