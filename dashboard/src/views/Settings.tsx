@@ -728,48 +728,10 @@ export default function Settings() {
           </div>
         </Card>
 
-        <Card>
-          <h3 className="text-sm font-semibold text-ink mb-1">Pairs trading (hedge)</h3>
-          <p className="text-xs text-ink-soft mb-3">
-            Kointegre iki sembol arasındaki spread saparsa iki bacaklı (bir LONG bir SHORT) pozisyon açar —
-            council/confidence sisteminden bağımsız, istatistiksel bir sinyal. Her bacağın gerçek dolar
-            (marjin) boyutu bu tutar / o anki fiyat olarak hesaplanır — tüm varlıklarda aynı gerçek risk.
-            Kapalıyken hiçbir etkisi yok, mevcut açık pozisyonlar normal stop/hedefe göre kapanmaya devam eder.
-          </p>
-          <div className="flex gap-2 mb-4">
-            {[
-              { key: "true", label: "Açık" },
-              { key: "false", label: "Kapalı" },
-            ].map(({ key, label }) => (
-              <button
-                key={key}
-                onClick={() => save("pairs_trading_enabled", key)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                  (settings.pairs_trading_enabled ?? "false") === key
-                    ? "bg-accent text-white border-accent"
-                    : "bg-canvas-soft text-ink-soft border-line hover:bg-surface-soft"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <p className="text-xs text-ink-soft mb-2">Bacak başına sermaye (dolar)</p>
-          <div className="flex gap-2">
-            <Input
-              decimal
-              value={draft.pairs_trading_leg_capital_usd ?? ""}
-              onChange={(v) => setDraft((d) => ({ ...d, pairs_trading_leg_capital_usd: v }))}
-            />
-            <Button
-              disabled={saving === "pairs_trading_leg_capital_usd"}
-              onClick={() => save("pairs_trading_leg_capital_usd", draft.pairs_trading_leg_capital_usd)}
-            >
-              {saved === "pairs_trading_leg_capital_usd" ? "Kaydedildi ✓" : "Kaydet"}
-            </Button>
-          </div>
-        </Card>
+        {/* Faz 282 — kullanıcı kararı (2026-08-19): pairs trading (hedge)
+            stratejisi kalıcı olarak durduruldu (pairs_trading_enabled=false,
+            backend'de hâlâ duruyor ama hiç yeni pozisyon açmıyor) — kullanıcı
+            Settings'te bu bölümün görünmesini istemedi, kart kaldırıldı. */}
       </div>
     </div>
   );
