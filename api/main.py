@@ -7,7 +7,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
-from api.rest import agents, audit, auth, backtest, calibration, causal_inference, cognitive, collective_intelligence, correlation_breakdown, dashboard, depeg_risk, experiments, feature_ic, feature_registry, liquidity_var, llm_critic, mae_mfe_confidence, market_data, memory, model_drift, models, orchestrator, positions, risk_limits, seasonality, self_model, settings, shadow, strategies, system_events, tokens, weights, webhooks, workspace
+from api.rest import agents, audit, auth, calibration, causal_inference, cognitive, collective_intelligence, correlation_breakdown, dashboard, depeg_risk, experiments, feature_ic, feature_registry, liquidity_var, llm_critic, mae_mfe_confidence, market_data, memory, model_drift, models, orchestrator, positions, risk_limits, seasonality, self_model, settings, shadow, strategies, system_events, tokens, weights, webhooks, workspace
 from config import get_settings
 from observability.health import router as health_router
 from observability.logger import setup_logging
@@ -80,7 +80,6 @@ app.include_router(memory.router, prefix="/api/v1")
 app.include_router(cognitive.router, prefix="/api/v1")
 app.include_router(orchestrator.router, prefix="/api/v1")
 app.include_router(dashboard.router, prefix="/api/v1")
-app.include_router(backtest.router, prefix="/api/v1")
 app.include_router(workspace.router, prefix="/api/v1")
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(risk_limits.router, prefix="/api/v1")

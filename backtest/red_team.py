@@ -1,23 +1,17 @@
 """Adversarial Red-Team modu — kasıtlı kötü senaryo üretimi.
 
-Faz 268-sonrası: backtest/real_historical_backtest.py GERÇEK Binance
-geçmişiyle GERÇEK council'i besliyor — ama "iyi/normal" piyasada ne
-olduğunu gösteriyor, "en kötü ihtimalde savunmalar gerçekten tutuyor mu"
-sorusunu cevaplamıyor. Bu modül SENTETİK, kasıtlı olarak kötü fiyat
-serileri (whipsaw, flash crash, korele çoklu-varlık çöküşü) üretip
-bunları AYNI GERÇEK altyapı (CognitiveEngine — 10 ajanlı council +
-RiskEngine + DrawdownSizingStage — ve real_historical_backtest.py'nin
-zaten test edilmiş context/exit simülasyonu) üzerinden koşturuyor. Amaç
-"council ne düşünürdü" değil: "kill switch/drawdown sizing/max drawdown
-limiti gerçekten sermayeyi koruyor mu, yoksa sadece sakin piyasada mı
-çalışıyorlar" sorusunu gerçek koda karşı test etmek.
+Faz 268-sonrası: gerçek council'i (CognitiveEngine — 10 ajanlı council +
+RiskEngine + DrawdownSizingStage) SENTETİK, kasıtlı olarak kötü fiyat
+serileri (whipsaw, flash crash, korele çoklu-varlık çöküşü) üzerinden
+koşturuyor. Amaç "council ne düşünürdü" değil: "kill switch/drawdown
+sizing/max drawdown limiti gerçekten sermayeyi koruyor mu, yoksa sadece
+sakin piyasada mı çalışıyorlar" sorusunu gerçek koda karşı test etmek.
 
-Kasıtlı olarak _build_backtest_context/_simulate_real_exit'i (real_
-historical_backtest.py) TEKRAR YAZMIYOR, doğrudan import edip üstüne
-sadece kill switch/drawdown-sizing için gereken SIRALI durumu (ctx.risk.
-consecutive_losses/ai_enabled/current_drawdown, bir SONRAKİ bar'a
-taşınan) ekliyor — "iki beyin" riskini (aynı context/exit mantığının
-ikinci, sapabilecek bir kopyası) önlemek için.
+_build_backtest_context/_simulate_real_exit (Faz 282'de kaldırılan
+backtest/real_historical_backtest.py'nin tek gerçek çağıranı bu dosyaydı,
+bu yüzden buraya taşındı) SADECE kill switch/drawdown-sizing için gereken
+SIRALI durumu (ctx.risk.consecutive_losses/ai_enabled/current_drawdown,
+bir SONRAKİ bar'a taşınan) üstlerine ekliyor.
 
 Basitleştirme (dürüstçe belirtilmeli): capital_per_trade SABİT kalıyor,
 önceki işlemlerin kâr/zararına göre YENİDEN ölçeklenmiyor (gerçek
@@ -46,12 +40,97 @@ import math
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from backtest.real_historical_backtest import _build_backtest_context, _simulate_real_exit
+from contracts.context import CognitiveCycleContext
 from contracts.contexts.risk import RiskLimitEntry
-from market_data.features.signal_engine import compute_daily_atr_pct
+from market_data.features.signal_engine import (
+    compute_daily_atr_pct,
+    compute_pattern_signals,
+    compute_quant_signals,
+    compute_technical_signals,
+)
 from market_data.ingestion.ohlcv import OHLCV
 from services.cognitive_engine import CognitiveEngine
 from simulator.fee_engine import FeeEngine
+
+
+def _build_backtest_context(
+    symbol: str, timeframe: str, window: list[OHLCV], capital_per_trade: float,
+    daily_atr_pct: float | None = None,
+) -> CognitiveCycleContext:
+    """Faz 282'de backtest/real_historical_backtest.py kaldırılırken buraya
+    taşındı — bu dosyanın (red_team.py) tek gerçek çağıranıydı. services/
+    orchestrator.py::build_cognitive_context()'in sinyal-hesaplama
+    kısmıyla (gerçek technical/quant/pattern) AYNI, ama risk state'i
+    izole/sentetik — gerçek üretimin canlı DB durumunu bu senaryolara
+    karıştırmıyoruz."""
+    ctx = CognitiveCycleContext()
+    ctx.market.symbol = symbol
+    ctx.market.timeframe = timeframe
+
+    technical = compute_technical_signals(window)
+    quant = compute_quant_signals(window)
+    pattern = compute_pattern_signals(window)
+    ctx.market.features = {**technical, **quant}
+    if daily_atr_pct is not None:
+        ctx.market.features["daily_atr_pct"] = daily_atr_pct
+    ctx.market.raw_snapshot = {
+        "close": window[-1].close,
+        "volume": window[-1].volume,
+        "high": window[-1].high,
+        "low": window[-1].low,
+        "last_bar_timestamp": window[-1].timestamp.isoformat(),
+        **pattern,
+    }
+    # sentiment/onchain/order_flow/relative_strength için gerçek veri
+    # kurulamıyor (Fear&Greed, borsa akışı, order book, watchlist basket'i
+    # — hiçbiri tek-sembollü sentetik bar dizisinden üretilemez) — bu 4
+    # domain CouncilStage'e hiç çağrılmıyor.
+    ctx.market.data_unavailable_domains = ["sentiment", "onchain", "order_flow", "relative_strength"]
+
+    ctx.risk.limits = {
+        "max_position_size": RiskLimitEntry(value=capital_per_trade * 10, hash=""),
+        "max_drawdown": RiskLimitEntry(value=0.5, hash=""),
+    }
+    ctx.risk.trading_mode = "test"
+    ctx.risk.ai_enabled = True
+    ctx.risk.max_concurrent_positions = 1000
+    ctx.risk.open_position_count = 0
+    ctx.risk.capital_used_pct = 0.0
+    ctx.risk.max_capital_pct = 1.0
+    ctx.decision.proposed_size = capital_per_trade / window[-1].close if window[-1].close else 0.0
+
+    return ctx
+
+
+def _simulate_real_exit(
+    bars: list[OHLCV],
+    entry_idx: int,
+    direction: str,
+    stop_price: float | None,
+    target_price: float | None,
+    max_forward_bars: int,
+) -> tuple[float | None, str | None, int | None]:
+    """services/position_closer.py::_exit_reason ile BİREBİR AYNI mantık —
+    "zaman geçmesi" yerine sonraki senaryo bar'larına bakılıyor.
+    max_forward_bars içinde stop/target'a hiç ulaşmazsa (None, None, None)
+    döner — uydurma bir kapanış fiyatı İCAT EDİLMEZ, işlem sonuçlara
+    dahil edilmez."""
+    for fb in range(1, max_forward_bars + 1):
+        idx = entry_idx + fb
+        if idx >= len(bars):
+            break
+        bar = bars[idx]
+        if direction == "LONG":
+            if stop_price is not None and bar.low <= stop_price:
+                return stop_price, "stop_loss", idx
+            if target_price is not None and bar.high >= target_price:
+                return target_price, "take_profit", idx
+        else:
+            if stop_price is not None and bar.high >= stop_price:
+                return stop_price, "stop_loss", idx
+            if target_price is not None and bar.low <= target_price:
+                return target_price, "take_profit", idx
+    return None, None, None
 
 
 def whipsaw_chop(base_price: float = 100.0, n_bars: int = 150, amplitude_pct: float = 0.05, period_bars: int = 4) -> list[OHLCV]:

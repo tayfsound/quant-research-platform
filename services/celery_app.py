@@ -1,5 +1,5 @@
-"""Sprint 27: Celery app — moves heavy operations (backtest runs, large
-replay batches) off the request/response cycle onto async workers. Uses the
+"""Sprint 27: Celery app — moves heavy operations (large replay batches)
+off the request/response cycle onto async workers. Uses the
 Redis instance that has been sitting in docker-compose.yml since before this
 session with nothing actually using it — config/settings.py already had
 REDIS_URL provisioned.
@@ -77,14 +77,14 @@ celery_app.conf.update(
 )
 
 # Faz 268-sonrası — kritik bulgu (mimari inceleme, gerçek koda karşı
-# doğrulandı): worker concurrency=1 ile TÜM task'lar (backtest, LLM
-# denetimi, açık pozisyon kontrolü) AYNI tek kuyrukta bekliyordu. Bu,
-# GERÇEKTEN yaşanmış bir olayla (HF Hub donması, embedding çağrısı
-# celery worker'ı tamamen dondurmuş, kuyrukta 8320+ görev birikmişti —
-# bkz. AI_MEMORY_SYSTEM/CURRENT_STATE.md) AYNI hata sınıfı: yavaş/ağ
-# bağımlı bir görev (llm_system_audit_task ~1-2dk gerçek LLM çağrısı,
-# refresh_llm_news_sentiment_task gerçek RSS/LLM çağrısı, backtest
-# task'ları) çalışırken, GÜVENLİK KRİTİK close_due_positions_task
+# doğrulandı): worker concurrency=1 ile TÜM task'lar (LLM denetimi, açık
+# pozisyon kontrolü) AYNI tek kuyrukta bekliyordu. Bu, GERÇEKTEN yaşanmış
+# bir olayla (HF Hub donması, embedding çağrısı celery worker'ı tamamen
+# dondurmuş, kuyrukta 8320+ görev birikmişti — bkz. AI_MEMORY_SYSTEM/
+# CURRENT_STATE.md) AYNI hata sınıfı: yavaş/ağ bağımlı bir görev
+# (llm_system_audit_task ~1-2dk gerçek LLM çağrısı, refresh_llm_news_
+# sentiment_task gerçek RSS/LLM çağrısı) çalışırken, GÜVENLİK KRİTİK
+# close_due_positions_task
 # (60sn'de bir açık pozisyonları stop/hedef/likidasyona göre kontrol
 # eden görev) sırasını bekliyor — açık pozisyonlar bu süre boyunca
 # kontrolsüz kalıyor. Yavaş/ağ-bağımlı görevler artık ayrı bir "slow"
@@ -94,9 +94,6 @@ celery_app.conf.update(
 celery_app.conf.task_routes = {
     "llm_system_audit_task": {"queue": "slow"},
     "refresh_llm_news_sentiment_task": {"queue": "slow"},
-    "run_backtest_task": {"queue": "slow"},
-    "run_real_backtest_task": {"queue": "slow"},
-    "run_portfolio_backtest_task": {"queue": "slow"},
 }
 
 celery_app.autodiscover_tasks(["services"], related_name="tasks")

@@ -121,27 +121,3 @@ def test_expectancy_zero_on_empty_fills():
     assert MetricsEngine.expectancy([]) == 0.0
 
 
-def test_metrics_engine_consumes_vectorized_backtest_equity_curve():
-    """Prove Sprint 3's engine and Sprint 4's metrics actually fit together,
-    instead of being two more disconnected pieces sitting next to each
-    other."""
-    from datetime import datetime, timezone, timedelta
-    from backtest.vectorized_engine import VectorizedBacktestEngine
-    from market_data.ingestion.ohlcv import OHLCV
-
-    now = datetime.now(timezone.utc)
-    closes = [100.0, 200.0, 100.0, 400.0]
-    data = {
-        "A": [
-            OHLCV(timestamp=now + timedelta(minutes=i), open=c, high=c, low=c, close=c, volume=0.0)
-            for i, c in enumerate(closes)
-        ]
-    }
-    signals = np.array([[1.0, 1.0, 1.0, 1.0]])
-
-    result = VectorizedBacktestEngine(fee=0.0).run(data, signals)
-    equity = [100.0] + (100.0 + result.equity_curve).tolist()
-
-    assert equity == pytest.approx(CLEAN_EQUITY)
-    assert MetricsEngine.max_drawdown(equity) == pytest.approx(-0.5)
-    assert MetricsEngine.ulcer_index(equity) == pytest.approx(0.25)

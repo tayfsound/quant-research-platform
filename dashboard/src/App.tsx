@@ -8,7 +8,6 @@ import Strategies from './views/Strategies';
 import Settings from './views/Settings';
 import Transactions from './views/Transactions';
 import PendingApprovals from './views/PendingApprovals';
-import BacktestRuns from './views/BacktestRuns';
 import ResearchWorkspace from './views/ResearchWorkspace';
 import LLMCritic from './views/LLMCritic';
 import FeatureIC from './views/FeatureIC';
@@ -64,7 +63,6 @@ function App() {
           {view === 'strategies' && <Strategies />}
           {view === 'settings' && <Settings />}
           {view === 'approvals' && <PendingApprovals />}
-          {view === 'backtest' && <BacktestRuns />}
           {view === 'workspace' && <ResearchWorkspace />}
           {view === 'llm-critic' && <LLMCritic />}
           {view === 'feature-ic' && <FeatureIC />}
