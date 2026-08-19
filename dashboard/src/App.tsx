@@ -15,6 +15,10 @@ import SelfModel from './views/SelfModel';
 import CausalInference from './views/CausalInference';
 import CollectiveIntelligence from './views/CollectiveIntelligence';
 import MaeMfeConfidence from './views/MaeMfeConfidence';
+import MetaLearningEffectiveness from './views/MetaLearningEffectiveness';
+import MarketWorldModel from './views/MarketWorldModel';
+import DirectionPredictionV2 from './views/DirectionPredictionV2';
+import OpportunityQuality from './views/OpportunityQuality';
 import Sidebar from './components/Sidebar';
 import { clearToken, hasToken } from './api/auth';
 
@@ -70,6 +74,10 @@ function App() {
           {view === 'causal-inference' && <CausalInference />}
           {view === 'collective-intelligence' && <CollectiveIntelligence />}
           {view === 'mae-mfe-confidence' && <MaeMfeConfidence />}
+          {view === 'meta-learning-effectiveness' && <MetaLearningEffectiveness />}
+          {view === 'market-world-model' && <MarketWorldModel />}
+          {view === 'direction-prediction-v2' && <DirectionPredictionV2 />}
+          {view === 'opportunity-quality' && <OpportunityQuality />}
         </div>
       </main>
     </div>

@@ -665,3 +665,91 @@ def close_due_shadow_positions_task() -> dict:
 
     closed = close_due_positions()
     return {"closed_count": len(closed), "closed": closed}
+
+
+@celery_app.task(name="refresh_meta_learning_effectiveness_report_task")
+def refresh_meta_learning_effectiveness_report_task() -> dict:
+    """Cognitive Core 2.0 / M10 (Faz 744-768) — kullanıcı onayıyla
+    (2026-08-19) 4 Grup B modülünden biri: meta_optimizer/agent_tuner.py'nin
+    (CMA-ES) GERÇEK onaylı turlarının zamanla iyileşip iyileşmediğini
+    (Spearman trend testi) ölçer. SADECE tespit/rapor — hiçbir tuning
+    kararını otomatik onaylamıyor/uygulamıyor."""
+    from contracts.meta_learning_effectiveness_report import MetaLearningEffectivenessReport
+    from database.repositories.meta_learning_effectiveness_report_repository import (
+        MetaLearningEffectivenessReportRepository,
+    )
+    from database.session_factory import SessionFactory
+    from services.meta_learning_effectiveness_gatherer import gather_meta_learning_effectiveness
+
+    result = gather_meta_learning_effectiveness()
+    with SessionFactory.get_session() as session:
+        report = MetaLearningEffectivenessReport(result=result)
+        MetaLearningEffectivenessReportRepository(session).save(report)
+
+    return {"id": str(report.id), "n_approved_rounds": result.get("n_approved_rounds")}
+
+
+@celery_app.task(name="refresh_market_world_model_report_task")
+def refresh_market_world_model_report_task() -> dict:
+    """Cognitive Core 5.0-6.0 (Faz 901-940) — kullanıcı onayıyla
+    (2026-08-19) 4 Grup B modülünden biri: GERÇEK kapanmış işlem
+    getirilerinden Moving Block Bootstrap (Künsch, 1989) ile zaman-serisi
+    bağımlılığını koruyan bir kümülatif getiri dağılımı üretir. SADECE
+    simülasyon/rapor — hiçbir pozisyon/risk kararını otomatik değiştirmiyor."""
+    from contracts.market_world_model_report import MarketWorldModelReport
+    from database.repositories.market_world_model_report_repository import (
+        MarketWorldModelReportRepository,
+    )
+    from database.session_factory import SessionFactory
+    from services.market_world_model_gatherer import gather_market_world_model
+
+    result = gather_market_world_model()
+    with SessionFactory.get_session() as session:
+        report = MarketWorldModelReport(result=result)
+        MarketWorldModelReportRepository(session).save(report)
+
+    return {"id": str(report.id), "n_returns": result.get("n_returns")}
+
+
+@celery_app.task(name="refresh_direction_prediction_v2_report_task")
+def refresh_direction_prediction_v2_report_task() -> dict:
+    """Cognitive Core 2.0 / M4 (Faz 519-543) — kullanıcı onayıyla
+    (2026-08-19) 4 Grup B modülünden biri: her ajanın GERÇEK (confidence,
+    was_correct) çiftlerinden Brier Score (Brier, 1950) hesaplar — hem
+    kalibrasyon hem çözünürlüğü TEK bir sayıda birleştirir. SADECE
+    ölçüm/rapor."""
+    from contracts.direction_prediction_v2_report import DirectionPredictionV2Report
+    from database.repositories.direction_prediction_v2_report_repository import (
+        DirectionPredictionV2ReportRepository,
+    )
+    from database.session_factory import SessionFactory
+    from services.direction_prediction_v2_gatherer import gather_direction_prediction_v2
+
+    result = gather_direction_prediction_v2()
+    with SessionFactory.get_session() as session:
+        report = DirectionPredictionV2Report(result=result)
+        DirectionPredictionV2ReportRepository(session).save(report)
+
+    return {"id": str(report.id), "domain_count": len(result.get("by_domain") or {})}
+
+
+@celery_app.task(name="refresh_opportunity_quality_report_task")
+def refresh_opportunity_quality_report_task() -> dict:
+    """Cognitive Core 2.0 (Faz 569-593) — kullanıcı onayıyla (2026-08-19)
+    4 Grup B modülünden biri: de Prado'nun meta-labeling ilkesiyle,
+    GERÇEK kapanmış işlemleri council'in ajan-oyu anlaşma derecesine göre
+    gruplayıp win_rate'i karşılaştırır. SADECE ölçüm/rapor — hiçbir
+    pozisyon/risk kararını otomatik değiştirmiyor."""
+    from contracts.opportunity_quality_report import OpportunityQualityReport
+    from database.repositories.opportunity_quality_report_repository import (
+        OpportunityQualityReportRepository,
+    )
+    from database.session_factory import SessionFactory
+    from services.opportunity_quality_gatherer import gather_opportunity_quality
+
+    result = gather_opportunity_quality()
+    with SessionFactory.get_session() as session:
+        report = OpportunityQualityReport(result=result)
+        OpportunityQualityReportRepository(session).save(report)
+
+    return {"id": str(report.id), "n_trades": result.get("n_trades")}

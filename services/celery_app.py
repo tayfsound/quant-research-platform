@@ -277,4 +277,25 @@ celery_app.conf.beat_schedule = {
         "task": "refresh_mae_mfe_confidence_report_task",
         "schedule": 604800.0,
     },
+    # Faz 282 — kullanıcı onayıyla (2026-08-19) 4 Grup B modülü birlikte
+    # canlıya alındı (hepsi council'i etkilemeyen, saf ölçüm/rapor
+    # katmanları — kullanıcı "bunlar birbirinden alakasız modüller,
+    # endişelenmemize gerek yok" diyerek tekli-aktivasyon disiplininden
+    # bilinçli olarak istisna yaptı).
+    "refresh-meta-learning-effectiveness-report-weekly": {
+        "task": "refresh_meta_learning_effectiveness_report_task",
+        "schedule": 604800.0,
+    },
+    "refresh-market-world-model-report-weekly": {
+        "task": "refresh_market_world_model_report_task",
+        "schedule": 604800.0,
+    },
+    "refresh-direction-prediction-v2-report-weekly": {
+        "task": "refresh_direction_prediction_v2_report_task",
+        "schedule": 604800.0,
+    },
+    "refresh-opportunity-quality-report-weekly": {
+        "task": "refresh_opportunity_quality_report_task",
+        "schedule": 604800.0,
+    },
 }
