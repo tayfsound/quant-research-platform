@@ -26,7 +26,10 @@ def _supportive_opinions() -> list[AgentOpinion]:
     return opinions
 
 
-def _ctx(adx: float | None, long_term_trend_regime: str | None) -> CognitiveCycleContext:
+def _ctx(
+    adx: float | None, long_term_trend_regime: str | None,
+    hurst_exponent: float | None = None, bollinger_bandwidth: float | None = None,
+) -> CognitiveCycleContext:
     ctx = CognitiveCycleContext()
     ctx.risk.trading_mode = "live"
     ctx.decision.proposed_size = 1.0
@@ -35,6 +38,10 @@ def _ctx(adx: float | None, long_term_trend_regime: str | None) -> CognitiveCycl
         ctx.market.features["adx"] = adx
     if long_term_trend_regime is not None:
         ctx.market.features["long_term_trend_regime"] = long_term_trend_regime
+    if hurst_exponent is not None:
+        ctx.market.features["hurst_exponent"] = hurst_exponent
+    if bollinger_bandwidth is not None:
+        ctx.market.features["bollinger_bandwidth"] = bollinger_bandwidth
     return ctx
 
 
@@ -82,6 +89,55 @@ def test_insufficient_data_regime_does_not_force_wait():
     tetiklememeli — bu, "rejim belirsiz/karışık" değil "henüz yeterli
     geçmiş yok" anlamına geliyor, ayrı bir durum."""
     ctx = _ctx(adx=15.0, long_term_trend_regime="insufficient_data")
+    stage = MetaStage()
+    result_ctx = stage.execute(ctx, _long_belief(), _supportive_opinions())
+
+    assert result_ctx.decision.action != ActionType.WAIT
+
+
+# Faz 293 — Hurst ~0.5 bandı + Bollinger bandwidth sıkışması, ADX/transition
+# gate'inden BAĞIMSIZ ikinci bir yol olarak eklendi. Gerçek 4949 kararlık
+# veriyle doğrulandı: Hurst dead-zone TEK BAŞINA %76 oranında true (ayırt
+# edici değil) — SADECE gerçekten sıkışmış bir Bollinger bandwidth'le
+# (<0.03, gerçek dağılımın alt %0.5'i) birleşince anlamlı.
+
+def test_hurst_dead_zone_and_extreme_bollinger_squeeze_forces_wait_even_with_strong_adx():
+    """İkinci yol: ADX güçlü olsa (gate'in eski koşulunu geçmese) bile,
+    Hurst dead-zone + gerçekten aşırı sıkışmış Bollinger bandwidth AYNI
+    ANDA varsa yatay piyasa olarak sayılmalı."""
+    ctx = _ctx(adx=30.0, long_term_trend_regime="bull_trend", hurst_exponent=0.50, bollinger_bandwidth=0.01)
+    stage = MetaStage()
+    result_ctx = stage.execute(ctx, _long_belief(), _supportive_opinions())
+
+    assert result_ctx.decision.action == ActionType.WAIT
+
+
+def test_hurst_dead_zone_alone_without_bollinger_squeeze_does_not_force_wait():
+    """Hurst dead-zone TEK BAŞINA (gerçek dağılımda %76 oranında true)
+    gate'i tetiklememeli — ayırt edici değil, sadece gerçek bir sıkışmayla
+    birlikte anlam kazanıyor."""
+    ctx = _ctx(adx=30.0, long_term_trend_regime="bull_trend", hurst_exponent=0.50, bollinger_bandwidth=0.15)
+    stage = MetaStage()
+    result_ctx = stage.execute(ctx, _long_belief(), _supportive_opinions())
+
+    assert result_ctx.decision.action != ActionType.WAIT
+
+
+def test_extreme_bollinger_squeeze_alone_without_hurst_dead_zone_does_not_force_wait():
+    """Aşırı sıkışmış Bollinger bandwidth TEK BAŞINA (Hurst net trendliyken)
+    gate'i tetiklememeli — ikisi BİRLİKTE gerekiyor."""
+    ctx = _ctx(adx=30.0, long_term_trend_regime="bull_trend", hurst_exponent=0.85, bollinger_bandwidth=0.01)
+    stage = MetaStage()
+    result_ctx = stage.execute(ctx, _long_belief(), _supportive_opinions())
+
+    assert result_ctx.decision.action != ActionType.WAIT
+
+
+def test_moderate_bollinger_squeeze_below_typical_but_above_extreme_threshold_does_not_force_wait():
+    """Bollinger bandwidth eşiğin (0.03) hemen üstündeyse (ör. p10 civarı,
+    0.05) — "biraz sıkışmış" ama "gerçekten aşırı" değil — Hurst dead-zone
+    olsa bile gate tetiklenmemeli, eşik gerçekten sıkı tutuluyor."""
+    ctx = _ctx(adx=30.0, long_term_trend_regime="bull_trend", hurst_exponent=0.50, bollinger_bandwidth=0.05)
     stage = MetaStage()
     result_ctx = stage.execute(ctx, _long_belief(), _supportive_opinions())
 

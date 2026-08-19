@@ -277,10 +277,34 @@ class MetaStage:
         # körüne bloke eden geniş bir kesim DEĞİL, gerçekten nadir ve
         # anlamlı bir "piyasada ne kısa ne uzun vadede net bir yön var"
         # durumu.
+        #
+        # Faz 293 — dış rapor önerisi (kullanıcı doğrulattı): "tek sinyale
+        # bağlı filtre hem false positive hem false negative üretebilir,
+        # Hurst ~0.5 bandı + Bollinger bandwidth sıkışması ikinci/üçüncü
+        # teyit olarak eklenebilir." Gerçek 4949 kararlık veriyle test
+        # edildi: Hurst [0.45,0.55] TEK BAŞINA %76 oranında true çıkıyor
+        # (kripto kısa pencerede neredeyse hep rastgele-yürüyüşe yakın —
+        # tek başına ayırt edici değil, "2'den fazlası true" gibi bir oy
+        # kuralına eklenince gate %1.4'ten %41.5'e fırlıyor, tarihin
+        # neredeyse yarısını körü körüne bloke ediyor — TAM olarak
+        # reddedilen "min katılımcı" hatasının tekrarı). Hurst dead-zone'u
+        # SADECE aynı anda GERÇEKTEN sıkışmış bir Bollinger bandwidth'le
+        # (<0.03 — aynı 4949 kararlık gerçek dağılımda alt %0.5'lik dilim,
+        # rastgele bir yuvarlak sayı değil) birleştirince ayrı, dar ve
+        # anlamlı bir ikinci yol oluşuyor: toplam gate oranı %1.4'ten
+        # %1.9'a çıkıyor — gerçekten yeni chop örnekleri yakalıyor,
+        # tarihi indiscriminate bloklamıyor.
         features = ctx.market.features or {}
         adx = features.get("adx")
         long_term_trend_regime = features.get("long_term_trend_regime")
-        sideways_market = adx is not None and adx < 20 and long_term_trend_regime == "transition"
+        weak_adx_transition = adx is not None and adx < 20 and long_term_trend_regime == "transition"
+
+        hurst_exponent = features.get("hurst_exponent")
+        bollinger_bandwidth = features.get("bollinger_bandwidth")
+        hurst_dead_zone = hurst_exponent is not None and 0.45 <= hurst_exponent <= 0.55
+        extreme_bollinger_squeeze = bollinger_bandwidth is not None and bollinger_bandwidth < 0.03
+
+        sideways_market = weak_adx_transition or (hurst_dead_zone and extreme_bollinger_squeeze)
         if sideways_market:
             meta["decision"] = "WAIT"
 
