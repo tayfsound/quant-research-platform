@@ -6,7 +6,6 @@ from agents.order_flow_agent import OrderFlowAgent
 from agents.pattern_agent import PatternAgent
 from agents.quant_agent import QuantAgent
 from agents.relative_strength_agent import RelativeStrengthAgent
-from agents.sentiment_agent import SentimentAgent
 from agents.technical_agent import TechnicalAgent
 from agents.time_agent import TimeAgent
 from contracts.agent import AgentDomain
@@ -30,16 +29,25 @@ class AgentRegistry:
 
     @classmethod
     def create_default(cls) -> "AgentRegistry":
-        """On uzman ajanla (4 orijinal + 5 sonraki turda eklenen: Pattern,
+        """Dokuz uzman ajanla (4 orijinal + 5 sonraki turda eklenen: Pattern,
         Quant, Order Flow, Time, Epistemology + Faz 242-243'te eklenen
         Relative Strength) hazır bir registry oluşturur,
         sonra agents/plugins/'daki güvenilir (hash'i TRUSTED_PLUGIN_HASHES'te
         olan) eklentileri keşfeder. TRUSTED_PLUGIN_HASHES varsayılan olarak
         boş — hiçbir plugin, bir insan onun hash'ini gözden geçirip
-        eklemeden otomatik yüklenmez (Sprint 17-18)."""
+        eklemeden otomatik yüklenmez (Sprint 17-18).
+
+        Faz 269-sonrası — kullanıcı kararı: SentimentAgent kaldırıldı.
+        Gerçek veri: son 20 kararının isabet oranı %5, SourceReliabilityAgent
+        tarafından zaten otomatik benchlenmişti (reliability=0.2 < 0.35,
+        effective_influence=0 — kararlara hiç katkısı yoktu). Kullanıcının
+        kendi sözleriyle: "elimizde fazlasıyla enstrüman var... bu veriler
+        ile piyasa yönü arasında korelasyon kurabileceğimiz bir ilişki
+        tespit edemedik." AgentDomain.SENTIMENT enum üyesi KASITLI OLARAK
+        kaldırılmadı — eski decisions.agent_contributions kayıtları hâlâ
+        bu domain'i referans veriyor, geriye dönük uyumluluk için duruyor."""
         registry = cls()
         registry.register(AgentDomain.MACRO, MacroAgent())
-        registry.register(AgentDomain.SENTIMENT, SentimentAgent())
         registry.register(AgentDomain.ONCHAIN, OnChainAgent())
         registry.register(AgentDomain.TECHNICAL, TechnicalAgent(coefficients=cls._approved_technical_coefficients()))
         registry.register(AgentDomain.PATTERN, PatternAgent())

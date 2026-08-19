@@ -26,7 +26,6 @@ from contracts.observation import Observation, ObservationType
 from contracts.onchain import OnChainContext
 from contracts.opportunity import OpportunityCost
 from contracts.outcome import DecisionEvaluation, FailureType, TradeOutcome
-from contracts.sentiment import SentimentContext
 from contracts.technical import TechnicalContext
 
 __all__ = [
@@ -45,7 +44,6 @@ __all__ = [
     "TradeOutcome", "DecisionEvaluation", "FailureType",
     "OpportunityCost",
     "MacroContext", "MacroIndicator",
-    "SentimentContext",
     "OnChainContext",
     "TechnicalContext",
     "DecisionEvent",

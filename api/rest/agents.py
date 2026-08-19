@@ -13,7 +13,6 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 _DESCRIPTIONS: dict[AgentDomain, str] = {
     AgentDomain.TECHNICAL: "Trend, momentum, market structure, RSI/EMA — klasik teknik analiz.",
     AgentDomain.MACRO: "Enflasyon, likidite, merkez bankası duruşu.",
-    AgentDomain.SENTIMENT: "Fear & Greed, sosyal medya tonu, pozisyonlanma (contrarian yorum).",
     AgentDomain.ONCHAIN: "Exchange akışı, whale hareketleri, MVRV Z-Score.",
     AgentDomain.PATTERN: "Wyckoff fazları, break of structure, fair value gap, likidite süpürme.",
     AgentDomain.QUANT: "Z-score, Hurst exponent, otokorelasyon — rejime göre mean-reversion/momentum.",

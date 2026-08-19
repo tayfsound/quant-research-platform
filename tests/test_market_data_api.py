@@ -115,7 +115,7 @@ def test_agents_endpoint_lists_real_registered_domains():
     assert resp.status_code == 200
     data = resp.json()
     domains = {a["domain"] for a in data["agents"]}
-    assert {"technical", "macro", "sentiment", "onchain", "pattern", "quant", "order_flow", "time", "epistemology"} <= domains
+    assert {"technical", "macro", "onchain", "pattern", "quant", "order_flow", "time", "epistemology"} <= domains
     critic_domains = {c["domain"] for c in data["critics"]}
     assert "risk" in critic_domains
     assert "alter_ego" in critic_domains

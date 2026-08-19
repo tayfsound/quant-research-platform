@@ -13,7 +13,6 @@ from contracts.onchain import OnChainContext
 from contracts.order_flow import OrderFlowContext
 from contracts.pattern import PatternContext
 from contracts.quant import QuantContext
-from contracts.sentiment import SentimentContext
 from contracts.technical import TechnicalContext
 from contracts.time_context import TimeContext
 from contracts.epistemology import EpistemologyContext
@@ -24,7 +23,7 @@ def test_all_nine_voting_agents_are_registered_by_default():
     registry = AgentRegistry.create_default()
     domains = set(registry.list_domains())
     expected = {
-        AgentDomain.MACRO, AgentDomain.SENTIMENT, AgentDomain.ONCHAIN, AgentDomain.TECHNICAL,
+        AgentDomain.MACRO, AgentDomain.ONCHAIN, AgentDomain.TECHNICAL,
         AgentDomain.PATTERN, AgentDomain.QUANT, AgentDomain.ORDER_FLOW,
         AgentDomain.TIME, AgentDomain.EPISTEMOLOGY,
     }
@@ -37,7 +36,6 @@ def test_full_council_with_all_nine_domains_produces_one_belief():
 
     belief, opinions = orchestrator.deliberate({
         AgentDomain.MACRO: MacroContext(inflation_trend="falling", central_bank_bias="dovish"),
-        AgentDomain.SENTIMENT: SentimentContext(fear_greed_index=20.0),
         AgentDomain.ONCHAIN: OnChainContext(whale_accumulation=True),
         AgentDomain.TECHNICAL: TechnicalContext(trend="bullish", market_structure="higher_highs"),
         AgentDomain.PATTERN: PatternContext(structure_phase="accumulation", break_of_structure="bullish"),
@@ -47,9 +45,9 @@ def test_full_council_with_all_nine_domains_produces_one_belief():
         AgentDomain.EPISTEMOLOGY: EpistemologyContext(feature_completeness=0.9),
     })
 
-    assert len(opinions) == 9
+    assert len(opinions) == 8
     assert belief.direction in ("LONG", "SHORT", "WAIT")
-    assert belief.total_opinions == 9
+    assert belief.total_opinions == 8
 
     # Time/Epistemology her zaman WAIT oyu verir — gerçek bir muhalefet
     # olarak kayda geçmeli, sessizce yutulmamalı.

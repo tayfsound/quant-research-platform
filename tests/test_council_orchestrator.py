@@ -3,7 +3,6 @@ from agents.registry import AgentRegistry
 from contracts.agent import AgentDomain
 from contracts.macro import MacroContext
 from contracts.onchain import OnChainContext
-from contracts.sentiment import SentimentContext
 from contracts.technical import TechnicalContext
 from services.council_orchestrator import CouncilOrchestrator
 
@@ -14,7 +13,6 @@ def test_full_council_deliberate():
 
     belief, opinions = orchestrator.deliberate({
         AgentDomain.MACRO: MacroContext(inflation_trend="rising", liquidity_condition="tight", central_bank_bias="hawkish"),
-        AgentDomain.SENTIMENT: SentimentContext(fear_greed_index=75.0, social_media_sentiment=0.4, positioning="long_bias"),
         AgentDomain.ONCHAIN: OnChainContext(exchange_outflow_24h=300_000_000, whale_accumulation=True),
         AgentDomain.TECHNICAL: TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs", volume_confirmation=True),
     })

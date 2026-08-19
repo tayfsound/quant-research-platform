@@ -58,7 +58,6 @@ class CouncilStage:
 
         contexts = {
             AgentDomain.MACRO: self.adapter.to_macro(ctx),
-            AgentDomain.SENTIMENT: self.adapter.to_sentiment(ctx),
             AgentDomain.ONCHAIN: self.adapter.to_onchain(ctx),
             AgentDomain.TECHNICAL: self.adapter.to_technical(ctx),
             AgentDomain.PATTERN: self.adapter.to_pattern(ctx),

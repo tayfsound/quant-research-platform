@@ -12,7 +12,6 @@ confidence scenario now actually produces a RiskChallenge."""
 from contracts.agent import AgentDomain
 from contracts.macro import MacroContext
 from contracts.onchain import OnChainContext
-from contracts.sentiment import SentimentContext
 from contracts.technical import TechnicalContext
 from services.council_orchestrator import CouncilOrchestrator
 from agents.registry import AgentRegistry
@@ -47,7 +46,6 @@ def test_crowded_high_volatility_high_confidence_council_actually_gets_challenge
         ),
         AgentDomain.MACRO: MacroContext(inflation_trend="falling", central_bank_bias="dovish"),
         AgentDomain.ONCHAIN: OnChainContext(exchange_outflow_24h=500_000_000, whale_accumulation=True),
-        AgentDomain.SENTIMENT: SentimentContext(fear_greed_index=10.0),
     })
 
     result = orchestrator.last_debate_result

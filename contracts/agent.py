@@ -40,9 +40,16 @@ class AgentDomain(StrEnum):
 #
 # Faz 242-243: 10. oy-veren ajan eklendi (Relative Strength — bkz.
 # agents/relative_strength_agent.py).
+#
+# Faz 269-sonrası — kullanıcı kararı: SENTIMENT çıkarıldı (9 oy-veren
+# ajan kaldı). Gerçek veri: son 20 kararının isabet oranı %5, zaten
+# otomatik benchlenmişti (SourceReliabilityAgent, reliability=0.2<0.35)
+# — kararlara hiç katkısı yoktu. AgentDomain.SENTIMENT enum üyesinin
+# kendisi KASITLI OLARAK silinmedi — eski decisions.agent_contributions
+# kayıtları hâlâ bu domain'i referans veriyor.
 VOTING_AGENT_DOMAINS = frozenset({
     AgentDomain.TECHNICAL, AgentDomain.MACRO, AgentDomain.ONCHAIN,
-    AgentDomain.SENTIMENT, AgentDomain.PATTERN, AgentDomain.QUANT,
+    AgentDomain.PATTERN, AgentDomain.QUANT,
     AgentDomain.ORDER_FLOW, AgentDomain.TIME, AgentDomain.EPISTEMOLOGY,
     AgentDomain.RELATIVE_STRENGTH,
 })

@@ -178,7 +178,6 @@ class BeliefEngine:
             "news": "news_agent",
             "macro": "macro_agent",
             "onchain": "onchain_agent",
-            "sentiment": "sentiment_agent",
             "relative_strength": "relative_strength_agent",
         }
         return mapping.get(domain, domain + "_agent")

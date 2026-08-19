@@ -22,57 +22,6 @@ def test_to_macro_falls_back_to_real_fred_categories_when_no_override():
     assert result.liquidity_condition in ("loose", "tight", "neutral")
 
 
-def test_to_sentiment_uses_real_fear_greed_index_for_crypto():
-    ctx = CognitiveCycleContext(market={"symbol": "BTCUSDT"})
-    result = ContextAdapter().to_sentiment(ctx)
-    assert 0 <= result.fear_greed_index <= 100
-
-
-def test_to_sentiment_defaults_to_neutral_for_non_crypto():
-    ctx = CognitiveCycleContext(market={"symbol": "AAPL"})
-    result = ContextAdapter().to_sentiment(ctx)
-    assert result.fear_greed_index == 50.0
-
-
-def test_to_sentiment_explicit_override_wins_over_real_fetch():
-    ctx = CognitiveCycleContext(market={
-        "symbol": "BTCUSDT",
-        "raw_snapshot": {"fear_greed_index": 12.0},
-    })
-    result = ContextAdapter().to_sentiment(ctx)
-    assert result.fear_greed_index == 12.0
-
-
-def test_to_sentiment_prefers_cached_llm_news_sentiment_over_reddit(monkeypatch):
-    """Faz 268-sonrası: Reddit (Devvit politikası nedeniyle kapalı) yerine
-    RSS + NVIDIA LLM tabanlı yeni kaynak — dolu bir önbellek varsa Reddit'e
-    hiç bakılmadan o tercih edilmeli."""
-    import market_data.sentiment.llm_news_sentiment_provider as llm_provider
-    import market_data.sentiment.reddit_provider as reddit_provider
-
-    def fake_reddit(*_args, **_kwargs):
-        raise AssertionError("LLM önbelleği doluyken Reddit'e hiç düşülmemeli")
-
-    monkeypatch.setattr(llm_provider, "get_cached", lambda: (0.55, "test özeti"))
-    monkeypatch.setattr(reddit_provider, "fetch_social_sentiment", fake_reddit)
-
-    ctx = CognitiveCycleContext(market={"symbol": "BTCUSDT"})
-    result = ContextAdapter().to_sentiment(ctx)
-    assert result.social_media_sentiment == 0.55
-
-
-def test_to_sentiment_falls_back_to_reddit_when_llm_cache_empty(monkeypatch):
-    import market_data.sentiment.llm_news_sentiment_provider as llm_provider
-    import market_data.sentiment.reddit_provider as reddit_provider
-
-    monkeypatch.setattr(llm_provider, "get_cached", lambda: (None, None))
-    monkeypatch.setattr(reddit_provider, "fetch_social_sentiment", lambda: -0.3)
-
-    ctx = CognitiveCycleContext(market={"symbol": "BTCUSDT"})
-    result = ContextAdapter().to_sentiment(ctx)
-    assert result.social_media_sentiment == -0.3
-
-
 def test_to_pattern_reads_raw_snapshot():
     ctx = CognitiveCycleContext(market={"raw_snapshot": {"structure_phase": "accumulation"}})
     result = ContextAdapter().to_pattern(ctx)
