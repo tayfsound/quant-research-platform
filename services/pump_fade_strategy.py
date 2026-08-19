@@ -135,6 +135,61 @@ def find_pump_candidates(
     return candidates
 
 
+_DENSITY_HISTORY_LIMIT = 1000
+_DENSITY_MIN_HISTORY = 50
+_DENSITY_HIGH_PERCENTILE = 0.90
+_DENSITY_FLOOR_MULTIPLIER = 0.5
+
+
+def _compute_density_size_multiplier(session, candidates_found: int) -> float:
+    """Faz 295 — kullanıcı isteği (2026-08-19): pump_fade'in gerçek
+    mekanik geri-testinde (4205 olay, 527 sembol) kayıpların zamanda
+    RASTGELE dağılmadığı, çok sayıda sembolün AYNI ANDA pompalandığı
+    ("altseason" benzeri) haftalarda belirgin şekilde arttığı bulundu
+    (kayıp haftalarında ortalama olay yoğunluğu, tüm haftaların
+    ortalamasından %32 daha yüksekti — 90.2 vs 68.3). BTC'nin kendi
+    yönü belirleyici DEĞİLDİ (en sert BTC düşüşü haftası — %14 —
+    neredeyse hiç kayıp vermedi) — asıl risk sinyali "şu an kaç sembol
+    aynı anda pump kriterini karşılıyor" yoğunluğuydu, BTC fiyatı değil.
+
+    system_events'e ("pump_fade_candidate_density") her cycle'da
+    candidates_found kaydedilip kendi GERÇEK geçmişine göre yüzdelik
+    dilimi hesaplanıyor — sabit bir sayı icat edilmiyor, sistem zaman
+    içinde kendi normal yoğunluk dağılımını öğreniyor (_volatility_
+    regime/_realized_vol_percentile ile AYNI desen). Yeterli geçmiş
+    yoksa (<50 kayıt, fail-closed) çarpan 1.0 — mevcut davranış hiç
+    değişmez. Yoğunluk kendi geçmişinin üst %10'unda (p90+) ise margin
+    lineer olarak [1.0, 0.5] aralığında küçültülüyor — SADECE küçültür,
+    asla büyütmez (CPPI/Kelly ile AYNI ilke)."""
+    from database.repositories.event_log_repository import EventLogRepository
+
+    repo = EventLogRepository(session)
+    repo.record("pump_fade_candidate_density", payload={"candidates_found": candidates_found})
+
+    history = repo.list_events(event_type="pump_fade_candidate_density", limit=_DENSITY_HISTORY_LIMIT)
+    counts = [
+        h["payload"]["candidates_found"] for h in history
+        if h.get("payload") and "candidates_found" in h["payload"]
+    ]
+    if len(counts) < _DENSITY_MIN_HISTORY:
+        return 1.0
+
+    # Eşitlikleri (ör. geçmişin büyük kısmı sabit bir değerdeyse) doğru
+    # ele almak için: kesin küçükler tam, eşit olanlar yarım ağırlıkla
+    # sayılıyor (standart "mid-rank" yüzdelik dilim tanımı) — aksi halde
+    # sabit bir geçmişte HER normal değer bile yanlışlıkla p100 çıkardı.
+    rank_less = sum(1 for c in counts if c < candidates_found)
+    rank_equal = sum(1 for c in counts if c == candidates_found)
+    percentile = (rank_less + 0.5 * rank_equal) / len(counts)
+    if percentile < _DENSITY_HIGH_PERCENTILE:
+        return 1.0
+
+    span = 1.0 - _DENSITY_HIGH_PERCENTILE
+    progress = (percentile - _DENSITY_HIGH_PERCENTILE) / span if span > 0 else 1.0
+    multiplier = 1.0 - progress * (1.0 - _DENSITY_FLOOR_MULTIPLIER)
+    return max(_DENSITY_FLOOR_MULTIPLIER, min(1.0, multiplier))
+
+
 class PumpFadeStrategy:
     def __init__(self, data_provider: OHLCVProvider | None = None):
         self.data_provider = data_provider or get_ohlcv_provider()
@@ -169,16 +224,23 @@ class PumpFadeStrategy:
             momentum_confirmation_hours, momentum_tolerance_pct,
         )
 
+        with SessionFactory.get_session() as session:
+            density_size_multiplier = _compute_density_size_multiplier(session, len(candidates))
+
         opened = []
         for candidate in candidates:
             result = self._try_open(
                 candidate, capital_pct, target_leverage, stop_distance_pct, take_profit_pct,
-                starting_capital, lookback_hours
+                starting_capital, lookback_hours, density_size_multiplier,
             )
             if result is not None:
                 opened.append(result)
 
-        return {"candidates_found": len(candidates), "opened": opened}
+        return {
+            "candidates_found": len(candidates),
+            "density_size_multiplier": density_size_multiplier,
+            "opened": opened,
+        }
 
     def _try_open(
         self,
@@ -189,6 +251,7 @@ class PumpFadeStrategy:
         take_profit_pct: float,
         starting_capital: float,
         lookback_hours: int,
+        density_size_multiplier: float = 1.0,
     ) -> dict | None:
         symbol = candidate["symbol"]
         entry_price = candidate["current_price"]
@@ -209,7 +272,10 @@ class PumpFadeStrategy:
             if safe_leverage is not None:
                 leverage = max(1.0, min(target_leverage, safe_leverage))
 
-            margin = starting_capital * capital_pct
+            # Faz 295: aynı anda çok sayıda sembol pompalanıyorsa (yoğunluk
+            # kendi geçmişinin üst %10'unda) margin bu çarpanla otomatik
+            # küçülüyor — bkz. _compute_density_size_multiplier.
+            margin = starting_capital * capital_pct * density_size_multiplier
 
             # Kullanıcı bulgusu — gerçek olay: PORTALUSDT'de $25.000 marjin
             # × 4,35x kaldıraç = $108.695 notional açıldı, ama RiskEngine'in
@@ -262,6 +328,7 @@ class PumpFadeStrategy:
                         "lookback_hours": lookback_hours,
                         "pullback_from_peak_pct": candidate["pullback_from_peak_pct"],
                         "momentum_pct": candidate["momentum_pct"],
+                        "density_size_multiplier": density_size_multiplier,
                         "stop_distance_pct": stop_distance_pct,
                         "target_leverage": target_leverage,
                         "applied_leverage": leverage,

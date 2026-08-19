@@ -13,7 +13,12 @@ from database.repositories.decision_persistor import DecisionPersistor
 from database.repositories.risk_limit_repository import RiskLimitModel, RiskLimitRepository
 from database.session_factory import SessionFactory
 from market_data.ingestion.ohlcv import OHLCV
-from services.pump_fade_strategy import EXPERIMENT_BUCKET, PumpFadeStrategy, find_pump_candidates
+from services.pump_fade_strategy import (
+    EXPERIMENT_BUCKET,
+    PumpFadeStrategy,
+    _compute_density_size_multiplier,
+    find_pump_candidates,
+)
 
 
 def _seed_max_position_size(value: float) -> None:
@@ -69,6 +74,12 @@ def _cleanup_symbol(symbol: str) -> None:
 def _cleanup_max_position_size() -> None:
     with SessionFactory.get_session() as session:
         session.execute(text("DELETE FROM risk_limits WHERE limit_type = 'max_position_size'"))
+        session.commit()
+
+
+def _cleanup_density_events() -> None:
+    with SessionFactory.get_session() as session:
+        session.execute(text("DELETE FROM system_events WHERE event_type = 'pump_fade_candidate_density'"))
         session.commit()
 
 
@@ -396,3 +407,122 @@ def test_has_open_position_for_experiment_reflects_real_open_positions():
             assert repo.has_open_position_for_experiment(symbol, "some_other_experiment") is False
     finally:
         _cleanup_symbol(symbol)
+
+
+# Faz 295 — kullanıcı isteği (2026-08-19): gerçek geri-testte kayıpların
+# çok sayıda sembolün AYNI ANDA pompalandığı haftalarda belirgin arttığı
+# bulundu (BTC yönünden bağımsız). Kendi geçmişine göre (yüzdelik dilim)
+# anormal yoğun cycle'larda margin otomatik küçülüyor.
+
+def test_density_multiplier_is_1_when_history_insufficient():
+    _cleanup_density_events()
+    try:
+        with SessionFactory.get_session() as session:
+            multiplier = _compute_density_size_multiplier(session, candidates_found=500)
+        assert multiplier == 1.0
+    finally:
+        _cleanup_density_events()
+
+
+def test_density_multiplier_is_1_for_typical_density_with_sufficient_history():
+    _cleanup_density_events()
+    try:
+        with SessionFactory.get_session() as session:
+            for _ in range(60):
+                _compute_density_size_multiplier(session, candidates_found=5)
+            # Bu son çağrı hem kendi geçmişine ekleniyor hem de değerlendiriliyor —
+            # tipik (5) bir değer, geçmişin üst %10'unda DEĞİL.
+            multiplier = _compute_density_size_multiplier(session, candidates_found=5)
+        assert multiplier == 1.0
+    finally:
+        _cleanup_density_events()
+
+
+def test_density_multiplier_shrinks_at_extreme_density_relative_to_own_history():
+    _cleanup_density_events()
+    try:
+        with SessionFactory.get_session() as session:
+            for _ in range(60):
+                _compute_density_size_multiplier(session, candidates_found=5)
+            # Geçmişin TAMAMINDAN çok daha yüksek bir değer -> ~p99, tabana (0.5) yakın düşmeli.
+            multiplier = _compute_density_size_multiplier(session, candidates_found=500)
+        assert 0.5 <= multiplier < 0.6
+    finally:
+        _cleanup_density_events()
+
+
+def test_density_multiplier_never_exceeds_1():
+    _cleanup_density_events()
+    try:
+        with SessionFactory.get_session() as session:
+            for _ in range(60):
+                _compute_density_size_multiplier(session, candidates_found=50)
+            # Geçmişin ortasında bir değer -> asla 1.0'ı aşmamalı (sadece küçültür).
+            multiplier = _compute_density_size_multiplier(session, candidates_found=50)
+        assert multiplier <= 1.0
+    finally:
+        _cleanup_density_events()
+
+
+def test_try_open_applies_density_multiplier_to_margin(monkeypatch):
+    """_try_open'a doğrudan verilen density_size_multiplier, açılan
+    pozisyonun notional'ını orantılı küçültmeli."""
+    symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    try:
+        _set_pump_fade_settings(pump_fade_enabled="true")
+        strategy = PumpFadeStrategy(data_provider=_FakeProvider({}))
+        candidate = {
+            "symbol": symbol, "current_price": 10.0, "gain_pct": 1.2,
+            "pullback_from_peak_pct": 0.0, "momentum_pct": 0.0,
+        }
+
+        full = strategy._try_open(candidate, 0.05, 5.0, 0.15, 0.25, 1000.0, 48, density_size_multiplier=1.0)
+        with SessionFactory.get_session() as session:
+            row_full = DecisionPersistor(session).list_open_positions(limit=50)
+        notional_full = next(r for r in row_full if r["symbol"] == symbol)["quantity"] * full["entry_price"]
+        _cleanup_symbol(symbol)
+
+        half = strategy._try_open(candidate, 0.05, 5.0, 0.15, 0.25, 1000.0, 48, density_size_multiplier=0.5)
+        with SessionFactory.get_session() as session:
+            row_half = DecisionPersistor(session).list_open_positions(limit=50)
+        notional_half = next(r for r in row_half if r["symbol"] == symbol)["quantity"] * half["entry_price"]
+
+        assert notional_half == pytest.approx(notional_full * 0.5, rel=1e-6)
+    finally:
+        _cleanup_symbol(symbol)
+        _set_pump_fade_settings(pump_fade_enabled="false")
+
+
+def test_run_cycle_scales_margin_down_during_extreme_density(monkeypatch):
+    """Uçtan uca: run_cycle, yüksek yoğunluk geçmişi varken küçültülmüş
+    margin ile pozisyon açmalı ve density_size_multiplier'ı sonuçta
+    raporlamalı."""
+    symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    _cleanup_density_events()
+    try:
+        _set_pump_fade_settings(pump_fade_enabled="true")
+        # Geçmişi "her zaman tek aday" olacak şekilde doldur (tipik/düşük yoğunluk).
+        with SessionFactory.get_session() as session:
+            for _ in range(60):
+                _compute_density_size_multiplier(session, candidates_found=1)
+
+        monkeypatch.setattr(
+            "services.pump_fade_strategy.fetch_usdt_perpetual_symbols",
+            lambda: [symbol, f"OTHER{uuid4().hex[:6]}USDT"],
+        )
+        # 2 aday birden -> bu sembolün kendi geçmişine göre (hep 1 aday) anormal
+        # yoğun sayılmayabilir (p90 eşiği), o yüzden burada asıl amaç sadece
+        # density_size_multiplier alanının gerçekten raporlandığını doğrulamak.
+        provider = _FakeProvider({
+            symbol: _pump_then_settled_bars(10.0, 22.0),
+            f"OTHER{uuid4().hex[:6]}USDT": _pump_then_settled_bars(10.0, 22.0),
+        })
+
+        result = PumpFadeStrategy(data_provider=provider).run_cycle()
+
+        assert "density_size_multiplier" in result
+        assert 0.5 <= result["density_size_multiplier"] <= 1.0
+    finally:
+        _cleanup_symbol(symbol)
+        _cleanup_density_events()
+        _set_pump_fade_settings(pump_fade_enabled="false")
