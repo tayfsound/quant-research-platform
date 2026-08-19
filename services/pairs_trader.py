@@ -41,10 +41,21 @@ class PairsTrader:
 
     def check_and_trade_pairs(self) -> list[dict]:
         with SessionFactory.get_session() as session:
-            ai_enabled = AppSettingsRepository(session).get("ai_enabled") == "true"
+            settings_repo = AppSettingsRepository(session)
+            ai_enabled = settings_repo.get("ai_enabled") == "true"
+            pairs_trading_enabled = settings_repo.get("pairs_trading_enabled") == "true"
 
         if not ai_enabled:
             return [{"skipped": "ai_disabled"}]
+
+        # Faz 282 — kullanıcı kararı (2026-08-19): bacak-boyutu birim
+        # bug'ı düzeltmesinden sonra açılan 2 temiz pozisyon görülünce,
+        # strateji tamamen durduruldu — mevcut pozisyonlar normal stop/
+        # hedefe göre kapanana kadar izlenmeye devam eder (PositionCloser
+        # zaten kaynağından bağımsız TÜM açık pozisyonları kontrol ediyor),
+        # sadece YENİ bacak açılmıyor.
+        if not pairs_trading_enabled:
+            return [{"skipped": "pairs_trading_disabled"}]
 
         results = []
         for sym_a, sym_b in PAIR_CANDIDATES:

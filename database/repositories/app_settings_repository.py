@@ -372,6 +372,13 @@ DEFAULTS: dict[str, str] = {
     # sabit bir DOLAR tutarı — her bacağın asıl miktarı current_price'a
     # bölünerek hesaplanıyor, tüm varlıklarda GERÇEKTEN aynı boyut.
     "pairs_trading_leg_capital_usd": "100",
+    # Faz 282 — kullanıcı kararı (2026-08-19): bacak-boyutu birim bug'ı
+    # (2026-08-16'da düzeltildi) sonrası açılan 2 temiz pozisyon dashboard'da
+    # görülünce, kullanıcı önceki "temiz veri birikene kadar çalışmaya devam
+    # etsin" kararını tersine çevirdi — strateji artık kapalı. Mevcut açık
+    # pozisyonlar normal stop/hedefe göre kapanana kadar izlenmeye devam
+    # eder (zorla kapatılmıyor), ama yeni bacak hiç açılmıyor.
+    "pairs_trading_enabled": "false",
 }
 
 CANDLE_TIMEFRAMES = ("1m", "5m", "15m", "1h", "4h", "1d")

@@ -210,9 +210,27 @@ class WeightOptimizer:
         # yoksa (aşırı uç durum, ör. sistemin ilk hiç çalışması) son çare
         # olarak 1.0'a düşülür — o zaman gerçekten karşılaştırılacak bir
         # emsal yok.
+        #
+        # Faz 282 — kritik bulgu (2026-08-19, kullanıcı: "hiçbir mantık
+        # kuramadım niye böyle bir teklifte bulunduğuna dair"): gerçek
+        # olay — nadir bir rejimde (bullish_high) SADECE technical'ın
+        # yeterli örneklemi vardı, diğer 8 ajan fallback'e düştü.
+        # "Medyan" TEK elemanlı bir listede matematiksel olarak o TEK
+        # değere eşit — sistem farkında olmadan technical'ın kendi
+        # skorunu (1.77), hiç kanıtı olmayan 8 ajana AYNEN kopyaladı.
+        # Bu, "kanıtlanmamış ajan diğerlerinden güvenilir görünmesin"
+        # ilkesinin tam tersi bir yanılsama üretti (sanki 8 ayrı ajan
+        # bağımsız olarak AYNI yüksek skora ulaşmış gibi). Medyan artık
+        # SADECE gerçekten birden fazla (>=2) veri-güdümlü domain varken
+        # kullanılıyor — TEK domain varsa (medyan = o domain'in kendisi,
+        # anlamsız bir "konsensüs" izlenimi verir) nötr 1.0'a düşülüyor,
+        # HİÇ domain yoksa zaten aynı şekilde 1.0.
         if domains_needing_fallback:
             data_driven_weights = [w for d, w in proposed.items() if d not in domains_needing_fallback]
-            fallback = round(sorted(data_driven_weights)[len(data_driven_weights) // 2], 3) if data_driven_weights else 1.0
+            if len(data_driven_weights) >= 2:
+                fallback = round(sorted(data_driven_weights)[len(data_driven_weights) // 2], 3)
+            else:
+                fallback = 1.0
             for domain in domains_needing_fallback:
                 proposed[domain] = fallback
 

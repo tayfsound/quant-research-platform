@@ -83,6 +83,50 @@ def test_domain_with_no_previous_weight_and_no_fresh_data_falls_back_to_peer_med
         shutil.rmtree(name, ignore_errors=True)
 
 
+def test_single_data_driven_domain_does_not_get_cloned_onto_all_fallback_domains(tmp_path):
+    """Faz 282 — kritik bulgu (2026-08-19, gerçek olay: bullish_high
+    rejiminde SADECE technical'ın yeterli örneklemi vardı, diğer 8 ajan
+    fallback'e düştü; kullanıcı: "hiçbir mantık kuramadım niye böyle bir
+    teklifte bulunduğuna dair"). "Medyan" TEK elemanlı bir listede
+    matematiksel olarak o TEK değere eşit — sistem technical'ın kendi
+    skorunu, hiç kanıtı olmayan 8 ajana AYNEN kopyalamıştı (previous={
+    'technical': 1.77}, proposed'da TÜM domain'ler 1.770). Artık medyan
+    SADECE >=2 gerçek veri-güdümlü domain varken kullanılıyor; TEK domain
+    varsa nötr 1.0'a düşülüyor — bir ajanın kendi skoru asla diğerlerine
+    kopyalanmıyor."""
+    import shutil
+
+    from services.weight_repository import WeightRepository
+
+    name = str(tmp_path / "weights_single_domain_test")
+    try:
+        memory = AgentMemory(storage_path=str(tmp_path / "agent_memory_single_domain"))
+        # SADECE technical'ın yeterli (>=10) taze örneklemi var — gerçek
+        # olaydaki AYNI senaryo (nadir bir rejimde tek ajan aktif).
+        for _ in range(30):
+            memory.record(AgentPerformanceRecord(
+                agent_domain="technical", direction="LONG", confidence=0.8, was_correct=True,
+            ))
+        # macro'nun MIN_SAMPLES_FOR_PROPOSAL(10) altında kalan birkaç
+        # kaydı var (domains() listesinde görünsün diye) ama önceki
+        # ağırlığı da yok -> o da fallback'e düşer.
+        for _ in range(3):
+            memory.record(AgentPerformanceRecord(
+                agent_domain="macro", direction="LONG", confidence=0.8, was_correct=True,
+            ))
+
+        repo = WeightRepository(storage_path=name)
+        optimizer = WeightOptimizer(memory, weight_repository=repo)
+        snapshot = optimizer.propose_weights(evaluation_window=100)
+
+        assert snapshot.weights["technical"] != 1.0  # gerçek veriyle hesaplandı
+        # macro, technical'ın skoruna KOPYALANMAMALI — nötr 1.0'a düşmeli.
+        assert snapshot.weights["macro"] == 1.0
+        assert snapshot.weights["macro"] != snapshot.weights["technical"]
+    finally:
+        shutil.rmtree(name, ignore_errors=True)
+
+
 def test_domain_with_previous_weight_but_no_fresh_data_still_keeps_its_own_previous_weight(tmp_path):
     """Az önceki testin karşıtı: önceki ağırlığı OLAN bir domain, medyan
     fallback'e DEĞİL, kendi önceki değerine düşmeye devam etmeli — bu

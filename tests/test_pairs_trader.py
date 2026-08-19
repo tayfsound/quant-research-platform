@@ -119,6 +119,23 @@ def test_pairs_trader_skips_everything_when_ai_disabled():
             AppSettingsRepository(session).set("ai_enabled", "true", updated_by="test")
 
 
+def test_pairs_trader_skips_everything_when_pairs_trading_disabled():
+    """Faz 282 — kullanıcı kararı (2026-08-19): bacak-boyutu birim
+    bug'ından sonra açılan 2 temiz hedge pozisyonu görülünce, kullanıcı
+    stratejiyi tamamen durdurmaya karar verdi — pairs_trading_enabled
+    artık varsayılan olarak false, check_and_trade_pairs() hiç yeni
+    bacak açmamalı (ai_enabled=true olsa bile)."""
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("ai_enabled", "true", updated_by="test")
+            AppSettingsRepository(session).set("pairs_trading_enabled", "false", updated_by="test")
+
+        trader = PairsTrader(data_provider=_FakeProvider({}))
+        results = trader.check_and_trade_pairs()
+
+        assert results == [{"skipped": "pairs_trading_disabled"}]
+
+
 def test_leg_size_is_dollar_based_and_consistent_across_wildly_different_prices():
     """Faz 268-sonrası — kritik bulgu, kullanıcı bulgusu: eski LEG_SIZE=0.2
     sabit bir HAM VARLIK BİRİMİYDİ — 0.2 BTC (~$13.000) ile 0.2 ETH (~$380)
