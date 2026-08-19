@@ -44,6 +44,28 @@ class WeightApprovalRepository:
     def get_pending(self, limit: int = 10):
         return self.session.query(WeightApprovalModel).filter_by(status="pending").order_by(WeightApprovalModel.timestamp.desc()).limit(limit).all()
 
+    def most_recent_timestamp(self, regime: str | None = None) -> datetime | None:
+        """Faz 282 — kritik bulgu (2026-08-19, kullanıcı: "her işlem
+        kapandığında değişiklik yapıyor... büyük örneklemlere göre hareket
+        etmesi lazım, her işlem kapandığında bunu yapamaz"). has_pending()
+        SADECE şu an bekleyen bir onay olup olmadığını kontrol ediyordu —
+        bir onay reddedilir reddedilmez (ya da auto_reject_stale ile 1
+        saat sonra kendiliğinden reddedilince) has_pending() tekrar False
+        dönüyor, bir SONRAKİ kapanış batch'i (genelde dakikalar içinde)
+        aynı küçük veri artışıyla YENİ bir öneri üretebiliyordu — statüsü
+        ne olursa olsun EN SON öneri ne zaman yapıldığını bilmeden gerçek
+        bir "soğuma süresi" yoktu. Durumdan (pending/approved/rejected)
+        bağımsız, o rejim için EN SON oluşturulan onayın zaman damgasını
+        döner — propose_weights() bunu bir minimum soğuma süresiyle
+        karşılaştırıyor."""
+        row = (
+            self.session.query(WeightApprovalModel)
+            .filter_by(regime=regime)
+            .order_by(WeightApprovalModel.timestamp.desc())
+            .first()
+        )
+        return row.timestamp if row is not None else None
+
     def has_pending(self, regime: str | None = None) -> bool:
         """Faz 229: kritik bulgu — WeightOptimizer.optimize()/propose_weights()
         her büyük ağırlık değişikliğinde KOŞULSUZCA yeni bir onay satırı

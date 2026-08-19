@@ -2,10 +2,17 @@
 from contracts.agent_performance import AgentPerformanceRecord
 from services.agent_memory import AgentMemory
 from services.weight_optimizer import WeightOptimizer
+from services.weight_repository import WeightRepository
 
 
-def test_weight_optimizer_proposes_weights():
-    memory = AgentMemory()
+def test_weight_optimizer_proposes_weights(tmp_path):
+    # Faz 242/282: AgentMemory()/WeightRepository() (storage_path
+    # override'sız) CANLI, paylaşılan dosyaları okuyup yazıyordu — hem
+    # gerçek üretim verisinin (technical/macro) hem de paylaşılan
+    # quantdb_test'teki regime=None onay geçmişinin (Faz 282'nin soğuma
+    # süresi kontrolü) bu testin kendi senaryosuna karışmaması için
+    # tmp_path ile izole edildi.
+    memory = AgentMemory(storage_path=str(tmp_path / "agent_memory_history"))
     # Teknik ajan başarılı
     for _ in range(20):
         memory.record(AgentPerformanceRecord(
@@ -25,7 +32,8 @@ def test_weight_optimizer_proposes_weights():
             market_regime="trend",
         ))
 
-    optimizer = WeightOptimizer(memory)
+    weight_repo = WeightRepository(storage_path=str(tmp_path / "weight_history"))
+    optimizer = WeightOptimizer(memory, weight_repository=weight_repo)
     snapshot = optimizer.propose_weights()
     assert "technical" in snapshot.weights
     assert "macro" in snapshot.weights

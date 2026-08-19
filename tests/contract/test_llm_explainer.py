@@ -152,6 +152,47 @@ async def test_ask_with_tools_stops_after_max_iterations_without_crashing():
 
 
 @pytest.mark.asyncio
+async def test_ask_with_tools_retries_once_when_model_stops_early_with_empty_content():
+    """Faz 282 — kritik bulgu (2026-08-19, kullanıcı: 3 ayrı gerçek denetim
+    çalıştırmasında — 8/9/12 gerçek araç çağrısı, HEPSİ max_iterations'tan
+    (15) çok önce — "Araç çağrı döngüsü sınırına ulaşıldı" hatası tekrarladı).
+    Kök neden: model max_iterations'a ulaşmadan KENDİLİĞİNDEN araç
+    çağırmayı bırakıyor ama BOŞ içerik döndürüyor (tool_call_log'da
+    üst üste binen search_code sorgularıyla — "stop_loss", "stop_loss_
+    price", "calculate_stop_loss" — takılıp pes ettiği görüldü). Artık bu
+    durumda (SON iterasyon değilken boş içerik) modele AYNI zorlayıcı
+    istemle (tool_choice="none") bir kez daha, iterasyon bütçesini
+    tüketmeden şans veriliyor."""
+    critic = NvidiaDecisionCritic(api_key="fake-key")
+
+    tool_call_response = MagicMock()
+    tool_call_response.json.return_value = {
+        "choices": [{"message": {
+            "role": "assistant", "content": None,
+            "tool_calls": [{"id": "call_1", "function": {"name": "search_code", "arguments": "{\"query\": \"stop_loss\"}"}}],
+        }}]
+    }
+    early_empty_response = MagicMock()
+    early_empty_response.json.return_value = {
+        "choices": [{"message": {"role": "assistant", "content": "", "tool_calls": []}}]
+    }
+    forced_final_response = MagicMock()
+    forced_final_response.json.return_value = {
+        "choices": [{"message": {"content": "Gerçek bulgulara göre nihai özet."}}]
+    }
+
+    with patch("httpx.post", side_effect=[tool_call_response, early_empty_response, forced_final_response]), \
+            patch("llm_tools.search_code", return_value={"query": "stop_loss", "matches": [], "truncated": False}):
+        # max_iterations=5 -> iterasyon 1 (2. çağrı) SON iterasyon DEĞİL,
+        # yine de model erkenden boş içerikle durdu.
+        result = await critic.ask_with_tools("stop-loss sorununu araştır", max_iterations=5)
+
+    assert result["response"] == "Gerçek bulgulara göre nihai özet."
+    assert result["status"] == "ok"
+    assert len(result["tool_calls"]) == 1  # sadece gerçek araç çağrısı sayıldı, zorlama çağrısı değil
+
+
+@pytest.mark.asyncio
 async def test_ask_with_tools_handles_unknown_tool_gracefully():
     critic = NvidiaDecisionCritic(api_key="fake-key")
     unknown_tool_response = MagicMock()

@@ -49,6 +49,19 @@ class WeightOptimizer:
 
         self.prior_strength = prior_strength
 
+    @staticmethod
+    def _load_proposal_cooldown_hours() -> float:
+        """bkz. propose_weights() içindeki Faz 282 notu."""
+        try:
+            from database.repositories.app_settings_repository import AppSettingsRepository
+
+            with SessionFactory.get_session() as session:
+                value = float(AppSettingsRepository(session).get("weight_proposal_cooldown_hours") or 6)
+            return value if value >= 0.0 else 6.0
+        except Exception as exc:
+            import structlog
+            structlog.get_logger().warning("weight_proposal_cooldown_hours_load_failed", error=str(exc))
+            return 6.0
 
     def propose_weights(
         self,
@@ -101,6 +114,29 @@ class WeightOptimizer:
         # rejimin büyük değişimi başka bir rejimin onay kuyruğunu bloklamaz.
         previous = self.weight_repository.get_latest(regime=regime)
         previous_weights = dict(previous.weights) if previous else {}
+
+        # Faz 282 — kritik bulgu (2026-08-19, kullanıcı: "her işlem
+        # kapandığında değişiklik yapıyor sanırım... büyük örneklemlere
+        # göre hareket etmesi lazım, her işlem kapandığında bunu yapamaz
+        # matematiksel olarak zırva"). has_pending() (aşağıda) sadece O AN
+        # bekleyen bir onay olup olmadığını kontrol ediyordu — kullanıcı
+        # reddeder etmez (ya da auto_reject_stale ile 1 saat sonra
+        # kendiliğinden reddedilince) BİR SONRAKİ kapanış batch'i
+        # (dakikalar içinde, aynı küçük veri artışıyla) hemen yeni bir
+        # öneri üretebiliyordu. Bu, gerçek soğuma süresi zaten VARSA (ilk
+        # öneri değilse) uygulanır — hiç önerisi olmayan bir rejim/global
+        # için ilk öneri asla geciktirilmez.
+        if previous is not None:
+            cooldown_hours = self._load_proposal_cooldown_hours()
+            try:
+                with SessionFactory.get_session() as session:
+                    last_proposed_at = WeightApprovalRepository(session).most_recent_timestamp(regime=regime)
+            except Exception as exc:
+                import structlog
+                structlog.get_logger().warning("weight_proposal_cooldown_check_failed", error=str(exc))
+                last_proposed_at = None
+            if last_proposed_at is not None and datetime.now() - last_proposed_at < timedelta(hours=cooldown_hours):
+                return previous
 
         # Faz 269-sonrası — kullanıcı bulgusu, gerçek olay: reliability_
         # legacy_cutoff_at set edildikten sadece birkaç gün sonra (bu

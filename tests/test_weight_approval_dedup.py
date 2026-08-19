@@ -9,6 +9,7 @@ için, gerçek ağırlıklar saatlerce hiç güncellenmeden donuk kaldı. Bu tes
 hem dedup kontrolünü hem de "unknown" domain sızıntısının kapatıldığını
 doğruluyor."""
 import shutil
+from uuid import uuid4
 
 from contracts.agent_performance import AgentPerformanceRecord
 from contracts.agent_weight_snapshot import AgentWeightSnapshot
@@ -63,22 +64,28 @@ def test_has_pending_reflects_real_db_state():
 def test_propose_weights_does_not_queue_a_duplicate_when_one_is_already_pending():
     name = "test_weights_dedup_propose"
     try:
+        # Faz 282: WeightOptimizer artık rejim başına bir soğuma süresi de
+        # kontrol ediyor (bkz. propose_weights() içindeki not) — paylaşılan
+        # quantdb_test'teki regime=None geçmişinden etkilenmesin diye
+        # benzersiz bir regime kullanılıyor.
+        regime = f"test_dedup_propose_{uuid4().hex[:8]}"
         repo = _isolated_repo(name)
-        repo.save(AgentWeightSnapshot(weights={"technical": 1.0, "macro": 1.0}).finalize())
+        repo.save(AgentWeightSnapshot(weights={"technical": 1.0, "macro": 1.0}, regime=regime).finalize())
 
         memory = AgentMemory()
         for _ in range(50):
             memory.record(AgentPerformanceRecord(
                 agent_domain="macro", direction="SHORT", confidence=0.6, was_correct=False,
+                market_regime=regime,
             ))
 
         optimizer = WeightOptimizer(memory, weight_repository=repo)
 
         _clear_all_pending()
         before = _pending_count()
-        optimizer.propose_weights(evaluation_window=50)
+        optimizer.propose_weights(evaluation_window=50, regime=regime)
         after_first = _pending_count()
-        optimizer.propose_weights(evaluation_window=50)
+        optimizer.propose_weights(evaluation_window=50, regime=regime)
         after_second = _pending_count()
 
         assert after_first == before + 1  # ilk çağrı bir tane ekledi
@@ -122,42 +129,48 @@ def test_regime_specific_approval_does_not_block_or_get_blocked_by_a_different_r
     etkilememeli."""
     name_a = "test_weights_regime_dedup_a"
     name_b = "test_weights_regime_dedup_b"
+    # Faz 282: bkz. yukarıdaki testin notu — soğuma süresi kontrolünün
+    # paylaşılan quantdb_test'teki "bullish_high"/"bearish_low" geçmişinden
+    # (başka testler de bu literal isimleri kullanıyor) etkilenmemesi için
+    # benzersiz regime isimleri kullanılıyor.
+    regime_a = f"test_regime_dedup_bullish_{uuid4().hex[:8]}"
+    regime_b = f"test_regime_dedup_bearish_{uuid4().hex[:8]}"
     try:
         _clear_all_pending()
 
         repo_a = _isolated_repo(name_a)
-        repo_a.save(AgentWeightSnapshot(weights={"technical": 1.0}, regime="bullish_high").finalize())
+        repo_a.save(AgentWeightSnapshot(weights={"technical": 1.0}, regime=regime_a).finalize())
         memory_a = AgentMemory()
         for _ in range(50):
             memory_a.record(AgentPerformanceRecord(
                 agent_domain="technical", direction="SHORT", confidence=0.6,
-                was_correct=False, market_regime="bullish_high",
+                was_correct=False, market_regime=regime_a,
             ))
         optimizer_a = WeightOptimizer(memory_a, weight_repository=repo_a)
-        optimizer_a.propose_weights(evaluation_window=50, regime="bullish_high")
+        optimizer_a.propose_weights(evaluation_window=50, regime=regime_a)
 
         with SessionFactory.get_session() as session:
-            assert WeightApprovalRepository(session).has_pending(regime="bullish_high") is True
-            # Farklı bir rejimin bekleyen onayı YOK — "bullish_high"ın
-            # onayı "bearish_low"u bloklamıyor.
-            assert WeightApprovalRepository(session).has_pending(regime="bearish_low") is False
+            assert WeightApprovalRepository(session).has_pending(regime=regime_a) is True
+            # Farklı bir rejimin bekleyen onayı YOK — regime_a'nın onayı
+            # regime_b'yi bloklamıyor.
+            assert WeightApprovalRepository(session).has_pending(regime=regime_b) is False
 
         repo_b = _isolated_repo(name_b)
-        repo_b.save(AgentWeightSnapshot(weights={"technical": 1.0}, regime="bearish_low").finalize())
+        repo_b.save(AgentWeightSnapshot(weights={"technical": 1.0}, regime=regime_b).finalize())
         memory_b = AgentMemory()
         for _ in range(50):
             memory_b.record(AgentPerformanceRecord(
                 agent_domain="technical", direction="SHORT", confidence=0.6,
-                was_correct=False, market_regime="bearish_low",
+                was_correct=False, market_regime=regime_b,
             ))
         optimizer_b = WeightOptimizer(memory_b, weight_repository=repo_b)
-        result_b = optimizer_b.propose_weights(evaluation_window=50, regime="bearish_low")
+        result_b = optimizer_b.propose_weights(evaluation_window=50, regime=regime_b)
 
-        # bullish_high'ın bekleyen onayı VARKEN bile bearish_low'un önerisi
+        # regime_a'nın bekleyen onayı VARKEN bile regime_b'nin önerisi
         # gerçekten yeni bir onay satırı olarak kuyruğa girdi.
         with SessionFactory.get_session() as session:
             pending = WeightApprovalRepository(session).get_pending(limit=100000)
-            bearish_pending = [p for p in pending if p.regime == "bearish_low"]
+            bearish_pending = [p for p in pending if p.regime == regime_b]
         assert len(bearish_pending) == 1
         assert result_b.weights.get("technical") == 1.0  # onaya takıldı, eski değer döndü
     finally:

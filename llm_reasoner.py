@@ -245,6 +245,41 @@ class NvidiaDecisionCritic:
             logger.exception("LLM ask_with_tools failed", extra={"error": str(e)})
             return {"response": f"Hata: {e}", "tool_calls": [], "status": "error"}
 
+    _FORCE_FINAL_ANSWER_MESSAGE = {
+        "role": "user",
+        "content": (
+            "Artık araç çağıramazsın. Şimdiye kadar topladığın "
+            "GERÇEK bulgulara dayanarak nihai, somut bir özet "
+            "yaz. Hiçbir şey bulamadıysan bunu dürüstçe söyle."
+        ),
+    }
+
+    def _force_final_answer(self, messages: list[dict], api_key: str, timeout_ms: int) -> str:
+        """messages + zorlayıcı bir "artık yaz" istemiyle, tool_choice="none"
+        tek bir çağrı yapar, üretilen (boş olabilir) metni döner. Hem gerçek
+        SON iterasyonda hem de modelin kendiliğinden erken (max_iterations'a
+        ulaşmadan) boş içerikle durduğu durumda AYNI zorlama mantığı."""
+        from llm_tools import TOOL_SCHEMAS
+
+        response = _post_with_retry(
+            NVIDIA_API_URL,
+            headers={"Authorization": f"Bearer {api_key}"},
+            json_payload={
+                "model": self.model,
+                "messages": messages + [self._FORCE_FINAL_ANSWER_MESSAGE],
+                "tools": TOOL_SCHEMAS,
+                "tool_choice": "none",
+                "temperature": 0.2,
+                "max_tokens": 1500,
+            },
+            timeout_seconds=timeout_ms / 1000,
+            retry_on_timeout=True,
+        )
+        data = response.json()
+        choices = data.get("choices") or []
+        assistant_message = choices[0].get("message", {}) if choices else {}
+        return (assistant_message.get("content") or "").strip()
+
     def _ask_with_tools_sync(self, message: str, timeout_ms: int, api_key: str, max_iterations: int) -> dict:
         import llm_tools
         from llm_tools import TOOL_FUNCTIONS, TOOL_SCHEMAS
@@ -268,14 +303,7 @@ class NvidiaDecisionCritic:
             is_last_iteration = i == max_iterations - 1
             request_messages = messages
             if is_last_iteration:
-                request_messages = messages + [{
-                    "role": "user",
-                    "content": (
-                        "Artık araç çağıramazsın. Şimdiye kadar topladığın "
-                        "GERÇEK bulgulara dayanarak nihai, somut bir özet "
-                        "yaz. Hiçbir şey bulamadıysan bunu dürüstçe söyle."
-                    ),
-                }]
+                request_messages = messages + [self._FORCE_FINAL_ANSWER_MESSAGE]
 
             response = _post_with_retry(
                 NVIDIA_API_URL,
@@ -298,6 +326,20 @@ class NvidiaDecisionCritic:
 
             if not tool_calls or is_last_iteration:
                 content = (assistant_message.get("content") or "").strip()
+                # Faz 282 — kritik bulgu (2026-08-19, kullanıcı: gerçek
+                # olayda 3 kez, 8/9/12 gerçek araç çağrısında — HEPSİ
+                # max_iterations'tan (15) çok önce — tekrarlandı): model
+                # kendiliğinden (max_iterations'a ulaşmadan) araç
+                # çağırmayı bırakıyor ama BOŞ içerik döndürüyor —
+                # tool_call_log'a bakınca model üst üste binen search_code
+                # sorgularıyla (ör. "stop_loss", "stop_loss_price",
+                # "calculate_stop_loss") takılıp pes ediyor. Bu durumda
+                # SON iterasyondaki AYNI zorlamayı (tool_choice="none" +
+                # açık "şimdi yaz" istemi) burada da bir kez deniyoruz —
+                # iterasyon bütçesini hiç tüketmeden modele gerçek bir
+                # sonuç üretmesi için ikinci bir şans.
+                if not content and not is_last_iteration:
+                    content = self._force_final_answer(messages, api_key, timeout_ms)
                 return {
                     "response": content or "Araç çağrı döngüsü sınırına ulaşıldı, net bir cevap üretemedim.",
                     "tool_calls": tool_call_log,

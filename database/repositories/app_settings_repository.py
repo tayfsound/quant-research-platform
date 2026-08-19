@@ -379,6 +379,19 @@ DEFAULTS: dict[str, str] = {
     # pozisyonlar normal stop/hedefe göre kapanana kadar izlenmeye devam
     # eder (zorla kapatılmıyor), ama yeni bacak hiç açılmıyor.
     "pairs_trading_enabled": "false",
+    # Faz 282 — kritik bulgu (2026-08-19, kullanıcı: "her işlem kapandığında
+    # değişiklik yapıyor sanırım... büyük örneklemlere göre hareket etmesi
+    # lazım, her işlem kapandığında bunu yapamaz matematiksel olarak zırva").
+    # WeightOptimizer.propose_weights() sadece o AN bekleyen bir onay olup
+    # olmadığını (has_pending) kontrol ediyordu — kullanıcı reddeder etmez
+    # (ya da auto_reject_stale ile 1 saat sonra kendiliğinden reddedilince)
+    # BİR SONRAKİ kapanış batch'i (dakikalar içinde, aynı küçük veri
+    # artışıyla) hemen yeni bir öneri üretebiliyordu, özellikle örneklemi
+    # küçük rejim-özel kovalarda gürültülü/tutarsız taleplere yol açıyordu.
+    # Artık bir rejim için EN SON öneri (durumu ne olursa olsun) bu kadar
+    # saat içinde yapıldıysa yeni bir öneri hiç hesaplanmıyor bile —
+    # gerçekten yeni kanıt birikmesi için zaman tanınıyor.
+    "weight_proposal_cooldown_hours": "6",
 }
 
 CANDLE_TIMEFRAMES = ("1m", "5m", "15m", "1h", "4h", "1d")
