@@ -7,7 +7,8 @@ import { Card, PageHeader, Badge, EmptyState, ErrorNote, Spinner } from "../comp
 // ilkesi: council'daki ajanların yön oylarındaki ANLAŞMA derecesinin,
 // gerçekleşen başarıyla ilişkili olup olmadığını ölçer. Sadece
 // ölçüm/rapor, hiçbir pozisyon/risk kararı otomatik değişmiyor.
-type BucketStat = { sample_size: number; win_rate: number };
+type ConfidenceInterval = { low: number; high: number; confidence_level: number };
+type BucketStat = { sample_size: number; win_rate: number; win_rate_ci: ConfidenceInterval | null };
 type Result = { by_agreement_bucket: Record<string, BucketStat>; n_trades: number };
 type Report = { id: string; created_at: string; result: Result };
 
@@ -66,6 +67,11 @@ export default function OpportunityQuality() {
               <div key={bucket} className="border border-line-soft rounded-lg p-3">
                 <p className="text-xs text-ink-faint mb-1">{BUCKET_LABEL[bucket] ?? bucket}</p>
                 <p className="text-lg font-mono text-ink">{(stat.win_rate * 100).toFixed(1)}%</p>
+                {stat.win_rate_ci && (
+                  <p className="text-xs text-ink-faint font-mono mb-1">
+                    %95 CI: {(stat.win_rate_ci.low * 100).toFixed(0)}–{(stat.win_rate_ci.high * 100).toFixed(0)}%
+                  </p>
+                )}
                 <Badge tone={stat.win_rate >= 0.5 ? "rise" : "fall"}>{stat.sample_size} örneklem</Badge>
               </div>
             ))}

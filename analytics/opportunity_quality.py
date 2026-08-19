@@ -13,6 +13,8 @@ otomatik değiştirmiyor."""
 import math
 from collections import defaultdict
 
+from analytics.collective_intelligence import compute_accuracy_confidence_interval
+
 MIN_GROUP_SIZE = 20
 
 
@@ -70,5 +72,12 @@ def compute_opportunity_quality_by_agreement(
         results[bucket] = {
             "sample_size": len(group_trades),
             "win_rate": round(wins / len(group_trades), 4),
+            # Faz 305 — Collective Intelligence/Agent Ablation'da uygulanan
+            # AYNI desen: min_group_size eşiği win_rate'i tamamen gizleyip
+            # göstermeyi belirliyor ama n=20 civarında bile nokta tahmini
+            # hâlâ geniş bir bant içinde belirsiz olabilir — %95 Wilson
+            # aralığı bilgilendirme amaçlı ekleniyor, hiçbir eşiği/kararı
+            # değiştirmiyor.
+            "win_rate_ci": compute_accuracy_confidence_interval(wins, len(group_trades)),
         }
     return results

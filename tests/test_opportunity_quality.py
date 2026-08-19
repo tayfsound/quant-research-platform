@@ -37,6 +37,17 @@ def test_opportunity_quality_detects_higher_win_rate_with_higher_agreement():
     assert result["high"]["win_rate"] > result["low"]["win_rate"]
 
 
+def test_opportunity_quality_win_rate_ci_contains_the_point_estimate():
+    """Faz 305 — Collective Intelligence/Agent Ablation'daki AYNI desen:
+    n=20'de bile win_rate nokta tahmini geniş bir bant içinde belirsiz
+    olabilir, Wilson aralığı bilgilendirme amaçlı ekleniyor."""
+    trades = [_trade(0.9, True) for _ in range(18)] + [_trade(0.9, False) for _ in range(2)]
+    result = compute_opportunity_quality_by_agreement(trades, min_group_size=20)
+    ci = result["high"]["win_rate_ci"]
+    assert ci is not None
+    assert ci["low"] <= result["high"]["win_rate"] <= ci["high"]
+
+
 def test_below_min_group_size_is_excluded_fail_closed():
     trades = [_trade(0.9, True) for _ in range(5)]
     result = compute_opportunity_quality_by_agreement(trades, min_group_size=20)
