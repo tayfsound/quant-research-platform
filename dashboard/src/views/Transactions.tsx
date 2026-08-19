@@ -291,6 +291,14 @@ function ClosedTradeRow({
             <Badge tone="accent">{t.leverage}x</Badge>
           </div>
         )}
+        <div>
+          <div className="text-ink-faint">Açıldı</div>
+          <div className="text-ink-soft">{t.opened_at ? new Date(t.opened_at).toLocaleString() : "—"}</div>
+        </div>
+        <div>
+          <div className="text-ink-faint">Kapandı</div>
+          <div className="text-ink-soft">{t.closed_at ? new Date(t.closed_at).toLocaleString() : "—"}</div>
+        </div>
         <div className="col-span-2 md:col-span-4 flex items-center gap-1.5 mt-1">
           {onSelectSymbol && (
             <button
@@ -527,12 +535,77 @@ function sinceCutoffMs(minutes: number): number {
   return Date.now() - minutes * 60_000;
 }
 
+// Kullanıcı isteği: "pozisyon türüne göre filtreleyebileyim, sonra long/
+// short durumuna göre, karda ya da zararda olanlara göre." tradeTypeBadge()
+// zaten hem açık hem kapalı pozisyonlar için AYNI sınıflandırmayı
+// üretiyor — filtre seçenekleri onunla BİREBİR aynı, ayrı bir taksonomi
+// icat edilmedi.
+type TypeFilter = "all" | "pump_fade" | "hedge" | "orta_vadeli" | "scalp" | "gun_ici" | "swing";
+type DirectionFilter = "all" | "LONG" | "SHORT";
+type OutcomeFilter = "all" | "profit" | "loss";
+
+const TYPE_FILTER_OPTIONS: { value: TypeFilter; label: string }[] = [
+  { value: "all", label: "Tüm türler" },
+  { value: "pump_fade", label: "Pump-Fade" },
+  { value: "hedge", label: "Hedge" },
+  { value: "orta_vadeli", label: "Orta vadeli" },
+  { value: "scalp", label: "Scalp" },
+  { value: "gun_ici", label: "Gün içi" },
+  { value: "swing", label: "Swing" },
+];
+
+function matchesTypeFilter(p: Position, filter: TypeFilter): boolean {
+  if (filter === "all") return true;
+  const badge = tradeTypeBadge(p);
+  const badgeKey = badge?.label === "Pump-Fade" ? "pump_fade"
+    : badge?.label === "hedge" ? "hedge"
+    : badge?.label === "orta vadeli" ? "orta_vadeli"
+    : badge?.label === "scalp" ? "scalp"
+    : badge?.label === "gün içi" ? "gun_ici"
+    : badge?.label === "swing" ? "swing"
+    : null;
+  return badgeKey === filter;
+}
+
+function matchesDirectionFilter(p: Position, filter: DirectionFilter): boolean {
+  return filter === "all" || p.direction === filter;
+}
+
+function matchesOutcomeFilter(pnl: number | null | undefined, filter: OutcomeFilter): boolean {
+  if (filter === "all") return true;
+  if (pnl == null) return false;
+  return filter === "profit" ? pnl > 0 : pnl < 0;
+}
+
+function FilterSelect<T extends string>({
+  value, onChange, options,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  options: { value: T; label: string }[];
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value as T)}
+      className="px-3 py-1.5 rounded-lg text-xs font-medium border border-line bg-surface text-ink shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent"
+    >
+      {options.map((opt) => (
+        <option key={opt.value} value={opt.value}>{opt.label}</option>
+      ))}
+    </select>
+  );
+}
+
 export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (symbol: string) => void } = {}) {
   const [open, setOpen] = useState<Position[]>([]);
   const [openSummary, setOpenSummary] = useState<{ open_count: number; committed_notional: number } | null>(null);
   const [trades, setTrades] = useState<Position[]>([]);
   const [summary, setSummary] = useState<{ count: number; win_rate: number; total_pnl: number; tp_count: number; sl_count: number; manual_count: number } | null>(null);
   const [sinceMinutes, setSinceMinutes] = useState<number | null>(null);
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [directionFilter, setDirectionFilter] = useState<DirectionFilter>("all");
+  const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>("all");
   const [closingId, setClosingId] = useState<string | null>(null);
   const [closeError, setCloseError] = useState<string | null>(null);
   const [closingProfitable, setClosingProfitable] = useState(false);
@@ -548,14 +621,31 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
   const OPEN_PAGE_SIZE = 100;
   const [openPage, setOpenPage] = useState(0);
 
+  const hasActiveFilters = typeFilter !== "all" || directionFilter !== "all" || outcomeFilter !== "all";
+
   const filteredTrades = useMemo(() => {
-    if (sinceMinutes === null) return trades;
-    const cutoff = sinceCutoffMs(sinceMinutes);
-    return trades.filter((t) => t.closed_at && new Date(t.closed_at).getTime() >= cutoff);
-  }, [trades, sinceMinutes]);
+    let result = trades;
+    if (sinceMinutes !== null) {
+      const cutoff = sinceCutoffMs(sinceMinutes);
+      result = result.filter((t) => t.closed_at && new Date(t.closed_at).getTime() >= cutoff);
+    }
+    return result.filter((t) =>
+      matchesTypeFilter(t, typeFilter)
+      && matchesDirectionFilter(t, directionFilter)
+      && matchesOutcomeFilter(t.pnl, outcomeFilter)
+    );
+  }, [trades, sinceMinutes, typeFilter, directionFilter, outcomeFilter]);
+
+  const filteredOpen = useMemo(() => {
+    return open.filter((p) =>
+      matchesTypeFilter(p, typeFilter)
+      && matchesDirectionFilter(p, directionFilter)
+      && matchesOutcomeFilter(p.net_unrealized_pnl, outcomeFilter)
+    );
+  }, [open, typeFilter, directionFilter, outcomeFilter]);
 
   const filteredSummary = useMemo(() => {
-    if (sinceMinutes === null) return null;
+    if (sinceMinutes === null && !hasActiveFilters) return null;
     const wins = filteredTrades.filter((t) => (t.pnl ?? 0) > 0).length;
     const totalPnl = filteredTrades.reduce((sum, t) => sum + (t.pnl ?? 0), 0);
     return {
@@ -657,6 +747,43 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
         />
       </div>
 
+      {/* Kullanıcı isteği: "pozisyon türüne göre filtreleyebileyim, sonra
+          long/short durumuna göre, karda ya da zararda olanlara göre."
+          Hem açık pozisyonlar hem kapanmış işlemler listesini AYNI ANDA
+          süzer — iki ayrı filtre seti kafa karıştırırdı. */}
+      <Card className="mb-6">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-ink-faint font-medium mr-1">Filtrele:</span>
+          <FilterSelect value={typeFilter} onChange={setTypeFilter} options={TYPE_FILTER_OPTIONS} />
+          <FilterSelect
+            value={directionFilter}
+            onChange={setDirectionFilter}
+            options={[
+              { value: "all", label: "Yön: Tümü" },
+              { value: "LONG", label: "LONG" },
+              { value: "SHORT", label: "SHORT" },
+            ]}
+          />
+          <FilterSelect
+            value={outcomeFilter}
+            onChange={setOutcomeFilter}
+            options={[
+              { value: "all", label: "Kâr/Zarar: Tümü" },
+              { value: "profit", label: "Sadece kârda" },
+              { value: "loss", label: "Sadece zararda" },
+            ]}
+          />
+          {hasActiveFilters && (
+            <button
+              onClick={() => { setTypeFilter("all"); setDirectionFilter("all"); setOutcomeFilter("all"); }}
+              className="text-xs text-accent hover:underline ml-1"
+            >
+              Filtreleri temizle
+            </button>
+          )}
+        </div>
+      </Card>
+
       <div className="flex items-center justify-between gap-4 mb-1">
         <h2 className="text-sm font-semibold text-ink-soft uppercase tracking-wide">Açık Pozisyonlar</h2>
         {open.length > 0 && (
@@ -682,11 +809,11 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
           pozisyon gösteriliyor — altta sayfalarla gezebilirsiniz.
         </p>
       )}
-      {open.length === 0 ? (
-        <EmptyState label="Şu an açık pozisyon yok." />
+      {filteredOpen.length === 0 ? (
+        <EmptyState label={hasActiveFilters ? "Filtreye uyan açık pozisyon yok." : "Şu an açık pozisyon yok."} />
       ) : (
         <div className="flex flex-col gap-1.5 mb-8">
-          {open.map((p) => (
+          {filteredOpen.map((p) => (
             <OpenPositionRow
               key={p.id}
               p={p}
