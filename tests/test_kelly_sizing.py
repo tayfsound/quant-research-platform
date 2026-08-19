@@ -72,6 +72,86 @@ def test_kelly_size_multiplier_rounds_confidence_to_nearest_bucket(monkeypatch):
     assert abs(result - 0.2) < 1e-9
 
 
+# Faz 290 — EV kapısının rejime koşullandırılması (dış rapor doğrulaması,
+# 2026-08-19): Kelly boyutlandırma önceden SADECE confidence kovasına
+# bakıyordu.
+
+def test_kelly_size_multiplier_prefers_regime_specific_stats_when_available(monkeypatch):
+    from services import kelly_sizing
+
+    # confidence-only kova iyimser (f*=0.4, half-Kelly=0.2) ama bu rejimde
+    # aynı confidence kovasının GERÇEK dağılımı çok daha kötü (f*=0) —
+    # rejim-özel veri varsa o kullanılmalı, global kova değil.
+    monkeypatch.setattr(
+        kelly_sizing, "get_confidence_bucket_payoff_stats",
+        lambda: {0.8: {"win_rate": 0.6, "avg_win": 10.0, "avg_loss": 5.0, "sample_count": 50}},
+    )
+    monkeypatch.setattr(
+        kelly_sizing, "get_regime_confidence_bucket_payoff_stats",
+        lambda: {("bearish_high", 0.8): {"win_rate": 0.2, "avg_win": 1.0, "avg_loss": 5.0, "sample_count": 30}},
+    )
+    result = kelly_size_multiplier(0.8, regime="bearish_high")
+    assert result == 0.0  # negatif kenar, fail-closed sıfır
+
+
+def test_kelly_size_multiplier_falls_back_to_global_bucket_when_regime_data_insufficient(monkeypatch):
+    from services import kelly_sizing
+
+    monkeypatch.setattr(
+        kelly_sizing, "get_confidence_bucket_payoff_stats",
+        lambda: {0.8: {"win_rate": 0.6, "avg_win": 10.0, "avg_loss": 5.0, "sample_count": 50}},
+    )
+    # bu rejim için hiç veri yok -> global kovaya (half-Kelly=0.2) düşmeli
+    monkeypatch.setattr(kelly_sizing, "get_regime_confidence_bucket_payoff_stats", lambda: {})
+    result = kelly_size_multiplier(0.8, regime="bearish_high")
+    assert abs(result - 0.2) < 1e-9
+
+
+def test_kelly_size_multiplier_without_regime_argument_uses_confidence_only_path(monkeypatch):
+    from services import kelly_sizing
+
+    monkeypatch.setattr(
+        kelly_sizing, "get_confidence_bucket_payoff_stats",
+        lambda: {0.8: {"win_rate": 0.6, "avg_win": 10.0, "avg_loss": 5.0, "sample_count": 50}},
+    )
+    result = kelly_size_multiplier(0.8)  # regime=None (varsayılan) — mevcut davranış
+    assert abs(result - 0.2) < 1e-9
+
+
+def test_compute_regime_confidence_bucket_payoff_stats_reflects_real_closed_trades():
+    """Gerçek DB'ye karşı: bir (rejim, confidence) kovasına yeterli (>=20)
+    gerçek kapanmış işlem eklenince, GERÇEK verilerden doğru
+    hesaplanmalı — ve market_regime=NULL olan kapanışlar bu kovaya hiç
+    karışmamalı."""
+    from services.kelly_sizing import compute_regime_confidence_bucket_payoff_stats
+
+    symbol = f"KELLYREGIME{uuid4().hex[:6]}"
+    regime = f"bullish_high_{uuid4().hex[:6]}"  # başka testlerle çakışmasın diye benzersiz
+    pnls = [10.0] * 15 + [-5.0] * 10
+
+    now = datetime.now(UTC)
+    for pnl in pnls:
+        event = DecisionEvent(
+            id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+            final_size=1.0, confidence=0.9, status="open", entry_price=100.0, quantity=1.0,
+        )
+        with SessionFactory.get_session() as session:
+            repo = DecisionPersistor(session)
+            repo.persist(event)
+            repo.close_position(
+                decision_id=str(event.id), exit_price=100.0, pnl=pnl, closed_at=now,
+                market_regime=regime,
+            )
+
+    stats = compute_regime_confidence_bucket_payoff_stats()
+    bucket = stats.get((regime, 0.9))
+    assert bucket is not None
+    assert bucket["sample_count"] == 25
+    assert bucket["win_rate"] == 0.6
+    assert bucket["avg_win"] == 10.0
+    assert bucket["avg_loss"] == 5.0
+
+
 def test_compute_confidence_bucket_payoff_stats_reflects_real_closed_trades():
     """Gerçek DB'ye karşı: bir kovaya (0.9) yeterli (>=20) gerçek kapanmış
     işlem eklenince, o kovanın win_rate/avg_win/avg_loss'u GERÇEK

@@ -32,7 +32,7 @@ def _supportive_opinions() -> list[AgentOpinion]:
 def test_act_tier_final_size_is_scaled_by_kelly_multiplier(monkeypatch):
     import engines.cognitive_pipeline as pipeline_module
 
-    monkeypatch.setattr(pipeline_module, "kelly_size_multiplier", lambda confidence: 0.3)
+    monkeypatch.setattr(pipeline_module, "kelly_size_multiplier", lambda confidence, regime=None: 0.3)
 
     ctx = CognitiveCycleContext()
     ctx.risk.trading_mode = "live"
@@ -50,7 +50,7 @@ def test_act_tier_with_no_kelly_data_keeps_full_size(monkeypatch):
     (tam boyut) hiç değişmemeli, regresyon yok."""
     import engines.cognitive_pipeline as pipeline_module
 
-    monkeypatch.setattr(pipeline_module, "kelly_size_multiplier", lambda confidence: 1.0)
+    monkeypatch.setattr(pipeline_module, "kelly_size_multiplier", lambda confidence, regime=None: 1.0)
 
     ctx = CognitiveCycleContext()
     ctx.risk.trading_mode = "live"
@@ -71,7 +71,7 @@ def test_act_tier_kelly_multiplier_never_increases_size_beyond_proposed(monkeypa
     (büyümediğini) kanıtlıyoruz."""
     import engines.cognitive_pipeline as pipeline_module
 
-    monkeypatch.setattr(pipeline_module, "kelly_size_multiplier", lambda confidence: 0.6)
+    monkeypatch.setattr(pipeline_module, "kelly_size_multiplier", lambda confidence, regime=None: 0.6)
 
     ctx = CognitiveCycleContext()
     ctx.risk.trading_mode = "live"

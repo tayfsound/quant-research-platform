@@ -311,7 +311,16 @@ class MetaStage:
             # — [0,1] aralığında, sadece küçültebilir, asla büyütemez;
             # yeterli veri yoksa (fail-closed) 1.0, mevcut davranış aynen
             # korunur.
-            kelly_multiplier = kelly_size_multiplier(meta["confidence"])
+            #
+            # Faz 290: rejim de veriliyor — services/position_closer.py::
+            # _extract_market_regime ile AYNI "trend_volatility" formatı
+            # (regime-özel kovaların açılış/kapanış tarafında birebir
+            # eşleşmesi bunun aynı olmasına bağlı). trend "unknown"sa
+            # (gerçek market_snapshot yoksa) None veriliyor — kelly_
+            # sizing zaten bu durumda confidence-only davranışına düşüyor.
+            trend = features.get("trend", "unknown")
+            regime = f"{trend}_{features.get('volatility_regime', 'normal')}" if trend != "unknown" else None
+            kelly_multiplier = kelly_size_multiplier(meta["confidence"], regime=regime)
             if belief.direction == "LONG":
                 ctx.decision.action = ActionType.ENTER_LONG
                 ctx.decision.final_size = ctx.decision.proposed_size * kelly_multiplier
