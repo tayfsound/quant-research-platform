@@ -428,20 +428,41 @@ class PositionCloser:
         güvenilir bir referans): fiyat lehte gittikçe stop (current_price
         ∓ entry_price*trailing_pct) olarak arkadan takip eder. Breakeven
         ve trailing'in ürettiği adaylardan HANGİSİ daha sıkıysa (daha çok
-        kâr koruyorsa) o kullanılır — ikisi de SADECE sıkılaştırır."""
+        kâr koruyorsa) o kullanılır — ikisi de SADECE sıkılaştırır.
+
+        Faz 282 — kritik bulgu (2026-08-19, kullanıcı: "kardayken -4k dolar
+        zarar yazmaya başladıysa çok mantıksız"): yukarıdaki breakeven_
+        trigger_r_multiple/trailing_stop_distance_pct, pump_fade_v1'in
+        SABİT geniş stop mesafesine (pump_fade_stop_distance_pct=%30) göre
+        ORANTILI hesaplanıyor — %50 tetikleme oranı bile mutlak %15
+        (0.5*%30) demek. Gerçek veri (7 açık pozisyon, 2026-08-19): hepsi
+        gerçek kâra geçti (MFE %0.4-%5.0) ama HİÇBİRİ ne %15 breakeven
+        eşiğine ne %5 trailing eşiğine ulaşamadı — koruma fiilen hiç
+        devreye giremedi, hepsi kârdan zarara döndü. pump_fade_v1
+        pozisyonları artık entry_price'a göre AYRI, MUTLAK yüzdelik
+        eşikler kullanıyor (stop mesafesiyle orantılı DEĞİL) — diğer (AI
+        konseyi) pozisyonlarının davranışı DEĞİŞMEDİ."""
         entry_price = pos.get("entry_price")
         stop_loss_price = pos.get("stop_loss_price")
         direction = (pos.get("direction") or "").upper()
         if entry_price is None or stop_loss_price is None or direction not in ("LONG", "SHORT"):
             return stop_loss_price
 
-        trigger_r_multiple = self._load_breakeven_trigger_r_multiple()
-        trailing_pct = self._load_trailing_stop_distance_pct()
+        is_pump_fade = pos.get("experiment_bucket") == "pump_fade_v1"
+        if is_pump_fade:
+            breakeven_trigger_pct = self._load_pump_fade_breakeven_trigger_pct()
+            trailing_pct = self._load_pump_fade_trailing_stop_distance_pct()
+        else:
+            trigger_r_multiple = self._load_breakeven_trigger_r_multiple()
+            trailing_pct = self._load_trailing_stop_distance_pct()
 
         if direction == "LONG":
             original_risk = entry_price - stop_loss_price
             candidates = [stop_loss_price]
-            if original_risk > 0 and current_price >= entry_price + original_risk * trigger_r_multiple:
+            if is_pump_fade:
+                if current_price >= entry_price * (1 + breakeven_trigger_pct):
+                    candidates.append(entry_price)
+            elif original_risk > 0 and current_price >= entry_price + original_risk * trigger_r_multiple:
                 candidates.append(entry_price)
             if trailing_pct > 0:
                 trailing_candidate = current_price - entry_price * trailing_pct
@@ -456,7 +477,10 @@ class PositionCloser:
         else:
             original_risk = stop_loss_price - entry_price
             candidates = [stop_loss_price]
-            if original_risk > 0 and current_price <= entry_price - original_risk * trigger_r_multiple:
+            if is_pump_fade:
+                if current_price <= entry_price * (1 - breakeven_trigger_pct):
+                    candidates.append(entry_price)
+            elif original_risk > 0 and current_price <= entry_price - original_risk * trigger_r_multiple:
                 candidates.append(entry_price)
             if trailing_pct > 0:
                 trailing_candidate = current_price + entry_price * trailing_pct
@@ -497,6 +521,36 @@ class PositionCloser:
         except Exception as exc:
             logger.warning("breakeven_trigger_r_multiple_load_failed", error=str(exc))
             return 0.5
+
+    @staticmethod
+    def _load_pump_fade_breakeven_trigger_pct() -> float:
+        """pump_fade_v1 için MUTLAK yüzdelik breakeven eşiği — bkz.
+        _apply_breakeven_stop docstring'indeki Faz 282 notu."""
+        try:
+            from database.repositories.app_settings_repository import AppSettingsRepository
+            from database.session_factory import SessionFactory
+
+            with SessionFactory.get_session() as session:
+                value = float(AppSettingsRepository(session).get("pump_fade_breakeven_trigger_pct") or 0.01)
+            return value if value > 0.0 else 0.01
+        except Exception as exc:
+            logger.warning("pump_fade_breakeven_trigger_pct_load_failed", error=str(exc))
+            return 0.01
+
+    @staticmethod
+    def _load_pump_fade_trailing_stop_distance_pct() -> float:
+        """pump_fade_v1 için MUTLAK yüzdelik trailing mesafesi — bkz.
+        _apply_breakeven_stop docstring'indeki Faz 282 notu."""
+        try:
+            from database.repositories.app_settings_repository import AppSettingsRepository
+            from database.session_factory import SessionFactory
+
+            with SessionFactory.get_session() as session:
+                value = float(AppSettingsRepository(session).get("pump_fade_trailing_stop_distance_pct") or 0.007)
+            return value if value >= 0.0 else 0.007
+        except Exception as exc:
+            logger.warning("pump_fade_trailing_stop_distance_pct_load_failed", error=str(exc))
+            return 0.007
 
     def close_due_positions(self, decision_repo: DecisionPersistor, timeframe: str = "1m") -> list[dict]:
         """Açık pozisyonları gerçek güncel fiyatla kontrol eder: fiyat gerçek

@@ -654,6 +654,139 @@ def test_trailing_stop_disabled_when_distance_pct_is_zero():
             AppSettingsRepository(session).set("trailing_stop_distance_pct", "0.05", updated_by="test")
 
 
+def test_pump_fade_breakeven_uses_absolute_price_pct_not_stop_distance_ratio():
+    """Faz 282 — kritik bulgu (2026-08-19, kullanıcı: "kardayken -4k dolar
+    zarar yazmaya başladıysa çok mantıksız"): pump_fade_v1'in SABİT geniş
+    stop mesafesi (gerçek varsayılan %30) yüzünden, genel breakeven_
+    trigger_r_multiple (%50) mutlak %15 demek — gerçek pozisyonlar sadece
+    %0.4-%5.0 lehte gidip hiç bu eşiğe ulaşmadan tersine döndü. Bu test,
+    pump_fade_v1 etiketli bir pozisyonda SADECE %1.5 lehte gidişin (genel
+    R-multiple kuralında HİÇ tetiklenmeyecek bir mesafe) artık breakeven'i
+    tetiklediğini kanıtlıyor — entry_price'a göre MUTLAK yüzde, stop
+    mesafesiyle orantılı DEĞİL."""
+    from contracts.decision_event import DecisionEvent
+
+    symbol = f"POSPFBE{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    entry, wide_stop, target = 100.0, 130.0, 75.0  # SHORT, gerçek pump_fade oranları (%30 stop/%25 hedef)
+
+    with SessionFactory.get_session() as session:
+        event = DecisionEvent(
+            id=uuid4(), timestamp=now, symbol=symbol,
+            proposed_direction="SHORT", final_action="SHORT", final_size=1.0, confidence=0.7,
+            status="open", entry_price=entry, quantity=1.0, opened_at=now,
+            stop_loss_price=wide_stop, take_profit_price=target,
+            experiment_bucket="pump_fade_v1",
+        )
+        DecisionPersistor(session).persist(event)
+
+    # %1.5 lehte (98.5) — varsayılan pump_fade_breakeven_trigger_pct (%1)
+    # eşiğinin üstünde, ama genel R-multiple kuralında (0.5*%30=%15,
+    # yani fiyat 85'e inmeli) HİÇ tetiklenmeyecek bir mesafe. Breakeven
+    # (aday: 100) VE trailing (aday: 98.5+100*0.007=99.2) ikisi de
+    # devreye girer — daha sıkı olan (99.2) kazanır, yalnızca girişe
+    # değil, gerçek bir kâr kilitlenir.
+    closer = PositionCloser(_FixedPriceProvider(98.5))
+    with SessionFactory.get_session() as session:
+        closer.close_due_positions(DecisionPersistor(session))
+
+    with SessionFactory.get_session() as session:
+        row = DecisionPersistor(session).get_by_id(str(event.id))
+    assert row["status"] == "open"
+    assert row["stop_loss_price"] <= entry  # en azından girişe çekildi, hâlâ 130 değil
+    assert abs(row["stop_loss_price"] - 99.2) < 1e-9  # trailing daha sıkı, gerçek kâr kilitlendi
+
+
+def test_pump_fade_small_favorable_move_below_threshold_does_not_trigger_breakeven():
+    """Eşiğin (varsayılan %1) altındaki bir hareket hâlâ tetiklememeli —
+    mekanizmanın gerçekten UYGULANDIĞININ (her zaman tetiklenmediğinin)
+    kanıtı."""
+    from contracts.decision_event import DecisionEvent
+
+    symbol = f"POSPFBENO{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    entry, wide_stop, target = 100.0, 130.0, 75.0
+
+    with SessionFactory.get_session() as session:
+        event = DecisionEvent(
+            id=uuid4(), timestamp=now, symbol=symbol,
+            proposed_direction="SHORT", final_action="SHORT", final_size=1.0, confidence=0.7,
+            status="open", entry_price=entry, quantity=1.0, opened_at=now,
+            stop_loss_price=wide_stop, take_profit_price=target,
+            experiment_bucket="pump_fade_v1",
+        )
+        DecisionPersistor(session).persist(event)
+
+    # %0.5 lehte (99.5) — %1 eşiğinin altında.
+    closer = PositionCloser(_FixedPriceProvider(99.5))
+    with SessionFactory.get_session() as session:
+        closer.close_due_positions(DecisionPersistor(session))
+
+    with SessionFactory.get_session() as session:
+        row = DecisionPersistor(session).get_by_id(str(event.id))
+    assert row["stop_loss_price"] == wide_stop  # eşiğin altında, tetiklenmedi
+
+
+def test_pump_fade_trailing_locks_more_profit_than_breakeven_alone():
+    """%1'lik breakeven eşiğinin ötesinde gerçek bir hareket (%2), pump_
+    fade'in kendi (varsayılan %0.7) trailing mesafesiyle SADECE girişe
+    değil, girişin DE ötesine (gerçek kilitlenmiş kâr) çekmeli."""
+    from contracts.decision_event import DecisionEvent
+
+    symbol = f"POSPFTRAIL{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    entry, wide_stop, target = 100.0, 130.0, 75.0
+
+    with SessionFactory.get_session() as session:
+        event = DecisionEvent(
+            id=uuid4(), timestamp=now, symbol=symbol,
+            proposed_direction="SHORT", final_action="SHORT", final_size=1.0, confidence=0.7,
+            status="open", entry_price=entry, quantity=1.0, opened_at=now,
+            stop_loss_price=wide_stop, take_profit_price=target,
+            experiment_bucket="pump_fade_v1",
+        )
+        DecisionPersistor(session).persist(event)
+
+    # %2 lehte (98.0) -> trailing adayı: 98 + 100*0.007 = 98.7 (entry'nin DE altında).
+    closer = PositionCloser(_FixedPriceProvider(98.0))
+    with SessionFactory.get_session() as session:
+        closer.close_due_positions(DecisionPersistor(session))
+
+    with SessionFactory.get_session() as session:
+        row = DecisionPersistor(session).get_by_id(str(event.id))
+    assert row["status"] == "open"
+    assert abs(row["stop_loss_price"] - 98.7) < 1e-9  # entry(100)'ün DE ötesinde, gerçek kâr kilitli
+
+
+def test_non_pump_fade_position_with_same_wide_stop_is_unaffected_by_pump_fade_thresholds():
+    """İzolasyon kanıtı: AYNI geniş stop mesafesine (SHORT, %30) sahip
+    ama pump_fade_v1 OLMAYAN bir pozisyon, %1.5 lehte gidişte pump_fade'in
+    mutlak-yüzde eşiğinden ETKİLENMEMELİ — genel R-multiple kuralı (%15)
+    hâlâ geçerli, bu mesafede tetiklenmemeli."""
+    from contracts.decision_event import DecisionEvent
+
+    symbol = f"POSNONPFWIDE{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    entry, wide_stop, target = 100.0, 130.0, 60.0
+
+    with SessionFactory.get_session() as session:
+        event = DecisionEvent(
+            id=uuid4(), timestamp=now, symbol=symbol,
+            proposed_direction="SHORT", final_action="SHORT", final_size=1.0, confidence=0.7,
+            status="open", entry_price=entry, quantity=1.0, opened_at=now,
+            stop_loss_price=wide_stop, take_profit_price=target,
+        )
+        DecisionPersistor(session).persist(event)
+
+    closer = PositionCloser(_FixedPriceProvider(98.5))
+    with SessionFactory.get_session() as session:
+        closer.close_due_positions(DecisionPersistor(session))
+
+    with SessionFactory.get_session() as session:
+        row = DecisionPersistor(session).get_by_id(str(event.id))
+    assert row["stop_loss_price"] == wide_stop  # pump_fade eşiği burada uygulanmadı
+
+
 def test_take_profit_exit_is_charged_the_cheaper_maker_fee_not_taker():
     """Faz 223: kullanıcı isteği — "işlem ücretlerinden kurtulmanın ya da
     minimize etmenin yolları var mı." Gerçek bulgu: çıkış her zaman taker

@@ -141,6 +141,20 @@ DEFAULTS: dict[str, str] = {
     # 0.0 = trailing kapalı (sadece breakeven). Varsayılan %5 — min_stop_pct
     # (%4.5) tabanıyla tutarlı, redeploy gerekmeden ayarlanabilir.
     "trailing_stop_distance_pct": "0.05",
+    # Faz 282 — kritik bulgu (2026-08-19, kullanıcı: "kardayken -4k dolar
+    # zarar yazmaya başladıysa çok mantıksız"): yukarıdaki breakeven_
+    # trigger_r_multiple/trailing_stop_distance_pct, pump_fade_v1'in SABİT
+    # geniş stop mesafesine (pump_fade_stop_distance_pct=%30) göre ORANTILI
+    # hesaplanıyor — %50 tetikleme oranı bile %15'lik (0.5*%30) mutlak bir
+    # eşik demek. Gerçek veri (7 açık pozisyon, 2026-08-19): hepsi gerçek
+    # kâra geçti (MFE %0.4-%5.0) ama HİÇBİRİ ne %15 breakeven eşiğine ne de
+    # %5 trailing eşiğine ulaşamadı — koruma fiilen hiç devreye giremedi,
+    # hepsi kârdan zarara döndü. pump_fade_v1 için artık entry_price'a göre
+    # AYRI, MUTLAK yüzdelik eşikler kullanılıyor (stop mesafesiyle orantılı
+    # DEĞİL) — bkz. services/position_closer.py::_apply_breakeven_stop.
+    # Diğer (AI konseyi) pozisyonlarının davranışı DEĞİŞMEDİ.
+    "pump_fade_breakeven_trigger_pct": "0.01",
+    "pump_fade_trailing_stop_distance_pct": "0.007",
     # Drawdown-Based Position Sizing (gambler's ruin koruması) — kill
     # switch'in kullandığı AYNI gerçek ardışık kayıp sayacıyla, sert
     # durmadan ÖNCE devreye giren kademeli bir fren. 3. ardışık kayıptan
