@@ -267,6 +267,14 @@ class DecisionPersistor:
         return self._breakdown_by_trade_type("closed")
 
     def _breakdown_by_trade_type(self, status: str) -> list[dict]:
+        # Faz 282 — kritik bulgu: bu agregasyon excluded_from_stats'ı hiç
+        # kontrol etmiyordu — list_closed_trades/closed_trades_summary/
+        # performance_by_period'ın (Faz 238'den beri) hepsi bilinen bug'
+        # lardan kirlenmiş satırları hariç tutarken, bu tablo (dashboard'un
+        # "işlem türüne göre long/short dağılımı" görünümü) hâlâ onları
+        # sayıyordu — kullanıcı bulgusu: faz279/280/281'de excluded_from_
+        # stats=true işaretlenen pump_fade/scalp/hedge satırları bu tabloda
+        # hâlâ görünüyordu.
         rows = self.session.execute(
             text("""
                 SELECT trade_type, direction, count(*) AS position_count
@@ -290,7 +298,7 @@ class DecisionPersistor:
                             ELSE NULL
                         END AS trade_type
                     FROM decisions
-                    WHERE status = :status
+                    WHERE status = :status AND excluded_from_stats = false
                 ) classified
                 WHERE trade_type IS NOT NULL
                 GROUP BY trade_type, direction

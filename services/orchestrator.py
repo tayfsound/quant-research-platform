@@ -1,4 +1,5 @@
 """End-to-end cognitive loop orchestrator — v1.1 trusted paper cycle."""
+import json
 from datetime import UTC, datetime
 from typing import Any
 
@@ -26,9 +27,6 @@ from config import get_settings
 from contracts.context import CognitiveCycleContext
 from contracts.contexts.decision import ActionType
 
-import threading
-import time
-
 # Faz 255 performans düzeltmesi: kritik bulgu — canlıda doğrulandı. Risk
 # ölçeklendirmesi için kullanılan bar'ları HER trading cycle'da (120s'de
 # bir), HER sembol için yeniden çekmek gerçek bir performans regresyonuna
@@ -38,14 +36,47 @@ import time
 # yavaş değişen bir ölçü — 120 saniyede bir tazelenmesinin hiçbir anlamı
 # yok. 15 dakikalık önbellek, riski gerçekçi tutarken gereksiz API
 # yükünü ~7x azaltıyor.
-# 3. taraf inceleme bulgusu (2.5) — modül-seviyeli dict, kilitsiz. FastAPI
-# sync endpoint'leri gerçek OS thread pool'unda çalıştırıyor, yani teorik
-# olarak iki eşzamanlı istek check-then-write arasında çakışabilir. Tek
-# celery worker (-c 1) ve tek uvicorn sürecinde bugüne kadar gerçek bir
-# soruna yol açmadı, ama kilit eklemenin maliyeti sıfıra yakın.
-_RISK_BARS_CACHE: dict[tuple[str, str], tuple[float, list]] = {}
+#
+# Faz 269-sonrası — kullanıcı isteği, gerçek bulgu: yorumun "Tek celery
+# worker (-c 1)" varsayımı canlı deployment'ta YANLIŞ çıktı — celery
+# worker `-c`/`--concurrency` verilmeden başlatılıyor, bu da varsayılan
+# olarak CPU çekirdek sayısı kadar (bu makinede 10) prefork worker
+# SÜRECİ demek (doğrulandı: `ps aux` gerçekten 10 ayrı ForkPoolWorker
+# PID'i gösterdi). Modül-seviyeli bir dict, fork sonrası her sürecin
+# KENDİ ayrı kopyasında yaşar — 10 süreç arasında paylaşılmaz. Sonuç:
+# aynı sembol farklı cycle'larda farklı worker'a düşünce (celery'nin
+# round-robin dağıtımıyla olağan), önbellek isabet oranı yorumun
+# vaat ettiği "~7x azalma"nın çok altında kalıyordu — her süreç
+# kendi izole 1/10'luk görünümünü önbellekliyordu. Artık services/
+# tasks.py::_CycleLock'un kullandığı AYNI Redis-tabanlı paylaşılan-
+# durum deseni: TÜM süreçler AYNI anahtarı paylaşıyor, gerçek bir
+# 15-dakikalık pencere TÜM worker'lar için geçerli oluyor. Redis'in
+# kendi TTL'i (SETEX) kullanılıyor — elle zaman damgası karşılaştırması
+# gerekmiyor.
 _RISK_BARS_CACHE_TTL_SECONDS = 900
-_RISK_BARS_CACHE_LOCK = threading.Lock()
+_RISK_BARS_CACHE_KEY_PREFIX = "risk_bars_cache"
+
+
+def _serialize_bars(bars: list) -> str:
+    return json.dumps([
+        {
+            "timestamp": bar.timestamp.isoformat(), "open": bar.open, "high": bar.high,
+            "low": bar.low, "close": bar.close, "volume": bar.volume,
+        }
+        for bar in bars
+    ])
+
+
+def _deserialize_bars(raw: str) -> list:
+    from market_data.ingestion.ohlcv import OHLCV
+
+    return [
+        OHLCV(
+            timestamp=datetime.fromisoformat(b["timestamp"]), open=b["open"], high=b["high"],
+            low=b["low"], close=b["close"], volume=b["volume"],
+        )
+        for b in json.loads(raw)
+    ]
 
 # Faz 268-sonrası — Effective Number of Bets tabanlı portföy sıkılaştırması
 # (bkz. _apply_portfolio_fusion). analytics/portfolio_intelligence.py'nin
@@ -66,15 +97,30 @@ def _observe_decision_latency(symbol: str, last_bar_timestamp: datetime) -> None
 
 
 def _get_risk_bars_cached(data_provider, symbol: str, timeframe: str = "1d", limit: int = 30) -> list:
-    now = time.time()
-    key = (symbol, timeframe)
-    with _RISK_BARS_CACHE_LOCK:
-        cached = _RISK_BARS_CACHE.get(key)
-        if cached and (now - cached[0]) < _RISK_BARS_CACHE_TTL_SECONDS:
-            return cached[1]
+    """Redis erişilemezse (ör. kısa bir kesinti) FAIL-OPEN: önbelleksiz
+    doğrudan gerçek veriyi çeker — bir yardımcı performans katmanının
+    kendisi, asıl veri çekme işlemini asla engellememeli (Binance rate
+    limiter/EventLogRepository ile AYNI felsefe)."""
+    cache_key = f"{_RISK_BARS_CACHE_KEY_PREFIX}:{symbol}:{timeframe}"
+    client = None
+    try:
+        import redis
+
+        client = redis.from_url(get_settings().REDIS_URL)
+        cached_raw = client.get(cache_key)
+        if cached_raw:
+            return _deserialize_bars(cached_raw)
+    except Exception:
+        client = None
+
     bars = data_provider.get_ohlcv(symbol, timeframe, limit=limit) or []
-    with _RISK_BARS_CACHE_LOCK:
-        _RISK_BARS_CACHE[key] = (now, bars)
+
+    if client is not None and bars:
+        try:
+            client.set(cache_key, _serialize_bars(bars), ex=_RISK_BARS_CACHE_TTL_SECONDS)
+        except Exception:
+            pass
+
     return bars
 
 

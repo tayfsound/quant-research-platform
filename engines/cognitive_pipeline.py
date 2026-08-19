@@ -1,4 +1,6 @@
 """Cognitive Pipeline Aşamaları — opinions akışı + Debate hafızası + RecordingStage."""
+import structlog
+
 from contracts.contexts.decision import ActionType
 from contracts.contexts.risk import RiskReason
 
@@ -16,6 +18,8 @@ from services.decision_recorder import DecisionRecorder
 from services.kelly_sizing import kelly_size_multiplier
 from services.knowledge_base import KnowledgeBase
 from services.metacognition import Metacognition
+
+logger = structlog.get_logger()
 
 
 class MemoryStage:
@@ -578,7 +582,8 @@ class RiskTargetStage:
             if recommendation is None:
                 return None
             return recommendation["sl_pct"], recommendation["tp_pct"]
-        except Exception:
+        except Exception as exc:
+            logger.warning("adaptive_barrier_lookup_failed", error=str(exc))
             return None
 
     def _load_multipliers(self) -> tuple[float, float, float]:
@@ -592,7 +597,8 @@ class RiskTargetStage:
                 target_mult = float(settings_repo.get("target_atr_mult") or self.DEFAULT_TARGET_ATR_MULT)
                 min_stop_pct = float(settings_repo.get("min_stop_pct") or self.DEFAULT_MIN_STOP_PCT)
                 return stop_mult, target_mult, min_stop_pct
-        except Exception:
+        except Exception as exc:
+            logger.warning("risk_multiplier_settings_load_failed", error=str(exc))
             return self.DEFAULT_STOP_ATR_MULT, self.DEFAULT_TARGET_ATR_MULT, self.DEFAULT_MIN_STOP_PCT
 
 

@@ -151,7 +151,22 @@ class PositionCloser:
         diyen bir ajan ne ödüllendiriliyor ne cezalandırılıyor, sadece o
         işlem için ölçülmüyor — WeightOptimizer'ın gördüğü doğruluk artık
         SADECE gerçekten yön tahmini yapıldığında ölçülen gerçek beceriyi
-        yansıtıyor."""
+        yansıtıyor.
+
+        Faz 282 — kritik bulgu: excluded_from_stats=true (bilinen bir
+        bug'dan kirlenmiş, ör. pump_fade/scalp/hedge migration'larıyla
+        işaretlenmiş) bir karar, dashboard/istatistik sorgularının
+        hepsinde hariç tutuluyordu ama BURADA hiç kontrol edilmiyordu —
+        AgentMemory'ye (ve oradan WeightOptimizer/SourceReliabilityAgent
+        öğrenmesine) sızmaya devam ediyordu. reliability_legacy_cutoff_at
+        sadece decision_opened_at'e göre ZAMAN tabanlı filtreliyor;
+        excluded_from_stats'ın kapsadığı (özellikle kesimden SONRA açılıp
+        bilinen bir bug'dan etkilenen) satırları yakalamıyor. Artık
+        işaretli kararlar ajan öğrenmesine de hiç girmiyor — "hiç
+        açılmamış gibi" davranış tüm sistemde tutarlı."""
+        if pos.get("excluded_from_stats"):
+            return False
+
         contributions = pos.get("agent_contributions") or []
         symbol = pos["symbol"]
         executed_direction = (pos.get("direction") or "").upper()
@@ -466,7 +481,8 @@ class PositionCloser:
             with SessionFactory.get_session() as session:
                 value = float(AppSettingsRepository(session).get("trailing_stop_distance_pct") or 0.05)
             return value if value >= 0.0 else 0.05
-        except Exception:
+        except Exception as exc:
+            logger.warning("trailing_stop_distance_pct_load_failed", error=str(exc))
             return 0.05
 
     @staticmethod
@@ -478,7 +494,8 @@ class PositionCloser:
             with SessionFactory.get_session() as session:
                 value = float(AppSettingsRepository(session).get("breakeven_trigger_r_multiple") or 0.5)
             return value if 0.0 < value <= 1.0 else 0.5
-        except Exception:
+        except Exception as exc:
+            logger.warning("breakeven_trigger_r_multiple_load_failed", error=str(exc))
             return 0.5
 
     def close_due_positions(self, decision_repo: DecisionPersistor, timeframe: str = "1m") -> list[dict]:

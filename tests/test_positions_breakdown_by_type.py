@@ -84,6 +84,27 @@ def test_classifies_scalp_gun_ici_swing_by_stop_distance(client):
     assert after.get(("swing", "SHORT"), 0) == before.get(("swing", "SHORT"), 0) + 1
 
 
+def test_excluded_from_stats_position_is_not_counted_in_breakdown(client):
+    """Faz 282 — kritik bulgu: bu agregasyon excluded_from_stats'ı hiç
+    kontrol etmiyordu, faz279/280/281'de bilinen bug'lardan kirlenmiş
+    diye işaretlenen pump_fade/scalp/hedge satırları hâlâ dashboard'un
+    "işlem türüne göre dağılım" tablosunda görünmeye devam ediyordu."""
+    from sqlalchemy import text
+
+    before = _counts(client)
+    symbol = f"BRKEXCL{uuid4().hex[:8]}"
+    event = _open(symbol, "LONG", stop_loss_price=98.0, take_profit_price=105.0)
+    with SessionFactory.get_session() as session:
+        session.execute(
+            text("UPDATE decisions SET excluded_from_stats = true WHERE id = :id"),
+            {"id": str(event.id)},
+        )
+        session.commit()
+
+    after = _counts(client)
+    assert after == before
+
+
 def test_position_without_stop_or_timeframe_is_excluded_not_miscategorized(client):
     """entry_price/stop_loss_price yoksa (ve orta-vadeli/pump_fade da
     değilse) NULL trade_type üretir — bu satırlar toplamda YOK sayılır,

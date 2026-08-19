@@ -908,3 +908,44 @@ def test_position_closer_ignores_liquidation_for_spot_position():
         closed = closer.close_due_positions(DecisionPersistor(session))
 
     assert str(event.id) not in {c["decision_id"] for c in closed}
+
+
+def test_excluded_from_stats_position_does_not_pollute_agent_learning_on_close():
+    """Faz 282 — kritik bulgu (2026-08-19, kullanıcı: "ajanları da çok
+    rahat yanıltır bu veri"): excluded_from_stats=true işaretli kararlar
+    (ör. faz279/280/281'de bilinen bug'lardan kirlenmiş diye işaretlenen
+    pump_fade/scalp/hedge pozisyonları) dashboard/istatistik sorgularının
+    hepsinde hariç tutuluyordu ama _record_agent_learning() bu bayrağı
+    hiç kontrol etmiyordu — kapandıklarında hâlâ AgentMemory'ye (ve
+    oradan WeightOptimizer/SourceReliabilityAgent öğrenmesine) sızıyordu.
+    reliability_legacy_cutoff_at SADECE decision_opened_at'e göre zaman
+    tabanlı filtreliyor — kesimden SONRA açılıp bilinen bir bug'dan
+    etkilenen (excluded_from_stats=true) bir kararı yakalamıyor."""
+    from contracts.decision_event import DecisionEvent
+    from sqlalchemy import text
+
+    symbol = f"POSEXCLLRN{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    event = DecisionEvent(
+        id=uuid4(), timestamp=now, symbol=symbol,
+        proposed_direction="LONG", final_action="LONG", final_size=1.0, confidence=0.7,
+        status="open", entry_price=100.0, quantity=1.0, opened_at=now,
+        stop_loss_price=90.0, take_profit_price=110.0,
+        agent_opinions=[{"domain": "technical", "direction": "LONG", "confidence": 0.6}],
+    )
+    with SessionFactory.get_session() as session:
+        DecisionPersistor(session).persist(event)
+        session.execute(
+            text("UPDATE decisions SET excluded_from_stats = true WHERE id = :id"),
+            {"id": str(event.id)},
+        )
+        session.commit()
+
+    closer = PositionCloser(_FixedPriceProvider(110.0), hold_seconds=3600)
+    from unittest.mock import patch
+    with patch.object(closer.agent_memory, "record") as record_spy:
+        with SessionFactory.get_session() as session:
+            closed = closer.close_due_positions(DecisionPersistor(session))
+
+    assert str(event.id) in {c["decision_id"] for c in closed}
+    assert not record_spy.called

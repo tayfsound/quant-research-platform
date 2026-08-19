@@ -49,30 +49,7 @@ def classify_stop_loss_failure(
     return "direction_error"
 
 
-def summarize_stop_loss_failures(hours: int = 90) -> dict:
-    """Gerçek DB'den son `hours` saatteki TÜM stop_loss kapanışlarını
-    (excluded_from_stats hariç) sınıflandırıp gerçek bir dağılım
-    döndürür — kullanıcının istediği "37 kaybın 21'i X, 9'u Y" tarzı
-    adli teşhisin doğrudan karşılığı."""
-    from sqlalchemy import text
-
-    with SessionFactory.get_session() as session:
-        # Faz 268-sonrası — gerçek kullanıcı bulgusu: opened_at'a göre
-        # filtrelemek "son N saatte AÇILMIŞ VE stop'a takılmış" işlemleri
-        # sayıyordu — pozisyonlar günlerce açık kalabildiği için "son
-        # dönemde KAPANAN stop-loss'lar" sorusuna (fonksiyonun kendi
-        # amacı) yanlış cevap veriyordu. closed_at'a göre filtreleniyor.
-        rows = session.execute(
-            text(
-                "SELECT entry_price, stop_loss_price, take_profit_price, outcome "
-                "FROM decisions "
-                "WHERE status = 'closed' AND outcome ->> 'exit_reason' = 'stop_loss' "
-                "AND closed_at >= now() - (:hours || ' hours')::interval "
-                "AND (excluded_from_stats IS NULL OR excluded_from_stats = false)"
-            ),
-            {"hours": hours},
-        ).mappings().all()
-
+def _classify_rows(rows) -> dict:
     counts = {"direction_error": 0, "barrier_error": 0, "insufficient_data": 0}
     for row in rows:
         outcome = row["outcome"] or {}
@@ -87,16 +64,64 @@ def summarize_stop_loss_failures(hours: int = 90) -> dict:
 
     total = len(rows)
     return {
-        "window_hours": hours,
         "total_stop_loss_trades": total,
         "direction_error_count": counts["direction_error"],
         "barrier_error_count": counts["barrier_error"],
         "insufficient_data_count": counts["insufficient_data"],
         "direction_error_pct": round(counts["direction_error"] / total, 4) if total else None,
         "barrier_error_pct": round(counts["barrier_error"] / total, 4) if total else None,
-        "note": (
-            "direction_error: fiyat hedefin anlamlı bir kısmına hiç yaklaşmadı. "
-            "barrier_error: fiyat hedefe yakın/üstünde gitti ama stop çok dar "
-            "olduğu için önce ona takıldı — model değil, bariyer sorunu."
-        ),
     }
+
+
+def summarize_stop_loss_failures(hours: int = 90) -> dict:
+    """Gerçek DB'den son `hours` saatteki TÜM stop_loss kapanışlarını
+    (excluded_from_stats hariç) sınıflandırıp gerçek bir dağılım
+    döndürür — kullanıcının istediği "37 kaybın 21'i X, 9'u Y" tarzı
+    adli teşhisin doğrudan karşılığı.
+
+    Faz 282 — kritik bulgu ("A/B kanal izolasyonu"): pump_fade_v1,
+    AI konseyinden TAMAMEN yalıtık, mekanik bir fade stratejisi (bkz.
+    services/pump_fade_strategy.py) — kendi doğası gereği (kasıtlı
+    contrarian giriş) çok farklı bir stop-loss örüntüsüne sahip.
+    Bu fonksiyon önceden pump_fade_v1'in kapanışlarını AI konseyinin
+    kapanışlarıyla harmanlıyordu — LLM denetçisi "AI'ın yön tahmini
+    sistematik olarak bozuk" gibi yanlış bir teşhise varabilirdi, oysa
+    sorun (varsa) tamamen ayrı bir karar mekanizmasından kaynaklanıyor
+    olabilirdi. Aynı izolasyon disiplini kill switch/Concept Drift'te
+    zaten uygulanıyordu (bkz. decision_persistor.py::list_closed_trades
+    exclude_experiment_bucket) — üst düzey alanlar artık SADECE AI
+    konseyi kapanışlarını sayıyor, pump_fade_v1 ayrı bir alt sözlükte."""
+    from sqlalchemy import text
+
+    with SessionFactory.get_session() as session:
+        # Faz 268-sonrası — gerçek kullanıcı bulgusu: opened_at'a göre
+        # filtrelemek "son N saatte AÇILMIŞ VE stop'a takılmış" işlemleri
+        # sayıyordu — pozisyonlar günlerce açık kalabildiği için "son
+        # dönemde KAPANAN stop-loss'lar" sorusuna (fonksiyonun kendi
+        # amacı) yanlış cevap veriyordu. closed_at'a göre filtreleniyor.
+        rows = session.execute(
+            text(
+                "SELECT entry_price, stop_loss_price, take_profit_price, outcome, experiment_bucket "
+                "FROM decisions "
+                "WHERE status = 'closed' AND outcome ->> 'exit_reason' = 'stop_loss' "
+                "AND closed_at >= now() - (:hours || ' hours')::interval "
+                "AND (excluded_from_stats IS NULL OR excluded_from_stats = false)"
+            ),
+            {"hours": hours},
+        ).mappings().all()
+
+    pump_fade_rows = [r for r in rows if r["experiment_bucket"] == "pump_fade_v1"]
+    ai_rows = [r for r in rows if r["experiment_bucket"] != "pump_fade_v1"]
+
+    result = _classify_rows(ai_rows)
+    result["window_hours"] = hours
+    result["pump_fade"] = _classify_rows(pump_fade_rows)
+    result["note"] = (
+        "direction_error: fiyat hedefin anlamlı bir kısmına hiç yaklaşmadı. "
+        "barrier_error: fiyat hedefe yakın/üstünde gitti ama stop çok dar "
+        "olduğu için önce ona takıldı — model değil, bariyer sorunu. "
+        "Üst düzey sayaçlar SADECE AI konseyi kararlarını kapsar — pump_fade_v1 "
+        "(AI konseyinden tamamen yalıtık, mekanik bir fade stratejisi) ayrı "
+        "'pump_fade' alanında raporlanır, üst düzey sayılara karıştırılmaz."
+    )
+    return result

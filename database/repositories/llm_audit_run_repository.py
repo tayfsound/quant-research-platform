@@ -13,6 +13,8 @@ class LLMAuditRunModel(Base):
     response = Column(Text, nullable=False)
     tool_calls = Column(JSONB, nullable=False)
     proposals_created = Column(Integer, default=0)
+    # Faz 282 — bkz. contracts/llm_audit_run.py::LLMAuditRun.status.
+    status = Column(Text, nullable=False, server_default="ok")
 
 
 class LLMAuditRunRepository:
@@ -26,6 +28,7 @@ class LLMAuditRunRepository:
             response=run.response,
             tool_calls=run.tool_calls,
             proposals_created=run.proposals_created,
+            status=run.status,
         )
         self.session.add(row)
         self.session.commit()
@@ -47,4 +50,5 @@ class LLMAuditRunRepository:
             "response": row.response,
             "tool_calls": row.tool_calls,
             "proposals_created": row.proposals_created,
+            "status": row.status,
         }

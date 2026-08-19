@@ -220,11 +220,17 @@ class NvidiaDecisionCritic:
         model bir araç çağırmak isterse gerçek Python fonksiyonu
         çalıştırılır, sonucu modele geri verilir, model nihai bir metin
         cevabı üretene kadar (ya da max_iterations'a ulaşılana kadar)
-        tekrarlanır. Döner: {"response": str, "tool_calls": [...]} —
-        tool_calls, dashboard'da "LLM şunu kontrol etti" şeffaflığı için."""
+        tekrarlanır. Döner: {"response": str, "tool_calls": [...], "status": str}
+        — tool_calls, dashboard'da "LLM şunu kontrol etti" şeffaflığı için;
+        status ("ok"/"no_api_key"/"timeout"/"tool_loop_limit"/"error")
+        Faz 282'de eklendi — kullanıcı bulgusu: "Araç çağrı döngüsü
+        sınırına ulaşıldı, net bir cevap üretemedim" gibi teknik
+        başarısızlıklar, önceden bir "sonuç" (llm_audit_runs'a normal
+        bir çalıştırma gibi) yazılıyordu — gerçek bir denetim bulgusuyla
+        (ya da dürüst "sorun yok" cevabıyla) ayırt edilemiyordu."""
         api_key = self._resolve_api_key()
         if not api_key:
-            return {"response": "NVIDIA_API_KEY ayarlanmamış — .env dosyasına eklenmeli.", "tool_calls": []}
+            return {"response": "NVIDIA_API_KEY ayarlanmamış — .env dosyasına eklenmeli.", "tool_calls": [], "status": "no_api_key"}
 
         llm_timeout = timeout_ms / 1000
         try:
@@ -234,10 +240,10 @@ class NvidiaDecisionCritic:
             )
         except TimeoutError:
             logger.warning("LLM ask_with_tools timed out", extra={"timeout_ms": timeout_ms, "model": self.model})
-            return {"response": f"Zaman aşımı ({timeout_ms}ms) — model yanıt veremedi.", "tool_calls": []}
+            return {"response": f"Zaman aşımı ({timeout_ms}ms) — model yanıt veremedi.", "tool_calls": [], "status": "timeout"}
         except Exception as e:
             logger.exception("LLM ask_with_tools failed", extra={"error": str(e)})
-            return {"response": f"Hata: {e}", "tool_calls": []}
+            return {"response": f"Hata: {e}", "tool_calls": [], "status": "error"}
 
     def _ask_with_tools_sync(self, message: str, timeout_ms: int, api_key: str, max_iterations: int) -> dict:
         import llm_tools
@@ -295,6 +301,7 @@ class NvidiaDecisionCritic:
                 return {
                     "response": content or "Araç çağrı döngüsü sınırına ulaşıldı, net bir cevap üretemedim.",
                     "tool_calls": tool_call_log,
+                    "status": "ok" if content else "tool_loop_limit",
                 }
 
             messages.append(assistant_message)
@@ -332,6 +339,7 @@ class NvidiaDecisionCritic:
         return {
             "response": "Araç çağrı döngüsü sınırına ulaşıldı, net bir cevap üretemedim.",
             "tool_calls": tool_call_log,
+            "status": "tool_loop_limit",
         }
 
     async def explain(self, ensemble_output: dict, prompt: str | None = None, timeout_ms: int = 120000) -> LLMExplanation:

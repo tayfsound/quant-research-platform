@@ -73,6 +73,7 @@ async def test_ask_with_tools_returns_message_when_no_api_key():
     result = await critic.ask_with_tools("merhaba")
     assert "NVIDIA_API_KEY" in result["response"]
     assert result["tool_calls"] == []
+    assert result["status"] == "no_api_key"
 
 
 @pytest.mark.asyncio
@@ -84,6 +85,7 @@ async def test_ask_with_tools_returns_content_directly_when_no_tool_call_request
         result = await critic.ask_with_tools("merhaba")
     assert result["response"] == "Genel bir cevap."
     assert result["tool_calls"] == []
+    assert result["status"] == "ok"
 
 
 @pytest.mark.asyncio
@@ -146,6 +148,7 @@ async def test_ask_with_tools_stops_after_max_iterations_without_crashing():
 
     assert "sınırına ulaşıldı" in result["response"]
     assert len(result["tool_calls"]) == 1
+    assert result["status"] == "tool_loop_limit"
 
 
 @pytest.mark.asyncio

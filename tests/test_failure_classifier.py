@@ -96,3 +96,47 @@ def test_summarize_stop_loss_failures_counts_by_closed_at_not_opened_at():
 
     assert after["total_stop_loss_trades"] == before["total_stop_loss_trades"] + 1
     assert after["direction_error_count"] == before["direction_error_count"] + 1
+
+
+def test_pump_fade_stop_losses_are_isolated_from_ai_council_top_level_counts():
+    """Faz 282 — kritik bulgu ("A/B kanal izolasyonu"): pump_fade_v1, AI
+    konseyinden tamamen yalıtık mekanik bir fade stratejisi — kendi
+    stop-loss örüntüsü üst düzey (AI konseyi) sayılara karışırsa LLM
+    denetçisi yanlış bir teşhise varabilir. Bir pump_fade_v1 stop-loss'u
+    üst düzey sayılara HİÇ eklenmemeli, sadece ayrı 'pump_fade' alanına."""
+    from datetime import UTC, datetime
+    from uuid import uuid4
+
+    from contracts.decision_event import DecisionEvent
+    from database.repositories.decision_persistor import DecisionPersistor
+    from database.session_factory import SessionFactory
+
+    symbol = f"FAILPF{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+
+    with SessionFactory.get_session() as session:
+        repo = DecisionPersistor(session)
+        event = DecisionEvent(
+            id=uuid4(), symbol=symbol, proposed_direction="SHORT", final_action="SHORT",
+            final_size=1.0, confidence=0.7, status="open",
+            entry_price=100.0, quantity=1.0, opened_at=now,
+            stop_loss_price=102.0, take_profit_price=90.0,
+            experiment_bucket="pump_fade_v1",
+        )
+        repo.persist(event)
+
+    before = summarize_stop_loss_failures(hours=90)
+
+    with SessionFactory.get_session() as session:
+        repo = DecisionPersistor(session)
+        # planned_target_pct=0.1, mfe_pct=0.008 -> reachability=0.08 -> direction_error.
+        repo.close_position(
+            decision_id=str(event.id), exit_price=102.0, pnl=-2.0, closed_at=now,
+            outcome={"exit_reason": "stop_loss", "mae_pct": -0.02, "mfe_pct": 0.008},
+        )
+
+    after = summarize_stop_loss_failures(hours=90)
+
+    assert after["total_stop_loss_trades"] == before["total_stop_loss_trades"]
+    assert after["pump_fade"]["total_stop_loss_trades"] == before["pump_fade"]["total_stop_loss_trades"] + 1
+    assert after["pump_fade"]["direction_error_count"] == before["pump_fade"]["direction_error_count"] + 1

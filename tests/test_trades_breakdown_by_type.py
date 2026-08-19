@@ -57,6 +57,27 @@ def test_classifies_closed_medium_term_timeframe(client):
     assert after.get(("orta_vadeli", "SHORT"), 0) == before.get(("orta_vadeli", "SHORT"), 0) + 1
 
 
+def test_excluded_from_stats_trade_is_not_counted_in_breakdown(client):
+    """Faz 282 — kritik bulgu: bu agregasyon excluded_from_stats'ı hiç
+    kontrol etmiyordu, faz279/280/281'de bilinen bug'lardan kirlenmiş
+    diye işaretlenen pump_fade/scalp/hedge satırları hâlâ dashboard'un
+    "işlem türüne göre dağılım" tablosunda görünmeye devam ediyordu."""
+    from sqlalchemy import text
+
+    before = _counts(client)
+    symbol = f"CBRKEXCL{uuid4().hex[:8]}"
+    event = _open_and_close(symbol, "SHORT", stop_loss_price=102.0, take_profit_price=95.0)
+    with SessionFactory.get_session() as session:
+        session.execute(
+            text("UPDATE decisions SET excluded_from_stats = true WHERE id = :id"),
+            {"id": str(event.id)},
+        )
+        session.commit()
+
+    after = _counts(client)
+    assert after == before
+
+
 def test_open_position_is_not_counted_in_closed_breakdown(client):
     """Aynı sembolde hem açık hem kapanmış işlem karışmamalı — yeni bir
     açık pozisyon burada hiç sayılmamalı."""

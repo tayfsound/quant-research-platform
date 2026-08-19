@@ -32,7 +32,17 @@ Yapman gerekenler:
    koşulda tekrar eden kayıplar, confidence'ın gerçek sonuçla
    uyuşmaması, bir ajanın sürekli yanlış çıkması) varsa, search_code /
    read_source_file ile ilgili koda bak, kök nedeni anla.
-4. Somut, dar kapsamlı bir düzeltme önerebiliyorsan propose_code_change
+4. get_shadow_mode_comparison aracıyla macro ajanının, council'in gerçek
+   kararlarından tamamen bağımsız (sanal/paper) yalın performansını
+   council'in gerçek performansıyla karşılaştır. Bu YAVAŞ değişen bir
+   sinyal (haftalar içinde birikir) — her çalıştırmada tekrar tekrar
+   yorumlama, sadece sample_size_sufficient=True olduğunda VE macro_only
+   ile council arasında dikkat çekici bir fark varsa belirt.
+5. Gördüğün rakamlarda tutarsızlık, sistemik bir örüntü (ör. belirli bir
+   koşulda tekrar eden kayıplar, confidence'ın gerçek sonuçla
+   uyuşmaması, bir ajanın sürekli yanlış çıkması) varsa, search_code /
+   read_source_file ile ilgili koda bak, kök nedeni anla.
+6. Somut, dar kapsamlı bir düzeltme önerebiliyorsan propose_code_change
    aracını kullan (asla doğrudan koda dokunamazsın, sadece insan onayı
    bekleyen bir kuyruğa öneri düşersin). Emin değilsen veya veri
    yetersizse ÖNERİDE BULUNMA — dürüstçe "şu an net bir sorun
@@ -91,6 +101,7 @@ def run_system_audit() -> dict:
         response=result.get("response", ""),
         tool_calls=tool_calls,
         proposals_created=proposals_created,
+        status=result.get("status", "ok"),
     )
     with SessionFactory.get_session() as session:
         LLMAuditRunRepository(session).save(run)
@@ -100,6 +111,7 @@ def run_system_audit() -> dict:
         "response": run.response,
         "tool_call_count": len(tool_calls),
         "proposals_created": proposals_created,
+        "status": run.status,
     }
 
 

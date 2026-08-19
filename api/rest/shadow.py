@@ -19,7 +19,7 @@ from services.auth_service import AuthContext, get_current_user
 router = APIRouter(prefix="/shadow", tags=["shadow"])
 
 
-def _council_comparison_summary(session, min_sample_size: int) -> dict:
+def council_comparison_summary(session, min_sample_size: int) -> dict:
     """Council'in GERÇEK kapanmış işlemlerini shadow ile AYNI ölçekte
     (fiyat getirisi %) özetler — pump_fade_v1 hariç (o mekanik bir
     strateji, council'in yönlü karar kalitesiyle ilgisi yok)."""
@@ -70,6 +70,6 @@ def shadow_comparison(min_sample_size: int = 100, user: AuthContext = Depends(ge
         macro_only = ShadowPositionRepository(session).comparison_summary(
             source="macro", min_sample_size=min_sample_size
         )
-        council = _council_comparison_summary(session, min_sample_size)
+        council = council_comparison_summary(session, min_sample_size)
 
     return {"macro_only": macro_only, "council": council}

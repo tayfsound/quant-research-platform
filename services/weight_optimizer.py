@@ -102,6 +102,35 @@ class WeightOptimizer:
         previous = self.weight_repository.get_latest(regime=regime)
         previous_weights = dict(previous.weights) if previous else {}
 
+        # Faz 269-sonrası — kullanıcı bulgusu, gerçek olay: reliability_
+        # legacy_cutoff_at set edildikten sadece birkaç gün sonra (bu
+        # kesimden bu yana en yoğun ajan bile 500'lük "uzun" pencereyi
+        # dolduramamış — 61/500), confidence_factor = min(total/window,
+        # 1.0) HER ajanı (kanıtı ne kadar güçlü olursa olsun) aynı
+        # ulaşılamaz statik hedefe (500) göre cezalandırıyordu. Gerçek
+        # örnek: technical'ın SON 20 kararı %95 isabetliydi ama 61
+        # örneklemlik "uzun" penceresi confidence_factor≈%12'ye
+        # eziliyordu, önerilen ağırlığı 1.420'den 0.319'a düşürüyordu.
+        # Standart düzeltme: her pencerenin hedefi, kesimden bu yana O
+        # PENCEREDE GERÇEKTEN birikmiş en yüksek örneklemle (TÜM oy-veren
+        # ajanlar arasında) SINIRLANIYOR — icat edilmiş bir sabit değil,
+        # "şu ana kadar ne kadar kanıt birikmesi mümkündü" sorusunun
+        # doğrudan kendisinden türetiliyor. Kesimden hemen sonra bu,
+        # confidence_factor'ü doğal olarak gevşetir (herkes aynı kısa
+        # süreye tabi); zaman geçip statik pencereler gerçekten dolmaya
+        # başlayınca etkisi kendiliğinden kaybolur (min() zaten statik
+        # pencereyi de asla aşmaz).
+        summaries: dict[tuple[str, str], object] = {}
+        window_ceilings: dict[str, int] = {}
+        for label, window in windows.items():
+            for d in domains:
+                summaries[(d, label)] = self.agent_memory.get_summary(d, window=window, regime=regime, min_timestamp=cutoff)
+            window_ceilings[label] = max(
+                (summaries[(d, label)].total_predictions for d in domains),
+                default=0,
+            )
+            window_ceilings[label] = max(window_ceilings[label], 1)
+
         proposed = {}
         window_breakdown: dict[str, dict[str, float]] = {}
         # Kullanıcı bulgusu — gerçek olay: onchain/time/epistemology/
@@ -134,7 +163,7 @@ class WeightOptimizer:
                 # Faz 268-sonrası: reliability_legacy_cutoff_at'ten ÖNCEKİ
                 # kayıtlar (eski/bozuk dönem) hiç sayılmıyor — bkz.
                 # services/agent_memory.py::get_reliability_legacy_cutoff.
-                summary = self.agent_memory.get_summary(domain, window=window, regime=regime, min_timestamp=cutoff)
+                summary = summaries[(domain, label)]
 
                 total = summary.total_predictions
                 if label == "medium":
@@ -147,7 +176,7 @@ class WeightOptimizer:
                     total + self.prior_strength * 2
                 )
 
-                confidence_factor = min(total / window, 1.0)
+                confidence_factor = min(total / window_ceilings[label], 1.0)
 
                 component_scores[label] = round(smoothed_accuracy * confidence_factor, 3)
 

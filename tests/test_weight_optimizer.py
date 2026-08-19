@@ -229,16 +229,19 @@ def test_propose_weights_excludes_records_before_legacy_cutoff(tmp_path):
         optimizer = WeightOptimizer(memory, weight_repository=repo)
         snapshot = optimizer.propose_weights(evaluation_window=100)
 
-        # confidence_factor (örneklem büyüklüğüne bağlı) ile smoothed_
-        # accuracy (kalite) etkileşimi karışık olduğu için nihai ağırlığı
-        # doğrudan karşılaştırmak güvenilir değil — ama "long" penceresi
-        # (window=500, hem 30 hem 120 kayıttan çok daha büyük) confidence_
-        # factor'ü SADECE ham kayıt SAYISINA bağlı, kaliteden bağımsız:
-        # kesim uygulanınca (120 kayıt yerine sadece 30'u sayılınca)
-        # kesinlikle daha DÜŞÜK çıkmalı — bu, eski kayıtların gerçekten
-        # dışarıda bırakıldığının kalitesiz bir yan etkiyle karışmayan,
-        # doğrudan kanıtı.
-        assert snapshot.window_breakdown["technical"]["long"] < snapshot_no_cutoff.window_breakdown["technical"]["long"]
+        # Faz 269-sonrası — kritik bulgu: confidence_factor artık statik
+        # bir hedefe (500) göre DEĞİL, kesimden bu yana TÜM ajanlar
+        # arasında GERÇEKTEN birikmiş en yüksek örnekleme göre (dinamik
+        # tavan) ölçülüyor — bu testte tek domain (technical) olduğu için
+        # tavan HER İKİ senaryoda da kendi toplamına eşit, yani confidence_
+        # factor ikisinde de ≈1.0. Eski varsayım (kesim = daha az kayıt =
+        # kesinlikle daha düşük confidence_factor) artık geçerli değil —
+        # asıl doğrudan kanıt, kesimin GERÇEKTEN eski kalitesiz veriyi
+        # dışarıda bıraktığı (aşağıdaki fresh_only_summary kontrolü) ve bu
+        # sayede nihai skorun (kalite serbestçe yükselince) kesimli
+        # tarafta daha YÜKSEK çıkması — eski %0 isabetli kayıtlar taze
+        # %100 isabetli veriyi artık aşağı çekmiyor.
+        assert snapshot.window_breakdown["technical"]["long"] > snapshot_no_cutoff.window_breakdown["technical"]["long"]
         # Ve kalite tarafı: kesimli tarafın ISABETİ (confidence_factor'den
         # bağımsız olarak) gerçekten %100 taze veriyi yansıtmalı — eski
         # %0 isabetli kayıtlar hiç karışmamış olmalı.

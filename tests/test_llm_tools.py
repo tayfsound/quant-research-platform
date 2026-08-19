@@ -58,6 +58,57 @@ def test_get_recent_performance_summary_counts_by_closed_at_not_opened_at():
     assert after["ai_automatic_closed_trades"] == before["ai_automatic_closed_trades"] + 1
 
 
+def test_pump_fade_closes_are_isolated_from_ai_council_top_level_counts():
+    """Faz 282 — kritik bulgu ("A/B kanal izolasyonu"): pump_fade_v1, AI
+    konseyinden tamamen yalıtık mekanik bir fade stratejisi — kapanışları
+    üst düzey ai_automatic_* sayılarına karışmamalı, sadece ayrı
+    'pump_fade' alanına girmeli."""
+    from contracts.decision_event import DecisionEvent
+    from database.repositories.decision_persistor import DecisionPersistor
+    from database.session_factory import SessionFactory
+
+    symbol = f"LLMTOOLSPF{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+
+    with SessionFactory.get_session() as session:
+        repo = DecisionPersistor(session)
+        event = DecisionEvent(
+            id=uuid4(), symbol=symbol, proposed_direction="SHORT", final_action="SHORT",
+            final_size=1.0, confidence=0.7, status="open",
+            entry_price=100.0, quantity=1.0, opened_at=now,
+            experiment_bucket="pump_fade_v1",
+        )
+        repo.persist(event)
+
+    before = llm_tools.get_recent_performance_summary(hours=24)
+
+    with SessionFactory.get_session() as session:
+        repo = DecisionPersistor(session)
+        repo.close_position(
+            decision_id=str(event.id), exit_price=95.0, pnl=5.0, closed_at=now,
+            outcome={"exit_reason": "take_profit"},
+        )
+
+    after = llm_tools.get_recent_performance_summary(hours=24)
+
+    assert after["ai_automatic_closed_trades"] == before["ai_automatic_closed_trades"]
+    assert after["take_profit_exits"] == before["take_profit_exits"]
+    assert after["pump_fade"]["ai_automatic_closed_trades"] == before["pump_fade"]["ai_automatic_closed_trades"] + 1
+    assert after["pump_fade"]["take_profit_exits"] == before["pump_fade"]["take_profit_exits"] + 1
+
+
+def test_get_shadow_mode_comparison_returns_real_shape():
+    """Faz 282 — kullanıcı isteği: "Shadow mode sonuçlarını LLM audit
+    prompt'una besle." GET /shadow/comparison ile AYNI hesabı kullanan
+    yeni bir araç — LLM'in macro'nun yalın performansını council'inkiyle
+    karşılaştırabilmesi için."""
+    result = llm_tools.get_shadow_mode_comparison()
+    assert result["macro_only"]["source"] == "macro"
+    assert result["council"]["source"] == "council"
+    assert "sample_size_sufficient" in result["macro_only"]
+    assert "sample_size_sufficient" in result["council"]
+
+
 def test_classify_recent_stop_loss_failures_returns_real_shape():
     result = llm_tools.classify_recent_stop_loss_failures(hours=90)
     assert "total_stop_loss_trades" in result

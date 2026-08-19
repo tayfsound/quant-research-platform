@@ -30,13 +30,51 @@ _MAX_FILE_READ_LINES = 400
 _MAX_SEARCH_RESULTS = 25
 
 
+def _closed_trade_counts(session, hours: int, bucket_filter_sql: str) -> dict:
+    from sqlalchemy import text
+
+    row = session.execute(
+        text(
+            "SELECT "
+            "count(*) FILTER (WHERE status = 'closed' AND closed_at >= now() - (:hours || ' hours')::interval AND outcome ->> 'exit_reason' NOT IN ('manual_full','manual_partial')) AS ai_closed_count, "
+            "count(*) FILTER (WHERE status = 'closed' AND closed_at >= now() - (:hours || ' hours')::interval AND outcome ->> 'exit_reason' NOT IN ('manual_full','manual_partial') AND pnl > 0) AS ai_wins, "
+            "count(*) FILTER (WHERE status = 'closed' AND closed_at >= now() - (:hours || ' hours')::interval AND outcome ->> 'exit_reason' = 'take_profit') AS tp_count, "
+            "count(*) FILTER (WHERE status = 'closed' AND closed_at >= now() - (:hours || ' hours')::interval AND outcome ->> 'exit_reason' = 'stop_loss') AS sl_count, "
+            "count(*) FILTER (WHERE status = 'closed' AND closed_at >= now() - (:hours || ' hours')::interval AND outcome ->> 'exit_reason' = 'breakeven_stop') AS breakeven_count, "
+            "count(*) FILTER (WHERE status = 'closed' AND closed_at >= now() - (:hours || ' hours')::interval AND outcome ->> 'exit_reason' IN ('manual_full','manual_partial')) AS manual_count "
+            "FROM decisions "
+            "WHERE (excluded_from_stats IS NULL OR excluded_from_stats = false) "
+            + bucket_filter_sql
+        ),
+        {"hours": hours},
+    ).mappings().one()
+
+    ai_closed = row["ai_closed_count"] or 0
+    ai_wins = row["ai_wins"] or 0
+    return {
+        "ai_automatic_closed_trades": ai_closed,
+        "ai_automatic_win_rate": round(ai_wins / ai_closed, 4) if ai_closed else None,
+        "take_profit_exits": row["tp_count"] or 0,
+        "stop_loss_exits": row["sl_count"] or 0,
+        "breakeven_stop_exits": row["breakeven_count"] or 0,
+        "manually_closed_trades": row["manual_count"] or 0,
+    }
+
+
 def get_recent_performance_summary(hours: int = 24) -> dict:
     """Gerçek DB'den, son N saatteki kararların özeti — manuel kapatılan
     pozisyonları (kullanıcının elle kâr almak için kapattığı, AI'ın
     OTONOM kararı OLMAYAN işlemler) ayrı sayıyor, çünkü bu ayrım
     yapılmadan hesaplanan bir kazanma oranı bu oturumda gerçek bir hataya
     yol açmıştı (bkz. context — manuel kapatılan TP'ler AI performansı
-    gibi sayılmıştı)."""
+    gibi sayılmıştı).
+
+    Faz 282 — kritik bulgu ("A/B kanal izolasyonu"): pump_fade_v1 AI
+    konseyinden tamamen yalıtık, mekanik bir fade stratejisi — üst düzey
+    ai_automatic_* alanları önceden onun kapanışlarını da harmanlıyordu.
+    analytics/failure_classifier.py::summarize_stop_loss_failures'daki
+    AYNI izolasyon burada da uygulanıyor: üst düzey alanlar SADECE AI
+    konseyi kapanışlarını sayar, pump_fade_v1 ayrı 'pump_fade' alanında."""
     from database.session_factory import SessionFactory
     from sqlalchemy import text
 
@@ -52,21 +90,12 @@ def get_recent_performance_summary(hours: int = 24) -> dict:
         # — "ne zaman kapandı" sorusu "ne zaman açıldı"dan ayrıştırıldı.
         # open_count ise zaman penceresinden bağımsız, o ANKİ gerçek açık
         # pozisyon sayısı.
-        row = session.execute(
-            text(
-                "SELECT "
-                "count(*) FILTER (WHERE status = 'open') AS open_count, "
-                "count(*) FILTER (WHERE status = 'closed' AND closed_at >= now() - (:hours || ' hours')::interval AND outcome ->> 'exit_reason' NOT IN ('manual_full','manual_partial')) AS ai_closed_count, "
-                "count(*) FILTER (WHERE status = 'closed' AND closed_at >= now() - (:hours || ' hours')::interval AND outcome ->> 'exit_reason' NOT IN ('manual_full','manual_partial') AND pnl > 0) AS ai_wins, "
-                "count(*) FILTER (WHERE status = 'closed' AND closed_at >= now() - (:hours || ' hours')::interval AND outcome ->> 'exit_reason' = 'take_profit') AS tp_count, "
-                "count(*) FILTER (WHERE status = 'closed' AND closed_at >= now() - (:hours || ' hours')::interval AND outcome ->> 'exit_reason' = 'stop_loss') AS sl_count, "
-                "count(*) FILTER (WHERE status = 'closed' AND closed_at >= now() - (:hours || ' hours')::interval AND outcome ->> 'exit_reason' = 'breakeven_stop') AS breakeven_count, "
-                "count(*) FILTER (WHERE status = 'closed' AND closed_at >= now() - (:hours || ' hours')::interval AND outcome ->> 'exit_reason' IN ('manual_full','manual_partial')) AS manual_count "
-                "FROM decisions "
-                "WHERE (excluded_from_stats IS NULL OR excluded_from_stats = false)"
-            ),
-            {"hours": hours},
-        ).mappings().one()
+        open_count = session.execute(
+            text("SELECT count(*) FROM decisions WHERE status = 'open'")
+        ).scalar()
+
+        ai_counts = _closed_trade_counts(session, hours, "AND (experiment_bucket IS NULL OR experiment_bucket != 'pump_fade_v1')")
+        pump_fade_counts = _closed_trade_counts(session, hours, "AND experiment_bucket = 'pump_fade_v1'")
 
         settings_row = session.execute(
             text("SELECT key, value FROM app_settings WHERE key IN "
@@ -74,17 +103,11 @@ def get_recent_performance_summary(hours: int = 24) -> dict:
         ).fetchall()
         settings = {r[0]: r[1] for r in settings_row}
 
-    ai_closed = row["ai_closed_count"] or 0
-    ai_wins = row["ai_wins"] or 0
     return {
         "window_hours": hours,
-        "open_positions": row["open_count"] or 0,
-        "ai_automatic_closed_trades": ai_closed,
-        "ai_automatic_win_rate": round(ai_wins / ai_closed, 4) if ai_closed else None,
-        "take_profit_exits": row["tp_count"] or 0,
-        "stop_loss_exits": row["sl_count"] or 0,
-        "breakeven_stop_exits": row["breakeven_count"] or 0,
-        "manually_closed_trades": row["manual_count"] or 0,
+        "open_positions": open_count or 0,
+        **ai_counts,
+        "pump_fade": pump_fade_counts,
         "current_stop_atr_mult": settings.get("stop_atr_mult"),
         "current_target_atr_mult": settings.get("target_atr_mult"),
         "current_min_stop_pct": settings.get("min_stop_pct"),
@@ -93,7 +116,9 @@ def get_recent_performance_summary(hours: int = 24) -> dict:
             "ai_automatic_* alanları SADECE AI'ın kendi başına verdiği "
             "otomatik kapanışları sayar — kullanıcının elle kapattığı "
             "işlemler (manually_closed_trades) hariçtir, bu ayrım "
-            "gerçek AI performansını ölçmek için zorunludur."
+            "gerçek AI performansını ölçmek için zorunludur. pump_fade_v1 "
+            "(AI konseyinden tamamen yalıtık, mekanik bir fade stratejisi) "
+            "de üst düzey sayılara karışmaz, ayrı 'pump_fade' alanındadır."
         ),
     }
 
@@ -217,6 +242,38 @@ def train_and_evaluate_meta_label_model(window: int = 1000, min_samples: int = 1
     }
 
 
+def get_shadow_mode_comparison(min_sample_size: int = 100) -> dict:
+    """Faz 282 — kullanıcı isteği: "Shadow mode sonuçlarını LLM audit
+    prompt'una besle." services/macro_shadow_tracker.py, council'in
+    GERÇEK kararlarını hiç etkilemeden, SADECE macro ajanının kendi
+    yönüne göre sanal (paper) pozisyon açıp kapatıyor — 100+ kapanmış
+    örneklem birikince bu gölge stratejinin gerçek performansını (win_
+    rate, avg_pnl_pct) tam council'inkiyle AYNI ölçekte (fiyat getirisi
+    yüzdesi) karşılaştırmak mümkün. GET /shadow/comparison ile AYNI
+    hesap — LLM'in konseyin genel yönlü karar kalitesini, tek bir
+    ajanın (macro) yalın performansına karşı denetlemesi için."""
+    from api.rest.shadow import council_comparison_summary
+    from database.repositories.shadow_position_repository import ShadowPositionRepository
+    from database.session_factory import SessionFactory
+
+    with SessionFactory.get_session() as session:
+        macro_only = ShadowPositionRepository(session).comparison_summary(
+            source="macro", min_sample_size=min_sample_size
+        )
+        council = council_comparison_summary(session, min_sample_size)
+
+    return {
+        "macro_only": macro_only,
+        "council": council,
+        "note": (
+            "macro_only: council kararlarını hiç etkilemeyen, SADECE macro ajanının "
+            "yönüne göre açılan sanal (paper) pozisyonların gerçek performansı. "
+            "sample_size_sufficient=False ise (yeterli kapanmış örneklem yok) "
+            "bu sayılardan mimari bir sonuç ÇIKARMA — sadece ölçüm amaçlı."
+        ),
+    }
+
+
 def propose_code_change(file_path: str, title: str, description: str, diff: str, rationale: str) -> dict:
     """HİÇBİR ZAMAN diske yazmaz — sadece code_change_proposals'a
     "pending" bir satır ekler. Gerçek dosya değişikliği daima ayrı, insan
@@ -326,6 +383,24 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "get_shadow_mode_comparison",
+            "description": (
+                "Macro ajanının, council kararlarından tamamen bağımsız (sanal/paper) "
+                "kendi yönlü kararlarının gerçek performansını (win_rate, avg_pnl_pct) "
+                "tüm council'in gerçek performansıyla AYNI ölçekte karşılaştırır. "
+                "sample_size_sufficient=False ise henüz yeterli kanıt yok demektir."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "min_sample_size": {"type": "integer", "description": "Yeterli sayılacak min. kapanmış örneklem (varsayılan 100)"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "propose_code_change",
             "description": (
                 "Bir kod değişikliği ÖNERİR — asla diske yazmaz, sadece kullanıcının "
@@ -353,5 +428,6 @@ TOOL_FUNCTIONS = {
     "search_code": search_code,
     "classify_recent_stop_loss_failures": classify_recent_stop_loss_failures,
     "train_and_evaluate_meta_label_model": train_and_evaluate_meta_label_model,
+    "get_shadow_mode_comparison": get_shadow_mode_comparison,
     "propose_code_change": propose_code_change,
 }

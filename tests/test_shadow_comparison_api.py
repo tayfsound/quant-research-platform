@@ -28,8 +28,13 @@ def test_shadow_comparison_endpoint_returns_both_sides_with_sample_size_flag():
         repo.open_position(position)
         repo.close_position(position.id, exit_price=110.0, exit_reason="take_profit", closed_at=datetime.now(UTC))
 
+    # min_sample_size kasıtlı olarak çok büyük — bu test paylaşılan test
+    # DB'sinde tekrar tekrar çalıştıkça birikmiş eski shadow pozisyonlardan
+    # (gerçek olay: 106 kapanmış "macro" kaydı, varsayılan eşik 100'ü
+    # aşmıştı) bağımsız, deterministik bir sample_size_sufficient=False
+    # garantisi için.
     resp = _client().get(
-        "/api/v1/shadow/comparison", headers=make_authed_headers(Role.VIEWER)
+        "/api/v1/shadow/comparison?min_sample_size=999999", headers=make_authed_headers(Role.VIEWER)
     )
     assert resp.status_code == 200
     body = resp.json()
