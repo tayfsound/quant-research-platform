@@ -18,6 +18,20 @@ def test_get_recent_performance_summary_returns_real_shape():
     assert result["window_hours"] == 24
 
 
+def test_get_recent_performance_summary_atr_multipliers_fall_back_to_defaults_not_null():
+    """Faz 307 — gerçek bulgu: app_settings tablosunda satırı hiç olmayan
+    (kod-içi varsayılanda kalan) anahtarlar için bu araç None döndürüyordu
+    — LLM'e "ATR çarpanı ayarlanmamış/null" diye YANLIŞ bir teşhis
+    verdiriyordu, oysa GERÇEK canlı risk hattı (engines/cognitive_pipeline.py)
+    hiçbir zaman null almıyor, DEFAULTS'a düzgün düşüyor. Bu test o AYNI
+    fallback'in artık burada da olduğunu doğruluyor."""
+    result = llm_tools.get_recent_performance_summary(hours=24)
+    assert result["current_stop_atr_mult"] is not None
+    assert result["current_target_atr_mult"] is not None
+    assert result["current_min_stop_pct"] is not None
+    assert result["current_kill_switch_consecutive_losses"] is not None
+
+
 def test_get_recent_performance_summary_counts_by_closed_at_not_opened_at():
     """Gerçek canlı bulgu (2026-08-18): pozisyonlar günlerce açık
     kalabiliyor — sorgu opened_at'a göre filtrelenirse, GÜNLER önce

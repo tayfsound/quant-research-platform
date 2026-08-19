@@ -97,11 +97,23 @@ def get_recent_performance_summary(hours: int = 24) -> dict:
         ai_counts = _closed_trade_counts(session, hours, "AND (experiment_bucket IS NULL OR experiment_bucket != 'pump_fade_v1')")
         pump_fade_counts = _closed_trade_counts(session, hours, "AND experiment_bucket = 'pump_fade_v1'")
 
+        # Faz 307 — gerçek bulgu: bu ham SQL, app_settings tablosunda satırı
+        # OLMAYAN (hiç .set() ile değiştirilmemiş, hâlâ kod-içi varsayılanda
+        # kalan — bu dört anahtarın hepsi bu durumda) bir anahtar için sessizce
+        # None döndürüyordu; AppSettingsRepository.get()'in DEFAULTS'a düşen
+        # fallback'i burada YOKTU. Sonuç: bu araç LLM'e "stop/target ATR
+        # çarpanı null" diye rapor ediyordu, oysa GERÇEK canlı risk hattı
+        # (engines/cognitive_pipeline.py::_load_multipliers) AppSettingsRepository.
+        # get()'i kullandığı için hiçbir zaman null almıyor, DEFAULTS'taki
+        # 2.5/1.4/0.045'e düzgün düşüyor — LLM'e yanlış veri gösteren bir
+        # teşhis-aracı hatasıydı, canlı stop/target hesaplamasını etkilemiyordu.
+        from database.repositories.app_settings_repository import DEFAULTS as _APP_SETTINGS_DEFAULTS
+
         settings_row = session.execute(
             text("SELECT key, value FROM app_settings WHERE key IN "
                  "('stop_atr_mult', 'target_atr_mult', 'min_stop_pct', 'kill_switch_consecutive_losses')")
         ).fetchall()
-        settings = {r[0]: r[1] for r in settings_row}
+        settings = {**_APP_SETTINGS_DEFAULTS, **{r[0]: r[1] for r in settings_row}}
 
     return {
         "window_hours": hours,
