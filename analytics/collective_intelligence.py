@@ -18,6 +18,8 @@ Kasıtlı olarak SADECE değerlendirme/rapor — hiçbir ajan ağırlığını
 otomatik değiştirmiyor."""
 from itertools import product
 
+from scipy.stats import binomtest
+
 MIN_AGENTS = 2
 
 
@@ -50,4 +52,29 @@ def compute_expected_majority_accuracy(individual_accuracies: list[float]) -> di
         "best_individual_accuracy": round(best_individual, 6),
         "collective_beats_best_individual": bool(expected_majority_correct > best_individual),
         "n_agents": n,
+    }
+
+
+def compute_accuracy_confidence_interval(
+    correct: int, total: int, confidence_level: float = 0.95
+) -> dict | None:
+    """Faz 303 — dış rapor (GPT) + kullanıcının uzun süredir bekleyen
+    bulgusu: sistemin birçok yerinde (bu modülün girdisi dahil) "son 20
+    örneklem" doğruluk ORANI tek bir nokta tahmini olarak gösteriliyor,
+    ama n=20'de bu oranın gerçek belirsizliği büyük — ör. 3/20 (%15) ile
+    8/20 (%40) arasındaki fark, tek bir kararın sonucuyla değişebilecek
+    kadar ince. Wilson skoru güven aralığı (binom oranları için standart,
+    küçük n'de normal-yaklaşıklıklı basit formüllerden daha güvenilir)
+    bu belirsizliği açık ediyor.
+
+    Kasıtlı olarak SADECE bilgilendirme — hiçbir karar mantığını
+    (ağırlıklandırma, benching, Condorcet hesabı) DEĞİŞTİRMİYOR, nokta
+    tahminin (recent_accuracy) yanına eklenen ayrı bir alan."""
+    if total <= 0 or not (0 <= correct <= total):
+        return None
+    ci = binomtest(correct, total).proportion_ci(confidence_level=confidence_level, method="wilson")
+    return {
+        "low": round(float(ci.low), 4),
+        "high": round(float(ci.high), 4),
+        "confidence_level": confidence_level,
     }

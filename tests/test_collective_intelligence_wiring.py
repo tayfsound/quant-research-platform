@@ -30,6 +30,10 @@ def test_collective_intelligence_returns_real_shape():
     for domain, acc in result["per_agent_accuracy"].items():
         assert 0.0 <= acc <= 1.0
         assert result["per_agent_sample_size"][domain] >= 10
+        # Faz 303 — Wilson güven aralığı her dahil edilen ajan için
+        # bulunmalı ve nokta tahminini kapsamalı.
+        ci = result["per_agent_confidence_interval"][domain]
+        assert ci["low"] <= acc <= ci["high"]
 
 
 def test_collective_intelligence_reports_requires_auth():

@@ -10,9 +10,12 @@ import { Card, PageHeader, Badge, EmptyState, ErrorNote, Spinner } from "../comp
 // ajandan yüksek olmalı. Bu sayfa 10-ajanlı council'in bu teoremi
 // GERÇEKTEN karşılayıp karşılamadığını gösterir — sadece ölçüm/izleme,
 // hiçbir ajan ağırlığı otomatik değişmiyor.
+type ConfidenceInterval = { low: number; high: number; confidence_level: number };
+
 type CollectiveResult = {
   per_agent_accuracy: Record<string, number>;
   per_agent_sample_size: Record<string, number>;
+  per_agent_confidence_interval: Record<string, ConfidenceInterval>;
   agents_included: string[];
   agents_excluded_insufficient_data: string[];
   condorcet: {
@@ -70,7 +73,9 @@ export default function CollectiveIntelligence() {
         <p className="text-xs text-ink-soft mb-3">
           Her ajanın son 20 gerçek yönlü kararının isabet oranı (SourceReliabilityAgent'ın kullandığı AYNI
           pencere) — yeterli örneklemi (≥10) olmayan ajanlar (WAIT-only time/epistemology dahil) dışarıda
-          bırakılır.
+          bırakılır. n=20 küçük bir örneklem olduğu için nokta tahminin yanında %95 Wilson güven aralığı da
+          gösteriliyor — dar bir aralık tahminin güvenilir olduğunu, geniş bir aralık (ör. %15 ± %20'lik bir
+          bant) tahminin çok az kararla belirlendiğini ve tek bir sonucun bile değiştirebileceğini gösterir.
         </p>
 
         {loading ? (
@@ -108,19 +113,26 @@ export default function CollectiveIntelligence() {
                   <tr className="text-left text-ink-faint border-b border-line-soft">
                     <th className="py-2 pr-4">Ajan</th>
                     <th className="py-2 pr-4">Son 20 karar isabeti</th>
+                    <th className="py-2 pr-4">%95 güven aralığı</th>
                     <th className="py-2 pr-4">Örneklem</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedAgents.map(([domain, acc]) => (
-                    <tr key={domain} className="border-b border-line-soft/50">
-                      <td className="py-2 pr-4 text-ink font-medium">{domain}</td>
-                      <td className="py-2 pr-4">
-                        <Badge tone={acc >= 0.5 ? "rise" : "fall"}>{(acc * 100).toFixed(0)}%</Badge>
-                      </td>
-                      <td className="py-2 pr-4 text-ink-soft">{live.per_agent_sample_size[domain]}</td>
-                    </tr>
-                  ))}
+                  {sortedAgents.map(([domain, acc]) => {
+                    const ci = live.per_agent_confidence_interval[domain];
+                    return (
+                      <tr key={domain} className="border-b border-line-soft/50">
+                        <td className="py-2 pr-4 text-ink font-medium">{domain}</td>
+                        <td className="py-2 pr-4">
+                          <Badge tone={acc >= 0.5 ? "rise" : "fall"}>{(acc * 100).toFixed(0)}%</Badge>
+                        </td>
+                        <td className="py-2 pr-4 text-ink-soft font-mono">
+                          {ci ? `${(ci.low * 100).toFixed(0)}% – ${(ci.high * 100).toFixed(0)}%` : "—"}
+                        </td>
+                        <td className="py-2 pr-4 text-ink-soft">{live.per_agent_sample_size[domain]}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
