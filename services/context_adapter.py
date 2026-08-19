@@ -111,6 +111,20 @@ class ContextAdapter:
 
     def to_onchain(self, ctx: CognitiveCycleContext) -> OnChainContext:
         real_metrics = self._real_onchain_metrics(ctx.market.symbol or "")
+
+        # Faz 300 — kullanıcı bulgusu: "Predictions'da onchain verileri
+        # dönmüyor." Kök neden: gerçek onchain metrikleri SADECE burada
+        # (OnchainAgent'a giden OnChainContext'e) hesaplanıyordu, ctx.
+        # market.features'a HİÇ yazılmıyordu — macro/order_flow/vb. diğer
+        # domain'lerle AYNI desen. Predictions.tsx (`/orchestrator/cycle`)
+        # SADECE ctx.market.features'ı gösterdiği için bu veriler o sayfada
+        # hiç görünmüyordu, sistem kararlarını etkilemesine RAĞMEN (gerçek
+        # bir işlevsellik bug'ı değil, sadece bir görünürlük eksikliği).
+        # onchain_ önekiyle (technical/quant feature adlarıyla çakışmasın
+        # diye) ekleniyor — sadece EKLEME, mevcut hiçbir karar mantığı
+        # değişmiyor.
+        for key, value in real_metrics.items():
+            ctx.market.features[f"onchain_{key}"] = value
         return OnChainContext(
             exchange_outflow_24h=self._get(ctx, "exchange_outflow_24h", 0.0),
             exchange_inflow_24h=self._get(ctx, "exchange_inflow_24h", 0.0),

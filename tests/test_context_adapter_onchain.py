@@ -15,6 +15,27 @@ def test_to_onchain_populates_real_network_metrics_for_crypto_symbol():
     assert result.solana_tps > 0
 
 
+def test_to_onchain_writes_real_metrics_into_market_features():
+    """Faz 300 — kullanıcı bulgusu: "Predictions'da onchain verileri
+    dönmüyor." to_onchain() artık gerçek metrikleri (OnchainAgent'a
+    giden OnChainContext'e EK olarak) ctx.market.features'a da
+    onchain_ önekiyle yazıyor — Predictions.tsx (`/orchestrator/cycle`)
+    SADECE ctx.market.features'ı gösterdiği için bu şart."""
+    ctx = CognitiveCycleContext(market={"symbol": "BTCUSDT"})
+    ContextAdapter().to_onchain(ctx)
+
+    assert "onchain_eth_gas_price_gwei" in ctx.market.features
+    assert ctx.market.features["onchain_eth_gas_price_gwei"] > 0
+    assert "onchain_solana_tps" in ctx.market.features
+
+
+def test_to_onchain_writes_no_features_for_non_crypto_symbol():
+    ctx = CognitiveCycleContext(market={"symbol": "AAPL"})
+    ContextAdapter().to_onchain(ctx)
+
+    assert not any(k.startswith("onchain_") for k in ctx.market.features)
+
+
 def test_to_onchain_has_no_network_metrics_for_non_crypto_symbol():
     ctx = CognitiveCycleContext(market={"symbol": "AAPL"})
     result = ContextAdapter().to_onchain(ctx)
