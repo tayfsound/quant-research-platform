@@ -399,6 +399,13 @@ def test_run_pairs_trading_task_runs_and_returns_pair_results():
 
             with SessionFactory.get_session() as session:
                 AppSettingsRepository(session).set("ai_enabled", "true", updated_by="test")
+                # Faz 282 — kullanıcı kararı: pairs_trading_enabled artık
+                # varsayılan false (strateji durduruldu). Bu test GERÇEK
+                # kointegrasyon/yön mantığını doğruluyor, kapatma
+                # davranışını değil (bkz. test_pairs_trader.py::test_
+                # pairs_trader_skips_everything_when_pairs_trading_disabled) —
+                # o yüzden burada açıkça true yapılıyor.
+                AppSettingsRepository(session).set("pairs_trading_enabled", "true", updated_by="test")
 
             celery_app.conf.task_always_eager = True
             celery_app.conf.task_eager_propagates = True
@@ -410,6 +417,8 @@ def test_run_pairs_trading_task_runs_and_returns_pair_results():
                 assert len(body["pairs"]) == 3  # PAIR_CANDIDATES'teki 3 çift
             finally:
                 celery_app.conf.task_always_eager = False
+                with SessionFactory.get_session() as session:
+                    AppSettingsRepository(session).set("pairs_trading_enabled", "false", updated_by="test")
 
 
 def test_live_trading_tasks_refuse_to_run_when_market_data_source_is_not_binance(monkeypatch):
