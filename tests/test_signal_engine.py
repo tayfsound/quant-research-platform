@@ -629,3 +629,123 @@ def test_compute_pattern_signals_flags_near_high_volume_node():
     bars = _volume_bars([(101.0, 1000.0)] * 30 + [(110.0 + i, 10.0) for i in range(9)] + [(101.05, 10.0)])
     signals = compute_pattern_signals(bars)
     assert signals["near_high_volume_node"] is True
+
+
+# Faz 288-sonrası: kullanıcı isteği (2026-08-19) — Pivot Points/Keltner/
+# Donchian/Parabolic SAR, signal_engine.py'nin kendi "gelecek aday" yorumunda
+# (Faz 237) not edilmiş üç yöntem + Pivot Points. Saf hesaplama katmanı,
+# henüz hiçbir ajana/TP-SL'e bağlı değil — bkz. compute_pivot_points/
+# compute_keltner_channels/compute_donchian_channels/compute_parabolic_sar
+# üstündeki kendi notları.
+
+def test_pivot_points_classic_and_woodie_match_hand_computed_formula():
+    from market_data.features.signal_engine import compute_pivot_points
+
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    daily_bars = [OHLCV(timestamp=base, open=95.0, high=110.0, low=90.0, close=100.0, volume=1000.0)]
+    result = compute_pivot_points(daily_bars)
+
+    classic = result["pivot_classic"]
+    assert classic["P"] == 100.0
+    assert classic["R1"] == 110.0
+    assert classic["S1"] == 90.0
+    assert classic["R2"] == 120.0
+    assert classic["S2"] == 80.0
+
+    woodie = result["pivot_woodie"]
+    assert woodie["P"] == 100.0
+    assert woodie["R1"] == 110.0
+    assert woodie["S1"] == 90.0
+
+
+def test_pivot_points_camarilla_levels_bracket_the_close():
+    from market_data.features.signal_engine import compute_pivot_points
+
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    daily_bars = [OHLCV(timestamp=base, open=95.0, high=110.0, low=90.0, close=100.0, volume=1000.0)]
+    camarilla = compute_pivot_points(daily_bars)["pivot_camarilla"]
+    assert camarilla["R1"] < camarilla["R2"] < camarilla["R3"] < camarilla["R4"]
+    assert camarilla["S1"] > camarilla["S2"] > camarilla["S3"] > camarilla["S4"]
+    assert camarilla["S1"] < 100.0 < camarilla["R1"]
+
+
+def test_pivot_points_returns_none_for_empty_daily_bars():
+    from market_data.features.signal_engine import compute_pivot_points
+
+    assert compute_pivot_points([]) is None
+
+
+def test_keltner_channels_upper_and_lower_bracket_the_middle():
+    from market_data.features.signal_engine import compute_keltner_channels
+
+    closes = _oscillating_trend(100, 0.8, 40)
+    result = compute_keltner_channels(_bars(closes))
+    assert result["keltner_lower"] < result["keltner_middle"] < result["keltner_upper"]
+
+
+def test_keltner_channels_returns_none_for_insufficient_data():
+    from market_data.features.signal_engine import compute_keltner_channels
+
+    assert compute_keltner_channels(_bars([100.0] * 5)) is None
+
+
+def test_donchian_channels_uses_extremes_over_the_lookback_window():
+    from market_data.features.signal_engine import compute_donchian_channels
+
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    bars = [
+        OHLCV(timestamp=base + timedelta(minutes=i), open=i, high=i + 1, low=i - 1, close=i, volume=100.0)
+        for i in range(30)
+    ]
+    result = compute_donchian_channels(bars, period=20)
+    # son 20 bar: indeks 10..29 -> en yuksek high=30 (i=29), en dusuk low=9 (i=10)
+    assert result["donchian_upper"] == 30.0
+    assert result["donchian_lower"] == 9.0
+    assert result["donchian_middle"] == 19.5
+
+
+def test_donchian_channels_returns_none_for_insufficient_data():
+    from market_data.features.signal_engine import compute_donchian_channels
+
+    assert compute_donchian_channels(_bars([100.0] * 5), period=20) is None
+
+
+def test_parabolic_sar_stays_below_price_and_bullish_in_a_clean_uptrend():
+    from market_data.features.signal_engine import compute_parabolic_sar
+
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    bars = [
+        OHLCV(timestamp=base + timedelta(minutes=i), open=100 + i, high=101 + i, low=99.5 + i, close=100.5 + i, volume=100.0)
+        for i in range(40)
+    ]
+    result = compute_parabolic_sar(bars)
+    assert result["parabolic_sar_trend"] == "bullish"
+    assert result["parabolic_sar"] < bars[-1].close
+
+
+def test_parabolic_sar_flips_to_bearish_after_a_sustained_reversal():
+    from market_data.features.signal_engine import compute_parabolic_sar
+
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    up = [
+        OHLCV(timestamp=base + timedelta(minutes=i), open=100 + i, high=101 + i, low=99.5 + i, close=100.5 + i, volume=100.0)
+        for i in range(20)
+    ]
+    down_start = 120
+    down = [
+        OHLCV(
+            timestamp=base + timedelta(minutes=20 + i),
+            open=down_start - i, high=down_start - i + 0.5, low=down_start - i - 1, close=down_start - i - 0.5,
+            volume=100.0,
+        )
+        for i in range(20)
+    ]
+    result = compute_parabolic_sar(up + down)
+    assert result["parabolic_sar_trend"] == "bearish"
+    assert result["parabolic_sar"] > (up + down)[-1].close
+
+
+def test_parabolic_sar_returns_none_for_too_few_bars():
+    from market_data.features.signal_engine import compute_parabolic_sar
+
+    assert compute_parabolic_sar(_bars([100.0, 101.0])) is None

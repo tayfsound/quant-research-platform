@@ -121,8 +121,13 @@ def compute_technical_signals(data: list[OHLCV]) -> dict:
     # VWAP/ADX/OBV — dördü de kesin tanımlı, standart formüller (Stochastic/
     # Williams %R/CCI kasıtlı olarak eklenmedi: RSI'ın zaten kapsadığı
     # "aşırı alım/satım" fikrini büyük ölçüde tekrarlıyorlar, katma değerleri
-    # düşük; Parabolic SAR/Keltner/Donchian de mevcut trend/ATR/swing
-    # göstergeleriyle ciddi örtüşüyor).
+    # düşük). Parabolic SAR/Keltner/Donchian burada "gelecek aday" olarak
+    # not edilmişti — kullanıcı isteğiyle (2026-08-19) artık eklendi, bkz.
+    # compute_pivot_points/compute_keltner_channels/compute_donchian_channels/
+    # compute_parabolic_sar aşağıda. Ayrı fonksiyonlar (bu dict'e DAHİL
+    # DEĞİL) çünkü henüz hiçbir ajana/TP-SL'e bağlanmadılar — Grup A
+    # confluence çalışmasının parçası olarak ayrı, gözlem pencereli bir
+    # adımda bağlanacaklar.
     bollinger_percent_b, bollinger_bandwidth = _bollinger_bands(closes)
     vwap_deviation_pct = _vwap_deviation(data)
     adx_value, di_plus, di_minus = _adx(data, min(14, n - 1))
@@ -466,6 +471,155 @@ def compute_volume_profile(data: list[OHLCV], num_bins: int = 20, value_area_pct
         "value_area_low": round(value_area_low, 8),
         "value_area_high": round(value_area_high, 8),
         "high_volume_nodes": high_volume_nodes,
+    }
+
+
+def compute_pivot_points(daily_bars: list[OHLCV]) -> dict | None:
+    """Pivot Points — Classic/Camarilla/Woodie (kullanıcı isteği, 2026-08-19:
+    "günlük OHLC'den türetilen, kesin formüllü"). Üçü de literatürdeki
+    standart, deterministik formüller — önceki GÜNÜN TAMAMLANMIŞ OHLC'sinden
+    türetilir (klasik tanım). daily_bars[-1] "referans bar" olarak
+    kullanılıyor — tıpkı compute_daily_atr_pct gibi, bu barın gerçekten
+    tamamlanmış bir gün olduğundan emin olmak çağıranın sorumluluğu (bu
+    fonksiyon kendi başına doğrulayamaz).
+
+    Henüz hiçbir ajanın oyuna ya da RiskTargetStage'in stop/target hesabına
+    BAĞLANMADI — saf hesaplama katmanı, kullanıcının tek-tek/gözlem-pencereli
+    aktivasyon disiplinine göre ayrı bir adımda bağlanacak."""
+    if not daily_bars:
+        return None
+    bar = daily_bars[-1]
+    high, low, c = bar.high, bar.low, bar.close
+    if high <= low:
+        return None
+
+    p = (high + low + c) / 3.0
+    r1, s1 = 2 * p - low, 2 * p - high
+    r2, s2 = p + (high - low), p - (high - low)
+    r3, s3 = high + 2 * (p - low), low - 2 * (high - p)
+
+    # Camarilla — pivot'un kendisi ticarette kullanılmaz, S/R seviyeleri
+    # doğrudan kapanış + range'den türetilir (standart formül, 1.1 sabiti
+    # literatürdeki orijinal tanımdan).
+    rng = high - low
+    cam = {
+        "R1": c + rng * 1.1 / 12, "R2": c + rng * 1.1 / 6,
+        "R3": c + rng * 1.1 / 4, "R4": c + rng * 1.1 / 2,
+        "S1": c - rng * 1.1 / 12, "S2": c - rng * 1.1 / 6,
+        "S3": c - rng * 1.1 / 4, "S4": c - rng * 1.1 / 2,
+    }
+
+    # Woodie — kapanışı 2 kat ağırlıklandıran varyant (standart formül).
+    wp = (high + low + 2 * c) / 4.0
+    w_r1, w_s1 = 2 * wp - low, 2 * wp - high
+    w_r2, w_s2 = wp + (high - low), wp - (high - low)
+
+    return {
+        "pivot_classic": {
+            "P": round(p, 8), "R1": round(r1, 8), "R2": round(r2, 8), "R3": round(r3, 8),
+            "S1": round(s1, 8), "S2": round(s2, 8), "S3": round(s3, 8),
+        },
+        "pivot_camarilla": {k: round(v, 8) for k, v in cam.items()},
+        "pivot_woodie": {
+            "P": round(wp, 8), "R1": round(w_r1, 8), "R2": round(w_r2, 8),
+            "S1": round(w_s1, 8), "S2": round(w_s2, 8),
+        },
+    }
+
+
+def compute_keltner_channels(
+    data: list[OHLCV], ema_period: int = 20, atr_period: int = 10, multiplier: float = 2.0
+) -> dict | None:
+    """Keltner Channels — standart formül: orta bant = EMA(close, ema_period),
+    üst/alt bant = orta ± multiplier * ATR(atr_period). Bollinger ile
+    kavramsal olarak benzer (fiyatın etrafında bir bant) ama genişliği
+    std yerine ATR'den geliyor — trend takibinde volatilite spike'larına
+    Bollinger'dan daha az duyarlı, literatürde ayrı bir araç. Faz 237
+    yorumu bunu "gelecek aday" olarak not etmişti, kullanıcı isteğiyle
+    (2026-08-19) ekleniyor. Henüz hiçbir ajana/TP-SL'e bağlanmadı."""
+    if len(data) < max(ema_period, atr_period) + 1:
+        return None
+    closes = _closes(data)
+    middle = float(_ema_series(closes, ema_period)[-1])
+    atr_value = _atr(data, atr_period)
+    if atr_value <= 0:
+        return None
+    return {
+        "keltner_upper": round(middle + multiplier * atr_value, 8),
+        "keltner_middle": round(middle, 8),
+        "keltner_lower": round(middle - multiplier * atr_value, 8),
+    }
+
+
+def compute_donchian_channels(data: list[OHLCV], period: int = 20) -> dict | None:
+    """Donchian Channels — standart formül: üst = son `period` bar'ın en
+    yüksek high'ı, alt = en düşük low'u, orta = ikisinin ortalaması. Turtle
+    Trading'in orijinal breakout sistemi buna dayanıyordu — kesin tanımlı,
+    yorum gerektirmeyen bir kanal. Faz 237 yorumu "gelecek aday" olarak not
+    etmişti, kullanıcı isteğiyle (2026-08-19) ekleniyor. Henüz hiçbir
+    ajana/TP-SL'e bağlanmadı."""
+    if len(data) < period:
+        return None
+    window = data[-period:]
+    upper = max(bar.high for bar in window)
+    lower = min(bar.low for bar in window)
+    return {
+        "donchian_upper": round(upper, 8),
+        "donchian_middle": round((upper + lower) / 2.0, 8),
+        "donchian_lower": round(lower, 8),
+    }
+
+
+def compute_parabolic_sar(
+    data: list[OHLCV], af_start: float = 0.02, af_step: float = 0.02, af_max: float = 0.2
+) -> dict | None:
+    """Parabolic SAR (Wilder, standart tanım) — trend yönünde fiyata
+    yaklaşan, ivmelenen bir stop-and-reverse seviyesi. Faz 237 yorumu
+    "gelecek aday" olarak not etmişti, kullanıcı isteğiyle (2026-08-19)
+    ekleniyor. İteratif bir algoritma (her bar bir öncekine bağımlı) —
+    burada TÜM geçmiş üzerinden baştan hesaplanıyor (tutarlı, deterministik;
+    büyük geçmişlerde çağıran kendi lookback'ini sınırlamalı, diğer
+    fonksiyonlarda olduğu gibi). Henüz hiçbir ajana/TP-SL'e bağlanmadı."""
+    if len(data) < 3:
+        return None
+
+    highs = [bar.high for bar in data]
+    lows = [bar.low for bar in data]
+
+    uptrend = data[1].close >= data[0].close
+    sar = lows[0] if uptrend else highs[0]
+    ep = highs[0] if uptrend else lows[0]
+    af = af_start
+
+    for i in range(1, len(data)):
+        sar = sar + af * (ep - sar)
+
+        if uptrend:
+            prior_low = lows[i - 1] if i < 2 else min(lows[i - 1], lows[i - 2])
+            sar = min(sar, prior_low)
+            if lows[i] < sar:
+                uptrend = False
+                sar = ep
+                ep = lows[i]
+                af = af_start
+            elif highs[i] > ep:
+                ep = highs[i]
+                af = min(af + af_step, af_max)
+        else:
+            prior_high = highs[i - 1] if i < 2 else max(highs[i - 1], highs[i - 2])
+            sar = max(sar, prior_high)
+            if highs[i] > sar:
+                uptrend = True
+                sar = ep
+                ep = highs[i]
+                af = af_start
+            elif lows[i] < ep:
+                ep = lows[i]
+                af = min(af + af_step, af_max)
+
+    return {
+        "parabolic_sar": round(float(sar), 8),
+        "parabolic_sar_trend": "bullish" if uptrend else "bearish",
     }
 
 
