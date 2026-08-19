@@ -494,6 +494,36 @@ def test_run_trading_cycle_task_skips_when_ai_disabled():
                     AppSettingsRepository(session).set("ai_enabled", "true", updated_by="test")
 
 
+def test_close_due_positions_task_skips_if_a_previous_run_is_still_in_progress():
+    """KRİTİK regresyon kilidi — gerçek olay (2026-08-19, canlıda
+    yakalandı): list_open_positions'ın limit=None'a geçmesiyle bu task
+    artık GERÇEKTEN binlerce pozisyonu tarıyor, 60sn'lik beat aralığını
+    aşabiliyor. _CycleLock'u YOKTU — restart sonrası GERÇEKTEN 9 kopyası
+    aynı anda kuyruğa girdiği doğrulandı. run_trading_cycle_task'ın
+    kullandığı AYNI Redis SETNX kilidi artık burada da var."""
+    import redis
+
+    from config import get_settings
+    from services.celery_app import celery_app
+    from services.tasks import _CycleLock, close_due_positions_task
+
+    lock_key = "lock:close_due_positions_task"
+    client = redis.from_url(get_settings().REDIS_URL)
+    client.delete(lock_key)
+
+    celery_app.conf.task_always_eager = True
+    celery_app.conf.task_eager_propagates = True
+    try:
+        with _CycleLock(lock_key, ttl_seconds=60) as acquired:
+            assert acquired is True
+            async_result = close_due_positions_task.delay()
+            assert async_result.successful()
+            assert async_result.result == {"skipped": "previous_run_still_in_progress"}
+    finally:
+        celery_app.conf.task_always_eager = False
+        client.delete(lock_key)
+
+
 @pytest.mark.xfail(reason="requires a real Celery worker process, not just broker reachability", strict=False)
 def test_broker_is_reachable_for_real_dispatch_without_eager_mode():
     """Sanity check against the actual local Redis (docker-compose) — proves

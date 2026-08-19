@@ -616,7 +616,19 @@ def close_due_positions_task() -> dict:
     fiyatla kontrol edip stop/hedef/likidasyona ulaşanları kapatır. Faz
     265: hold_seconds/trade_horizon parametresi kaldırıldı — Faz 215'ten
     beri PositionCloser bunu zaten hiç kullanmıyordu (vade dolunca zorla
-    kapatma yok, sadece gerçekten stop/hedefe ulaşınca)."""
+    kapatma yok, sadece gerçekten stop/hedefe ulaşınca).
+
+    Faz 269-sonrası — KRİTİK bulgu, canlıda yakalandı: list_open_positions
+    artık limit=None ile TÜM açık pozisyonları tarıyor (bkz. o
+    değişikliğin commit'i — önceden en eski binlerce pozisyon hiç
+    kontrol edilmiyordu). Ama GERÇEKTEN 2631 pozisyonu (her biri gerçek
+    bir Binance/Yahoo fiyat isteği) 60sn'lik beat aralığında bitirmek
+    imkansız hale geldi — bu task'ın _CycleLock'u YOKTU (run_trading_
+    cycle_task'ın aksine), restart sonrası GERÇEKTEN 9 kopyası aynı anda
+    kuyruğa girdiği doğrulandı (aynı pozisyonları eşzamanlı işleyip
+    çakışma/gereksiz tekrar isteği riski). run_trading_cycle_task ile
+    AYNI Redis SETNX kilidi — önceki çalışma sürerken yenisi sessizce
+    atlanır."""
     from database.repositories.decision_persistor import DecisionPersistor
     from database.session_factory import SessionFactory
     from market_data.ingestion.data_provider import RoutingProvider
@@ -625,12 +637,16 @@ def close_due_positions_task() -> dict:
     if _real_market_data_source_or_none() is None:
         return {"skipped": "non_binance_market_data_source"}
 
-    # Faz 194: açık pozisyonlar artık farklı varlık sınıflarında olabilir
-    # (kripto + hisse/endeks/emtia) — RoutingProvider her pozisyonu kendi
-    # gerçek fiyat kaynağına yönlendiriyor.
-    closer = PositionCloser(RoutingProvider())
-    with SessionFactory.get_session() as session:
-        closed = closer.close_due_positions(DecisionPersistor(session))
+    with _CycleLock("lock:close_due_positions_task", ttl_seconds=600) as acquired:
+        if not acquired:
+            return {"skipped": "previous_run_still_in_progress"}
+
+        # Faz 194: açık pozisyonlar artık farklı varlık sınıflarında
+        # olabilir (kripto + hisse/endeks/emtia) — RoutingProvider her
+        # pozisyonu kendi gerçek fiyat kaynağına yönlendiriyor.
+        closer = PositionCloser(RoutingProvider())
+        with SessionFactory.get_session() as session:
+            closed = closer.close_due_positions(DecisionPersistor(session))
 
     return {"closed_count": len(closed), "closed": closed}
 
