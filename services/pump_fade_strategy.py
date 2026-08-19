@@ -67,13 +67,27 @@ def find_pump_candidates(
     provider: OHLCVProvider,
     lookback_hours: int,
     min_gain_pct: float,
+    peak_window_hours: int,
+    max_pullback_from_peak_pct: float,
+    momentum_confirmation_hours: int,
+    momentum_tolerance_pct: float,
 ) -> list[dict]:
     """Her sembol için gerçek son `lookback_hours` saatlik (1h mumlarla)
     geçmişteki EN DÜŞÜK kapanıştan güncel kapanışa kazanç oranını hesaplar.
     Veri çekilemeyen (ör. futures'ta işlem görüp spot'ta listelenmemiş — bu
     sistemin OHLCV kaynağı spot klines kullanıyor, bkz. market_data/
     ingestion/data_provider.py::BinanceProvider) semboller sessizce atlanır,
-    tarama asla bir sembol yüzünden bütünüyle durmaz."""
+    tarama asla bir sembol yüzünden bütünüyle durmaz.
+
+    Faz 292 — kullanıcı bulgusu (gerçek CHIPUSDT örneği): "%15+ kazanç"
+    tek başına giriş zamanlamasını hiç garanti etmiyordu — fiyat zirveden
+    günlerdir geri çekilip ÇOKTAN dönmeye başlamış olsa bile hâlâ eşiği
+    geçiyor olabilir. İki BAĞIMSIZ, kesin tanımlı ek filtre — ikisi de
+    (min_gain_pct'e EK olarak) geçmeli, ikisi de zaten fetch edilmiş
+    `bars`'ın bir alt-penceresinden hesaplanıyor (ekstra ağ isteği yok):
+    zirve yakınlığı (fiyat hâlâ kısa-vadeli zirveye yakın mı) ve kısa
+    vadeli momentum teyidi (fiyat son birkaç saatte zaten toparlanmaya
+    başlamış mı)."""
     candidates = []
     for symbol in symbols:
         try:
@@ -87,8 +101,37 @@ def find_pump_candidates(
         if low <= 0 or current <= 0:
             continue
         gain_pct = (current - low) / low
-        if gain_pct >= min_gain_pct:
-            candidates.append({"symbol": symbol, "gain_pct": gain_pct, "current_price": current})
+        if gain_pct < min_gain_pct:
+            continue
+
+        peak_window = bars[-peak_window_hours:] if len(bars) >= peak_window_hours else bars
+        recent_peak = max(b.high for b in peak_window)
+        if recent_peak <= 0:
+            continue
+        pullback_from_peak_pct = (recent_peak - current) / recent_peak
+        if pullback_from_peak_pct > max_pullback_from_peak_pct:
+            continue
+
+        momentum_window = (
+            bars[-(momentum_confirmation_hours + 1):]
+            if len(bars) > momentum_confirmation_hours
+            else bars
+        )
+        momentum_pct = None
+        if len(momentum_window) >= 2:
+            reference_close = momentum_window[0].close
+            if reference_close > 0:
+                momentum_pct = (current - reference_close) / reference_close
+                if momentum_pct > momentum_tolerance_pct:
+                    continue
+
+        candidates.append({
+            "symbol": symbol,
+            "gain_pct": gain_pct,
+            "current_price": current,
+            "pullback_from_peak_pct": pullback_from_peak_pct,
+            "momentum_pct": momentum_pct,
+        })
     return candidates
 
 
@@ -110,12 +153,21 @@ class PumpFadeStrategy:
             stop_distance_pct = float(settings_repo.get("pump_fade_stop_distance_pct"))
             take_profit_pct = float(settings_repo.get("pump_fade_take_profit_pct"))
             starting_capital = float(settings_repo.get("starting_capital"))
+            # Faz 292 — giriş-zamanlaması filtreleri (bkz. find_pump_candidates).
+            peak_window_hours = int(settings_repo.get("pump_fade_peak_window_hours"))
+            max_pullback_from_peak_pct = float(settings_repo.get("pump_fade_max_pullback_from_peak_pct"))
+            momentum_confirmation_hours = int(settings_repo.get("pump_fade_momentum_confirmation_hours"))
+            momentum_tolerance_pct = float(settings_repo.get("pump_fade_momentum_tolerance_pct"))
 
         symbols = fetch_usdt_perpetual_symbols()
         if not symbols:
             return {"skipped": "no_symbols"}
 
-        candidates = find_pump_candidates(symbols, self.data_provider, lookback_hours, min_gain_pct)
+        candidates = find_pump_candidates(
+            symbols, self.data_provider, lookback_hours, min_gain_pct,
+            peak_window_hours, max_pullback_from_peak_pct,
+            momentum_confirmation_hours, momentum_tolerance_pct,
+        )
 
         opened = []
         for candidate in candidates:
@@ -208,6 +260,8 @@ class PumpFadeStrategy:
                     "data": {
                         "gain_pct_lookback": candidate["gain_pct"],
                         "lookback_hours": lookback_hours,
+                        "pullback_from_peak_pct": candidate["pullback_from_peak_pct"],
+                        "momentum_pct": candidate["momentum_pct"],
                         "stop_distance_pct": stop_distance_pct,
                         "target_leverage": target_leverage,
                         "applied_leverage": leverage,

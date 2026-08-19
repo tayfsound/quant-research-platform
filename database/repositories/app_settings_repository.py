@@ -333,8 +333,34 @@ DEFAULTS: dict[str, str] = {
     # penceresindeki EN DÜŞÜK kapanıştan güncel kapanışa göre ölçülen
     # kazanç oranı (1.0 = %100).
     "pump_fade_min_gain_pct": "0.15",
-    # "son iki gün" — 48 saat, 1 saatlik mumlarla taranıyor.
+    # "son iki gün" — 48 saat, 1 saatlik mumlarla taranıyor. NOT: canlı DB'de
+    # bu Settings'ten 154'e çekilmiş durumda (bkz. faz292 notu aşağıda) —
+    # bu DEFAULTS sadece reset-to-defaults'un döneceği değer.
     "pump_fade_lookback_hours": "48",
+    # Faz 292 — kullanıcı bulgusu (gerçek CHIPUSDT örneği, 2026-08-19):
+    # lookback_hours SADECE "bu bir pump mı" (min-den-şimdiye kazanç)
+    # sorusunu cevaplıyor, fiyatın ŞU AN zirveye yakın mı yoksa zirveden
+    # günlerdir geri çekilip ÇOKTAN dönmeye mi başladığını hiç ayırt
+    # etmiyordu. Gerçek olay: sistem CHIPUSDT'de gerçek zirveden (~$0.033,
+    # 17 Ağustos) 2 gün SONRA, geri çekilmenin TAM dip yaptığı ve tekrar
+    # yükselmeye başladığı saatte (19 Ağustos 08:42, $0.0257) SHORT açtı —
+    # en kötü olası zamanlama. Kullanıcı isteği: "bir çok çözümü aynı anda
+    # uygulayabilirsek daha iyi olur" — iki BAĞIMSIZ, kesin tanımlı ek
+    # filtre, ikisi de geçmeli (bkz. find_pump_candidates):
+    #
+    # 1) Zirve yakınlığı: lookback_hours'tan KISA bir alt-pencerede
+    # (pump_fade_peak_window_hours) gerçek zirveden şu ana kadarki geri
+    # çekilme pump_fade_max_pullback_from_peak_pct'i aşarsa (fiyat
+    # zirveden çoktan uzaklaşmış, "geç kalınmış") giriş yok.
+    "pump_fade_peak_window_hours": "72",
+    "pump_fade_max_pullback_from_peak_pct": "0.08",
+    # 2) Kısa vadeli momentum teyidi: fiyat son pump_fade_momentum_
+    # confirmation_hours saatte ZATEN toparlanmaya başlamışsa (CHIPUSDT'de
+    # tam olan buydu — entry'den 3 saat önceki kapanışa göre entry ANI
+    # zaten daha yüksekti) giriş yok; hâlâ net aşağı/yatay olmalı. Küçük
+    # bir tolerans (gürültü barlarının yanlışlıkla bloklamaması için).
+    "pump_fade_momentum_confirmation_hours": "6",
+    "pump_fade_momentum_tolerance_pct": "0.01",
     # Faz 268-sonrası — kritik tasarım kararı: kullanıcı çıkışı ("%100
     # kâr ettiğinde") onayladı ama KORUYUCU stop-loss mesafesini
     # belirtmedi (sadece "max_safe_leverage ile aynı güvenlik kilidi

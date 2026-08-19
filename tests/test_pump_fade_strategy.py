@@ -30,6 +30,28 @@ def _bar(low: float, close: float) -> OHLCV:
     )
 
 
+def _pump_then_settled_bars(low: float, peak: float, flat_bars: int = 7) -> list[OHLCV]:
+    """Faz 292 — pump + ardından TOPARLANMAMIŞ, yatay bir dönem: yeni
+    giriş-zamanlaması filtrelerinin (zirve yakınlığı + kısa-vadeli momentum
+    teyidi) hâlâ geçmesi için gerçekçi bir fixture. Sadece iki bar'lık ham
+    "pump" fixture'ı (eski testler) momentum penceresiyle ÇAKIŞIYORDU —
+    fiyat zaten "toparlanmış" gibi okunuyordu, oysa asıl senaryo tam tersi
+    (fiyat hâlâ zirvede/yatay, henüz geri dönmemiş)."""
+    bars = [_bar(low, low), _bar(low, peak)]
+    bars += [_bar(peak, peak) for _ in range(flat_bars)]
+    return bars
+
+
+# Faz 292 varsayılanları — testlerde find_pump_candidates'e doğrudan
+# geçirilen giriş-zamanlaması parametreleri (gevşek: eski davranışı
+# olabildiğince koruyacak şekilde, asıl davranış _set_pump_fade_settings
+# üzerinden AppSettings'ten okunuyor).
+_PEAK_WINDOW_HOURS = 72
+_MAX_PULLBACK_FROM_PEAK_PCT = 0.08
+_MOMENTUM_CONFIRMATION_HOURS = 6
+_MOMENTUM_TOLERANCE_PCT = 0.01
+
+
 class _FakeProvider:
     def __init__(self, bars_by_symbol: dict):
         self.bars_by_symbol = bars_by_symbol
@@ -79,12 +101,20 @@ def _set_pump_fade_settings(**overrides) -> None:
     _cleanup_max_position_size()
 
 
+def _find_candidates(symbols, provider, lookback_hours=48, min_gain_pct=1.0):
+    return find_pump_candidates(
+        symbols, provider, lookback_hours, min_gain_pct,
+        _PEAK_WINDOW_HOURS, _MAX_PULLBACK_FROM_PEAK_PCT,
+        _MOMENTUM_CONFIRMATION_HOURS, _MOMENTUM_TOLERANCE_PCT,
+    )
+
+
 def test_find_pump_candidates_identifies_symbol_meeting_gain_threshold():
     provider = _FakeProvider({
-        "PUMPUSDT": [_bar(10.0, 10.0), _bar(10.0, 22.0)],  # low=10, current=22 -> %120 kazanç
+        "PUMPUSDT": _pump_then_settled_bars(10.0, 22.0),  # low=10, current=22 -> %120 kazanç
         "FLATUSDT": [_bar(10.0, 10.0), _bar(10.0, 10.5)],  # %5 kazanç, eşiğin altında
     })
-    candidates = find_pump_candidates(["PUMPUSDT", "FLATUSDT"], provider, lookback_hours=48, min_gain_pct=1.0)
+    candidates = _find_candidates(["PUMPUSDT", "FLATUSDT"], provider)
     assert {c["symbol"] for c in candidates} == {"PUMPUSDT"}
     assert candidates[0]["gain_pct"] == pytest.approx(1.2)
 
@@ -94,13 +124,39 @@ def test_find_pump_candidates_skips_symbols_when_fetch_fails():
         def get_ohlcv(self, symbol, timeframe, limit=100):
             raise RuntimeError("network down")
 
-    candidates = find_pump_candidates(["BROKENUSDT"], _BrokenProvider(), lookback_hours=48, min_gain_pct=1.0)
+    candidates = _find_candidates(["BROKENUSDT"], _BrokenProvider())
     assert candidates == []
 
 
 def test_find_pump_candidates_skips_symbols_with_insufficient_bars():
     provider = _FakeProvider({"THINUSDT": [_bar(10.0, 20.0)]})
-    candidates = find_pump_candidates(["THINUSDT"], provider, lookback_hours=48, min_gain_pct=1.0)
+    candidates = _find_candidates(["THINUSDT"], provider)
+    assert candidates == []
+
+
+def test_find_pump_candidates_rejects_when_price_already_pulled_back_from_peak():
+    """Faz 292 — kullanıcı bulgusu (gerçek CHIPUSDT örneği): fiyat zirveden
+    izin verilen tavanın (varsayılan %8) ötesinde geri çekilmişse, gain_pct
+    eşiği hâlâ geçse bile giriş olmamalı — "geç kalınmış" pump."""
+    # Zirve 30, sonra %20 geri çekilip 24'te yatay kalmış (izin verilen
+    # %8'in çok üstünde bir pullback).
+    bars = [_bar(10.0, 10.0), _bar(10.0, 30.0)] + [_bar(24.0, 24.0) for _ in range(7)]
+    provider = _FakeProvider({"LATEUSDT": bars})
+    candidates = _find_candidates(["LATEUSDT"], provider)
+    assert candidates == []
+
+
+def test_find_pump_candidates_rejects_when_short_term_momentum_already_reversed():
+    """Faz 292 — fiyat zirveye yakın kalsa bile son birkaç saatte ZATEN
+    net yukarı toparlanmaya başlamışsa (momentum_tolerance_pct'i aşan bir
+    hareket) giriş olmamalı — CHIPUSDT'de tam olan buydu."""
+    # Zirve 22'de, ardından yatay, SON 3 barda momentum toleransının (%1)
+    # çok üstünde bir sıçrama (22 -> 24, ~%9).
+    bars = [_bar(10.0, 10.0), _bar(10.0, 22.0)] + [_bar(22.0, 22.0) for _ in range(4)] + [
+        _bar(22.0, 23.0), _bar(22.5, 23.5), _bar(23.0, 24.0),
+    ]
+    provider = _FakeProvider({"BOUNCEDUSDT": bars})
+    candidates = _find_candidates(["BOUNCEDUSDT"], provider)
     assert candidates == []
 
 
@@ -120,7 +176,7 @@ def test_run_cycle_opens_short_position_with_leverage_clamped_by_safety_lock(mon
         monkeypatch.setattr(
             "services.pump_fade_strategy.fetch_usdt_perpetual_symbols", lambda: [symbol]
         )
-        provider = _FakeProvider({symbol: [_bar(10.0, 10.0), _bar(10.0, 22.0)]})
+        provider = _FakeProvider({symbol: _pump_then_settled_bars(10.0, 22.0)})
 
         result = PumpFadeStrategy(data_provider=provider).run_cycle()
 
@@ -162,7 +218,7 @@ def test_run_cycle_clamps_leverage_when_notional_would_exceed_max_position_size(
         monkeypatch.setattr(
             "services.pump_fade_strategy.fetch_usdt_perpetual_symbols", lambda: [symbol]
         )
-        provider = _FakeProvider({symbol: [_bar(10.0, 10.0), _bar(10.0, 22.0)]})
+        provider = _FakeProvider({symbol: _pump_then_settled_bars(10.0, 22.0)})
 
         result = PumpFadeStrategy(data_provider=provider).run_cycle()
 
@@ -192,7 +248,7 @@ def test_run_cycle_does_not_open_position_when_margin_alone_exceeds_max_position
         monkeypatch.setattr(
             "services.pump_fade_strategy.fetch_usdt_perpetual_symbols", lambda: [symbol]
         )
-        provider = _FakeProvider({symbol: [_bar(10.0, 10.0), _bar(10.0, 22.0)]})
+        provider = _FakeProvider({symbol: _pump_then_settled_bars(10.0, 22.0)})
 
         result = PumpFadeStrategy(data_provider=provider).run_cycle()
 
@@ -223,7 +279,7 @@ def test_run_cycle_take_profit_is_independent_of_leverage(monkeypatch):
         monkeypatch.setattr(
             "services.pump_fade_strategy.fetch_usdt_perpetual_symbols", lambda: [symbol]
         )
-        provider = _FakeProvider({symbol: [_bar(10.0, 10.0), _bar(10.0, 22.0)]})
+        provider = _FakeProvider({symbol: _pump_then_settled_bars(10.0, 22.0)})
 
         result = PumpFadeStrategy(data_provider=provider).run_cycle()
 
@@ -252,7 +308,7 @@ def test_run_cycle_does_not_open_a_second_position_for_a_symbol_already_open(mon
         monkeypatch.setattr(
             "services.pump_fade_strategy.fetch_usdt_perpetual_symbols", lambda: [symbol]
         )
-        provider = _FakeProvider({symbol: [_bar(10.0, 10.0), _bar(10.0, 22.0)]})
+        provider = _FakeProvider({symbol: _pump_then_settled_bars(10.0, 22.0)})
         strategy = PumpFadeStrategy(data_provider=provider)
 
         first = strategy.run_cycle()
@@ -275,7 +331,7 @@ def test_run_cycle_does_not_raise_target_leverage_when_safety_lock_would_allow_m
         monkeypatch.setattr(
             "services.pump_fade_strategy.fetch_usdt_perpetual_symbols", lambda: [symbol]
         )
-        provider = _FakeProvider({symbol: [_bar(10.0, 10.0), _bar(10.0, 22.0)]})
+        provider = _FakeProvider({symbol: _pump_then_settled_bars(10.0, 22.0)})
 
         result = PumpFadeStrategy(data_provider=provider).run_cycle()
 
