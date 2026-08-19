@@ -7,7 +7,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
-from api.rest import agents, audit, auth, calibration, causal_inference, cognitive, collective_intelligence, correlation_breakdown, dashboard, depeg_risk, direction_prediction_v2, experiments, feature_ic, feature_registry, liquidity_var, llm_critic, mae_mfe_confidence, market_data, market_world_model, memory, meta_learning_effectiveness, model_drift, models, opportunity_quality, orchestrator, positions, risk_limits, seasonality, self_model, settings, shadow, strategies, system_events, tokens, weights, webhooks, workspace
+from api.rest import agent_ablation, agents, audit, auth, calibration, causal_inference, cognitive, collective_intelligence, correlation_breakdown, dashboard, depeg_risk, direction_prediction_v2, experiments, feature_ic, feature_registry, liquidity_var, llm_critic, mae_mfe_confidence, market_data, market_world_model, memory, meta_learning_effectiveness, model_drift, models, opportunity_quality, orchestrator, positions, risk_limits, seasonality, self_model, settings, shadow, strategies, system_events, tokens, weights, webhooks, workspace
 from config import get_settings
 from observability.health import router as health_router
 from observability.logger import setup_logging
@@ -97,6 +97,7 @@ app.include_router(meta_learning_effectiveness.router, prefix="/api/v1")
 app.include_router(market_world_model.router, prefix="/api/v1")
 app.include_router(direction_prediction_v2.router, prefix="/api/v1")
 app.include_router(opportunity_quality.router, prefix="/api/v1")
+app.include_router(agent_ablation.router, prefix="/api/v1")
 app.include_router(shadow.router, prefix="/api/v1")
 app.include_router(model_drift.router, prefix="/api/v1")
 app.include_router(seasonality.router, prefix="/api/v1")

@@ -753,3 +753,27 @@ def refresh_opportunity_quality_report_task() -> dict:
         OpportunityQualityReportRepository(session).save(report)
 
     return {"id": str(report.id), "n_trades": result.get("n_trades")}
+
+
+@celery_app.task(name="refresh_agent_ablation_report_task")
+def refresh_agent_ablation_report_task() -> dict:
+    """Faz 296 — kullanıcı isteği (2026-08-19): mevcut auto-bench SADECE
+    davranışsal/geriye dönük doğruluk ölçüyordu, "bu ajanın oyu olmasaydı
+    gerçekleşen kararlar farklı olur muydu" sorusuna hiç cevap vermiyordu.
+    GERÇEK kapanmış kararların saklanmış agent_contributions'ından
+    leave-one-out rekonstrüksiyon yapar (services/belief_engine.py::
+    synthesize'ı hedef ajan sıfırlanmış halde yeniden çalıştırır). SADECE
+    ölçüm/rapor — hiçbir ajanın canlı oy hakkını otomatik değiştirmiyor."""
+    from contracts.agent_ablation_report import AgentAblationReport
+    from database.repositories.agent_ablation_report_repository import (
+        AgentAblationReportRepository,
+    )
+    from database.session_factory import SessionFactory
+    from services.agent_ablation_gatherer import gather_agent_ablation
+
+    result = gather_agent_ablation()
+    with SessionFactory.get_session() as session:
+        report = AgentAblationReport(result=result)
+        AgentAblationReportRepository(session).save(report)
+
+    return {"id": str(report.id), "n_decisions_analyzed": result.get("n_decisions_analyzed")}

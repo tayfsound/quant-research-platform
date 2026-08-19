@@ -298,4 +298,8 @@ celery_app.conf.beat_schedule = {
         "task": "refresh_opportunity_quality_report_task",
         "schedule": 604800.0,
     },
+    "refresh-agent-ablation-report-weekly": {
+        "task": "refresh_agent_ablation_report_task",
+        "schedule": 604800.0,
+    },
 }

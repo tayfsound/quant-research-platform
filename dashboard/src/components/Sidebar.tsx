@@ -22,6 +22,7 @@ const GROUPS: { label: string; items: { key: string; label: string }[] }[] = [
       { key: "market-world-model", label: "Market World Model" },
       { key: "direction-prediction-v2", label: "Direction Prediction v2" },
       { key: "opportunity-quality", label: "Opportunity Quality" },
+      { key: "agent-ablation", label: "Agent Ablation" },
       { key: "llm-critic", label: "Respond" },
     ],
   },
