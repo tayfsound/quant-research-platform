@@ -13,6 +13,7 @@ type DomainStat = {
   caused_trade_count: number;
   caused_trade_total_pnl: number;
   caused_trade_win_rate: number | null;
+  caused_trade_win_rate_ci: { low: number; high: number; confidence_level: number } | null;
   flipped_direction_count: number;
   not_pivotal_count: number;
 };
@@ -80,7 +81,7 @@ export default function AgentAblation() {
                   <th className="py-2 pr-4">Oy kullandığı karar</th>
                   <th className="py-2 pr-4">Neden oldu (caused_trade)</th>
                   <th className="py-2 pr-4">Toplam pnl (nedensel)</th>
-                  <th className="py-2 pr-4">Kazanma oranı</th>
+                  <th className="py-2 pr-4">Kazanma oranı (%95 CI)</th>
                   <th className="py-2 pr-4">Yön değiştirdi</th>
                 </tr>
               </thead>
@@ -100,7 +101,18 @@ export default function AgentAblation() {
                       )}
                     </td>
                     <td className="py-2 pr-4 font-mono text-ink-soft">
-                      {s.caused_trade_win_rate != null ? `${(s.caused_trade_win_rate * 100).toFixed(1)}%` : "—"}
+                      {s.caused_trade_win_rate != null ? (
+                        <>
+                          {(s.caused_trade_win_rate * 100).toFixed(1)}%
+                          {s.caused_trade_win_rate_ci && (
+                            <span className="text-ink-faint">
+                              {" "}({(s.caused_trade_win_rate_ci.low * 100).toFixed(0)}–{(s.caused_trade_win_rate_ci.high * 100).toFixed(0)}%)
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                     <td className="py-2 pr-4 font-mono text-ink-soft">{s.flipped_direction_count}</td>
                   </tr>

@@ -26,6 +26,7 @@ Kasıtlı olarak SADECE ölçüm/rapor — hiçbir ajanın canlı oy hakkını
 burada otomatik değiştirmiyor."""
 from collections import defaultdict
 
+from analytics.collective_intelligence import compute_accuracy_confidence_interval
 from contracts.agent import AgentOpinion
 
 
@@ -128,6 +129,16 @@ def summarize_ablation_by_domain(records: list[dict]) -> dict:
             "caused_trade_count": len(caused),
             "caused_trade_total_pnl": round(sum(r["pnl"] for r in caused), 4),
             "caused_trade_win_rate": round(caused_wins / len(caused), 4) if has_enough_samples else None,
+            # Faz 304 — Collective Intelligence'ta uygulanan AYNI desen
+            # (analytics/collective_intelligence.py::compute_accuracy_
+            # confidence_interval): MIN_SAMPLES_FOR_WIN_RATE eşiği win_rate'i
+            # tamamen gizleyip göstermeyi belirliyor ama n=10 civarında bile
+            # nokta tahmini hâlâ geniş bir bant içinde belirsiz olabilir —
+            # %95 Wilson aralığı nokta tahminin yanına bilgilendirme amaçlı
+            # ekleniyor, hiçbir eşiği/kararı değiştirmiyor.
+            "caused_trade_win_rate_ci": (
+                compute_accuracy_confidence_interval(caused_wins, len(caused)) if has_enough_samples else None
+            ),
             "flipped_direction_count": len(flipped),
             "not_pivotal_count": len(domain_records) - len(caused) - len(flipped),
         }

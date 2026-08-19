@@ -99,6 +99,7 @@ def test_summarize_ablation_by_domain_win_rate_is_none_below_min_samples():
     assert stats["caused_trade_count"] == 8
     assert stats["caused_trade_total_pnl"] == 8.0
     assert stats["caused_trade_win_rate"] is None
+    assert stats["caused_trade_win_rate_ci"] is None
 
 
 def test_summarize_ablation_by_domain_win_rate_reported_at_min_samples():
@@ -110,6 +111,11 @@ def test_summarize_ablation_by_domain_win_rate_reported_at_min_samples():
     stats = summary["macro"]
     assert stats["caused_trade_count"] == 10
     assert stats["caused_trade_win_rate"] == 0.7
+    # Faz 304 — n=10'de bile %70 nokta tahmini geniş bir bant içinde
+    # belirsiz; Wilson aralığı bunu açık ediyor, gerçek oranı kapsamalı.
+    ci = stats["caused_trade_win_rate_ci"]
+    assert ci is not None
+    assert ci["low"] <= 0.7 <= ci["high"]
 
 
 def test_summarize_ablation_by_domain_win_rate_is_none_with_no_caused_trades():
