@@ -308,6 +308,29 @@ class MetaStage:
         if sideways_market:
             meta["decision"] = "WAIT"
 
+        # Faz 297 — dış rapor önerisi (kullanıcı doğrulattı): "yüksek
+        # entropy/düşük konsensüste action eşiğinin otomatik yükselmesi."
+        # belief.entropy (services/belief_engine.py::synthesize'ın 3 yönlü
+        # — LONG/SHORT/WAIT — Shannon entropisi) HİÇBİR YERDE
+        # kullanılmıyordu; conflict_level SADECE belief.uncertainty'yi
+        # (2 yönlü, en güçlü ikinci sesin oranı) kullanıyordu. Gerçek
+        # kararlar tarihsel olarak entropy DEĞERİNİ saklamıyordu (sadece
+        # ajan oylarını) — bu yüzden 1058 gerçek karar, services/
+        # belief_engine.py::synthesize'ın AYNI pure fonksiyonuyla
+        # (analytics/agent_ablation.py::reconstruct_opinions ile AYNI
+        # rekonstrüksiyon) yeniden hesaplanıp entropy dağılımı ölçüldü:
+        # entropy>=1.5 (dağılımın gerçek üst %11'i, teorik tavana —
+        # log2(3)≈1.585 — yakın, "gerçekten maksimuma yakın anlaşmazlık"),
+        # 544 kapanmış kararda ORTALAMA pnl ~2.4 kat daha kötüydü (-1.71
+        # vs -0.72), win_rate'te büyük fark YOKTU (%31 vs %28) — yani
+        # yüksek entropy işlemi engellemiyor, kaybedince DAHA BÜYÜK
+        # kaybettiriyor. Eşik birkaç komşu değerde (1.4-1.55) tutarlıydı,
+        # tek bir nokta tesadüfü değil. Bu yüzden WAIT'e değil (kanıt tam
+        # blok için yeterince güçlü değil) REDUCE'a zorluyor — boyut
+        # küçülsün, fırsat tamamen kapanmasın.
+        if belief.entropy >= 1.5 and meta["decision"] == "ACT":
+            meta["decision"] = "REDUCE"
+
         if meta["decision"] == "WAIT":
             ctx.decision.action = ActionType.WAIT
             ctx.decision.final_size = 0.0
