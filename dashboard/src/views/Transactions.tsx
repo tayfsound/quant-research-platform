@@ -44,6 +44,10 @@ const EXIT_REASON_LABELS: Record<string, string> = {
   // stop girişe (başabaşa) çekiliyor; buna takılmak normal stop_loss'tan
   // (tam zarar) ayrı, "kayıptan kaçınıldı" anlamına geliyor.
   breakeven_stop: "Başabaş çekildi",
+  // Faz 291 — kullanıcı bulgusu (gerçek CHIPUSDT örneği): trailing/breakeven
+  // stop kâra doğru da taşınabiliyor (bkz. position_closer.py'nin üç yönlü
+  // ayrımı) — "Stop oldu" etiketi bunu zarar sanıyordu, ayrı ve doğru etiket.
+  trailing_stop_profit: "İz süren stop (kârda kapandı)",
   time_expired: "Vadesi doldu",
   liquidation: "Likidasyon",
 };

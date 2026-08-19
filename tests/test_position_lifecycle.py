@@ -758,6 +758,51 @@ def test_pump_fade_trailing_locks_more_profit_than_breakeven_alone():
     assert abs(row["stop_loss_price"] - 98.7) < 1e-9  # entry(100)'ün DE ötesinde, gerçek kâr kilitli
 
 
+def test_pump_fade_trailing_stop_closes_as_trailing_stop_profit_not_stop_loss():
+    """Faz 291 — kullanıcı bulgusu (gerçek CHIPUSDT örneği): trailing stop
+    kâra doğru taşındıktan sonra tetiklenirse dashboard'da düz "stop_loss"
+    (zarar) gösteriyordu, ama işlem gerçekte KÂRLA kapanmıştı. Stop
+    gerçekten kâr bölgesine (entry'nin ötesine) taşınmışsa exit_reason
+    "trailing_stop_profit" olmalı, pnl pozitif olmalı — "Stop oldu" ile
+    karışmamalı."""
+    from contracts.decision_event import DecisionEvent
+
+    symbol = f"POSPFTRLPRF{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    entry, wide_stop, target = 100.0, 130.0, 75.0
+
+    with SessionFactory.get_session() as session:
+        event = DecisionEvent(
+            id=uuid4(), timestamp=now, symbol=symbol,
+            proposed_direction="SHORT", final_action="SHORT", final_size=1.0, confidence=0.7,
+            status="open", entry_price=entry, quantity=1.0, opened_at=now,
+            stop_loss_price=wide_stop, take_profit_price=target,
+            experiment_bucket="pump_fade_v1",
+        )
+        DecisionPersistor(session).persist(event)
+
+    # 1. adım: %2 lehte (98.0) -> trailing stop 98.7'ye çekiliyor (entry'nin DE altında, gerçek kâr kilidi).
+    closer_step1 = PositionCloser(_FixedPriceProvider(98.0))
+    with SessionFactory.get_session() as session:
+        closer_step1.close_due_positions(DecisionPersistor(session))
+
+    # 2. adım: fiyat 99.0'a geri sıçrıyor -> trailing stop (98.7) tetikleniyor,
+    # ama 99.0 hâlâ entry'nin (100) altında -> gerçek kâr, zarar değil.
+    closer_step2 = PositionCloser(_FixedPriceProvider(99.0))
+    with SessionFactory.get_session() as session:
+        closed = closer_step2.close_due_positions(DecisionPersistor(session))
+
+    assert closed[0]["exit_reason"] == "trailing_stop_profit"
+    assert closed[0]["pnl"] > 0
+    assert closed[0]["win"] is True
+
+    with SessionFactory.get_session() as session:
+        row = DecisionPersistor(session).get_by_id(str(event.id))
+    assert row["status"] == "closed"
+    assert row["outcome"]["exit_reason"] == "trailing_stop_profit"
+    assert row["outcome"]["win"] is True
+
+
 def test_non_pump_fade_position_with_same_wide_stop_is_unaffected_by_pump_fade_thresholds():
     """İzolasyon kanıtı: AYNI geniş stop mesafesine (SHORT, %30) sahip
     ama pump_fade_v1 OLMAYAN bir pozisyon, %1.5 lehte gidişte pump_fade'in

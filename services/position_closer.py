@@ -652,13 +652,27 @@ class PositionCloser:
                 if exit_reason is None:
                     continue
                 exit_price = current_price
-                # Başabaşa çekilmiş bir stop'a takılmak normal bir stop_loss
-                # değil — kullanıcının istediği "tam zarar yerine nötr çık"
-                # senaryosunun gerçekleştiği an. Ayrı etiketle, "stop_loss"
-                # istatistiğiyle karışmasın (analiz/Transactions'ta ayırt
-                # edilebilsin).
-                if exit_reason == "stop_loss" and abs(pos["stop_loss_price"] - entry_price) < max(1e-9, abs(entry_price) * 1e-9):
-                    exit_reason = "breakeven_stop"
+                # Kullanıcı bulgusu (2026-08-19, gerçek CHIPUSDT örneği):
+                # dashboard "stop_loss" etiketini her zaman zarar sanıyordu,
+                # ama breakeven/trailing stop (pump_fade_v1 dahil, bkz.
+                # _apply_breakeven_stop) fiyatı KÂRA doğru da taşıyabiliyor —
+                # tetiklenen stop bu durumda gerçek bir zarar değil, kilitlenmiş
+                # bir kâr. Önceki kod SADECE tam breakeven'i (stop==entry) ayırt
+                # ediyordu; stop entry'den daha İYİ bir noktaya taşınmışsa hâlâ
+                # düz "stop_loss" kaydediliyordu — "karlı ayrıldı ama dashboard
+                # stop oldu gösteriyor" çelişkisinin kök nedeni buydu. Artık
+                # stop fiyatının entry'ye göre KONUMU (mekanizma, fee
+                # gürültüsünden etkilenmeyen bir sinyal — nihai pnl'e değil
+                # stop'un NEREYE taşındığına bakıyor) üç yönlü ayrım yapıyor.
+                if exit_reason == "stop_loss":
+                    stop_price = pos["stop_loss_price"]
+                    epsilon = max(1e-9, abs(entry_price) * 1e-9)
+                    if abs(stop_price - entry_price) < epsilon:
+                        exit_reason = "breakeven_stop"
+                    elif (direction == "LONG" and stop_price > entry_price) or (
+                        direction == "SHORT" and stop_price < entry_price
+                    ):
+                        exit_reason = "trailing_stop_profit"
 
             if direction == "LONG":
                 gross_pnl = (exit_price - entry_price) * quantity

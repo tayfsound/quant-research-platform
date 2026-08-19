@@ -436,7 +436,11 @@ class DecisionPersistor:
                 # ayrı bir "manuel" kovasında gösterilmesin, kârlıysa TP
                 # gibi, zarardaysa SL gibi sayılsın — kapanış MEKANİZMASI
                 # değil, GERÇEK sonuç (kâr/zarar) önemli.
-                "sum(CASE WHEN outcome ->> 'exit_reason' = 'take_profit' "
+                # Faz 291 — kullanıcı bulgusu (gerçek CHIPUSDT örneği):
+                # trailing_stop_profit (bkz. position_closer.py) da GERÇEK
+                # bir kâr kapanışı — mekanizması "stop" ama sonucu "hedef"
+                # gibi, aynı manual_full ilkesiyle burada da TP sayılıyor.
+                "sum(CASE WHEN outcome ->> 'exit_reason' IN ('take_profit', 'trailing_stop_profit') "
                 "OR (outcome ->> 'exit_reason' = 'manual_full' AND pnl > 0) THEN 1 ELSE 0 END) AS tp_count, "
                 "sum(CASE WHEN outcome ->> 'exit_reason' = 'stop_loss' "
                 "OR (outcome ->> 'exit_reason' = 'manual_full' AND pnl <= 0) THEN 1 ELSE 0 END) AS sl_count, "
