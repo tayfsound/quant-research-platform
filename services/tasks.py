@@ -777,3 +777,25 @@ def refresh_agent_ablation_report_task() -> dict:
         AgentAblationReportRepository(session).save(report)
 
     return {"id": str(report.id), "n_decisions_analyzed": result.get("n_decisions_analyzed")}
+
+
+@celery_app.task(name="refresh_tp_sl_confluence_report_task")
+def refresh_tp_sl_confluence_report_task() -> dict:
+    """Faz 299-300 — kullanıcı isteği (2026-08-19): TP/SL Confluence
+    "wire edilmiş" (RiskTargetStage artık hedefi gerçek yapısal
+    bölgelere göre sıkılaştırıyor). Bu haftalık görev SADECE gözlem/
+    izleme — mevcut ATR-tabanlı hedefin watchlist genelinde gerçek
+    yapısal desteğe ne sıklıkla denk geldiğini raporlar."""
+    from contracts.tp_sl_confluence_report import TpSlConfluenceReport
+    from database.repositories.tp_sl_confluence_report_repository import (
+        TpSlConfluenceReportRepository,
+    )
+    from database.session_factory import SessionFactory
+    from services.tp_sl_confluence_gatherer import gather_tp_sl_confluence
+
+    result = gather_tp_sl_confluence()
+    with SessionFactory.get_session() as session:
+        report = TpSlConfluenceReport(result=result)
+        TpSlConfluenceReportRepository(session).save(report)
+
+    return {"id": str(report.id), "symbols_analyzed": result.get("symbols_analyzed")}

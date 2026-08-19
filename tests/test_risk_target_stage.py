@@ -367,6 +367,67 @@ def test_risk_target_stage_skips_all_work_when_final_size_is_zero(monkeypatch):
     assert called == []
 
 
+# Faz 299-300 — kullanıcı isteği: TP/SL Confluence canlıya bağlandı
+# ("wire edelim"). SADECE hedefi (stop'u değil) gerçek bir yapısal
+# bölgeye (>=2 bağımsız yöntem) yakınsa daha erken/gerçekçi bir noktaya
+# çekiyor — asla hedefi mevcut ATR hesabından daha UZAĞA taşımıyor.
+
+def test_risk_target_stage_snaps_target_to_confluence_zone_when_present():
+    ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
+    # Ham hedef: 100 * 1.4 * 0.02 = 2.8 -> fiyat 102.8. Aralarında (100-102.8)
+    # 2 bağımsız yöntemin birleştiği gerçek bir bölge: 101.5.
+    ctx.market.features["confluence_zones"] = [
+        {"level": 101.5, "method_count": 2, "contributing_methods": ["sr_resistance", "pivot_r1"]}
+    ]
+    result = RiskTargetStage().execute(ctx)
+
+    # Hedef artık 102.8 DEĞİL, 101.5'in hemen altına çekilmiş olmalı.
+    assert result.decision.take_profit < 2.8
+    assert 1.0 < result.decision.take_profit < 1.5  # (101.5*(1-eps) - 100) civarı
+    # Stop HİÇ etkilenmemeli.
+    assert abs(result.decision.stop_loss - 5.0) < 1e-9
+
+
+def test_risk_target_stage_ignores_confluence_zone_beyond_target():
+    """Bölge hedefin ÖTESİNDEYSE (aradan geçilmesi gerekmiyor) hedef
+    hiç değişmemeli — mevcut davranış (regresyon yok)."""
+    ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
+    ctx.market.features["confluence_zones"] = [
+        {"level": 150.0, "method_count": 2, "contributing_methods": ["sr_resistance", "pivot_r1"]}
+    ]
+    result = RiskTargetStage().execute(ctx)
+    assert abs(result.decision.take_profit - 2.8) < 1e-9
+
+
+def test_risk_target_stage_ignores_weak_confluence_zone():
+    """method_count<2 (tek yöntem) — ayırt edici değil, hedef değişmemeli."""
+    ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
+    ctx.market.features["confluence_zones"] = [
+        {"level": 101.5, "method_count": 1, "contributing_methods": ["sr_resistance"]}
+    ]
+    result = RiskTargetStage().execute(ctx)
+    assert abs(result.decision.take_profit - 2.8) < 1e-9
+
+
+def test_risk_target_stage_without_confluence_zones_feature_behaves_as_before():
+    """confluence_zones hiç yoksa (ör. hesaplama başarısız olup boş liste
+    döndüyse) mevcut davranış hiç değişmemeli — fail-closed."""
+    ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
+    result = RiskTargetStage().execute(ctx)
+    assert abs(result.decision.take_profit - 2.8) < 1e-9
+
+
+def test_risk_target_stage_snaps_short_target_to_confluence_zone():
+    ctx = _ctx(direction="SHORT", daily_atr_pct=0.02, current_price=100.0)
+    # Ham hedef: 100 - 2.8 = 97.2. Aralarında (97.2-100) gerçek bir bölge: 98.5.
+    ctx.market.features["confluence_zones"] = [
+        {"level": 98.5, "method_count": 2, "contributing_methods": ["sr_support", "volume_profile_poc"]}
+    ]
+    result = RiskTargetStage().execute(ctx)
+    assert result.decision.take_profit < 2.8
+    assert 1.0 < result.decision.take_profit < 1.5
+
+
 def test_decision_fusion_still_forces_wait_without_risk_target_stage():
     """Regresyon kilidi: RiskTargetStage atlanırsa (eski, bug'lı davranış)
     DecisionFusion hâlâ her zaman WAIT'e zorlamalı — bu testin kendisi

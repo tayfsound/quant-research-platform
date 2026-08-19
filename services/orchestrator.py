@@ -262,6 +262,26 @@ def build_cognitive_context(
     # eksik bir kararı WAIT'e çevirir).
     if daily_data:
         ctx.market.features["daily_atr_pct"] = compute_daily_atr_pct(daily_data)
+
+    # Faz 299-300 — kullanıcı isteği: TP/SL için çok-yöntemli confluence
+    # ("zone of agreement" — S/R zone clustering, Volume Profile POC/VA,
+    # Pivot Points, Donchian, Keltner). Ölçüm katmanında (services/
+    # tp_sl_confluence_gatherer.py) doğrulandı: mevcut ATR-tabanlı hedef
+    # gerçek yapısal seviyelere SADECE %2-26 oranında yakın düşüyor —
+    # RiskTargetStage burada hesaplanan zone'ları okuyup hedefi (SADECE
+    # hedefi, stop'u değil) gerçek bir dirence/desteğe denk geliyorsa
+    # daha erken, gerçekçi bir noktaya çekiyor. Hesaplama başarısız
+    # olursa (yetersiz veri vb.) fail-closed boş liste — RiskTargetStage
+    # bu durumda mevcut ATR hedefini hiç değiştirmeden kullanır.
+    try:
+        from analytics.tp_sl_confluence import compute_confluence_zones, compute_price_levels
+
+        price_levels = compute_price_levels(data, daily_data, data[-1].close)
+        ctx.market.features["confluence_zones"] = compute_confluence_zones(price_levels)
+    except Exception as exc:
+        structlog.get_logger().warning("confluence_zones_computation_failed", error=str(exc))
+        ctx.market.features["confluence_zones"] = []
+
     ctx.market.raw_snapshot = {
         "close": data[-1].close,
         "volume": data[-1].volume,

@@ -20,6 +20,7 @@ import MarketWorldModel from './views/MarketWorldModel';
 import DirectionPredictionV2 from './views/DirectionPredictionV2';
 import OpportunityQuality from './views/OpportunityQuality';
 import AgentAblation from './views/AgentAblation';
+import TpSlConfluence from './views/TpSlConfluence';
 import Sidebar from './components/Sidebar';
 import { clearToken, hasToken } from './api/auth';
 
@@ -80,6 +81,7 @@ function App() {
           {view === 'direction-prediction-v2' && <DirectionPredictionV2 />}
           {view === 'opportunity-quality' && <OpportunityQuality />}
           {view === 'agent-ablation' && <AgentAblation />}
+          {view === 'tp-sl-confluence' && <TpSlConfluence />}
         </div>
       </main>
     </div>

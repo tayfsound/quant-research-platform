@@ -302,4 +302,8 @@ celery_app.conf.beat_schedule = {
         "task": "refresh_agent_ablation_report_task",
         "schedule": 604800.0,
     },
+    "refresh-tp-sl-confluence-report-weekly": {
+        "task": "refresh_tp_sl_confluence_report_task",
+        "schedule": 604800.0,
+    },
 }

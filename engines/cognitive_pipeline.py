@@ -579,6 +579,36 @@ class RiskTargetStage:
             stop_pct *= scale
             target_pct *= scale
 
+        # Faz 299-300 — kullanıcı isteği: TP/SL Confluence canlıya bağlandı
+        # ("wire edelim"). Ölçüm katmanında doğrulandı: ATR-tabanlı hedef
+        # gerçek yapısal seviyelere (S/R + Volume Profile + Pivot +
+        # Donchian + Keltner "zone of agreement") SADECE %2-26 oranında
+        # yakın düşüyor. Fiyat ile ATR hedefi ARASINDA (yani hedefe
+        # ulaşmadan ÖNCE karşılaşılacak) en az 2 bağımsız yöntemin
+        # birleştiği gerçek bir bölge varsa, hedef o bölgenin hemen önüne
+        # çekiliyor — daha erken, gerçekçi bir kâr alımı. SADECE stop
+        # DEĞİL sadece hedef ayarlanıyor, ve SADECE sıkılaştırıyor (hedefi
+        # her zaman fiyata daha YAKIN bir noktaya çeker, asla daha uzağa
+        # taşımaz — Kelly/CPPI/trailing stop ile AYNI ilke). Uygun bir
+        # bölge yoksa (fail-closed) davranış hiç değişmez.
+        confluence_zones = (ctx.market.features or {}).get("confluence_zones") or []
+        if confluence_zones:
+            from analytics.tp_sl_confluence import snap_target_to_confluence
+
+            raw_target_price = (
+                current_price * (1 + target_pct) if direction == "LONG"
+                else current_price * (1 - target_pct)
+            )
+            adjusted_target_price, used_zone = snap_target_to_confluence(
+                direction, current_price, raw_target_price, confluence_zones
+            )
+            if used_zone is not None:
+                target_pct = abs(adjusted_target_price - current_price) / current_price
+                ctx.cognition.relevant_knowledge.append({
+                    "type": "tp_sl_confluence",
+                    "data": {"zone": used_zone, "adjusted_target_pct": round(target_pct, 6)},
+                })
+
         ctx.decision.stop_loss = current_price * stop_pct
         ctx.decision.take_profit = current_price * target_pct
         return ctx
