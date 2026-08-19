@@ -15,42 +15,57 @@ class PatternAgent:
         # KADAR birikmiş katkılara uygulanıyor — orijinal `score *= X`
         # sıralamasıyla birebir aynı.
         contributions: dict[str, float] = {}
+        # Faz 302 — kullanıcı isteği: dış rapor + analytics/feature_ic.py'nin
+        # gerçek veriyle doğrulanmış bulgusu: structure_phase (IC=-0.392,
+        # n=155, p≈0.0000) ve wyckoff_event (IC=-0.4464, n=83, p≈0.0000) —
+        # her iki yarıda (kronolojik split) da tutarlı, 25-29 farklı sembolde
+        # — bu sistemin gerçek verisinde TERS yönde çalışıyor (klasik Wyckoff
+        # teorisinin varsaydığının tersi). Kod tarafında işaret hatası YOK
+        # (accumulation/spring=bullish, distribution/upthrust=bearish —
+        # ders kitabı doğru), yani bu gerçek bir ampirik bulgu.
+        # Örneklem sadece 5 günlük tek bir pencereye sıkışık olduğu için
+        # (rejim çeşitliliği doğrulanmadı) işareti TERSİNE ÇEVİRMEK yerine
+        # şimdilik skora katkısını SIFIRLIYORUZ (daha güvenli, tersine
+        # çevrilebilir) — ama feature_ic'in izlemeye devam edebilmesi için
+        # gerçek (sıfırlanmamış) değerleri shadow_contributions'a yazıyoruz.
+        # Birkaç hafta/farklı rejimde ters yön kalıcı çıkarsa işareti
+        # çevirmek ayrı, sonraki bir karar olacak.
+        shadow_contributions: dict[str, float] = {}
 
         def scale_all(factor: float) -> None:
             for key in contributions:
                 contributions[key] *= factor
 
-        # Wyckoff fazı
+        # Wyckoff fazı — skora katkısı sıfırlandı (bkz. yukarıdaki not),
+        # sadece izleme için shadow_contributions'a yazılıyor.
         if context.structure_phase == "accumulation":
-            contributions["structure_phase"] = 1.5
-            evidence.append("Wyckoff birikim (accumulation) fazı tespit edildi")
+            shadow_contributions["structure_phase"] = 1.5
+            evidence.append("Wyckoff birikim (accumulation) fazı tespit edildi (ağırlığı ampirik ters IC nedeniyle sıfırlandı, izleniyor)")
         elif context.structure_phase == "distribution":
-            contributions["structure_phase"] = -1.5
-            evidence.append("Wyckoff dağıtım (distribution) fazı tespit edildi")
+            shadow_contributions["structure_phase"] = -1.5
+            evidence.append("Wyckoff dağıtım (distribution) fazı tespit edildi (ağırlığı ampirik ters IC nedeniyle sıfırlandı, izleniyor)")
         elif context.structure_phase == "markup":
-            contributions["structure_phase"] = 1.0
-            evidence.append("Markup fazı — trendin devam etmesi muhtemel")
+            shadow_contributions["structure_phase"] = 1.0
+            evidence.append("Markup fazı tespit edildi (ağırlığı ampirik ters IC nedeniyle sıfırlandı, izleniyor)")
         elif context.structure_phase == "markdown":
-            contributions["structure_phase"] = -1.0
-            evidence.append("Markdown fazı — trendin devam etmesi muhtemel")
+            shadow_contributions["structure_phase"] = -1.0
+            evidence.append("Markdown fazı tespit edildi (ağırlığı ampirik ters IC nedeniyle sıfırlandı, izleniyor)")
 
-        # Faz 237: gerçek, kesin tanımlı Wyckoff olayları — structure_phase
-        # (yukarıda) kaba bir genel-rejim yaklaşıklaması, bunlar ise ayrık,
-        # net kurallarla tespit edilen olaylar (bkz. signal_engine.py::
-        # _wyckoff_event). Spring/SOS en güçlü, en klasik Wyckoff sinyalleri
-        # olduğu için structure_phase'ten daha yüksek ağırlıklı.
+        # Faz 237: gerçek, kesin tanımlı Wyckoff olayları — skora katkısı
+        # sıfırlandı (bkz. yukarıdaki not), sadece izleme için
+        # shadow_contributions'a yazılıyor.
         if context.wyckoff_event == "spring":
-            contributions["wyckoff_event"] = 2.0
-            evidence.append("Wyckoff spring — desteğin altında sahte kırılım, gerçek alıcılar devreye giriyor")
+            shadow_contributions["wyckoff_event"] = 2.0
+            evidence.append("Wyckoff spring tespit edildi (ağırlığı ampirik ters IC nedeniyle sıfırlandı, izleniyor)")
         elif context.wyckoff_event == "upthrust":
-            contributions["wyckoff_event"] = -2.0
-            evidence.append("Wyckoff upthrust — direncin üzerinde sahte kırılım, gerçek satıcılar devreye giriyor")
+            shadow_contributions["wyckoff_event"] = -2.0
+            evidence.append("Wyckoff upthrust tespit edildi (ağırlığı ampirik ters IC nedeniyle sıfırlandı, izleniyor)")
         elif context.wyckoff_event == "sign_of_strength":
-            contributions["wyckoff_event"] = 1.5
-            evidence.append("Wyckoff sign of strength — hacimle teyitli direnç kırılımı")
+            shadow_contributions["wyckoff_event"] = 1.5
+            evidence.append("Wyckoff sign of strength tespit edildi (ağırlığı ampirik ters IC nedeniyle sıfırlandı, izleniyor)")
         elif context.wyckoff_event == "sign_of_weakness":
-            contributions["wyckoff_event"] = -1.5
-            evidence.append("Wyckoff sign of weakness — hacimle teyitli destek kırılımı")
+            shadow_contributions["wyckoff_event"] = -1.5
+            evidence.append("Wyckoff sign of weakness tespit edildi (ağırlığı ampirik ters IC nedeniyle sıfırlandı, izleniyor)")
 
         # Break of Structure
         if context.break_of_structure == "bullish":
@@ -148,5 +163,5 @@ class PatternAgent:
             source_reliability=0.7,
             evidence=evidence,
             caveats=caveats,
-            feature_contributions={k: round(v, 4) for k, v in contributions.items()},
+            feature_contributions={k: round(v, 4) for k, v in {**shadow_contributions, **contributions}.items()},
         ).recalculate()

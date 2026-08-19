@@ -49,12 +49,17 @@ def test_mixed_structure_waits():
 
 
 def test_feature_contributions_sum_to_the_implied_raw_score():
+    """Faz 302 — structure_phase/wyckoff_event artık skora katkı vermiyor
+    (ampirik ters IC nedeniyle sıfırlandı, feature_ic için gölge olarak
+    kaydediliyor) — implied score sadece SKORA KATKI VEREN feature'ları
+    kapsamalı."""
     agent = PatternAgent()
     opinion = agent.analyze(PatternContext(
         structure_phase="accumulation", break_of_structure="bullish",
         swing_structure="higher_highs_higher_lows",
     ))
-    implied_score = sum(opinion.feature_contributions.values())
+    shadow_keys = {"structure_phase", "wyckoff_event"}
+    implied_score = sum(v for k, v in opinion.feature_contributions.items() if k not in shadow_keys)
     assert abs(abs(implied_score) - opinion.confidence * 5.0) < 1e-6
 
 
@@ -65,10 +70,11 @@ def test_feature_contributions_are_empty_when_no_signal_fires():
 
 
 def test_feature_contributions_reflect_the_change_of_character_discount():
-    """scale_all(0.6), O ANA KADAR birikmiş katkılara (structure_phase,
-    break_of_structure) uygulanmalı — sonradan eklenen swing_structure
-    katkısı ETKİLENMEMELİ, orijinal `score *= 0.6`'nın tam sıralamasıyla
-    birebir aynı."""
+    """scale_all(0.6) SADECE skora katkı veren contributions'a (break_of_
+    structure) uygulanır — structure_phase artık gölge (skora katkısı
+    sıfır, Faz 302) olduğu için CHoCH'tan ETKİLENMEMELİ; sonradan eklenen
+    swing_structure katkısı da ETKİLENMEMELİ, orijinal `score *= 0.6`'nın
+    tam sıralamasıyla birebir aynı."""
     agent = PatternAgent()
     without_choch = agent.analyze(PatternContext(
         structure_phase="accumulation", break_of_structure="bullish",
@@ -78,8 +84,28 @@ def test_feature_contributions_reflect_the_change_of_character_discount():
         structure_phase="accumulation", break_of_structure="bullish",
         swing_structure="higher_highs_higher_lows", change_of_character=True,
     ))
-    assert abs(with_choch.feature_contributions["structure_phase"] - without_choch.feature_contributions["structure_phase"] * 0.6) < 1e-6
+    assert with_choch.feature_contributions["structure_phase"] == without_choch.feature_contributions["structure_phase"]
+    assert abs(with_choch.feature_contributions["break_of_structure"] - without_choch.feature_contributions["break_of_structure"] * 0.6) < 1e-6
     assert with_choch.feature_contributions["swing_structure"] == without_choch.feature_contributions["swing_structure"]
+
+
+def test_structure_phase_alone_no_longer_influences_direction():
+    """Faz 302 — ampirik ters IC nedeniyle (bkz. analytics/feature_ic.py
+    bulgusu) skora katkısı sıfırlandı; structure_phase tek başına artık
+    WAIT üretmeli (önceden accumulation tek başına +1.5 ile LONG üretirdi)
+    ama gerçek (sıfırlanmamış) değer feature_ic'in izlemeye devam edebilmesi
+    için feature_contributions'ta gölge olarak kalmalı."""
+    agent = PatternAgent()
+    opinion = agent.analyze(PatternContext(structure_phase="accumulation"))
+    assert opinion.direction == "WAIT"
+    assert opinion.feature_contributions["structure_phase"] == 1.5
+
+
+def test_wyckoff_event_alone_no_longer_influences_direction():
+    agent = PatternAgent()
+    opinion = agent.analyze(PatternContext(wyckoff_event="spring"))
+    assert opinion.direction == "WAIT"
+    assert opinion.feature_contributions["wyckoff_event"] == 2.0
 
 
 def test_feature_contributions_reflect_the_fibonacci_confirmation():
