@@ -1,9 +1,18 @@
-# Mevcut Durum -- v1.58.0 (Faz 319: AgentMemory JSON -> Postgres/TimescaleDB)
+# Mevcut Durum -- v1.59.0 (Faz 320: Dashboard'a "Güncel kasa" kartı)
 
 **Tarih:** 2026-08-20
 **Branch:** main
-**Son commit (HEAD):** 0c85049 (Faz 318) — Faz 319 henüz commit edilmedi (bu değişiklik: `services/agent_memory.py`, `services/confidence_calibration.py`, `database/migrations/versions/faz319_*.py`, `scripts/migrate_agent_memory_to_postgres.py`, ilgili testler). **ÖNEMLİ: servisler yeniden başlatılınca (celery worker dahil) eski agent_memory.py'yi belleğinde tutan hiçbir süreç kalmamalı** — aksi halde o süreç artık okunmayan agent_memory_history/agent_memory.json'a yazmaya devam edip yeni gerçek veriyi Postgres'in dışında bırakabilir.
-**Test:** AgentMemory'ye dokunan hedefli regresyon (170 test) temiz.
+**Son commit (HEAD):** 4b7def5 (Faz 319) — Faz 320 henüz commit edilmedi (bu değişiklik: `dashboard/src/views/Dashboard.tsx`). **ÖNEMLİ: servisler yeniden başlatılınca (celery worker dahil) eski agent_memory.py'yi belleğinde tutan hiçbir süreç kalmamalı** — aksi halde o süreç artık okunmayan agent_memory_history/agent_memory.json'a yazmaya devam edip yeni gerçek veriyi Postgres'in dışında bırakabilir.
+**Test:** AgentMemory'ye dokunan hedefli regresyon (170 test) temiz. Dashboard.tsx: `tsc --noEmit` temiz, canlı dev sunucusunda (HMR) doğrulandı.
+**Altyapı notu (2026-08-20):** Docker Desktop bu oturumda bir kez çöktü (postgres/redis konteynerleri durdu) — `docker start` ile geri getirildi, veri kaybı yok (agent_performance_records 54.402, decisions 50.268 — çöküş öncesiyle aynı). api/celery worker'lar Docker'a bağlı değil (host'ta native çalışıyor), kendiliğinden toparlandı.
+
+## Faz 320 — Dashboard'a "Güncel kasa" kartı (2026-08-20)
+
+Kullanıcı bulgusu: "Settings'te kasa 500k dolar fakat 2m dolardan fazla harcama yapılmış görünüyor ilginç bir tutarsızlık... Kasada toplam ne kadar para olduğunu görebileceğim hiçbir yer yok." Araştırıldı, GERÇEK sayılarla doğrulandı: `starting_capital`=$500.000, `deployed_notional` (tüm-zamanlar toplam işlem hacmi, 1392 kapanmış işlem üzerinden)=$2.751.607 — bu bir tutarsızlık/bug DEĞİL, aynı sermayenin tekrar tekrar kullanılmasının doğal sonucu, ama "kullanılan" etiketi kafa karıştırıyordu. Gerçek güncel kasa = starting_capital + total_pnl = **$573.106,74** (500k + $73.106,74 gerçekleşmiş kâr) — bunu gösteren HİÇBİR kart yoktu, gerçek bir eksiklik.
+
+`api/rest/positions.py::performance_summary`'nin zaten döndürdüğü `starting_capital`/`all_time.total_pnl` üzerinden (yeni API çağrısı gerekmedi) Dashboard'a en öne yeni bir "Güncel kasa" `StatCard`'ı eklendi. Ayrıca "Strateji getirisi" kartındaki kafa karıştırıcı "kullanılan: $X" alt-yazısı "tüm-zamanlar hacmi: $X" olarak netleştirildi. Açık pozisyonların gerçekleşmemiş kâr/zararı bu kartta YOK (kasıtlı — kapanmış işlemlerle güncellenen gerçek/elde sermaye, floating bir sayı değil).
+
+Aynı düzenlemede: `TRADE_TYPE_LABELS`'ta `scalp`/`hedge` etiketleri commit edilmemiş, önceki bir oturumdan kalma bir düzenlemeyle silinmiş halde bulundu — backend (`api/rest/positions.py::_classify_trade_type`) hâlâ bu iki türü üretiyor, silinmesi devam etseydi dashboard'da bu türdeki işlemler ham `scalp`/`hedge` anahtar adıyla (büyük harf/Türkçe çevirisiz) görünecekti. Geri eklendi.
 
 ## Faz 319 — AgentMemory: JSON dosyasından Postgres/TimescaleDB'ye taşındı (2026-08-20)
 

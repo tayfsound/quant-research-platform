@@ -538,6 +538,21 @@ export default function Dashboard() {
       {perf && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            {/* Faz 319 — kullanıcı bulgusu: "Kasada toplam ne kadar para
+                olduğunu görebileceğim hiçbir yer yok, büyük eksiklik."
+                Güncel kasa = Settings'te belirlenen starting_capital +
+                şimdiye kadarki GERÇEK toplam PnL (deployed_notional ile
+                KARIŞTIRILMAMALI — o, tüm zamanların toplam işlem hacmi,
+                sermaye tekrar tekrar kullanıldığı için kasadan çok daha
+                büyük çıkması normal, "harcanan" anlamına gelmiyor). Açık
+                pozisyonların gerçekleşmemiş kâr/zararı dahil değil — kasa
+                kapanmış işlemlerle güncellenen gerçek, elde sermaye. */}
+            <StatCard
+              label={`Güncel kasa (${currency})`}
+              value={format(perf.starting_capital + perf.all_time.total_pnl)}
+              tone={perf.all_time.total_pnl > 0 ? "rise" : perf.all_time.total_pnl < 0 ? "fall" : "neutral"}
+              sub={`başlangıç: ${format(perf.starting_capital)}`}
+            />
             <StatCard label="Açık pozisyon" value={openCount} />
             <StatCard label="Kapanmış işlem" value={perf.all_time.trade_count} />
             <StatCard label="Kazanma oranı" value={`%${(perf.all_time.win_rate * 100).toFixed(0)}`} />
@@ -563,7 +578,12 @@ export default function Dashboard() {
               label="Strateji getirisi"
               value={`%${(perf.all_time.roi_pct_on_deployed * 100).toFixed(3)}`}
               tone={perf.all_time.roi_pct_on_deployed > 0 ? "rise" : perf.all_time.roi_pct_on_deployed < 0 ? "fall" : "neutral"}
-              sub={`kullanılan: ${format(perf.all_time.deployed_notional)}`}
+              // Faz 319 — kullanıcı bulgusu: "kullanılan" kasadan şu an
+              // ayrılmış/kilitli sermaye gibi okunuyordu, kafa karıştırdı.
+              // Bu aslında TÜM ZAMANLARIN toplam işlem hacmi (aynı sermaye
+              // defalarca yeniden kullanıldığı için kasadan kat kat büyük
+              // çıkması normal) — etiket bunu netleştiriyor.
+              sub={`tüm-zamanlar hacmi: ${format(perf.all_time.deployed_notional)}`}
             />
           </div>
 
