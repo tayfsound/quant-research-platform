@@ -1,9 +1,6 @@
 """
 Binance REST adapter — salt okunur piyasa verisi.
 """
-import asyncio
-import random
-import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -13,6 +10,7 @@ from config import get_settings
 from contracts.exchange import OrderBookSnapshot, SymbolInfo
 from contracts.market_data import DataSource
 from exchange_gateway.base import BaseExchangeAdapter
+from exchange_gateway.binance.rate_limit import throttle_binance_request as _throttle_binance_request
 
 settings = get_settings()
 BASE_URL = "https://api.binance.com"
@@ -25,51 +23,11 @@ BASE_URL = "https://api.binance.com"
 # üretim kodu da çağırmadığı için fark edilmemiş.
 FUTURES_BASE_URL = "https://fapi.binance.com"
 
-# Faz 269-sonrası — gerçek olay (2026-08-18, canlıda 3 kez tekrarladı):
-# çok sayıda Celery worker süreci + her birinin kendi paralel
-# ThreadPoolExecutor fetch'leri, TEK bir IP'den Binance'e kısa sürede
-# çok yüksek istek hızıyla gitti ve GERÇEKTEN IP banına (418 "I'm a
-# teapot") yol açtı — her seferinde ~2-5 dakika sürdü, o süre boyunca
-# TÜM semboller için fiyat/mum verisi (Predictions, /positions PnL, canlı
-# trading cycle) kesildi. services/tasks.py::_CycleLock'un kullandığı
-# AYNI Redis-tabanlı paylaşılan-durum deseni: sabit-pencere sayaç
-# (fixed-window counter) — standart, iyi bilinen bir distributed
-# rate-limiting tekniği, icat edilmiş bir formül değil. Tüm süreçler
-# AYNI Redis sayacını paylaştığı için TOPLAM istek hızı sınırlanıyor,
-# tek bir sürecin kendi içindeki limiti değil.
-_RATE_LIMIT_KEY_PREFIX = "binance_rate_limit"
-# Binance spot ağırlık limiti dakikada 6000 (~100/sn) — küçük-limitli
-# klines/depth/trades istekleri genelde ağırlık 1-5 arası, bu yüzden
-# saniyede 15 İSTEK konservatif bir pay bırakıyor (~%50-75 ağırlık
-# marjı), kendi kendimizi banlamayı önlerken canlı döngüyü fazla
-# yavaşlatmıyor.
-_MAX_REQUESTS_PER_SECOND = 15
-_MAX_THROTTLE_WAIT_SECONDS = 5.0
-
-
-async def _throttle_binance_request() -> None:
-    """Redis erişilemezse (ör. kısa bir kesinti) FAIL-OPEN: hiç
-    yavaşlatmadan devam eder — bir yardımcı altyapı bileşeninin kendisi,
-    asıl veri çekme işlemini asla engellememeli (EventLogRepository.record
-    ile AYNI felsefe)."""
-    try:
-        import redis
-
-        client = redis.from_url(get_settings().REDIS_URL)
-        waited = 0.0
-        while waited < _MAX_THROTTLE_WAIT_SECONDS:
-            bucket = int(time.time())
-            key = f"{_RATE_LIMIT_KEY_PREFIX}:{bucket}"
-            count = client.incr(key)
-            if count == 1:
-                client.expire(key, 2)
-            if count <= _MAX_REQUESTS_PER_SECOND:
-                return
-            sleep_for = 0.05 + random.random() * 0.05
-            await asyncio.sleep(sleep_for)
-            waited += sleep_for
-    except Exception:
-        return
+# Faz 315 — hız sınırlayıcı exchange_gateway/binance/rate_limit.py'ye
+# taşındı (Execution Layer'ın futures_execution_adapter.py'si de AYNI
+# Redis sayacını paylaşabilsin diye) — burada sadece eski isimle
+# (_throttle_binance_request) yeniden dışa aktarılıyor, bu dosyanın geri
+# kalanı hiç değişmedi.
 
 
 class BinanceAdapter(BaseExchangeAdapter):

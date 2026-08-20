@@ -58,3 +58,16 @@ class DecisionEvent(BaseModel):
     # "multi_timeframe_cascade_v1") control/treatment kovasından mı
     # geldi. Deneysel olmayan kararlarda (ezici çoğunluk) None kalır.
     experiment_bucket: str | None = None
+    # Faz 315 — Execution Layer, Faz 1. YUKARIDAKİ ExecutionMode enum'uyla
+    # ("experiment"/"paper"/"live") KARIŞTIRILMASIN — o, hiçbir production
+    # kodunun dokunmadığı ölü bir iskele (engines/live_executor.py'nin
+    # kendi kendine yeten stub'ı). Bu alan tamamen ayrı, gerçek bir
+    # kavram: "simulated" (varsayılan, bugünkü davranış) | "testnet"
+    # (gerçek Binance Futures Testnet emri). Pozisyon açılış anında BİR
+    # KEZ yazılır (services/decision_recorder.py) — sonradan global ayar
+    # değişse bile zaten açık bir pozisyonun anlamı geriye dönük değişmez.
+    execution_mode: str | None = None
+    exchange_order_id: str | None = None
+    exchange_client_order_id: str | None = None
+    exchange_stop_order_id: str | None = None
+    exchange_tp_order_id: str | None = None

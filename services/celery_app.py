@@ -306,4 +306,14 @@ celery_app.conf.beat_schedule = {
         "task": "refresh_tp_sl_confluence_report_task",
         "schedule": 604800.0,
     },
+    # Faz 315 — Execution Layer, Faz 1. close_due_positions_task'ın
+    # (60sn) yaptığı testnet kontrolünden bağımsız ikinci güvenlik ağı —
+    # 5dk'da bir DB/borsa durumunu karşılaştırır, mismatch varsa
+    # işaretler/loglar (otomatik düzeltmez). execution_service
+    # yapılandırılmamışsa (testnet anahtarları yok — bugünkü varsayılan)
+    # anında no-op, hiçbir yük oluşturmaz.
+    "reconcile-execution-state-every-5m": {
+        "task": "reconcile_execution_state_task",
+        "schedule": 300.0,
+    },
 }

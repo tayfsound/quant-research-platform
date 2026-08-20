@@ -61,10 +61,21 @@ class PositionCloser:
         data_provider: OHLCVProvider,
         hold_seconds: int = 600,
         fee_engine: FeeEngine | None = None,
+        execution_service=None,
     ):
         self.data_provider = data_provider
         self.hold_seconds = hold_seconds
         self.fee_engine = fee_engine or FeeEngine()
+        # Faz 315 — testnet pozisyonlarında breakeven/trailing ratchet ve
+        # kapanış kontrolü GERÇEK borsa durumunu sorar (bkz.
+        # _apply_breakeven_stop_testnet/_check_testnet_exit). Lazy-default:
+        # DecisionRecorder.__init__ ile AYNI desen — import döngüsünü
+        # önlemek ve execution_mode="simulated" varsayılan yolunu
+        # etkilememek için burada import ediliyor.
+        if execution_service is None:
+            from services.execution_service import ExecutionService
+            execution_service = ExecutionService()
+        self.execution_service = execution_service
         self.agent_memory = AgentMemory()
         self.weight_optimizer = WeightOptimizer(
             agent_memory=self.agent_memory,
@@ -497,8 +508,76 @@ class PositionCloser:
             new_stop = min(candidates)
 
         if new_stop != stop_loss_price:
+            # Faz 315 — Execution Layer, Faz 1. Kullanıcı kararı: testnet
+            # pozisyonlarında da breakeven/trailing en baştan aktif olsun.
+            # DB'yi doğrudan yazmak yerine GERÇEK borsa emrini güncelle —
+            # DB stop_loss_price SADECE bu gerçekten başarılı olursa
+            # değişir (DB/borsa hiç tutarsız kalmasın diye).
+            if pos.get("execution_mode") == "testnet" and self.execution_service.is_configured():
+                return self._apply_breakeven_stop_testnet(pos, new_stop, decision_repo)
             decision_repo.update_stop_loss_price(str(pos["id"]), new_stop)
         return new_stop
+
+    def _apply_breakeven_stop_testnet(
+        self, pos: dict, new_stop: float, decision_repo: DecisionPersistor
+    ) -> float:
+        """testnet modundaki bir pozisyonda ratchet — borsadaki GERÇEK
+        STOP_MARKET emrini günceller (iptal + yeniden koy, bkz. services/
+        execution_service.py::ExecutionService.update_stop_price).
+        Emergency-close olursa (pozisyon artık borsada yok, koruma
+        kurulamadığı için güvenlik amaçlı kapatıldı) burada özel bir şey
+        YAPILMIYOR — bir sonraki döngüde _check_testnet_exit borsanın
+        artık pozisyon göstermediğini zaten yakalayıp GERÇEK kapanış
+        verisiyle işlemi düzgünce kapatacak."""
+        result = self.execution_service.update_stop_price(
+            decision_id=pos["id"],
+            symbol=pos["symbol"],
+            direction=(pos.get("direction") or "").upper(),
+            quantity=pos.get("quantity") or 0.0,
+            old_stop_order_id=pos.get("exchange_stop_order_id") or "",
+            old_stop_price=pos["stop_loss_price"],
+            new_stop_price=new_stop,
+        )
+        if result.emergency_closed:
+            return pos["stop_loss_price"]
+        if result.new_stop_order_id:
+            decision_repo.update_exchange_stop_order_id(str(pos["id"]), result.new_stop_order_id)
+        if result.achieved_stop_price is not None and result.achieved_stop_price != pos["stop_loss_price"]:
+            decision_repo.update_stop_loss_price(str(pos["id"]), result.achieved_stop_price)
+            return result.achieved_stop_price
+        return pos["stop_loss_price"]
+
+    def _check_testnet_exit(self, pos: dict) -> tuple[str | None, float | None]:
+        """testnet modundaki bir pozisyon için: kendi iç fiyat-
+        karşılaştırmamızı (periyodik kontrol döngüsünün BOME/MUBARAK'ta
+        yaşanan gecikme/kayma sorununu ÜRETEN tam o mekanizma) HİÇ
+        KULLANMIYORUZ — borsadaki GERÇEK durum soruluyor. Pozisyon
+        borsada hâlâ açıksa (None, None) döner (bu cycle'da atlanır).
+        Kapandıysa, hangi koruma emrinin tetiklendiğini sorup GERÇEK
+        dolum fiyatından exit_reason/exit_price döner — asla tahmini
+        bir değer uydurulmaz."""
+        symbol = pos["symbol"]
+        open_position = self.execution_service.get_open_position(symbol)
+        if open_position is not None:
+            return None, None
+
+        stop_order_id = pos.get("exchange_stop_order_id")
+        stop_status = self.execution_service.get_order_status(symbol, stop_order_id) if stop_order_id else None
+        if stop_status is not None and stop_status.status == "FILLED":
+            return "stop_loss", stop_status.avg_price or pos.get("stop_loss_price")
+
+        tp_order_id = pos.get("exchange_tp_order_id")
+        tp_status = self.execution_service.get_order_status(symbol, tp_order_id) if tp_order_id else None
+        if tp_status is not None and tp_status.status == "FILLED":
+            return "take_profit", tp_status.avg_price or pos.get("take_profit_price")
+
+        # Pozisyon borsada yok ama hangi koruma emrinin tetiklendiği
+        # belirlenemedi (ör. acil kapatma, elle testnet'te kapatılmış) —
+        # dürüstçe genel bir "stop_loss" say, mevcut stop fiyatını (yoksa
+        # entry_price'ı) en iyi tahmin olarak kullan — icat edilmiş bir
+        # sayı asla üretilmez, ama pozisyon de sonsuza kadar "open" da
+        # kalamaz (uzlaştırma görevi bunu ayrıca işaretler).
+        return "stop_loss", pos.get("stop_loss_price") or pos.get("entry_price")
 
     @staticmethod
     def _load_trailing_stop_distance_pct() -> float:
@@ -639,27 +718,40 @@ class PositionCloser:
 
             pos["stop_loss_price"] = self._apply_breakeven_stop(pos, current_price, decision_repo)
 
-            # Faz 255: kullanıcı isteği — kaldıraç desteği. Kaldıraçlı bir
-            # pozisyon (leverage>1) gerçek likidasyon fiyatına ulaşırsa,
-            # bu stop-loss'tan ÖNCE kontrol edilir — gerçek bir kaldıraçlı
-            # pozisyon likidasyona uğrarsa sistem bunu görmezden gelemez
-            # (fail-fake olmaz). "liquidation" ayrı, açıkça etiketlenmiş
-            # bir exit_reason — normal stop_loss ile karışmıyor.
-            liquidation_price = pos.get("liquidation_price")
-            liquidated = liquidation_price is not None and (
-                (direction == "LONG" and current_price <= liquidation_price)
-                or (direction == "SHORT" and current_price >= liquidation_price)
-            )
-            if liquidated:
-                exit_reason = "liquidation"
-                exit_price = liquidation_price
-            else:
-                exit_reason = self._exit_reason(
-                    direction, current_price, pos.get("stop_loss_price"), pos.get("take_profit_price")
-                )
+            # Faz 315 — Execution Layer, Faz 1. testnet modundaki bir
+            # pozisyon için kendi iç fiyat-karşılaştırmamızı (periyodik
+            # kontrol döngüsünün BOME/MUBARAK'ta yaşanan gecikme/kayma
+            # sorununu ÜRETEN tam o mekanizma) HİÇ KULLANMIYORUZ —
+            # borsadaki GERÇEK durum soruluyor. Borsada hâlâ açıksa bu
+            # cycle'da yapılacak bir şey yok (continue); kapandıysa
+            # GERÇEK dolum fiyatından exit_reason/exit_price geliyor.
+            if pos.get("execution_mode") == "testnet" and self.execution_service.is_configured():
+                exit_reason, exit_price = self._check_testnet_exit(pos)
                 if exit_reason is None:
                     continue
-                exit_price = current_price
+            else:
+                # Faz 255: kullanıcı isteği — kaldıraç desteği. Kaldıraçlı
+                # bir pozisyon (leverage>1) gerçek likidasyon fiyatına
+                # ulaşırsa, bu stop-loss'tan ÖNCE kontrol edilir — gerçek
+                # bir kaldıraçlı pozisyon likidasyona uğrarsa sistem bunu
+                # görmezden gelemez (fail-fake olmaz). "liquidation" ayrı,
+                # açıkça etiketlenmiş bir exit_reason — normal stop_loss
+                # ile karışmıyor.
+                liquidation_price = pos.get("liquidation_price")
+                liquidated = liquidation_price is not None and (
+                    (direction == "LONG" and current_price <= liquidation_price)
+                    or (direction == "SHORT" and current_price >= liquidation_price)
+                )
+                if liquidated:
+                    exit_reason = "liquidation"
+                    exit_price = liquidation_price
+                else:
+                    exit_reason = self._exit_reason(
+                        direction, current_price, pos.get("stop_loss_price"), pos.get("take_profit_price")
+                    )
+                    if exit_reason is None:
+                        continue
+                    exit_price = current_price
 
             if direction == "LONG":
                 gross_pnl = (exit_price - entry_price) * quantity

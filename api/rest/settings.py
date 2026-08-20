@@ -132,6 +132,25 @@ def _validate(key: str, value: str) -> None:
     elif key == "medium_term_enabled":
         if value not in ("true", "false"):
             raise HTTPException(400, "medium_term_enabled must be 'true' or 'false'")
+    elif key == "execution_mode":
+        # Faz 315 — "trading_mode" ile KARIŞTIRILMASIN, tamamen ayrı bir
+        # kavram (bkz. DEFAULTS'taki not).
+        if value not in ("simulated", "testnet"):
+            raise HTTPException(400, "execution_mode must be 'simulated' or 'testnet'")
+    elif key == "execution_mode_symbols":
+        # symbol_leverage ile AYNI desen — JSON dict, {"BTCUSDT": "testnet"}.
+        import json as _json
+        try:
+            mapping = _json.loads(value)
+            if not isinstance(mapping, dict):
+                raise ValueError
+            for mode in mapping.values():
+                if mode not in ("simulated", "testnet"):
+                    raise ValueError
+        except (ValueError, TypeError):
+            raise HTTPException(
+                400, "execution_mode_symbols must be a JSON object of {symbol: 'simulated'|'testnet'}"
+            )
     elif key == "medium_term_capital_pct":
         try:
             v = float(value)

@@ -64,7 +64,12 @@ class DecisionPersistor:
                     leverage,
                     liquidation_price,
                     timeframe,
-                    experiment_bucket
+                    experiment_bucket,
+                    execution_mode,
+                    exchange_order_id,
+                    exchange_client_order_id,
+                    exchange_stop_order_id,
+                    exchange_tp_order_id
                 )
                 VALUES (
                     :id,
@@ -87,7 +92,12 @@ class DecisionPersistor:
                     :leverage,
                     :liquidation_price,
                     :timeframe,
-                    :experiment_bucket
+                    :experiment_bucket,
+                    :execution_mode,
+                    :exchange_order_id,
+                    :exchange_client_order_id,
+                    :exchange_stop_order_id,
+                    :exchange_tp_order_id
                 )
                 ON CONFLICT (id, timestamp) DO NOTHING
             """),
@@ -126,6 +136,11 @@ class DecisionPersistor:
                 "liquidation_price": event.liquidation_price,
                 "timeframe": event.timeframe,
                 "experiment_bucket": event.experiment_bucket,
+                "execution_mode": event.execution_mode,
+                "exchange_order_id": event.exchange_order_id,
+                "exchange_client_order_id": event.exchange_client_order_id,
+                "exchange_stop_order_id": event.exchange_stop_order_id,
+                "exchange_tp_order_id": event.exchange_tp_order_id,
             },
         )
 
@@ -646,6 +661,35 @@ class DecisionPersistor:
         self.session.execute(
             text("UPDATE decisions SET stop_loss_price = :stop WHERE id = :id AND status = 'open'"),
             {"id": decision_id, "stop": new_stop_loss_price},
+        )
+        self.session.commit()
+
+    def update_exchange_stop_order_id(self, decision_id: str, new_exchange_stop_order_id: str) -> None:
+        """Faz 315 — Execution Layer, Faz 1. testnet modundaki bir
+        pozisyonda breakeven/trailing ratchet tetiklendiğinde, borsadaki
+        eski STOP_MARKET emri iptal edilip yenisi konuyor (bkz. services/
+        execution_service.py::ExecutionService.update_stop_price) —
+        update_stop_loss_price ile AYNI zamanda, ama AYRI bir çağrı:
+        biri (bu) borsadaki GERÇEK emir kimliğini, diğeri dashboard'un
+        okuduğu fiyatı günceller."""
+        self.session.execute(
+            text(
+                "UPDATE decisions SET exchange_stop_order_id = :order_id "
+                "WHERE id = :id AND status = 'open'"
+            ),
+            {"id": decision_id, "order_id": new_exchange_stop_order_id},
+        )
+        self.session.commit()
+
+    def update_exchange_sync_status(self, decision_id: str, status: str) -> None:
+        """Faz 315 — services/execution_reconciliation.py'nin, DB'deki bir
+        testnet pozisyonu ile borsadaki gerçek durumu karşılaştırdıktan
+        SONRA yazdığı tek alan. Sadece işaretler/loglar — hiçbir zaman
+        pozisyonun kendisini (stop/entry/pnl) burada OTOMATİK
+        düzeltmiyoruz (bkz. plan: "asla veri uydurma")."""
+        self.session.execute(
+            text("UPDATE decisions SET exchange_sync_status = :status WHERE id = :id"),
+            {"id": decision_id, "status": status},
         )
         self.session.commit()
 

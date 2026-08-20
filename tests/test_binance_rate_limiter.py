@@ -1,9 +1,15 @@
-"""exchange_gateway/binance/adapter.py::_throttle_binance_request —
+"""exchange_gateway/binance/rate_limit.py::throttle_binance_request —
 gerçek olay (2026-08-18, canlıda 3 kez tekrarladı): çok sayıda Celery
 worker süreci + paralel fetch'ler tek bir IP'den Binance'e çok yüksek
 istek hızıyla gidip GERÇEKTEN IP banına (418) yol açtı. Bu, tüm
 süreçlerin PAYLAŞTIĞI Redis sayacının gerçekten istek hızını sınırladığını
 ve Redis erişilemezse fail-open davrandığını doğruluyor.
+
+Faz 315 — bu mantık exchange_gateway/binance/adapter.py'den (spot,
+salt-okunur) exchange_gateway/binance/rate_limit.py'ye taşındı (futures
+execution adapter'ının da paylaşabilmesi için) — testler artık gerçek
+mantığın yaşadığı modülü hedefliyor, adapter'ın SADECE geriye dönük
+uyumluluk için tuttuğu private-isimli re-export'unu DEĞİL.
 
 Testler kendi İZOLE anahtar önekini kullanır (canlı sistemin GERÇEK
 binance_rate_limit anahtarını DEĞİL) — aksi halde arka planda çalışan
@@ -16,15 +22,16 @@ from uuid import uuid4
 
 import pytest
 
-from exchange_gateway.binance.adapter import _MAX_REQUESTS_PER_SECOND, _throttle_binance_request
+from exchange_gateway.binance.rate_limit import _MAX_REQUESTS_PER_SECOND
+from exchange_gateway.binance.rate_limit import throttle_binance_request as _throttle_binance_request
 
 
 @pytest.fixture
 def isolated_rate_limit_key(monkeypatch):
-    import exchange_gateway.binance.adapter as adapter_module
+    import exchange_gateway.binance.rate_limit as rate_limit_module
 
     prefix = f"test_binance_rate_limit_{uuid4().hex[:8]}"
-    monkeypatch.setattr(adapter_module, "_RATE_LIMIT_KEY_PREFIX", prefix)
+    monkeypatch.setattr(rate_limit_module, "_RATE_LIMIT_KEY_PREFIX", prefix)
     yield prefix
 
     import redis

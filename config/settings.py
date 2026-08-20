@@ -41,6 +41,16 @@ class Settings(BaseSettings):
 
     BINANCE_API_KEY: str = ""
     BINANCE_API_SECRET: str = ""
+    # Faz 315 — Execution Layer, Faz 1. KASITLI OLARAK yukarıdaki
+    # BINANCE_API_KEY/_SECRET'tan AYRI, açıkça isimlendirilmiş alanlar —
+    # o ikisi hiç kullanılmayan eski iskele (mainnet spot içindi, hiçbir
+    # kodda referans yok). Bu alanları o isimle karıştırmak, ileride
+    # gerçek bir mainnet anahtarının yanlışlıkla bu (testnet, düşük
+    # riskli) koda akmasına yol açabilirdi. Diğer tüm API anahtarlarıyla
+    # (FRED_API_KEY/HELIUS_API_KEY) AYNI .env-tabanlı, varsayılan ""
+    # (fail-closed) desen.
+    BINANCE_FUTURES_TESTNET_API_KEY: str = ""
+    BINANCE_FUTURES_TESTNET_API_SECRET: str = ""
     BYBIT_API_KEY: str = ""
     BYBIT_API_SECRET: str = ""
     OKX_API_KEY: str = ""

@@ -667,6 +667,29 @@ def close_due_shadow_positions_task() -> dict:
     return {"closed_count": len(closed), "closed": closed}
 
 
+@celery_app.task(name="reconcile_execution_state_task")
+def reconcile_execution_state_task() -> dict:
+    """Faz 315 — Execution Layer, Faz 1: DB'deki execution_mode='testnet'
+    açık pozisyonlarını borsadaki GERÇEK durumla karşılaştırır (bkz.
+    services/execution_reconciliation.py). close_due_positions_task'ın
+    (60sn'de bir) yaptığı kontrolden BAĞIMSIZ, ikinci bir güvenlik ağı —
+    o task bir pozisyonu atlarsa/hata verirse burada yakalanır. Hiçbir
+    otomatik düzeltme YAPMAZ, sadece işaretler/loglar (plan kararı).
+    execution_service henüz yapılandırılmamışsa (testnet anahtarları
+    yoksa — bugünkü varsayılan durum) anında no-op döner."""
+    from database.repositories.decision_persistor import DecisionPersistor
+    from database.repositories.event_log_repository import EventLogRepository
+    from database.session_factory import SessionFactory
+    from services.execution_reconciliation import reconcile_execution_state
+
+    with SessionFactory.get_session() as session:
+        result = reconcile_execution_state(
+            decision_repo=DecisionPersistor(session),
+            event_repo=EventLogRepository(session),
+        )
+    return result
+
+
 @celery_app.task(name="refresh_meta_learning_effectiveness_report_task")
 def refresh_meta_learning_effectiveness_report_task() -> dict:
     """Cognitive Core 2.0 / M10 (Faz 744-768) — kullanıcı onayıyla

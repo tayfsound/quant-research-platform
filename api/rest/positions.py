@@ -91,6 +91,10 @@ def _serialize(row: dict, current_price: float | None = None, net_unrealized_pnl
         "timeframe": row.get("timeframe"),
         "pairs_trade": _extract_pairs_trade(row),
         "trade_type": _classify_trade_type(row),
+        # Faz 315 — Execution Layer, Faz 1. Dashboard'un "testnet" rozeti
+        # için: bu pozisyon simülasyon mu yoksa gerçek Binance Futures
+        # Testnet emirleriyle mi açıldı/yönetiliyor.
+        "execution_mode": row.get("execution_mode"),
         "exit_reason": outcome.get("exit_reason"),
         "realized_pnl": outcome.get("realized_pnl"),
         # Faz 268p — kullanıcı isteği: "pozisyon o an karda mı zararda mı

@@ -25,6 +25,7 @@ type Position = {
   exit_reason: string | null;
   opened_at: string | null;
   closed_at: string | null;
+  execution_mode: string | null;
 };
 
 // Faz 268: kullanıcı isteği — "aşamalı kapama, pozisyonun yarısını/
@@ -139,6 +140,11 @@ function OpenPositionRow({
           <span className="font-mono text-ink font-medium truncate">{p.symbol}</span>
           {badge && <Badge tone={badge.tone}>{badge.label}</Badge>}
           <Badge tone={p.direction === "LONG" ? "rise" : "fall"}>{p.direction}</Badge>
+          {p.execution_mode === "testnet" && (
+            <span title="Bu pozisyon simülasyon değil — gerçek Binance Futures Testnet emirleriyle açıldı/yönetiliyor.">
+              <Badge tone="warn">testnet</Badge>
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-4 shrink-0 text-xs">
           <span className="font-mono text-ink-soft hidden sm:inline">

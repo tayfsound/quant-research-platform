@@ -250,6 +250,22 @@ DEFAULTS: dict[str, str] = {
     # (spot, kaldıraçsız) sayılır — fail-closed varsayılan, kaldıraç
     # sadece kullanıcı AÇIKÇA bir sembol için ayarlarsa devreye girer.
     "symbol_leverage": "{}",
+    # Faz 315 — Execution Layer, Faz 1. "trading_mode" (test/live) ile
+    # KARIŞTIRILMASIN — o BUGÜN de risk-teşhis sıkılığından başka bir
+    # şeyi değiştirmiyor, emir gönderimiyle ilgisi yok. Bu, tamamen ayrı,
+    # yeni bir kavram: "simulated" (varsayılan — bugünkü davranış,
+    # uydurma dolum fiyatı + periyodik fiyat-yoklama ile kapanış) |
+    # "testnet" (gerçek Binance Futures Testnet emri — bkz. services/
+    # execution_service.py). Kullanıcı gerçek testnet anahtarları
+    # olmadan bu ayarı "testnet" yapsa bile ExecutionService fail-closed
+    # davranır (anahtar yoksa hiçbir emir göndermez, "simulated" gibi
+    # davranmaya devam eder) — asla sessizce yarım bir emir denemez.
+    "execution_mode": "simulated",
+    # symbol_leverage'ın AYNI JSON-eşleme deseni — kullanıcı ilk
+    # testnet denemesini TEK, düşük riskli bir sembolle sınırlayabilsin
+    # diye. Haritada olmayan semboller yukarıdaki global execution_mode'u
+    # kullanır.
+    "execution_mode_symbols": "{}",
     # Faz 259: kullanıcı isteği — "predictions WAIT döndüğünde uygun
     # zamanda ai büyük pozisyonlara girsin, orta vadeli, günler/haftalar
     # sürecek." Kısa-vadeli katmandan (candle_timeframe/max_capital_pct)

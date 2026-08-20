@@ -1,9 +1,27 @@
-# Mevcut Durum -- v1.53.0 (Backtest kaldırıldı + veri hijyeni kök nedene inildi + pump_fade/ağırlık/LLM-denetim düzeltmeleri + Grup B'nin son 4 modülü + 4 yeni TA göstergesi)
+# Mevcut Durum -- v1.54.0 (Faz 315: Execution Layer — gerçek testnet emir gönderimi, henüz commit edilmedi)
 
-**Tarih:** 2026-08-19
+**Tarih:** 2026-08-20
 **Branch:** main
-**Son commit (HEAD):** 46f8f95 (Faz 289: Pivot Points/Keltner/Donchian/Parabolic SAR)
-**Test:** her adımda targeted + push öncesi tam suite (1406 passed, 1 skipped, 1 xpassed). Bilinen, koddan bağımsız 3 "canlı-veri flake" (calibration_api, red_team x2 — paylaşılan quantdb_test'teki gerçek kapanmış işlem verisine bağımlı, bkz. `project_shared_test_state_bloat` hafıza notu) + `tmp_test_memory/agent_memory_history`'nin periyodik temizlenmesi gerekiyor (aksi halde council_orchestrator testleri de yanlışlıkla kırmızı görünür). Tüm commit'ler push edildi, servisler her deploy'dan sonra yeniden başlatıldı.
+**Son commit (HEAD):** 9f56d79 (Faz 313: breakeven_stop artık orijinal risk mesafesine göre doğrulanıyor) — Faz 315 çalışması aşağıda anlatıldığı gibi TAMAMLANDI ve tam suite ile doğrulandı ama kullanıcı onayı beklendiği için HENÜZ commit edilmedi.
+**Test:** tam suite (1541 passed, 1 skipped, 1 xpassed, 8 failed). 8 başarısızlığın TAMAMI Faz 315 ile ilgisiz, önceden bilinen sorunlar: `test_binance_rate_limiter.py::test_throttle_delays_...` full-suite'te paralel Redis yüküyle zamanlamaya bağlı flake (izole çalıştırıldığında geçiyor); diğer 7'si (`test_calibration_api`, `test_council_orchestrator` x3, `test_red_team` x2, `test_performance_api`) `project_shared_test_state_bloat` hafıza notunda zaten belgelenen, paylaşılan `quantdb_test`teki birikmiş geçmiş kapanmış-işlem verisinden kaynaklanan bilinen flake'ler — izole çalıştırıldığında da aynı şekilde başarısız oluyorlar (DB temizliği gerektiriyor, bu turun kapsamı dışında).
+
+## Faz 315 — Execution Layer, Faz 1: gerçek Binance Futures Testnet emir gönderimi (2026-08-20)
+
+Kullanıcı: "Execution Layer'den devam edelim." Sistem baştan sona saf simülasyondu (`simulator/fill_engine.py` uydurma dolum fiyatı, `position_closer.py` periyodik fiyat-yoklamasıyla "kapandı" kararı) — BOME (-$17.5K)/MUBARAK (-$16.9K) kayıplarının kök nedeni tam olarak buydu: kontrol döngüsü fiyatın stop seviyesini AŞTIĞINI bir SONRAKİ yoklamada fark ediyordu. Plan Mode ile mimari onayı alındı (`~/.claude/plans/velvety-whistling-parasol.md`), 3 kritik karar kullanıcıdan: **sembol bazında** opt-in (`execution_mode_symbols`), **STOP_MARKET/TAKE_PROFIT_MARKET** (limit değil), ve kullanıcının ısrarla eklediği kritik gereksinim — **"Hayır, breakeven/trailing testnet'te de en baştan olmalı"** (agent'ın Faz-1-erteleme önerisini reddetti).
+
+**Yeni**: `contracts/exchange.py::OrderExecutionPort` (+OrderSide/OrderType/OrderStatus/PlaceOrderRequest, BİLEREK senkron); `exchange_gateway/binance/futures_execution_adapter.py` (HMAC-SHA256 imzalı, testnet.binancefuture.com sabit, mainnet'e Faz 1'de kod içinde bile erişilemez); `exchange_gateway/binance/rate_limit.py` (mevcut Redis throttle adapter.py'den çıkarıldı, futures adaptörüyle paylaşılıyor); `services/execution_service.py::ExecutionService` (tek orkestrasyon noktası — açılış: MARKET giriş + STOP_MARKET/TAKE_PROFIT_MARKET koruma; ratchet: iptal+yeniden-koy, başarısızlıkta önce eski fiyatı yeniden koymayı dener, o da başarısızsa ACİL MARKET kapatış + `EventLogRepository`'ye KRİTİK olay — "bir leveraged pozisyonun sınırsız süre korumasız kalmasına asla izin verilmez"); `services/execution_reconciliation.py` + `reconcile_execution_state_task` (5dk'da bir, DB/borsa mismatch'ini SADECE işaretler/loglar, otomatik düzeltmez).
+
+**Değişen**: `services/decision_recorder.py` (execution_mode=="testnet" ise gerçek dolum fiyatı/miktarı kullanır, emir teyit edilemezse fail-closed no_trade); `services/position_closer.py` (testnet pozisyonlarında kendi iç fiyat-karşılaştırmasını — BOME/MUBARAK'ı üreten TAM O mekanizmayı — atlayıp borsanın gerçek durumunu sorar); `decisions` tablosuna 6 yeni nullable sütun (migration `faz315`, hem `quantdb` hem `quantdb_test`'e uygulandı); Transactions.tsx'e "testnet" rozeti.
+
+**Mimari not**: `execution_mode` (simulated/testnet, YENİ) ile `trading_mode` (test/live, Faz 188'den beri var) KASITLI OLARAK ayrı, örtüşmeyen kavramlar — biri emir gönderimini, diğeri sadece risk-teşhis sıkılığını kontrol ediyor.
+
+**Test**: `test_futures_execution_adapter.py` (httpx.MockTransport, imzalama+istek inşası+hata kodları), `test_execution_service.py` (sahte adapter, happy-path+fail-closed+emergency-close), `test_execution_reconciliation.py`, `test_decision_recorder_execution_mode.py`, `test_position_closer_execution.py` — hepsi gerçek ağ/anahtar gerektirmiyor. Varsayılan `execution_mode="simulated"` davranışının HİÇ değişmediği ayrıca doğrulandı.
+
+**Mid-implementation'da yakalanan bug (commit'ten ÖNCE düzeltildi)**: `get_order_status`/`cancel_order` başta `client_order_id` alıyordu ama koruma (stop/TP) emirlerinin client_order_id'si DB'de HİÇ saklanmıyor — sadece borsanın atadığı numerik `exchange_stop_order_id`/`exchange_tp_order_id` var. Port/adaptör/servis `order_id` (numerik) kullanacak şekilde düzeltildi.
+
+**Kullanıcının henüz testnet API anahtarı yok** — "Şimdilik sadece mimariyi/planı konuşalım, anahtar sonra" dedi. Anahtarsız durumda `ExecutionService.is_configured()` False döner, sistem tamamen `execution_mode="simulated"` (bugünkü davranış) gibi çalışmaya devam eder — bu Faz'ın tamamı anahtar OLMADAN kodlanıp mock'lu testlerle doğrulandı.
+
+**Açık kalan takip maddesi:** commit + servis restart (kullanıcı onayı bekleniyor); gerçek testnet anahtarları gelince tek sembolde uçtan uca canlı doğrulama (listenin en sonuna bilerek bırakıldı).
 
 ## Faz 279-289 — Backtest kaldırıldı, veri hijyeni kök nedene inildi, pump_fade/ağırlık/LLM-denetim düzeltmeleri, Grup B'nin son 4 modülü, 4 yeni TA göstergesi (2026-08-19)
 

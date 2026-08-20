@@ -8,12 +8,21 @@ from database.repositories.decision_persistor import DecisionPersistor
 
 
 class DecisionRecorder:
-    def __init__(self, storage_path=None):
+    def __init__(self, storage_path=None, execution_service=None):
         self.storage_path = Path(storage_path) if storage_path else None
         if self.storage_path:
             self.storage_path.mkdir(parents=True, exist_ok=True)
         self.session = get_session()
         self.persistor = DecisionPersistor(self.session)
+        # Faz 315 — Execution Layer, Faz 1. execution_service enjekte
+        # edilebilir (testler için) — verilmezse gerçek ExecutionService
+        # kurulur, ama anahtar yoksa (varsayılan durum) is_configured()
+        # False kalır ve bu SIFIR maliyetli, ağa hiç dokunmaz.
+        if execution_service is None:
+            from services.execution_service import ExecutionService
+
+            execution_service = ExecutionService()
+        self.execution_service = execution_service
 
     def record(
         self,
@@ -134,6 +143,50 @@ class DecisionRecorder:
                 from simulator.margin import compute_liquidation_price
                 liquidation_price = compute_liquidation_price(entry_price, direction, leverage)
 
+        # Faz 315 — Execution Layer, Faz 1. Kullanıcı isteği: "sistem
+        # baştan sona saf simülasyon, gerçek bir emir asla borsaya
+        # gitmiyor — BOME/MUBARAK'ta kayıp bu yüzden kontrol döngüsünün
+        # geç fark etmesinden kaynaklandı." execution_mode="testnet"
+        # ise (sembol bazında ya da global) gerçek Binance Futures
+        # Testnet emri gönderilir; entry_price/quantity GERÇEK dolum
+        # değerleriyle DEĞİŞTİRİLİR (asla tahmini fill_engine değeri
+        # değil). Emir teyit edilemezse (ExecutionService fail-closed
+        # None döner) opens_position SAHTEN False'a çekilir — hiçbir
+        # zaman uydurma bir "open" satırı yazılmaz, dürüstçe "no_trade"
+        # olarak kaydedilir.
+        execution_mode = None
+        exchange_order_id = None
+        exchange_client_order_id = None
+        exchange_stop_order_id = None
+        exchange_tp_order_id = None
+        if opens_position:
+            resolved_execution_mode = self._resolve_execution_mode(ctx.market.symbol)
+            if resolved_execution_mode == "testnet" and self.execution_service.is_configured():
+                exec_result = self.execution_service.open_position(
+                    decision_id=ctx.cycle_id,
+                    symbol=ctx.market.symbol,
+                    direction=direction,
+                    quantity=quantity,
+                    stop_loss_price=stop_loss_price,
+                    take_profit_price=take_profit_price,
+                )
+                if exec_result is None:
+                    opens_position = False
+                else:
+                    execution_mode = "testnet"
+                    entry_price = exec_result.entry_price
+                    quantity = exec_result.executed_qty
+                    exchange_order_id = exec_result.exchange_order_id
+                    exchange_client_order_id = exec_result.exchange_client_order_id
+                    exchange_stop_order_id = exec_result.exchange_stop_order_id
+                    exchange_tp_order_id = exec_result.exchange_tp_order_id
+            else:
+                # resolved_execution_mode "testnet" olsa bile gerçek
+                # anahtar yoksa (is_configured() False) fail-closed
+                # olarak "simulated" gibi davranmaya devam ediyoruz —
+                # asla yarım bir emir denemesi yapılmıyor.
+                execution_mode = "simulated"
+
         event = DecisionEvent(
             id=ctx.cycle_id,
             timestamp=ctx.timestamp,
@@ -174,6 +227,11 @@ class DecisionRecorder:
             timeframe=ctx.market.timeframe,
             experiment_bucket=experiment_bucket,
             decision_latency_ms=self._compute_decision_latency_ms(ctx),
+            execution_mode=execution_mode,
+            exchange_order_id=exchange_order_id,
+            exchange_client_order_id=exchange_client_order_id,
+            exchange_stop_order_id=exchange_stop_order_id,
+            exchange_tp_order_id=exchange_tp_order_id,
         )
 
         self.persistor.persist(event)
@@ -183,6 +241,27 @@ class DecisionRecorder:
             log_file.write_text(event.model_dump_json(indent=2))
 
         return event
+
+    def _resolve_execution_mode(self, symbol: str) -> str:
+        """Faz 315 — _symbol_leverage ile AYNI desen: execution_mode_
+        symbols haritasında sembol için açık bir mod varsa o kullanılır,
+        yoksa global execution_mode ayarı (varsayılan "simulated").
+        Herhangi bir hata/eksik ayar fail-closed "simulated" — asla
+        istemeden testnet moduna düşülmez."""
+        import json
+
+        from database.repositories.app_settings_repository import AppSettingsRepository
+        from database.session_factory import SessionFactory
+
+        try:
+            with SessionFactory.get_session() as session:
+                repo = AppSettingsRepository(session)
+                raw_map = repo.get("execution_mode_symbols")
+                global_mode = repo.get("execution_mode") or "simulated"
+            mapping = json.loads(raw_map) if raw_map else {}
+            return mapping.get(symbol, global_mode)
+        except Exception:
+            return "simulated"
 
     def _symbol_leverage(self, symbol: str) -> float:
         """Faz 255: kullanıcı isteği — token bazlı kaldıraç
