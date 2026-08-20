@@ -21,7 +21,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY pyproject.toml ./
 COPY . .
 
+# Faz 312 — 3. dış rapor bulgusu (kullanıcı doğrulattı): image ~11.6GB,
+# çünkü pyproject.toml'daki "torch>=2.3.0" pip'i PyPI'daki VARSAYILAN
+# (CUDA çalışma zamanı gömülü) linux wheel'ine düşürüyordu — bu ortamın
+# GPU'su yok, o CUDA kütüphaneleri hiç kullanılmıyor, sadece disk/pull
+# süresini şişiriyordu. Gerçek ölçüm (2026-08-20, download.pytorch.org +
+# pypi.org JSON API): torch 2.6.0 cp313-linux_x86_64 CUDA'lı 766.6MB,
+# CPU-only (download.pytorch.org/whl/cpu) SADECE 178.5MB — tek paket
+# ~589MB azalıyor. pyproject.toml'daki "torch>=2.3.0" KASITLI OLARAK
+# değiştirilmedi — "torch==X+cpu" pin'i macOS/Windows'ta (bu +cpu
+# etiketi SADECE Linux'ta var) yerel `pip install .`'ı tamamen kırardı.
+# Bunun yerine CPU-only sürüm burada, `pip install .`'DAN ÖNCE açıkça
+# kuruluyor — pip .'daki "torch>=2.3.0" kısıtını zaten karşılanmış bulup
+# YENİDEN İNMİYOR (2.6.0 >= 2.3.0), CUDA'lı varyantı hiç görmüyor.
 RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --extra-index-url https://download.pytorch.org/whl/cpu "torch==2.6.0+cpu" && \
     pip install .
 
 EXPOSE 8000
