@@ -1,10 +1,21 @@
-# Mevcut Durum -- v1.59.0 (Faz 320: Dashboard'a "Güncel kasa" kartı)
+# Mevcut Durum -- v1.60.0 (Faz 321: R:R kalibrasyonu — yön-bazlı target_atr_mult/stop_atr_mult)
 
 **Tarih:** 2026-08-20
 **Branch:** main
-**Son commit (HEAD):** 4b7def5 (Faz 319) — Faz 320 henüz commit edilmedi (bu değişiklik: `dashboard/src/views/Dashboard.tsx`). **ÖNEMLİ: servisler yeniden başlatılınca (celery worker dahil) eski agent_memory.py'yi belleğinde tutan hiçbir süreç kalmamalı** — aksi halde o süreç artık okunmayan agent_memory_history/agent_memory.json'a yazmaya devam edip yeni gerçek veriyi Postgres'in dışında bırakabilir.
-**Test:** AgentMemory'ye dokunan hedefli regresyon (170 test) temiz. Dashboard.tsx: `tsc --noEmit` temiz, canlı dev sunucusunda (HMR) doğrulandı.
-**Altyapı notu (2026-08-20):** Docker Desktop bu oturumda bir kez çöktü (postgres/redis konteynerleri durdu) — `docker start` ile geri getirildi, veri kaybı yok (agent_performance_records 54.402, decisions 50.268 — çöküş öncesiyle aynı). api/celery worker'lar Docker'a bağlı değil (host'ta native çalışıyor), kendiliğinden toparlandı.
+**Son commit (HEAD):** 94300af (Faz 320) — Faz 321 henüz commit edilmedi (bu değişiklik: `engines/cognitive_pipeline.py`, `database/repositories/app_settings_repository.py`, `services/{macro_shadow_tracker,benched_agent_shadow_tracker,pairs_trader,tp_sl_confluence_gatherer}.py`, `llm_tools.py`, ilgili testler).
+**⚠️ KRİTİK — CANLI SİSTEM HENÜZ ESKİ KODU ÇALIŞTIRIYOR:** Kullanıcı canlı bir pump_fade pozisyonunda (SIGNUSDT, 2026-08-20 17:12 UTC) `regime_size_multiplier` alanının agent_contributions'ta HİÇ olmadığını fark etti — celery worker'lar (12:17'de başlamış) bu oturumdaki HİÇBİR kod değişikliğini (Faz 318 pump_fade gate, Faz 319 AgentMemory, Faz 320 kasa kartı, Faz 321 R:R) henüz yüklemedi. **Bu iş bitip commit edilir edilmez api/worker/beat servisleri restart edilmeli** — aksi halde tüm bu düzeltmeler kâğıt üzerinde kalır.
+**Test:** R:R'ye dokunan hedefli regresyon (121 test) temiz — 2 pairs_trader başarısızlığı `git stash` A/B ile ÖNCEKİ commit'te de aynı şekilde başarısız olduğu doğrulanarak ilgisiz/bilinen kirlilik olarak elendi.
+**Altyapı notu (2026-08-20):** Docker Desktop bu oturumda bir kez çöktü (postgres/redis konteynerleri durdu) — `docker start` ile geri getirildi, veri kaybı yok (agent_performance_records 54.402, decisions 50.268 — çöküş öncesiyle aynı). api/celery worker'lar Docker'a bağlı değil (host'ta native çalışıyor), kendiliğinden toparlandı — ama KOD değişikliklerini almadılar, bkz. yukarıdaki kritik not.
+
+## Faz 321 — R:R kalibrasyonu: gerçek MAE/MFE verisiyle yön-bazlı target_atr_mult/stop_atr_mult (2026-08-20)
+
+Kullanıcının duraklattığı "Otomatik R/R kalibrasyonu" işi tamamlandı. `analytics/mae_mfe.py::compute_optimal_barrier()` gerçek orta-vadeli (4h/1d, `timeframe` sınıflandırması) kapanmış işlem MAE/MFE'siyle (1098 örneklem, %99.5 kapsam) çalıştırıldı. Güçlü bir yön asimetrisi bulundu:
+- **LONG:** empirik en-iyi stop %3.30, hedef %9.09 (oran ~2.75), EV **+%5.85** — hedefler şimdiye kadar çok erken kesiliyormuş.
+- **SHORT:** empirik en-iyi ayarda bile hedef ~%0, EV **-%2.46** (negatif) — bu vadede SHORT'un R:R ayarıyla düzelebilecek bir kenarı yok.
+
+Kullanıcı kararıyla (2x AskUserQuestion): tek global `stop_atr_mult`/`target_atr_mult` yerine yön-bazlı 4 ayar (`stop_atr_mult_long`/`target_atr_mult_long`/`stop_atr_mult_short`/`target_atr_mult_short`). LONG'da Faz 261'deki AYNI yöntem (stop sabit, hedef empirik oranla ölçeklenir): 2.5 × 2.7548 ≈ **6.89**. SHORT bilinçli olarak ESKİ değerinde (1.4) bırakıldı — negatif EV'den türeyen bir oranı doğrudan uygulamak anlamsız bir sonuç üretirdi, SHORT'un kendisi ayrı bir inceleme konusu (todo'ya eklendi).
+
+`engines/cognitive_pipeline.py::RiskTargetStage._load_multipliers()` artık `direction` parametresi alıyor (opsiyonel — bilinmiyorsa stop_mult ikisi için aynı olduğundan sorun çıkmıyor). 4 gerçek çağıran güncellendi: `services/macro_shadow_tracker.py::_atr_based_distance_pct` (artık direction parametresi alıyor), `services/benched_agent_shadow_tracker.py` (dissent'lerin ortak yönü çıkarılıyor — "not final" tek bir zıt yön bırakıyor), `services/pairs_trader.py::_open_leg` (zaten bilinen direction'ı geçiriyor), `services/tp_sl_confluence_gatherer.py` (yön-agnostik ölçüm — artık LONG/SHORT mesafeleri BAĞIMSIZ hesaplanıyor). `llm_tools.py`'nin LLM denetim aracı 4 yeni anahtarı raporluyor.
 
 ## Faz 320 — Dashboard'a "Güncel kasa" kartı (2026-08-20)
 

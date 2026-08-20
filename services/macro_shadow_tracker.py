@@ -65,7 +65,7 @@ def process_symbol_opinion(symbol: str, ctx, entry_price: float, data_provider=N
             if repo.has_open_position(SOURCE, symbol):
                 return
 
-            stop_pct, target_pct = _atr_based_distance_pct(symbol, data_provider)
+            stop_pct, target_pct = _atr_based_distance_pct(symbol, direction, data_provider)
             if stop_pct is None:
                 return
 
@@ -92,11 +92,13 @@ def process_symbol_opinion(symbol: str, ctx, entry_price: float, data_provider=N
         structlog.get_logger().warning("macro_shadow_tracker_open_failed", symbol=symbol, exc_info=True)
 
 
-def _atr_based_distance_pct(symbol: str, data_provider=None) -> tuple[float | None, float | None]:
+def _atr_based_distance_pct(symbol: str, direction: str, data_provider=None) -> tuple[float | None, float | None]:
     """Gerçek sistemin RiskTargetStage'inin kullandığı AYNI günlük
     ATR-tabanlı formül (bkz. engines/cognitive_pipeline.py::
     RiskTargetStage) — adil bir karşılaştırma için macro'nun gölge
-    pozisyonu da council'in kullandığı AYNI risk ölçeğiyle açılıyor."""
+    pozisyonu da council'in kullandığı AYNI risk ölçeğiyle açılıyor.
+    Faz 320 — target_atr_mult artık yöne göre farklı, bu yüzden direction
+    da RiskTargetStage ile AYNI şekilde geçirilmeli."""
     from engines.cognitive_pipeline import RiskTargetStage
     from market_data.features.signal_engine import compute_daily_atr_pct
     from market_data.ingestion.data_provider import RoutingProvider
@@ -107,7 +109,7 @@ def _atr_based_distance_pct(symbol: str, data_provider=None) -> tuple[float | No
     if daily_atr_pct is None:
         return None, None
 
-    stop_mult, target_mult, min_stop_pct = RiskTargetStage()._load_multipliers()
+    stop_mult, target_mult, min_stop_pct = RiskTargetStage()._load_multipliers(direction)
     stop_pct = stop_mult * daily_atr_pct
     target_pct = target_mult * daily_atr_pct
     if stop_pct < min_stop_pct:

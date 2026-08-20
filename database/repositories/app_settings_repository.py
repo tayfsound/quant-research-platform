@@ -98,8 +98,23 @@ DEFAULTS: dict[str, str] = {
     # bu yüzden RiskTargetStage'e SABİT değil, AYARLANABİLİR olarak
     # bağlandı (bkz. o dosyadaki not) — veri birikince kolayca yeniden
     # kalibre edilebilir, redeploy gerekmez.
-    "stop_atr_mult": "2.5",
-    "target_atr_mult": "1.4",
+    # Faz 320 — kullanıcı isteği: "target_atr_mult/stop_atr_mult oranının
+    # gerçek veriyle yeniden kalibre edilmesi." compute_optimal_barrier()
+    # gerçek orta-vadeli (4h/1d) kapanmış işlem MAE/MFE'siyle (1098
+    # örneklem) çalıştırıldı — güçlü bir yön asimetrisi bulundu: LONG'da
+    # empirik hedef/stop oranı ~2.75 (EV +%5.85 — hedefler şu ana kadar
+    # çok erken kesiliyormuş), SHORT'ta en iyi ampirik ayarda bile EV
+    # negatif (-%2.46 — bu vadede SHORT'un gerçek bir kenarı yok, R:R
+    # ayarıyla düzelmiyor, ayrı bir inceleme konusu). Kullanıcı kararıyla
+    # tek global orandan yön-bazlı iki ayrı orana geçildi (bkz. engines/
+    # cognitive_pipeline.py::RiskTargetStage sınıf yorumu). STOP sabit
+    # tutulup (kabul edilmiş risk mesafesi, Faz 261'deki AYNI yöntem)
+    # SADECE LONG hedefi empirik oranla ölçeklendi: 2.5 * 2.7548 ≈ 6.89.
+    # SHORT bilinçli olarak ESKİ tek-oran değerinde (1.4) bırakıldı.
+    "stop_atr_mult_long": "2.5",
+    "target_atr_mult_long": "6.89",
+    "stop_atr_mult_short": "2.5",
+    "target_atr_mult_short": "1.4",
     # Faz 268-sonrası — gerçek bulgu: trade_type'a göre ayrılmış kapanmış
     # işlemlerde "scalp" (stop < %4.5, api/rest/positions.py::_SCALP_MAX_
     # STOP_PCT ile AYNI eşik) TEK BAŞINA toplam zararın %92'siydi (-$1954/

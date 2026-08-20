@@ -76,7 +76,11 @@ def process_symbol_opinions(symbol: str, ctx, entry_price: float, data_provider=
 
         from services.macro_shadow_tracker import _atr_based_distance_pct
 
-        stop_pct, target_pct = _atr_based_distance_pct(symbol, data_provider)
+        # Faz 320 — target_atr_mult artık yöne göre farklı. "not final"
+        # tek bir zıt yön bırakır (sadece LONG/SHORT var), bu yüzden
+        # dissents içindeki tüm kayıtlar zaten AYNI yöne sahip.
+        dissent_direction = dissents[0][1]
+        stop_pct, target_pct = _atr_based_distance_pct(symbol, dissent_direction, data_provider)
         if stop_pct is None:
             return
 

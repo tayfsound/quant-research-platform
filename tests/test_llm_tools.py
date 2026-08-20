@@ -14,7 +14,7 @@ def test_get_recent_performance_summary_returns_real_shape():
     result = llm_tools.get_recent_performance_summary(hours=24)
     assert "ai_automatic_closed_trades" in result
     assert "manually_closed_trades" in result
-    assert "current_stop_atr_mult" in result
+    assert "current_stop_atr_mult_long" in result
     assert result["window_hours"] == 24
 
 
@@ -24,10 +24,15 @@ def test_get_recent_performance_summary_atr_multipliers_fall_back_to_defaults_no
     — LLM'e "ATR çarpanı ayarlanmamış/null" diye YANLIŞ bir teşhis
     verdiriyordu, oysa GERÇEK canlı risk hattı (engines/cognitive_pipeline.py)
     hiçbir zaman null almıyor, DEFAULTS'a düzgün düşüyor. Bu test o AYNI
-    fallback'in artık burada da olduğunu doğruluyor."""
+    fallback'in artık burada da olduğunu doğruluyor.
+
+    Faz 320 — stop_atr_mult/target_atr_mult yön-bazlı iki ayrı ayara
+    bölündü (bkz. app_settings_repository.py::DEFAULTS)."""
     result = llm_tools.get_recent_performance_summary(hours=24)
-    assert result["current_stop_atr_mult"] is not None
-    assert result["current_target_atr_mult"] is not None
+    assert result["current_stop_atr_mult_long"] is not None
+    assert result["current_target_atr_mult_long"] is not None
+    assert result["current_stop_atr_mult_short"] is not None
+    assert result["current_target_atr_mult_short"] is not None
     assert result["current_min_stop_pct"] is not None
     assert result["current_kill_switch_consecutive_losses"] is not None
 

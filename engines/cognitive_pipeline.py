@@ -555,9 +555,29 @@ class RiskTargetStage:
     Sabit sınıf sabitleri yerine artık AppSettings'ten okunuyor — DSR henüz
     istatistiksel kanıt eşiğini geçmediği için (yön güçlü ama örneklem
     küçük) bu oranın redeploy gerektirmeden hızla ayarlanabilir kalması
-    kasıtlı bir tasarım kararı."""
-    DEFAULT_STOP_ATR_MULT = 2.5
-    DEFAULT_TARGET_ATR_MULT = 1.4
+    kasıtlı bir tasarım kararı.
+
+    Faz 320 — kullanıcı isteği: "duraklattığımız Otomatik R/R kalibrasyonu
+    işinin parçası olan target_atr_mult/stop_atr_mult oranının gerçek
+    veriyle yeniden kalibre edilmesi." compute_optimal_barrier() gerçek
+    orta-vadeli (4h/1d) kapanmış işlem MAE/MFE'siyle (1098 örneklem)
+    çalıştırıldı — GÜÇLÜ bir yön asimetrisi bulundu: LONG'da empirik
+    hedef/stop oranı ~2.75 (stop %3.30, hedef %9.09, EV +%5.85 — hedefler
+    şu ana kadar ÇOK ERKEN kesiliyormuş), SHORT'ta ise en iyi ampirik
+    ayarda bile EV NEGATİF (-%2.46, hedef ~%0 — bu vadede SHORT'un gerçek
+    bir kenarı yok, R:R ayarıyla düzelmiyor). Kullanıcı kararıyla (Ask
+    UserQuestion): tek global orandan yön-bazlı iki ayrı orana geçildi.
+    LONG'da AYNI "stop sabit, hedef empirik oranla ölçeklenir" yöntemi
+    (bkz. app_settings_repository.py::DEFAULTS) uygulandı: 2.5 * 2.7548 ≈
+    6.89. SHORT bilinçli olarak ESKİ değerinde (1.4) bırakıldı — negatif
+    EV'den türeyen bir oranı doğrudan uygulamak anlamsız bir "neredeyse
+    anında kâr al" hedefi üretirdi; SHORT'un kendisi ayrı bir inceleme
+    konusu (kalıcı bir düzeltme değil, gerçek kanıt eşiği geçilmeden hiçbir
+    kalıcı değişiklik yapılmıyor ilkesiyle tutarlı)."""
+    DEFAULT_STOP_ATR_MULT_LONG = 2.5
+    DEFAULT_TARGET_ATR_MULT_LONG = 6.89
+    DEFAULT_STOP_ATR_MULT_SHORT = 2.5
+    DEFAULT_TARGET_ATR_MULT_SHORT = 1.4
     # Faz 268-sonrası — gerçek bulgu: kapanmış işlemleri "scalp" (stop <
     # %4.5, bkz. api/rest/positions.py::_SCALP_MAX_STOP_PCT) / gün_içi /
     # swing türüne göre ayırınca, scalp TEK BAŞINA toplam zararın %92'sini
@@ -593,7 +613,7 @@ class RiskTargetStage:
         if not daily_atr_pct or daily_atr_pct <= 0 or not current_price or current_price <= 0:
             return ctx
 
-        stop_mult, target_mult, min_stop_pct = self._load_multipliers()
+        stop_mult, target_mult, min_stop_pct = self._load_multipliers(direction)
 
         # Faz 268-sonrası — kullanıcı isteği: Adaptive Barrier Engine
         # (MAE/MFE'nin GERÇEK koşullu dağılımından türetilmiş SL/TP
@@ -737,20 +757,32 @@ class RiskTargetStage:
             logger.warning("adaptive_barrier_lookup_failed", error=str(exc))
             return None
 
-    def _load_multipliers(self) -> tuple[float, float, float]:
+    def _load_multipliers(self, direction: str | None = None) -> tuple[float, float, float]:
+        """Faz 320 — direction=None (yön henüz bilinmiyor, ör. Tokens
+        sayfasının önizleme uç noktası) SADECE stop_mult'u kullanan
+        çağıranlar için var — stop_mult LONG/SHORT için AYNI (ikisi de
+        2.5), bu yüzden yön bilinmese de doğru sonuç döner. target_mult
+        bu durumda muhafazakâr/eski tek-oran davranışına (SHORT değeri)
+        düşer — hiçbir çağıran yönü bilmeden hedef mesafesini KULLANMAZ,
+        sadece stop_mult'u okuyan tokens.py bu varsayılanla etkilenmez."""
+        is_long = (direction or "").upper() == "LONG"
+        default_stop = self.DEFAULT_STOP_ATR_MULT_LONG if is_long else self.DEFAULT_STOP_ATR_MULT_SHORT
+        default_target = self.DEFAULT_TARGET_ATR_MULT_LONG if is_long else self.DEFAULT_TARGET_ATR_MULT_SHORT
+        stop_key = "stop_atr_mult_long" if is_long else "stop_atr_mult_short"
+        target_key = "target_atr_mult_long" if is_long else "target_atr_mult_short"
         try:
             from database.repositories.app_settings_repository import AppSettingsRepository
             from database.session_factory import SessionFactory
 
             with SessionFactory.get_session() as session:
                 settings_repo = AppSettingsRepository(session)
-                stop_mult = float(settings_repo.get("stop_atr_mult") or self.DEFAULT_STOP_ATR_MULT)
-                target_mult = float(settings_repo.get("target_atr_mult") or self.DEFAULT_TARGET_ATR_MULT)
+                stop_mult = float(settings_repo.get(stop_key) or default_stop)
+                target_mult = float(settings_repo.get(target_key) or default_target)
                 min_stop_pct = float(settings_repo.get("min_stop_pct") or self.DEFAULT_MIN_STOP_PCT)
                 return stop_mult, target_mult, min_stop_pct
         except Exception as exc:
             logger.warning("risk_multiplier_settings_load_failed", error=str(exc))
-            return self.DEFAULT_STOP_ATR_MULT, self.DEFAULT_TARGET_ATR_MULT, self.DEFAULT_MIN_STOP_PCT
+            return default_stop, default_target, self.DEFAULT_MIN_STOP_PCT
 
 
 class DecisionFusionStage:

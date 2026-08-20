@@ -155,7 +155,7 @@ class PairsTrader:
         daily_bars = self.data_provider.get_ohlcv(symbol, "1d", limit=30)
         daily_atr_pct = compute_daily_atr_pct(daily_bars) if daily_bars else None
         if daily_atr_pct and daily_atr_pct > 0:
-            stop_mult, target_mult, min_stop_pct = RiskTargetStage()._load_multipliers()
+            stop_mult, target_mult, min_stop_pct = RiskTargetStage()._load_multipliers(direction)
             stop_pct = stop_mult * daily_atr_pct
             target_pct = target_mult * daily_atr_pct
             if stop_pct < min_stop_pct:

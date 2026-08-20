@@ -111,7 +111,8 @@ def get_recent_performance_summary(hours: int = 24) -> dict:
 
         settings_row = session.execute(
             text("SELECT key, value FROM app_settings WHERE key IN "
-                 "('stop_atr_mult', 'target_atr_mult', 'min_stop_pct', 'kill_switch_consecutive_losses')")
+                 "('stop_atr_mult_long', 'target_atr_mult_long', 'stop_atr_mult_short', "
+                 "'target_atr_mult_short', 'min_stop_pct', 'kill_switch_consecutive_losses')")
         ).fetchall()
         settings = {**_APP_SETTINGS_DEFAULTS, **{r[0]: r[1] for r in settings_row}}
 
@@ -120,8 +121,10 @@ def get_recent_performance_summary(hours: int = 24) -> dict:
         "open_positions": open_count or 0,
         **ai_counts,
         "pump_fade": pump_fade_counts,
-        "current_stop_atr_mult": settings.get("stop_atr_mult"),
-        "current_target_atr_mult": settings.get("target_atr_mult"),
+        "current_stop_atr_mult_long": settings.get("stop_atr_mult_long"),
+        "current_target_atr_mult_long": settings.get("target_atr_mult_long"),
+        "current_stop_atr_mult_short": settings.get("stop_atr_mult_short"),
+        "current_target_atr_mult_short": settings.get("target_atr_mult_short"),
         "current_min_stop_pct": settings.get("min_stop_pct"),
         "current_kill_switch_consecutive_losses": settings.get("kill_switch_consecutive_losses"),
         "note": (

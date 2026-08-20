@@ -49,11 +49,12 @@ def test_risk_target_stage_sets_take_profit_and_stop_loss_from_daily_atr_pct():
     ctx = RiskTargetStage().execute(ctx)
 
     assert abs(ctx.decision.stop_loss - 5.0) < 1e-9  # 100 * 2.5 * 0.02
-    # Faz 268-sonrası: gerçek OOS doğrulaması 1:4'ün (2.5x/10.0x) tersini
-    # işaret etti — hedef, stop'tan KÜÇÜK olmalı (bkz. app_settings_
-    # repository.py::DEFAULTS["target_atr_mult"] üstündeki not).
-    # Varsayılan artık 1.4x — 100 * 1.4 * 0.02 = 2.8.
-    assert abs(ctx.decision.take_profit - 2.8) < 1e-9
+    # Faz 320 — kullanıcı isteği: target_atr_mult/stop_atr_mult oranı
+    # gerçek MAE/MFE verisiyle (1098 orta-vadeli kapanmış işlem) yeniden
+    # kalibre edildi. LONG'da empirik hedef/stop oranı ~2.75 bulundu (bkz.
+    # app_settings_repository.py::DEFAULTS["target_atr_mult_long"] üstündeki
+    # not) — LONG varsayılanı artık 6.89x. 100 * 6.89 * 0.02 = 13.78.
+    assert abs(ctx.decision.take_profit - 13.78) < 1e-9
 
 
 def test_risk_target_stage_widens_stop_to_the_min_floor_preserving_the_ratio():
@@ -66,9 +67,9 @@ def test_risk_target_stage_widens_stop_to_the_min_floor_preserving_the_ratio():
 
     # Ham: stop=2.5*0.01=%2.5 (taban %4.5'in altında) -> 1.8x ölçeklenir.
     assert abs(ctx.decision.stop_loss - 4.5) < 1e-9  # 100 * %4.5 taban
-    assert abs(ctx.decision.take_profit - 2.52) < 1e-9  # 100 * 1.4*0.01*1.8
-    # Oran korunmalı: taban öncesi (1.4/2.5) ile taban sonrası aynı.
-    ratio_before = (1.4 * 0.01) / (2.5 * 0.01)
+    assert abs(ctx.decision.take_profit - 12.402) < 1e-9  # 100 * 6.89*0.01*1.8
+    # Oran korunmalı: taban öncesi (6.89/2.5) ile taban sonrası aynı.
+    ratio_before = (6.89 * 0.01) / (2.5 * 0.01)
     ratio_after = ctx.decision.take_profit / ctx.decision.stop_loss
     assert abs(ratio_before - ratio_after) < 1e-9
 
@@ -133,14 +134,14 @@ def test_multipliers_are_read_from_app_settings_not_hardcoded():
     from database.session_factory import SessionFactory
 
     with SessionFactory.get_session() as session:
-        AppSettingsRepository(session).set("target_atr_mult", "3.0", updated_by="test")
+        AppSettingsRepository(session).set("target_atr_mult_long", "3.0", updated_by="test")
     try:
         ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
         ctx = RiskTargetStage().execute(ctx)
         assert abs(ctx.decision.take_profit - 6.0) < 1e-9  # 100 * 3.0 * 0.02
     finally:
         with SessionFactory.get_session() as session:
-            AppSettingsRepository(session).set("target_atr_mult", "1.4", updated_by="test")
+            AppSettingsRepository(session).set("target_atr_mult_long", "6.89", updated_by="test")
 
 
 def _set_adaptive_barrier_enabled(value: str) -> None:
@@ -374,15 +375,15 @@ def test_risk_target_stage_skips_all_work_when_final_size_is_zero(monkeypatch):
 
 def test_risk_target_stage_snaps_target_to_confluence_zone_when_present():
     ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
-    # Ham hedef: 100 * 1.4 * 0.02 = 2.8 -> fiyat 102.8. Aralarında (100-102.8)
-    # 2 bağımsız yöntemin birleştiği gerçek bir bölge: 101.5.
+    # Ham hedef: 100 * 6.89 * 0.02 = 13.78 -> fiyat 113.78. Aralarında
+    # (100-113.78) 2 bağımsız yöntemin birleştiği gerçek bir bölge: 101.5.
     ctx.market.features["confluence_zones"] = [
         {"level": 101.5, "method_count": 2, "contributing_methods": ["sr_resistance", "pivot_r1"]}
     ]
     result = RiskTargetStage().execute(ctx)
 
-    # Hedef artık 102.8 DEĞİL, 101.5'in hemen altına çekilmiş olmalı.
-    assert result.decision.take_profit < 2.8
+    # Hedef artık 113.78 DEĞİL, 101.5'in hemen altına çekilmiş olmalı.
+    assert result.decision.take_profit < 13.78
     assert 1.0 < result.decision.take_profit < 1.5  # (101.5*(1-eps) - 100) civarı
     # Stop HİÇ etkilenmemeli.
     assert abs(result.decision.stop_loss - 5.0) < 1e-9
@@ -396,7 +397,7 @@ def test_risk_target_stage_ignores_confluence_zone_beyond_target():
         {"level": 150.0, "method_count": 2, "contributing_methods": ["sr_resistance", "pivot_r1"]}
     ]
     result = RiskTargetStage().execute(ctx)
-    assert abs(result.decision.take_profit - 2.8) < 1e-9
+    assert abs(result.decision.take_profit - 13.78) < 1e-9
 
 
 def test_risk_target_stage_ignores_weak_confluence_zone():
@@ -406,7 +407,7 @@ def test_risk_target_stage_ignores_weak_confluence_zone():
         {"level": 101.5, "method_count": 1, "contributing_methods": ["sr_resistance"]}
     ]
     result = RiskTargetStage().execute(ctx)
-    assert abs(result.decision.take_profit - 2.8) < 1e-9
+    assert abs(result.decision.take_profit - 13.78) < 1e-9
 
 
 def test_risk_target_stage_without_confluence_zones_feature_behaves_as_before():
@@ -414,7 +415,7 @@ def test_risk_target_stage_without_confluence_zones_feature_behaves_as_before():
     döndüyse) mevcut davranış hiç değişmemeli — fail-closed."""
     ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
     result = RiskTargetStage().execute(ctx)
-    assert abs(result.decision.take_profit - 2.8) < 1e-9
+    assert abs(result.decision.take_profit - 13.78) < 1e-9
 
 
 def test_risk_target_stage_snaps_short_target_to_confluence_zone():
@@ -445,7 +446,7 @@ def test_risk_target_stage_snaps_stop_to_confluence_zone_when_present():
     # fiyata olan mesafesi KÜÇÜLMÜŞ, ama taban (4.5) hâlâ AŞILMAMIŞ.
     assert 4.5 < result.decision.stop_loss < 5.0
     # Hedef HİÇ etkilenmemeli (bu senaryoda hedef aralığında zone yok).
-    assert abs(result.decision.take_profit - 2.8) < 1e-9
+    assert abs(result.decision.take_profit - 13.78) < 1e-9
 
 
 def test_risk_target_stage_snaps_short_stop_to_confluence_zone():
