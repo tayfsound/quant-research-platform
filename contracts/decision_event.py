@@ -39,8 +39,8 @@ class DecisionEvent(BaseModel):
     opened_at: datetime | None = None
     closed_at: datetime | None = None
     # Faz 192: RiskTargetStage'in gerçek ATR'den kurduğu risk/ödül
-    # magnitüdlerinin (ctx.decision.stop_loss/take_profit), pozisyon
-    # gerçekten açıldığı andaki entry_price'a göre mutlak fiyat karşılığı.
+    # magnitüdlerinin (ctx.decision.stop_loss_distance/take_profit_distance),
+    # pozisyon gerçekten açıldığı andaki entry_price'a göre mutlak fiyat karşılığı.
     stop_loss_price: float | None = None
     take_profit_price: float | None = None
     # Faz 255: kaldıraç desteği — leverage=1.0 spot (kaldıraçsız, önceki

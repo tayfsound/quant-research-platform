@@ -91,15 +91,16 @@ class DecisionRecorder:
         entry_price = getattr(ctx.decision, "filled_price", None) or (ctx.market.raw_snapshot or {}).get("close")
 
         # Faz 192: RiskTargetStage'in gerçek ATR'den kurduğu risk/ödül
-        # magnitüdlerini (ctx.decision.stop_loss/take_profit), pozisyon
-        # gerçekten açıldığı andaki entry_price'a göre mutlak fiyat
-        # seviyesine çeviriyoruz — PositionCloser bu seviyeleri kontrol edip
-        # hedefine ulaşan/stop'a takılan pozisyonu vade dolmadan kapatabiliyor.
+        # magnitüdlerini (ctx.decision.stop_loss_distance/take_profit_
+        # distance), pozisyon gerçekten açıldığı andaki entry_price'a göre
+        # mutlak fiyat seviyesine çeviriyoruz — PositionCloser bu seviyeleri
+        # kontrol edip hedefine ulaşan/stop'a takılan pozisyonu vade
+        # dolmadan kapatabiliyor.
         stop_loss_price = None
         take_profit_price = None
         if opens_position and entry_price:
-            risk_mag = getattr(ctx.decision, "stop_loss", None)
-            reward_mag = getattr(ctx.decision, "take_profit", None)
+            risk_mag = getattr(ctx.decision, "stop_loss_distance", None)
+            reward_mag = getattr(ctx.decision, "take_profit_distance", None)
             if risk_mag is not None and reward_mag is not None:
                 if direction.upper() == "LONG":
                     stop_loss_price = entry_price - risk_mag

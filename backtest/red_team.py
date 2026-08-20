@@ -283,8 +283,8 @@ def run_red_team_scenario(
         if direction not in ("LONG", "SHORT") or size <= 0:
             continue
 
-        risk_mag = result_ctx.decision.stop_loss
-        reward_mag = result_ctx.decision.take_profit
+        risk_mag = result_ctx.decision.stop_loss_distance
+        reward_mag = result_ctx.decision.take_profit_distance
         if not risk_mag or not reward_mag:
             continue
 

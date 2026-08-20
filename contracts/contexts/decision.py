@@ -31,6 +31,13 @@ class Decision(BaseModel):
     confidence: float = 0.0
     uncertainty: float = 1.0
     reconsideration_count: int = 0
-    take_profit: float | None = None
-    stop_loss: float | None = None
+    # Faz 329 — Kimi'nin (üçüncü taraf inceleme) bulduğu adlandırma tuzağı:
+    # eskiden take_profit/stop_loss isimlendirilen bu iki alan MUTLAK FİYAT
+    # DEĞİL, entry_price'a göre bir MESAFE/MAGNİTÜD (her zaman >=0, yöne
+    # göre +/- işareti services/decision_recorder.py'de uygulanıyor) —
+    # "stop_loss" ismi bunu okuyan yeni bir geliştiriciyi "bu bir fiyat
+    # seviyesi" diye yanıltabilirdi (canlı bir bug'a yol açmadı, tüm mevcut
+    # kullanımlar zaten doğru yorumluyordu, ama isim netleştirildi).
+    take_profit_distance: float | None = None
+    stop_loss_distance: float | None = None
     filled_price: float | None = None

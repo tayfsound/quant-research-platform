@@ -45,8 +45,8 @@ def _make_ctx(symbol, direction="LONG", final_size=0.3, filled_price=100.0, stop
     ctx.decision.proposed_direction = direction
     ctx.decision.final_size = final_size
     ctx.decision.filled_price = filled_price
-    ctx.decision.stop_loss = stop_loss
-    ctx.decision.take_profit = take_profit
+    ctx.decision.stop_loss_distance = stop_loss
+    ctx.decision.take_profit_distance = take_profit
     ctx.risk.evaluation.verdict = "approved"
     return ctx
 

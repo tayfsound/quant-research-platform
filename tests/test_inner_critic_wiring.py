@@ -78,8 +78,8 @@ def _base_decision(**overrides):
         "proposed_size": 1.0,
         "final_size": 1.0,
         "confidence": 0.9,
-        "take_profit": 3.0,
-        "stop_loss": 1.0,
+        "take_profit_distance": 3.0,
+        "stop_loss_distance": 1.0,
     }
     payload.update(overrides)
     return payload

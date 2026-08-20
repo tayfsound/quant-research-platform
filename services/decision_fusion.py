@@ -96,8 +96,8 @@ class DecisionFusion:
         # confidence ile tutarlı olsun.
         ctx.decision.confidence = round(confidence, 4)
 
-        win = ctx.decision.take_profit or 0.0
-        loss = abs(ctx.decision.stop_loss or 0.0)
+        win = ctx.decision.take_profit_distance or 0.0
+        loss = abs(ctx.decision.stop_loss_distance or 0.0)
         ev = confidence * win - (1 - confidence) * loss
 
         if ev <= 0:

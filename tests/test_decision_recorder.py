@@ -65,7 +65,7 @@ def test_leverage_is_clamped_to_keep_liquidation_safely_beyond_the_stop(tmp_path
             market={"symbol": symbol, "raw_snapshot": {"close": entry_price}},
             decision={
                 "proposed_direction": "LONG", "final_action": "LONG",
-                "final_size": 100.0, "stop_loss": risk_mag, "take_profit": risk_mag * 0.56,
+                "final_size": 100.0, "stop_loss_distance": risk_mag, "take_profit_distance": risk_mag * 0.56,
             },
             risk={"evaluation": {"verdict": "approved"}},
         )

@@ -1,4 +1,4 @@
-"""Faz 191: kritik bulgu — DecisionFusion, ctx.decision.take_profit/stop_loss'a
+"""Faz 191: kritik bulgu — DecisionFusion, ctx.decision.take_profit_distance/stop_loss_distance'a
 bakıp Expected Value hesaplıyordu ama hiçbir kod bu ikisini hiçbir zaman set
 etmiyordu (hep None -> win=0, loss=0, ev her zaman <=0). Bu, Council ne
 önerirse önersin HER işlemi WAIT'e zorluyordu — sistemin bu oturumda inşa
@@ -48,13 +48,13 @@ def test_risk_target_stage_sets_take_profit_and_stop_loss_from_daily_atr_pct():
     ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
     ctx = RiskTargetStage().execute(ctx)
 
-    assert abs(ctx.decision.stop_loss - 5.0) < 1e-9  # 100 * 2.5 * 0.02
+    assert abs(ctx.decision.stop_loss_distance - 5.0) < 1e-9  # 100 * 2.5 * 0.02
     # Faz 320 — kullanıcı isteği: target_atr_mult/stop_atr_mult oranı
     # gerçek MAE/MFE verisiyle (1098 orta-vadeli kapanmış işlem) yeniden
     # kalibre edildi. LONG'da empirik hedef/stop oranı ~2.75 bulundu (bkz.
     # app_settings_repository.py::DEFAULTS["target_atr_mult_long"] üstündeki
     # not) — LONG varsayılanı artık 6.89x. 100 * 6.89 * 0.02 = 13.78.
-    assert abs(ctx.decision.take_profit - 13.78) < 1e-9
+    assert abs(ctx.decision.take_profit_distance - 13.78) < 1e-9
 
 
 def test_risk_target_stage_widens_stop_to_the_min_floor_preserving_the_ratio():
@@ -66,11 +66,11 @@ def test_risk_target_stage_widens_stop_to_the_min_floor_preserving_the_ratio():
     ctx = RiskTargetStage().execute(ctx)
 
     # Ham: stop=2.5*0.01=%2.5 (taban %4.5'in altında) -> 1.8x ölçeklenir.
-    assert abs(ctx.decision.stop_loss - 4.5) < 1e-9  # 100 * %4.5 taban
-    assert abs(ctx.decision.take_profit - 12.402) < 1e-9  # 100 * 6.89*0.01*1.8
+    assert abs(ctx.decision.stop_loss_distance - 4.5) < 1e-9  # 100 * %4.5 taban
+    assert abs(ctx.decision.take_profit_distance - 12.402) < 1e-9  # 100 * 6.89*0.01*1.8
     # Oran korunmalı: taban öncesi (6.89/2.5) ile taban sonrası aynı.
     ratio_before = (6.89 * 0.01) / (2.5 * 0.01)
-    ratio_after = ctx.decision.take_profit / ctx.decision.stop_loss
+    ratio_after = ctx.decision.take_profit_distance / ctx.decision.stop_loss_distance
     assert abs(ratio_before - ratio_after) < 1e-9
 
 
@@ -78,8 +78,8 @@ def test_risk_target_stage_leaves_targets_unset_for_wait():
     ctx = _ctx(direction="WAIT", daily_atr_pct=0.02)
     ctx = RiskTargetStage().execute(ctx)
 
-    assert ctx.decision.stop_loss is None
-    assert ctx.decision.take_profit is None
+    assert ctx.decision.stop_loss_distance is None
+    assert ctx.decision.take_profit_distance is None
 
 
 def test_risk_target_stage_leaves_targets_unset_when_no_daily_atr():
@@ -89,8 +89,8 @@ def test_risk_target_stage_leaves_targets_unset_when_no_daily_atr():
     ctx = _ctx(direction="LONG", daily_atr_pct=0.0)
     ctx = RiskTargetStage().execute(ctx)
 
-    assert ctx.decision.stop_loss is None
-    assert ctx.decision.take_profit is None
+    assert ctx.decision.stop_loss_distance is None
+    assert ctx.decision.take_profit_distance is None
 
 
 def test_decision_fusion_no_longer_forces_wait_once_real_targets_are_set(monkeypatch):
@@ -138,7 +138,7 @@ def test_multipliers_are_read_from_app_settings_not_hardcoded():
     try:
         ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
         ctx = RiskTargetStage().execute(ctx)
-        assert abs(ctx.decision.take_profit - 6.0) < 1e-9  # 100 * 3.0 * 0.02
+        assert abs(ctx.decision.take_profit_distance - 6.0) < 1e-9  # 100 * 3.0 * 0.02
     finally:
         with SessionFactory.get_session() as session:
             AppSettingsRepository(session).set("target_atr_mult_long", "6.89", updated_by="test")
@@ -175,8 +175,8 @@ def test_risk_target_stage_uses_adaptive_barrier_when_enabled_and_bucket_matches
             "daily_atr_pct": 0.02, "long_term_trend_regime": "bull_trend", "volatility_regime": "normal",
         }
         ctx = RiskTargetStage().execute(ctx)
-        assert abs(ctx.decision.stop_loss - 6.0) < 1e-9   # 100 * 0.06 (adaptive, statik 2.5*0.02=5.0 DEĞİL)
-        assert abs(ctx.decision.take_profit - 5.0) < 1e-9  # 100 * 0.05
+        assert abs(ctx.decision.stop_loss_distance - 6.0) < 1e-9   # 100 * 0.06 (adaptive, statik 2.5*0.02=5.0 DEĞİL)
+        assert abs(ctx.decision.take_profit_distance - 5.0) < 1e-9  # 100 * 0.05
     finally:
         _set_adaptive_barrier_enabled("true")
 
@@ -197,7 +197,7 @@ def test_risk_target_stage_falls_back_to_static_atr_when_adaptive_barrier_disabl
             "daily_atr_pct": 0.02, "long_term_trend_regime": "bull_trend", "volatility_regime": "normal",
         }
         ctx = RiskTargetStage().execute(ctx)
-        assert abs(ctx.decision.stop_loss - 5.0) < 1e-9  # statik: 100 * 2.5 * 0.02
+        assert abs(ctx.decision.stop_loss_distance - 5.0) < 1e-9  # statik: 100 * 2.5 * 0.02
     finally:
         _set_adaptive_barrier_enabled("true")
 
@@ -220,7 +220,7 @@ def test_risk_target_stage_falls_back_when_no_matching_bucket(monkeypatch):
             "daily_atr_pct": 0.02, "long_term_trend_regime": "bull_trend", "volatility_regime": "normal",
         }
         ctx = RiskTargetStage().execute(ctx)
-        assert abs(ctx.decision.stop_loss - 5.0) < 1e-9  # statik: 100 * 2.5 * 0.02
+        assert abs(ctx.decision.stop_loss_distance - 5.0) < 1e-9  # statik: 100 * 2.5 * 0.02
     finally:
         _set_adaptive_barrier_enabled("true")
 
@@ -233,7 +233,7 @@ def test_risk_target_stage_falls_back_when_no_table_saved_yet(monkeypatch):
     try:
         ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
         ctx = RiskTargetStage().execute(ctx)
-        assert abs(ctx.decision.stop_loss - 5.0) < 1e-9  # statik: 100 * 2.5 * 0.02
+        assert abs(ctx.decision.stop_loss_distance - 5.0) < 1e-9  # statik: 100 * 2.5 * 0.02
     finally:
         _set_adaptive_barrier_enabled("true")
 
@@ -257,10 +257,10 @@ def test_adaptive_barrier_still_respects_the_min_stop_pct_floor(monkeypatch):
             "daily_atr_pct": 0.02, "long_term_trend_regime": "bull_trend", "volatility_regime": "normal",
         }
         ctx = RiskTargetStage().execute(ctx)
-        assert abs(ctx.decision.stop_loss - 4.5) < 1e-9  # taban uygulanmış: 100 * %4.5
+        assert abs(ctx.decision.stop_loss_distance - 4.5) < 1e-9  # taban uygulanmış: 100 * %4.5
         # Oran korunmuş olmalı: taban öncesi (0.02/0.01) ile sonrası aynı.
         ratio_before = 0.02 / 0.01
-        ratio_after = ctx.decision.take_profit / ctx.decision.stop_loss
+        ratio_after = ctx.decision.take_profit_distance / ctx.decision.stop_loss_distance
         assert abs(ratio_before - ratio_after) < 1e-9
     finally:
         _set_adaptive_barrier_enabled("true")
@@ -298,7 +298,7 @@ def test_adaptive_barrier_ab_test_tags_control_bucket_and_falls_back_to_static(m
         }
         ctx = RiskTargetStage().execute(ctx)
 
-        assert abs(ctx.decision.stop_loss - 5.0) < 1e-9  # statik: 100 * 2.5 * 0.02, adaptive DEĞİL (6.0)
+        assert abs(ctx.decision.stop_loss_distance - 5.0) < 1e-9  # statik: 100 * 2.5 * 0.02, adaptive DEĞİL (6.0)
         entries = [i for i in ctx.cognition.relevant_knowledge if i.get("type") == "experiment_bucket"]
         assert len(entries) == 1
         assert entries[0]["data"]["bucket"] == "adaptive_barrier_v1:control"
@@ -326,7 +326,7 @@ def test_adaptive_barrier_ab_test_tags_treatment_bucket_and_uses_adaptive(monkey
         }
         ctx = RiskTargetStage().execute(ctx)
 
-        assert abs(ctx.decision.stop_loss - 6.0) < 1e-9  # adaptive: 100 * 0.06
+        assert abs(ctx.decision.stop_loss_distance - 6.0) < 1e-9  # adaptive: 100 * 0.06
         entries = [i for i in ctx.cognition.relevant_knowledge if i.get("type") == "experiment_bucket"]
         assert len(entries) == 1
         assert entries[0]["data"]["bucket"] == "adaptive_barrier_v1:treatment"
@@ -363,8 +363,8 @@ def test_risk_target_stage_skips_all_work_when_final_size_is_zero(monkeypatch):
 
     result = RiskTargetStage().execute(ctx)
 
-    assert result.decision.stop_loss is None
-    assert result.decision.take_profit is None
+    assert result.decision.stop_loss_distance is None
+    assert result.decision.take_profit_distance is None
     assert called == []
 
 
@@ -383,10 +383,10 @@ def test_risk_target_stage_snaps_target_to_confluence_zone_when_present():
     result = RiskTargetStage().execute(ctx)
 
     # Hedef artık 113.78 DEĞİL, 101.5'in hemen altına çekilmiş olmalı.
-    assert result.decision.take_profit < 13.78
-    assert 1.0 < result.decision.take_profit < 1.5  # (101.5*(1-eps) - 100) civarı
+    assert result.decision.take_profit_distance < 13.78
+    assert 1.0 < result.decision.take_profit_distance < 1.5  # (101.5*(1-eps) - 100) civarı
     # Stop HİÇ etkilenmemeli.
-    assert abs(result.decision.stop_loss - 5.0) < 1e-9
+    assert abs(result.decision.stop_loss_distance - 5.0) < 1e-9
 
 
 def test_risk_target_stage_ignores_confluence_zone_beyond_target():
@@ -397,7 +397,7 @@ def test_risk_target_stage_ignores_confluence_zone_beyond_target():
         {"level": 150.0, "method_count": 2, "contributing_methods": ["sr_resistance", "pivot_r1"]}
     ]
     result = RiskTargetStage().execute(ctx)
-    assert abs(result.decision.take_profit - 13.78) < 1e-9
+    assert abs(result.decision.take_profit_distance - 13.78) < 1e-9
 
 
 def test_risk_target_stage_ignores_weak_confluence_zone():
@@ -407,7 +407,7 @@ def test_risk_target_stage_ignores_weak_confluence_zone():
         {"level": 101.5, "method_count": 1, "contributing_methods": ["sr_resistance"]}
     ]
     result = RiskTargetStage().execute(ctx)
-    assert abs(result.decision.take_profit - 13.78) < 1e-9
+    assert abs(result.decision.take_profit_distance - 13.78) < 1e-9
 
 
 def test_risk_target_stage_without_confluence_zones_feature_behaves_as_before():
@@ -415,7 +415,7 @@ def test_risk_target_stage_without_confluence_zones_feature_behaves_as_before():
     döndüyse) mevcut davranış hiç değişmemeli — fail-closed."""
     ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
     result = RiskTargetStage().execute(ctx)
-    assert abs(result.decision.take_profit - 13.78) < 1e-9
+    assert abs(result.decision.take_profit_distance - 13.78) < 1e-9
 
 
 def test_risk_target_stage_snaps_short_target_to_confluence_zone():
@@ -425,8 +425,8 @@ def test_risk_target_stage_snaps_short_target_to_confluence_zone():
         {"level": 98.5, "method_count": 2, "contributing_methods": ["sr_support", "volume_profile_poc"]}
     ]
     result = RiskTargetStage().execute(ctx)
-    assert result.decision.take_profit < 2.8
-    assert 1.0 < result.decision.take_profit < 1.5
+    assert result.decision.take_profit_distance < 2.8
+    assert 1.0 < result.decision.take_profit_distance < 1.5
 
 
 def test_risk_target_stage_snaps_stop_to_confluence_zone_when_present():
@@ -444,9 +444,9 @@ def test_risk_target_stage_snaps_stop_to_confluence_zone_when_present():
 
     # Stop artık 5.0 (100-95) DEĞİL, 95.3'ün hemen altına çekilmiş —
     # fiyata olan mesafesi KÜÇÜLMÜŞ, ama taban (4.5) hâlâ AŞILMAMIŞ.
-    assert 4.5 < result.decision.stop_loss < 5.0
+    assert 4.5 < result.decision.stop_loss_distance < 5.0
     # Hedef HİÇ etkilenmemeli (bu senaryoda hedef aralığında zone yok).
-    assert abs(result.decision.take_profit - 13.78) < 1e-9
+    assert abs(result.decision.take_profit_distance - 13.78) < 1e-9
 
 
 def test_risk_target_stage_snaps_short_stop_to_confluence_zone():
@@ -456,7 +456,7 @@ def test_risk_target_stage_snaps_short_stop_to_confluence_zone():
         {"level": 104.7, "method_count": 2, "contributing_methods": ["sr_resistance", "volume_profile_poc"]}
     ]
     result = RiskTargetStage().execute(ctx)
-    assert 4.5 < result.decision.stop_loss < 5.0
+    assert 4.5 < result.decision.stop_loss_distance < 5.0
 
 
 def test_risk_target_stage_stop_confluence_never_breaches_the_min_stop_pct_floor(monkeypatch):
@@ -481,7 +481,7 @@ def test_risk_target_stage_stop_confluence_never_breaches_the_min_stop_pct_floor
         result = RiskTargetStage().execute(ctx)
 
         # Stop tabanın (4.5) altına ASLA inmemeli.
-        assert result.decision.stop_loss >= 4.5 - 1e-9
+        assert result.decision.stop_loss_distance >= 4.5 - 1e-9
     finally:
         with SessionFactory.get_session() as session:
             from database.repositories.app_settings_repository import DEFAULTS
@@ -496,7 +496,7 @@ def test_risk_target_stage_ignores_confluence_zone_beyond_stop():
         {"level": 50.0, "method_count": 2, "contributing_methods": ["sr_support", "pivot_s1"]}
     ]
     result = RiskTargetStage().execute(ctx)
-    assert abs(result.decision.stop_loss - 5.0) < 1e-9
+    assert abs(result.decision.stop_loss_distance - 5.0) < 1e-9
 
 
 def test_risk_target_stage_ignores_weak_confluence_zone_for_stop():
@@ -505,7 +505,7 @@ def test_risk_target_stage_ignores_weak_confluence_zone_for_stop():
         {"level": 97.5, "method_count": 1, "contributing_methods": ["sr_support"]}
     ]
     result = RiskTargetStage().execute(ctx)
-    assert abs(result.decision.stop_loss - 5.0) < 1e-9
+    assert abs(result.decision.stop_loss_distance - 5.0) < 1e-9
 
 
 def test_decision_fusion_still_forces_wait_without_risk_target_stage():

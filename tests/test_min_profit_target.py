@@ -20,8 +20,8 @@ def _ctx(current_price: float, take_profit: float, stop_loss: float, confidence:
     ctx.decision.proposed_size = 1.0
     ctx.decision.final_size = 1.0
     ctx.decision.confidence = confidence
-    ctx.decision.take_profit = take_profit
-    ctx.decision.stop_loss = stop_loss
+    ctx.decision.take_profit_distance = take_profit
+    ctx.decision.stop_loss_distance = stop_loss
     ctx.decision.action = ActionType.ENTER_LONG
     return ctx
 

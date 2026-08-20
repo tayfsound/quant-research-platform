@@ -510,7 +510,7 @@ class DrawdownSizingStage:
 
 class RiskTargetStage:
     """Faz 191 — gerçek bulgu: DecisionFusion (aşağıda) `ctx.decision.
-    take_profit`/`stop_loss`'a bakıp Expected Value hesaplıyordu, ama
+    take_profit_distance`/`stop_loss_distance`'a bakıp Expected Value hesaplıyordu, ama
     hiçbir kod bu iki alanı hiçbir zaman set etmiyordu (hep None) — yani
     win=0, loss=0, ev her zaman <=0, Council ne önerirse önersin HER
     işlem WAIT'e zorlanıyordu. Bu aşama, MetaStage'in belirlediği yön için
@@ -694,8 +694,8 @@ class RiskTargetStage:
                     "data": {"zone": used_stop_zone, "adjusted_stop_pct": round(stop_pct, 6)},
                 })
 
-        ctx.decision.stop_loss = current_price * stop_pct
-        ctx.decision.take_profit = current_price * target_pct
+        ctx.decision.stop_loss_distance = current_price * stop_pct
+        ctx.decision.take_profit_distance = current_price * target_pct
         return ctx
 
     def _try_adaptive_barrier(self, ctx: CognitiveCycleContext) -> tuple[float, float] | None:

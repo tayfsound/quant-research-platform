@@ -25,8 +25,8 @@ def _ctx(confidence=0.6):
     # 0.6*0.6883≈0.413'e düşürür -> EV negatife döner (WAIT) — indirimin
     # GERÇEK karar üzerindeki etkisini (sadece bir iç değişkeni değil)
     # doğrulamak için kasıtlı seçildi.
-    ctx.decision.stop_loss = 5.0
-    ctx.decision.take_profit = 6.0
+    ctx.decision.stop_loss_distance = 5.0
+    ctx.decision.take_profit_distance = 6.0
     return ctx
 
 
