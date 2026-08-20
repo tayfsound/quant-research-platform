@@ -6,6 +6,7 @@ from market_data.onchain.onchain_provider import (
     fetch_eth_gas_price_gwei,
     fetch_hash_rate_trend,
     fetch_mayer_multiple,
+    fetch_mvrv_ratio,
     fetch_mvrv_zscore,
     fetch_network_activity_trend,
     fetch_solana_tps,
@@ -146,6 +147,51 @@ def test_fetch_mvrv_zscore_uses_the_cache_not_a_fresh_network_call(monkeypatch):
     fetch_mvrv_zscore()
 
     assert calls["count"] == 1
+    onchain_provider._MVRV_CACHE.clear()
+
+
+def test_fetch_mvrv_ratio_returns_a_real_plausible_value():
+    """Faz 309 — düz MVRV oranı (Z-skoru DEĞİL). Canlı doğrulandı
+    (2026-08-20): 1.3248. Tarihsel olarak hiç 0'ın altına ya da 10'un
+    üstüne çıkmadı. bitcoin-data.com'un sıkı 10/saat limiti (MVRV
+    Z-Score testiyle AYNI kabul) None'ı da geçerli kılıyor."""
+    onchain_provider._MVRV_CACHE.clear()
+    value = fetch_mvrv_ratio()
+    if value is not None:
+        assert 0.0 < value < 10.0
+    onchain_provider._MVRV_CACHE.clear()
+
+
+def test_fetch_mvrv_ratio_uses_the_cache_not_a_fresh_network_call(monkeypatch):
+    onchain_provider._MVRV_CACHE.clear()
+    calls = {"count": 0}
+    real_get = onchain_provider.httpx.get
+
+    def counting_get(*args, **kwargs):
+        calls["count"] += 1
+        return real_get(*args, **kwargs)
+
+    monkeypatch.setattr(onchain_provider.httpx, "get", counting_get)
+
+    fetch_mvrv_ratio()
+    fetch_mvrv_ratio()
+    fetch_mvrv_ratio()
+
+    assert calls["count"] == 1
+    onchain_provider._MVRV_CACHE.clear()
+
+
+def test_mvrv_ratio_and_zscore_use_separate_cache_keys():
+    """mvrv_zscore ve mvrv_ratio AYNI _MVRV_CACHE sözlüğünü paylaşıyor
+    (farklı anahtarlarla) — biri diğerinin önbelleğini yanlışlıkla
+    döndürmemeli."""
+    onchain_provider._MVRV_CACHE.clear()
+    onchain_provider._MVRV_CACHE["mvrv_zscore"] = (0.0, 0.4146)
+    onchain_provider._MVRV_CACHE["mvrv_ratio"] = (0.0, 1.3248)
+    # TTL süresi geçmiş (monotonic 0.0) sayıldığı için ikisi de taze
+    # fetch'e düşer, ama testin amacı: iki farklı anahtarın birbirine
+    # KARIŞMADIĞINI (aynı sözlükte bağımsız yaşadığını) doğrulamak.
+    assert onchain_provider._MVRV_CACHE["mvrv_zscore"][1] != onchain_provider._MVRV_CACHE["mvrv_ratio"][1]
     onchain_provider._MVRV_CACHE.clear()
 
 

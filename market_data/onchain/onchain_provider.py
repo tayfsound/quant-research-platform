@@ -43,6 +43,17 @@ logger = logging.getLogger(__name__)
 
 _BLOCKCHAIN_INFO_CHARTS_URL = "https://api.blockchain.info/charts/{chart}"
 _BITCOIN_DATA_MVRV_ZSCORE_URL = "https://bitcoin-data.com/v1/mvrv-zscore/last"
+# Faz 309 — kullanıcı isteği: MVRV Z-SKORU (yukarıda, Faz 268v) DIŞINDA,
+# düz MVRV ORANI (Z-skoru olmayan, ham piyasa-değeri/gerçekleşen-değer
+# oranı) da isteniyordu. bitcoin-data.com'un AYNI ücretsiz Bitcoin Data
+# API'sinde gerçekten var — 2026-08-20'de canlı doğrulandı:
+# GET /v1/mvrv/last -> {"d":"2026-08-19","unixTs":...,"mvrv":1.3248}.
+# NUPL/SOPR/Realized Price için de aynı ailede endpoint olduğu (bkz.
+# https://api.bgeometrics.com/scalar.html) araştırmayla doğrulandı ama
+# tam yolları saatlik kota (10/saat) doluyken teyit edilemedi — bilinen
+# "/v1/{metrik}/last" kalıbına güvenerek kör tahmin eklemek yerine,
+# SADECE gerçekten canlı test edilmiş MVRV eklendi.
+_BITCOIN_DATA_MVRV_URL = "https://bitcoin-data.com/v1/mvrv/last"
 # Faz 306 — kullanıcı isteği: pump-fade'in gerçek risk sürücüsünün BTC
 # yönü değil "kaç coin aynı anda pompalanıyor" yoğunluğu olduğu (bkz.
 # services/pump_fade_strategy.py::_compute_density_size_multiplier)
@@ -236,6 +247,29 @@ def fetch_mvrv_zscore() -> float | None:
         # Başarısızlığı da önbelleğe alıyoruz — art arda hatalı isteklerle
         # zaten sıkı olan 8/saat limitini tüketmeyelim.
         _MVRV_CACHE["mvrv_zscore"] = (time.monotonic(), None)
+        return None
+
+
+def fetch_mvrv_ratio() -> float | None:
+    """Faz 309 — düz MVRV oranı (Z-skoru DEĞİL, ham piyasa-değeri/
+    gerçekleşen-değer oranı): >1 piyasa değeri gerçekleşen değerin
+    üstünde (ortalama katılımcı kârda), <1 altında (ortalama katılımcı
+    zararda). MVRV Z-Score'un (fetch_mvrv_zscore) AYNI ücretsiz kaynağı,
+    AYNI önbellek disiplini (_MVRV_CACHE, 1 saat TTL — bitcoin-data.com'un
+    sıkı 10/saat limitini aşmamak için ZORUNLU)."""
+    cached = _MVRV_CACHE.get("mvrv_ratio")
+    if cached and (time.monotonic() - cached[0]) < _MVRV_CACHE_TTL_SECONDS:
+        return cached[1]
+
+    try:
+        response = httpx.get(_BITCOIN_DATA_MVRV_URL, timeout=10)
+        response.raise_for_status()
+        value = float(response.json()["mvrv"])
+        _MVRV_CACHE["mvrv_ratio"] = (time.monotonic(), value)
+        return value
+    except Exception as exc:
+        logger.warning("bitcoin-data.com MVRV ratio fetch failed: %s", exc)
+        _MVRV_CACHE["mvrv_ratio"] = (time.monotonic(), None)
         return None
 
 
