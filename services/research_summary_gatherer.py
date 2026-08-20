@@ -1,0 +1,63 @@
+"""Research Summary — Faz 326. Kullanıcı isteği: "araştırma" (Grup B,
+ölçüm-only) modüllerini tek tek görüntülemek yerine tek bir düğmeyle
+hepsinin özetini alabilmek — detaylar yine kendi sayfalarında kalıyor,
+sadece HIZLI bir genel bakış katmanı ekleniyor.
+
+10 modülün hepsi AYNI mimariyi paylaşıyor (services/*_gatherer.py::
+gather_*() — her çağrıda gerçek alt sistemlerden taze hesaplar, hiçbir
+şey önceden saklanmıyor). Kullanıcı kararıyla: özet de AYNI şekilde
+CANLI hesaplanıyor (stale/eski bir anlık görüntü değil) — bazı modüller
+(ör. tp_sl_confluence tüm watchlist'i tarıyor) birkaç saniye sürebiliyor,
+bu yüzden 10'u SIRAYLA değil ThreadPoolExecutor ile PARALEL çalıştırılıyor
+— toplam süre en yavaş TEK modülün süresine yakın kalıyor, 10'unun
+toplamına değil."""
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# (modül anahtarı, etiket, dashboard "view" anahtarı, gather fonksiyonunun import yolu)
+_MODULES = [
+    ("self_model", "Self-Model", "self-model", "services.self_model_gatherer", "gather_self_reliability_snapshot"),
+    ("causal_inference", "Causal Inference", "causal-inference", "services.causal_inference_gatherer", "gather_causal_relationships"),
+    ("collective_intelligence", "Collective Intelligence", "collective-intelligence", "services.collective_intelligence_gatherer", "gather_collective_intelligence"),
+    ("mae_mfe_confidence", "MAE/MFE Güven Aralığı", "mae-mfe-confidence", "services.mae_mfe_confidence_gatherer", "gather_mae_mfe_confidence"),
+    ("meta_learning_effectiveness", "Meta-Learning Effectiveness", "meta-learning-effectiveness", "services.meta_learning_effectiveness_gatherer", "gather_meta_learning_effectiveness"),
+    ("market_world_model", "Market World Model", "market-world-model", "services.market_world_model_gatherer", "gather_market_world_model"),
+    ("direction_prediction_v2", "Direction Prediction v2", "direction-prediction-v2", "services.direction_prediction_v2_gatherer", "gather_direction_prediction_v2"),
+    ("opportunity_quality", "Opportunity Quality", "opportunity-quality", "services.opportunity_quality_gatherer", "gather_opportunity_quality"),
+    ("agent_ablation", "Agent Ablation", "agent-ablation", "services.agent_ablation_gatherer", "gather_agent_ablation"),
+    ("tp_sl_confluence", "TP/SL Confluence", "tp-sl-confluence", "services.tp_sl_confluence_gatherer", "gather_tp_sl_confluence"),
+]
+
+
+def _run_one(key: str, label: str, view: str, module_path: str, func_name: str) -> dict:
+    import importlib
+
+    entry = {"key": key, "label": label, "view": view, "result": None, "error": None}
+    try:
+        mod = importlib.import_module(module_path)
+        func = getattr(mod, func_name)
+        entry["result"] = func()
+    except Exception as exc:
+        # Faz 326 — bir modülün hatası (ör. dış API zaman aşımı) diğer 9'unu
+        # engellememeli — fail-closed, sessiz değil: hata mesajı açıkça
+        # dönüyor, frontend o kartı "geçici olarak alınamadı" gösterebilir.
+        entry["error"] = str(exc)
+    return entry
+
+
+def gather_research_summary() -> dict:
+    """10 Grup B modülünün hepsini PARALEL, canlı olarak çalıştırıp tek
+    bir listede döner — modül sırası sabit (_MODULES ile aynı), her
+    zaman TÜM 10 kayıt var (başarısız olan bile "error" alanıyla)."""
+    results: dict[str, dict] = {}
+    with ThreadPoolExecutor(max_workers=len(_MODULES)) as executor:
+        futures = {
+            executor.submit(_run_one, key, label, view, module_path, func_name): key
+            for key, label, view, module_path, func_name in _MODULES
+        }
+        for future in as_completed(futures):
+            entry = future.result()
+            results[entry["key"]] = entry
+
+    # Sıra _MODULES ile AYNI (as_completed tamamlanma sırasına göre değil).
+    ordered = [results[key] for key, *_ in _MODULES]
+    return {"modules": ordered}

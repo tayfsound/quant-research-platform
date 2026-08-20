@@ -109,7 +109,10 @@ function tradeTypeBadge(
   }
   if (p.entry_price != null && p.stop_loss_price != null && p.entry_price !== 0) {
     const pct = (Math.abs(p.entry_price - p.stop_loss_price) / p.entry_price) * 100;
-    if (pct < 4.5) return { label: "scalp", tone: "neutral" };
+    // Kullanıcı bulgusu: "scalp" de diğerleri gibi neutral kaldığı için
+    // sönük görünüyordu — "orta_vadeli" (Faz 323'te kaldırıldı) boşa
+    // çıkan accent tonuna taşındı, yeni bir renk eklenmedi.
+    if (pct < 4.5) return { label: "scalp", tone: "accent" };
     // Kullanıcı bulgusu: "swing" diğer türler gibi neutral kaldığı için
     // sönük görünüyordu — kendi rengine (info) taşındı.
     return { label: "swing", tone: "info" };

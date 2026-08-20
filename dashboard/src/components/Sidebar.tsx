@@ -12,6 +12,7 @@ const GROUPS: { label: string; items: { key: string; label: string }[] }[] = [
   {
     label: "Research",
     items: [
+      { key: "research-summary", label: "Genel Özet" },
       { key: "strategies", label: "Agents" },
       { key: "feature-ic", label: "Feature IC" },
       { key: "self-model", label: "Self-Model" },

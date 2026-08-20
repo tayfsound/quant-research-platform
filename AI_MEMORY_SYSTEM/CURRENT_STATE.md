@@ -1,9 +1,17 @@
-# Mevcut Durum -- v1.65.0 (Faz 327: pump_fade rejim gate'i kademeli 2. seviye)
+# Mevcut Durum -- v1.66.0 (Faz 326: "Genel Özet" araştırma paneli + Scalp rozet rengi)
 
 **Tarih:** 2026-08-20
 **Branch:** main
-**Son commit (HEAD):** e63dba8 (Faz 325) — Faz 326 (research_summary_gatherer, henüz API/frontend yok) ve Faz 327 (pump_fade gate) henüz commit edilmedi.
-**⚠️ Servis durumu:** Faz 327 pump_fade_strategy.py'yi (celery -Q celery worker'da çalışan) değiştiriyor — commit sonrası o worker restart edilmeli.
+**Son commit (HEAD):** 37079d7 (Faz 327) — Faz 326 (Genel Özet paneli + Scalp rengi) henüz commit edilmedi.
+**⚠️ Servis durumu:** uvicorn (API) YENİDEN BAŞLATILMALI — `research-summary` endpoint'i yeni, `--reload` olmadan çalışan mevcut süreç bunu bilmiyor (404 verir, kullanıcı canlıda doğruladı). Faz 327 (pump_fade_strategy.py, celery -Q celery worker) için de restart hâlâ bekleniyor.
+
+## Faz 326 — "Genel Özet" araştırma paneli (2026-08-20)
+
+Kullanıcı isteği: 10 Grup B (ölçüm-only) araştırma modülünü (Self-Model, Causal Inference, Market World Model, MAE/MFE Confidence, Opportunity Quality, Collective Intelligence, Agent Ablation, Meta-Learning Effectiveness, Direction Prediction V2, TP/SL Confluence) tek tek dolaşmak yerine tek düğmeyle özetleyebilmek — detaylar kendi sayfalarında kalıyor. `services/research_summary_gatherer.py::gather_research_summary()` — kullanıcı kararıyla CANLI hesaplama (her modülün kendi `gather_*()` fonksiyonu), 10'u SIRAYLA değil `ThreadPoolExecutor` ile PARALEL (ölçüldü: ~111 saniye — bazı modüller tüm watchlist'i tarıyor). Bir modülün hatası diğer 9'unu engellemiyor (fail-closed, her zaman 10 kayıt döner). `GET /api/v1/research-summary/`, yeni `ResearchSummary.tsx` (Sidebar → Research → "Genel Özet") — şekil-agnostik bir özetleyici (sample_size/win_rate içeren alt-kovaları otomatik yakalıyor), "Detaya git" ile ilgili sayfaya atlıyor.
+
+Ayrıca: Transactions.tsx'te "scalp" rozeti de "swing" gibi (Faz 322) neutral kaldığı için sönük görünüyordu — yeni bir renk eklenmedi, "orta_vadeli" (Faz 323'te kaldırıldı) sayesinde boşa çıkan `accent` tonuna taşındı.
+
+Bu oturumda ayrıca (özet panelinden önce): Grup A (TP/SL Confluence 7-yöntemli canlı bağlantı) TAMAMLANDI onayı; Grup B modüllerinin veri-yeterlilik taraması yapıldı (Opportunity Quality en güçlü aday: orta-uyum kovası n=368, %92.9 kazanma — kullanıcı "wire edelim" dedi, henüz yapılmadı); pump_fade rejim gate'ine kademeli 2. seviye eklendi (Faz 327, commit 37079d7); scalp min_stop_pct incelendi (empirik optimum %2.46 bulundu) ama kullanıcı kararıyla DOKUNULMADI ("aktif ve başarılıysa değiştirmeyelim").
 **Test:** yeni kalibrasyon testlerine + DecisionFusion/RedTeam/InnerCritic'e dokunan hedefli regresyon (82 test) temiz.
 **Altyapı notu (2026-08-20):** Docker Desktop bu oturumda bir kez çöktü (postgres/redis konteynerleri durdu) — `docker start` ile geri getirildi, veri kaybı yok.
 
