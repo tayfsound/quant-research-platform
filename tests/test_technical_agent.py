@@ -152,3 +152,62 @@ def test_feature_contributions_reflect_the_adx_weak_discount():
     no_discount = agent.analyze(TechnicalContext(trend="bullish", adx=22.0))
     with_discount = agent.analyze(TechnicalContext(trend="bullish", adx=10.0))
     assert abs(with_discount.feature_contributions["trend"] - no_discount.feature_contributions["trend"] * 0.7) < 1e-6
+
+
+def test_htf_agreement_discounts_confidence_but_never_changes_direction():
+    """Faz 316 — gerçek geçmiş veri ölçümü: kısa-vadeli yön 4h trendle
+    AYNIYKEN kazanma oranı daha düşük (%41.6) — confidence indirilmeli,
+    direction ASLA değişmemeli."""
+    agent = TechnicalAgent()
+    base_ctx = TechnicalContext(
+        trend="bullish", momentum="strengthening", market_structure="higher_highs",
+        ema_alignment="bullish_aligned",
+    )
+    baseline = agent.analyze(base_ctx)
+    agreeing = agent.analyze(base_ctx.model_copy(update={"higher_timeframe_trend": "bullish"}))
+
+    assert baseline.direction == "LONG"
+    assert agreeing.direction == "LONG"
+    assert agreeing.confidence < baseline.confidence
+    assert abs(agreeing.confidence - round(baseline.confidence * 0.75, 3)) < 1e-3
+
+
+def test_htf_disagreement_boosts_confidence_but_never_changes_direction():
+    """Aynı ölçüm: kısa-vadeli yön 4h trendin TERSİNDEYKEN kazanma oranı
+    daha yüksek (%74.7) — confidence artırılmalı (0.85 tavanı korunarak),
+    direction ASLA değişmemeli."""
+    agent = TechnicalAgent()
+    base_ctx = TechnicalContext(
+        trend="bearish", momentum="weakening", market_structure="lower_lows",
+        rsi_value=80.0,
+    )
+    baseline = agent.analyze(base_ctx)
+    disagreeing = agent.analyze(base_ctx.model_copy(update={"higher_timeframe_trend": "bullish"}))
+
+    assert baseline.direction == "SHORT"
+    assert disagreeing.direction == "SHORT"
+    assert disagreeing.confidence >= baseline.confidence
+    assert disagreeing.confidence <= 0.85
+
+
+def test_htf_trend_missing_or_neutral_never_changes_confidence():
+    """higher_timeframe_trend None (veri yok) ya da 'neutral' (ölçümde
+    hiç örneklenmemiş kova) iken hiçbir ayarlama yapılmamalı — no-op."""
+    agent = TechnicalAgent()
+    base_ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs")
+    baseline = agent.analyze(base_ctx)
+
+    none_case = agent.analyze(base_ctx.model_copy(update={"higher_timeframe_trend": None}))
+    neutral_case = agent.analyze(base_ctx.model_copy(update={"higher_timeframe_trend": "neutral"}))
+
+    assert none_case.confidence == baseline.confidence
+    assert neutral_case.confidence == baseline.confidence
+
+
+def test_htf_signal_never_fires_on_wait():
+    """direction WAIT iken (score eşiği geçmedi) htf sinyali hiç
+    devreye girmemeli — sadece yönlü (LONG/SHORT) çağrılarda anlamlı."""
+    agent = TechnicalAgent()
+    ctx = TechnicalContext(trend="neutral", higher_timeframe_trend="bullish")
+    opinion = agent.analyze(ctx)
+    assert opinion.direction == "WAIT"

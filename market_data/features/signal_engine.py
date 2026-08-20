@@ -342,6 +342,40 @@ def compute_daily_atr_pct(daily_bars: list[OHLCV], period: int = 14) -> float | 
     return atr / price
 
 
+def compute_higher_timeframe_trend(higher_timeframe_bars: list[OHLCV]) -> str | None:
+    """Faz 316 — kullanıcı bulgusu: kısa-vadeli sinyal HİÇBİR ZAMAN daha
+    uzun bir zaman dilimiyle karşılaştırılmıyordu (kısa-vadeli/orta-vadeli
+    katmanlar tamamen bağımsız, birbirinden habersiz iki paralel süreç).
+    Gerçek geçmiş veriyle (925/446 örnek, feature_ic.py metodolojisiyle,
+    lookahead'siz) ölçüldü: technical_agent'ın kısa-vadeli yönü 4 saatlik
+    EMA12/26 trendiyle AYNI yöndeyken kazanma oranı %41.6 (agree), TERS
+    yöndeyken %74.7 (disagree) — sezgisel "confluence" beklentisinin tam
+    tersi (muhtemel neden: "agree" genelde zaten olgunlaşmış/geç kalınmış
+    bir harekete binmek, "disagree" ise kısa-vadeli sinyalin gerçek bir
+    dönüş noktasını yakalaması).
+
+    compute_technical_signals'daki KISA-vadeli trend ile AYNI EMA12/26
+    kesişim mantığı — ama burada `higher_timeframe_bars`'a (services/
+    orchestrator.py'nin zaten TRADE_HORIZON_TO_RISK_TIMEFRAME'e göre
+    çektiği "daily_data"/risk barları — trade_horizon="medium" iken 4h,
+    ölçümün yapıldığı AYNI zaman dilimi) uygulanıyor. Ekstra bir ağ
+    isteği YOK — zaten ATR/price_levels için çekilen veri yeniden
+    kullanılıyor. Yeterli bar yoksa None (fail-closed — icat edilmiş bir
+    trend asla üretilmez, agents/technical_agent.py bunu "veri yok"
+    olarak ele alıp confidence'a hiç dokunmuyor)."""
+    if len(higher_timeframe_bars) < 26:
+        return None
+    closes = _closes(higher_timeframe_bars)
+    ema_fast = _ema_series(closes, 12)
+    ema_slow = _ema_series(closes, 26)
+    fast, slow = ema_fast[-1], ema_slow[-1]
+    if fast > slow:
+        return "bullish"
+    if fast < slow:
+        return "bearish"
+    return "neutral"
+
+
 def _find_swings(closes: np.ndarray, window: int = 3) -> tuple[list[int], list[int]]:
     """Yerel tepe/dip indekslerini bulur (basit ama gerçek: window genişliğinde
     komşularından yüksek/düşük olan noktalar)."""

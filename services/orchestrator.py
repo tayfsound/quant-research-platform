@@ -13,6 +13,7 @@ from market_data.ingestion.data_provider import get_ohlcv_provider, OHLCVProvide
 from market_data.macro.economic_calendar import compute_event_proximity
 from market_data.features.signal_engine import (
     compute_daily_atr_pct,
+    compute_higher_timeframe_trend,
     compute_data_quality_score,
     compute_pattern_signals,
     compute_quant_signals,
@@ -262,6 +263,13 @@ def build_cognitive_context(
     # eksik bir kararı WAIT'e çevirir).
     if daily_data:
         ctx.market.features["daily_atr_pct"] = compute_daily_atr_pct(daily_data)
+        # Faz 316 — kullanıcı bulgusu: kısa-vadeli sinyal hiçbir zaman
+        # daha uzun bir zaman dilimiyle karşılaştırılmıyordu. daily_atr_pct
+        # ile AYNI, zaten çekilmiş veriyi (ekstra ağ isteği yok) yeniden
+        # kullanıyor — bkz. signal_engine.compute_higher_timeframe_trend
+        # docstring'i (gerçek ölçüm sonucu ve kaynak/hedef zaman dilimi
+        # notu için).
+        ctx.market.features["higher_timeframe_trend"] = compute_higher_timeframe_trend(daily_data)
 
     # Faz 299-300 — kullanıcı isteği: TP/SL için çok-yöntemli confluence
     # ("zone of agreement" — S/R zone clustering, Volume Profile POC/VA,
@@ -810,6 +818,14 @@ class CognitiveOrchestrator:
                 # (bkz. macro_shadow_tracker.py docstring'i).
                 from services.macro_shadow_tracker import process_symbol_opinion
                 process_symbol_opinion(sym, p["ctx"], p["data"][-1].close, data_provider=self.data_provider)
+
+                # Faz 316-sonrası — kullanıcı isteği: "benched ajan
+                # itirazını gölge pozisyon testi." Benching kararının
+                # gerçekten doğru olup olmadığını (susturulan bir sinyal
+                # boşa mı gidiyor) AYNI izole/etkisiz mekanizmayla ölçer
+                # (bkz. services/benched_agent_shadow_tracker.py).
+                from services.benched_agent_shadow_tracker import process_symbol_opinions as process_benched_dissent
+                process_benched_dissent(sym, p["ctx"], p["data"][-1].close, data_provider=self.data_provider)
 
         directional = {
             sym: p for sym, p in proposals.items()

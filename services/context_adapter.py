@@ -245,6 +245,7 @@ class ContextAdapter:
             di_minus=self._get(ctx, "di_minus", 0.0),
             obv_trend=self._get(ctx, "obv_trend", "flat"),
             price_obv_divergence=self._get(ctx, "price_obv_divergence", "none"),
+            higher_timeframe_trend=self._get(ctx, "higher_timeframe_trend", None),
         )
 
     def to_pattern(self, ctx: CognitiveCycleContext) -> PatternContext:

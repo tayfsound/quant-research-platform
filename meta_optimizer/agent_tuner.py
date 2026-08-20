@@ -54,6 +54,12 @@ FIELD_BOUNDS: dict[str, tuple[float, float]] = {
     "adx_strong_confirm_weight": (0.0, 2.0),
     "obv_divergence_weight": (0.0, 2.0),
     "confidence_divisor": (2.0, 10.0),
+    # Faz 316 — sınırlar semantiği koruyor: agreement çarpanı 1.0'ı asla
+    # AŞMAZ (her zaman bir indirim kalır), disagreement çarpanı 1.0'ın
+    # ALTINA asla İNMEZ (her zaman bir artış kalır) — CMA-ES ikisinin
+    # rolünü birbirine karıştıramaz.
+    "htf_agreement_confidence_multiplier": (0.3, 1.0),
+    "htf_disagreement_confidence_multiplier": (1.0, 2.0),
 }
 
 MIN_RECORDS_TO_OPTIMIZE = 200

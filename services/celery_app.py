@@ -112,6 +112,12 @@ celery_app.conf.beat_schedule = {
         "task": "close_due_shadow_positions_task",
         "schedule": 60.0,
     },
+    # Faz 316-sonrası — "benched ajan itirazı" gölge pozisyonları,
+    # macro-only shadow ile AYNI cadence.
+    "close-due-benched-shadow-positions-every-minute": {
+        "task": "close_due_benched_shadow_positions_task",
+        "schedule": 60.0,
+    },
     # Faz 190/194: "gerçek işlem alıyormuş gibi test başlasın" — AI'ın
     # sadece birisi dashboard'u açık tutunca değil, gerçekten bağımsız/
     # sürekli karar üretmesi. RiskEngine'in kendi cooldown'u (varsayılan

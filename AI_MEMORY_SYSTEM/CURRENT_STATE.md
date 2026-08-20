@@ -1,9 +1,23 @@
-# Mevcut Durum -- v1.54.0 (Faz 315: Execution Layer — gerçek testnet emir gönderimi, henüz commit edilmedi)
+# Mevcut Durum -- v1.55.0 (Faz 316: HTF Confluence + Benched Ajan Gölge Pozisyon + küçük temizlikler)
 
 **Tarih:** 2026-08-20
 **Branch:** main
-**Son commit (HEAD):** 9f56d79 (Faz 313: breakeven_stop artık orijinal risk mesafesine göre doğrulanıyor) — Faz 315 çalışması aşağıda anlatıldığı gibi TAMAMLANDI ve tam suite ile doğrulandı ama kullanıcı onayı beklendiği için HENÜZ commit edilmedi.
-**Test:** tam suite (1541 passed, 1 skipped, 1 xpassed, 8 failed). 8 başarısızlığın TAMAMI Faz 315 ile ilgisiz, önceden bilinen sorunlar: `test_binance_rate_limiter.py::test_throttle_delays_...` full-suite'te paralel Redis yüküyle zamanlamaya bağlı flake (izole çalıştırıldığında geçiyor); diğer 7'si (`test_calibration_api`, `test_council_orchestrator` x3, `test_red_team` x2, `test_performance_api`) `project_shared_test_state_bloat` hafıza notunda zaten belgelenen, paylaşılan `quantdb_test`teki birikmiş geçmiş kapanmış-işlem verisinden kaynaklanan bilinen flake'ler — izole çalıştırıldığında da aynı şekilde başarısız oluyorlar (DB temizliği gerektiriyor, bu turun kapsamı dışında).
+**Son commit (HEAD):** 71d4bd5 (Faz 315: Execution Layer, Faz 1) — Faz 316 çalışması aşağıda anlatıldığı gibi TAMAMLANDI ve tam suite ile doğrulandı ama HENÜZ commit edilmedi (kullanıcı onayı bekleniyor). Faz 315 de henüz push edilmedi, servis restart'ı bekleniyor.
+**Test:** tam suite (1548 passed, 1 skipped, 1 xpassed, 8 failed). Başarısızlıkların TAMAMI Faz 316 ile ilgisiz: `test_calibration_api`/`test_council_orchestrator` x3/`test_red_team` x2/`test_performance_api` — `project_shared_test_state_bloat` hafıza notunda zaten belgelenen, paylaşılan `quantdb_test`teki birikmiş geçmiş veriden kaynaklanan bilinen flake'ler (izole çalıştırıldığında da aynı şekilde başarısız); `test_llm_reasoner_timeout` — gerçek dış LLM ağ isteği zaman aşımı (izole doğrulandı, koddan bağımsız).
+
+## Faz 316 — Çok-zamanlı dilim (HTF) confluence + benched ajan itirazı gölge pozisyon + küçük temizlikler (2026-08-20)
+
+Execution Layer'ın hemen ardından, kullanıcının "Technical Agent iki gün önceye kadar %95 isabetliydi, dünden beri tersi çıkıyor" bulgusundan başlayan bir tur:
+
+**1) Kök neden (gerçek ayar, kod bug'ı değil): `candle_timeframe`/`candle_lookback` 6 gündür `1d`/`5000`'de kalmıştı** (14 Ağustos'ta "admin" tarafından değiştirilmiş, kullanıcı "test için değiştirmiştim, bilerek bırakmadım" dedi) — kısa-vadeli sinyal katmanı 5000 GÜNLÜK bar (~13.7 yıl) üzerinden hesaplanıyordu, VWAP sapması gerçek dışı değerler (ör. OPUSDT için -%89.76) üretiyordu. Varsayılana (`15m`/`100`) döndürüldü, `trade_horizon` da (`long`→`medium`) düzeltildi.
+
+**2) Çok-zamanlı dilim (HTF) confluence — gerçek ölçüm + kullanıcı onaylı iki yönlü wiring.** Kullanıcı bulgusu doğru bir mimari boşluğa işaret ediyordu: kısa-vadeli/orta-vadeli katmanlar birbirinden habersiz, tek bir ajan asla iki zaman dilimini birlikte okumuyordu. Gerçek geçmiş 4h Binance verisiyle (feature_ic.py metodolojisi, lookahead'siz, iki bağımsız çalıştırma) ölçüldü: technical_agent'ın kısa-vadeli yönü 4h EMA12/26 trendiyle AYNI yöndeyken kazanma oranı **%41.6** (n=911), TERS yöndeyken **%74.7** (n=438) — sezgisel "confluence" beklentisinin tam tersi. Kullanıcı kararıyla (AskUserQuestion) **iki yönde de** wiring: `market_data/features/signal_engine.py::compute_higher_timeframe_trend` (zaten çekilen risk-timeframe barlarını yeniden kullanıyor, ekstra ağ isteği yok) → `TechnicalContext.higher_timeframe_trend` → `agents/technical_agent.py`'de SADECE confidence çarpanı (`htf_agreement_confidence_multiplier=0.75`, `htf_disagreement_confidence_multiplier=1.15`, 0.85 tavanı korunuyor) — direction ASLA değişmiyor. `meta_optimizer/agent_tuner.py::FIELD_BOUNDS`'a yeni katsayılar için sınır eklendi (gerçek regresyon, testte yakalandı).
+
+**3) Benched ajan itirazı — gölge pozisyon testi (kullanıcı: "günlerdir listede bekliyor").** `services/macro_shadow_tracker.py`'nin izolasyon deseni tekrarlandı: yeni `services/benched_agent_shadow_tracker.py`, bir domain benched olup (`agents/source_reliability_agent.py`) final karardan FARKLI yön önerdiğinde `source="benched_<domain>"` ile sanal pozisyon açıyor — `contracts/shadow_position.py`/`ShadowPositionRepository` zaten source-parametrikti, şema değişikliği gerekmedi. `close_due_benched_shadow_positions_task` (celery beat, macro ile aynı cadence) + `GET /shadow/comparison?source=...` (artık genel) + `GET /shadow/sources` (hangi domain'ler itiraz etmiş, keşif).
+
+**4) Küçük temizlikler:** Transactions.tsx'te kapalı işlem kartında "Kaldıraç" alanı koşullu render ediliyordu (leverage yoksa DOM'dan tamamen çıkıp sonraki hücreleri sola kaydırıyordu) — `OpenPositionRow`'daki "hep render + spot fallback" desenine getirildi. `contracts/experiment_registry.py` (Faz 233'te tablosu kaldırılmıştı, kod tamamen ölüydü — `engines/cognitive_pipeline.py`'de kullanılmayan bir import dışında hiçbir gerçek çağıran yoktu) tamamen silindi.
+
+**Açık kalan takip maddesi:** commit onayı bekleniyor (Execution Layer gibi, henüz istenmedi).
 
 ## Faz 315 — Execution Layer, Faz 1: gerçek Binance Futures Testnet emir gönderimi (2026-08-20)
 

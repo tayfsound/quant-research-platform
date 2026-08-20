@@ -273,6 +273,29 @@ def test_compute_daily_atr_pct_returns_positive_ratio_with_enough_bars():
     assert 0 < pct < 1.0
 
 
+def test_compute_higher_timeframe_trend_returns_none_with_insufficient_bars():
+    """Faz 316: EMA26 ısınmadan (26 bardan az) icat edilmiş bir trend
+    üretilmiyor — fail-closed, agents/technical_agent.py bunu "veri yok"
+    olarak ele alıp confidence'a hiç dokunmuyor."""
+    from market_data.features.signal_engine import compute_higher_timeframe_trend
+
+    assert compute_higher_timeframe_trend(_bars([100.0] * 20)) is None
+
+
+def test_compute_higher_timeframe_trend_detects_a_real_uptrend():
+    from market_data.features.signal_engine import compute_higher_timeframe_trend
+
+    rising_closes = [100.0 + i * 2 for i in range(40)]
+    assert compute_higher_timeframe_trend(_bars(rising_closes)) == "bullish"
+
+
+def test_compute_higher_timeframe_trend_detects_a_real_downtrend():
+    from market_data.features.signal_engine import compute_higher_timeframe_trend
+
+    falling_closes = [200.0 - i * 2 for i in range(40)]
+    assert compute_higher_timeframe_trend(_bars(falling_closes)) == "bearish"
+
+
 # Faz 237: kullanıcı isteği — "eklenebilecek bütün teknik analiz
 # yöntemlerini ekleyelim eğer matematiksel bir yöntemse." Bollinger/VWAP/
 # ADX/OBV — dördü de kesin tanımlı, standart formüller.

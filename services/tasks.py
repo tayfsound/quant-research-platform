@@ -667,6 +667,20 @@ def close_due_shadow_positions_task() -> dict:
     return {"closed_count": len(closed), "closed": closed}
 
 
+@celery_app.task(name="close_due_benched_shadow_positions_task")
+def close_due_benched_shadow_positions_task() -> dict:
+    """Faz 316-sonrası — close_due_shadow_positions_task ile AYNI cadence,
+    ama "benched ajan itirazı" gölge pozisyonları için (bkz. services/
+    benched_agent_shadow_tracker.py). Gerçek pozisyonları asla etkilemez."""
+    from services.benched_agent_shadow_tracker import close_due_positions as close_due_benched_positions
+
+    if _real_market_data_source_or_none() is None:
+        return {"skipped": "non_binance_market_data_source"}
+
+    closed = close_due_benched_positions()
+    return {"closed_count": len(closed), "closed": closed}
+
+
 @celery_app.task(name="reconcile_execution_state_task")
 def reconcile_execution_state_task() -> dict:
     """Faz 315 — Execution Layer, Faz 1: DB'deki execution_mode='testnet'

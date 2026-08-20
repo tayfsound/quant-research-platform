@@ -65,11 +65,29 @@ def council_comparison_summary(session, min_sample_size: int) -> dict:
 
 
 @router.get("/comparison")
-def shadow_comparison(min_sample_size: int = 100, user: AuthContext = Depends(get_current_user)):
+def shadow_comparison(
+    source: str = "macro", min_sample_size: int = 100, user: AuthContext = Depends(get_current_user)
+):
+    """Faz 316-sonrası — kullanıcı isteği: "benched ajan itirazını gölge
+    pozisyon testi." source artık serbest — "macro" (varsayılan, geriye
+    dönük uyumlu) ya da "benched_<domain>" (bkz. services/
+    benched_agent_shadow_tracker.py, GET /shadow/sources ile hangi
+    domain'lerin gerçekten itiraz ettiği keşfedilebilir)."""
     with SessionFactory.get_session() as session:
-        macro_only = ShadowPositionRepository(session).comparison_summary(
-            source="macro", min_sample_size=min_sample_size
+        shadow_summary = ShadowPositionRepository(session).comparison_summary(
+            source=source, min_sample_size=min_sample_size
         )
         council = council_comparison_summary(session, min_sample_size)
 
-    return {"macro_only": macro_only, "council": council}
+    return {"macro_only": shadow_summary, "council": council}
+
+
+@router.get("/sources")
+def shadow_benched_sources(user: AuthContext = Depends(get_current_user)):
+    """Şu ana kadar en az bir kez itiraz edip (benched olup final karardan
+    farklı yön önerip) gölge pozisyon açtırmış her domain'i listeler —
+    GET /shadow/comparison?source=... için hangi değerlerin anlamlı
+    olduğunu keşfetmek için."""
+    from services.benched_agent_shadow_tracker import list_active_sources
+
+    return {"benched_sources": list_active_sources()}

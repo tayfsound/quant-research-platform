@@ -26,6 +26,16 @@ class TechnicalAgentCoefficients:
     adx_strong_confirm_weight: float = 0.4
     obv_divergence_weight: float = 0.3
     confidence_divisor: float = 5.0
+    # Faz 316 — kullanıcı bulgusu + gerçek geçmiş veri ölçümü (925/446
+    # örnek, feature_ic.py metodolojisiyle, lookahead'siz): kısa-vadeli
+    # yön 4 saatlik EMA12/26 trendiyle AYNI yöndeyken kazanma oranı
+    # %41.6 (agree), TERS yöndeyken %74.7 (disagree) — kullanıcının
+    # açık kararıyla İKİ yönde de uygulanıyor (bkz. market_data/
+    # features/signal_engine.py::compute_higher_timeframe_trend
+    # docstring'i). Yön ASLA değişmez — sadece nihai confidence çarpılır,
+    # 0.85 tavanı korunur.
+    htf_agreement_confidence_multiplier: float = 0.75
+    htf_disagreement_confidence_multiplier: float = 1.15
 
     def as_vector(self) -> list[float]:
         return [
@@ -33,6 +43,7 @@ class TechnicalAgentCoefficients:
             self.ema_alignment_weight, self.rsi_extreme_weight, self.volume_confirmation_penalty,
             self.bollinger_confirm_weight, self.vwap_confirm_weight, self.adx_weak_discount,
             self.adx_strong_confirm_weight, self.obv_divergence_weight, self.confidence_divisor,
+            self.htf_agreement_confidence_multiplier, self.htf_disagreement_confidence_multiplier,
         ]
 
     @classmethod
@@ -42,6 +53,7 @@ class TechnicalAgentCoefficients:
             "ema_alignment_weight", "rsi_extreme_weight", "volume_confirmation_penalty",
             "bollinger_confirm_weight", "vwap_confirm_weight", "adx_weak_discount",
             "adx_strong_confirm_weight", "obv_divergence_weight", "confidence_divisor",
+            "htf_agreement_confidence_multiplier", "htf_disagreement_confidence_multiplier",
         ]
 
     @classmethod
@@ -223,6 +235,28 @@ class TechnicalAgent:
                 caveats.append("Nasdaq + S&P500 bearish ama kendi teknik görüşümüz bullish — korelasyon çelişiyor")
 
         confidence = min(abs(score) / c.confidence_divisor, 0.85)
+
+        # Faz 316 — kullanıcı bulgusu + gerçek ölçüm (bkz. yukarıdaki
+        # htf_agreement/disagreement katsayı yorumu). SADECE confidence
+        # değişir, direction ASLA — WAIT dahil, hiçbir yön kararı bu
+        # sinyalle flip edilmez. Veri yoksa (higher_timeframe_trend None/
+        # "neutral" — ölçümde "neutral" kovası hiç örneklenmedi, davranışı
+        # doğrulanmamış) no-op.
+        if direction in ("LONG", "SHORT") and context.higher_timeframe_trend in ("bullish", "bearish"):
+            agent_trend_side = "bullish" if direction == "LONG" else "bearish"
+            if context.higher_timeframe_trend == agent_trend_side:
+                confidence *= c.htf_agreement_confidence_multiplier
+                caveats.append(
+                    f"Üst zaman dilimi trendiyle (4h) AYNI yönde ({context.higher_timeframe_trend}) — "
+                    "geçmiş veride bu durum daha düşük isabetle ilişkili, confidence indirildi"
+                )
+            else:
+                confidence *= c.htf_disagreement_confidence_multiplier
+                evidence.append(
+                    f"Üst zaman dilimi trendinin (4h, {context.higher_timeframe_trend}) TERSİNE — "
+                    "geçmiş veride bu durum daha yüksek isabetle ilişkili, confidence artırıldı"
+                )
+            confidence = min(confidence, 0.85)
 
         return AgentOpinion(
             agent_id=self.agent_id,

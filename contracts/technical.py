@@ -38,3 +38,9 @@ class TechnicalContext(BaseModel):
     di_minus: float = 0.0
     obv_trend: str = "flat"            # "rising", "falling", "flat"
     price_obv_divergence: str = "none"  # "bullish_divergence", "bearish_divergence", "none"
+    # Faz 316 — kullanıcı bulgusu: kısa-vadeli sinyal hiçbir zaman daha
+    # uzun bir zaman dilimiyle karşılaştırılmıyordu. Gerçek geçmiş veriyle
+    # ölçüldü (bkz. market_data/features/signal_engine.py::
+    # compute_higher_timeframe_trend docstring'i) — "bullish"/"bearish"/
+    # "neutral"/None (veri yoksa).
+    higher_timeframe_trend: str | None = None

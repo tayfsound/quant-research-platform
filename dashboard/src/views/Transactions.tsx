@@ -291,12 +291,14 @@ function ClosedTradeRow({
             {t.entry_price != null && t.quantity != null ? format(t.entry_price * t.quantity) : "—"}
           </div>
         </div>
-        {t.leverage && t.leverage > 1 && (
-          <div>
-            <div className="text-ink-faint">Kaldıraç</div>
+        <div>
+          <div className="text-ink-faint">Kaldıraç</div>
+          {t.leverage && t.leverage > 1 ? (
             <Badge tone="accent">{t.leverage}x</Badge>
-          </div>
-        )}
+          ) : (
+            <span className="text-ink-faint">spot</span>
+          )}
+        </div>
         <div>
           <div className="text-ink-faint">Açıldı</div>
           <div className="text-ink-soft">{t.opened_at ? new Date(t.opened_at).toLocaleString() : "—"}</div>

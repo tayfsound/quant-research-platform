@@ -9,7 +9,6 @@ from contracts.agent import AgentDomain, AgentOpinion
 from contracts.belief import Belief
 from contracts.context import CognitiveCycleContext
 from contracts.decision_event import DecisionEvent
-from contracts.experiment_registry import ExperimentRegistry
 from services.context_adapter import ContextAdapter
 from services.council_orchestrator import CouncilOrchestrator
 from services.decision_context_builder import DecisionContextBuilder
