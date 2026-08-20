@@ -11,6 +11,7 @@ backtest_agent_memory_history/
 decision_logs/
 weight_history/
 confidence_model_history/
+barrier_table_history/
 test_intelligence_logs/
 celerybeat-schedule*
 agents/plugins/TRUSTED_HASHES.json

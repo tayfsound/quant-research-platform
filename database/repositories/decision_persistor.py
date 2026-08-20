@@ -448,7 +448,17 @@ class DecisionPersistor:
                 # azaltılmış) satırlarda görülür — closed satırlarda hiç
                 # oluşmaz, bu yüzden closed özetinde manual_count her
                 # zaman 0'a yakınsar (bkz. position_closer.py).
-                "sum(CASE WHEN outcome ->> 'exit_reason' = 'manual_partial' THEN 1 ELSE 0 END) AS manual_count "
+                "sum(CASE WHEN outcome ->> 'exit_reason' = 'manual_partial' THEN 1 ELSE 0 END) AS manual_count, "
+                # Faz 311 — kullanıcı isteği (uzun süredir bekleyen todo):
+                # "toplam manuel kapanan işlem" kartı. manual_count'un
+                # (yukarıda) AYRI ve neredeyse hep sıfır olan manual_partial
+                # ile karıştırılmaması için AYRI bir alan — kullanıcının
+                # ELLE tamamen kapattığı (manual_full) işlemlerin GERÇEK
+                # toplam sayısı, sonucundan (kâr/zarar) BAĞIMSIZ. tp_count/
+                # sl_count'un manual_full'u sonucuna göre kendi içine
+                # katması (yukarıdaki Faz 268-sonrası ilkesi) DEĞİŞMİYOR —
+                # bu SADECE ek, bilgilendirici bir toplam.
+                "sum(CASE WHEN outcome ->> 'exit_reason' = 'manual_full' THEN 1 ELSE 0 END) AS manual_full_count "
                 "FROM decisions WHERE status = 'closed' AND excluded_from_stats = false"
             )
         ).mappings().one()
@@ -465,6 +475,7 @@ class DecisionPersistor:
             "tp_count": row["tp_count"] or 0,
             "sl_count": row["sl_count"] or 0,
             "manual_count": row["manual_count"] or 0,
+            "manual_full_count": row["manual_full_count"] or 0,
         }
 
     # Faz 268-sonrası: kullanıcı bulgusu — bir gün için hiç GERÇEK (excluded_

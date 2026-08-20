@@ -172,6 +172,7 @@ type AllTime = {
   tp_count: number;
   sl_count: number;
   manual_count: number;
+  manual_full_count: number;
 };
 
 // Faz 268f — kullanıcı isteği: "kısa/orta/uzun swing scalp gibi işlem
@@ -547,6 +548,13 @@ export default function Dashboard() {
                 ediliyor (bkz. decision_persistor.py::closed_trades_summary). */}
             <StatCard label="TP ile kapanan" value={perf.all_time.tp_count} tone="rise" />
             <StatCard label="SL ile kapanan" value={perf.all_time.sl_count} tone="fall" />
+            {/* Faz 311 — kullanıcı isteği (uzun süredir bekleyen todo):
+                toplam manuel kapanan işlem sayısı. Yukarıdaki TP/SL
+                kapanışlarının bir ALT KÜMESİ (manual_full kendi sonucuna
+                göre zaten TP/SL'ye dahil edildi) — ayrı bir üçüncü kova
+                DEĞİL, sadece "kaç işlemi elle kapattım" sorusuna
+                bilgilendirici bir cevap. */}
+            <StatCard label="Manuel kapanan (toplam)" value={perf.all_time.manual_full_count} />
             <StatCard
               label={`Toplam PnL (${currency})`}
               value={format(perf.all_time.total_pnl)}

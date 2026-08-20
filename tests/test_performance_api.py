@@ -293,3 +293,10 @@ def test_manual_closes_are_counted_as_tp_or_sl_by_real_outcome_not_a_separate_bu
         assert trades_body["summary"]["sl_count"] == perf_body["all_time"]["sl_count"]
         assert perf_body["all_time"]["tp_count"] == before["tp_count"] + 1
         assert perf_body["all_time"]["sl_count"] == before["sl_count"] + 1
+
+        # Faz 311 — kullanıcı isteği (uzun süredir bekleyen todo): "toplam
+        # manuel kapanan işlem" kartı — manual_full_count her iki manuel
+        # kapanışı da (kârlı VE zararlı) sayar, tp_count/sl_count'a
+        # bölünmesinden BAĞIMSIZ ayrı bir bilgilendirme alanı.
+        assert trades_body["summary"]["manual_full_count"] == perf_body["all_time"]["manual_full_count"]
+        assert perf_body["all_time"]["manual_full_count"] == before["manual_full_count"] + 2
