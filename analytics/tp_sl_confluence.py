@@ -71,16 +71,21 @@ def find_nearby_confluence_zone(
 
 def compute_price_levels(hourly_data, daily_data, current_price: float) -> dict[str, float]:
     """Zaten fetch edilmiş OHLCV geçmişinden (hourly_data: S/R/Volume
-    Profile/Donchian/Keltner için, daily_data: Pivot Points için) BEŞ
-    BAĞIMSIZ yöntemin ham fiyat seviyelerini toplar. Her yöntem eksik/
-    yetersiz veriyle fail-closed None dönebilir — o yöntem sessizce
-    atlanır, hiçbir seviye icat edilmez. services/tp_sl_confluence_
-    gatherer.py (ölçüm) ve services/orchestrator.py (canlı karar hattı)
-    AYNI bu fonksiyonu çağırır — iki farklı yerde iki farklı hesap
-    riski yok."""
+    Profile/Donchian/Keltner/Bollinger/Fibonacci için, daily_data: Pivot
+    Points için) YEDİ BAĞIMSIZ yöntemin ham fiyat seviyelerini toplar.
+    Her yöntem eksik/yetersiz veriyle fail-closed None dönebilir — o
+    yöntem sessizce atlanır, hiçbir seviye icat edilmez. services/
+    tp_sl_confluence_gatherer.py (ölçüm) ve services/orchestrator.py
+    (canlı karar hattı) AYNI bu fonksiyonu çağırır — iki farklı yerde
+    iki farklı hesap riski yok.
+
+    Faz 312 — kullanıcı isteği: Bollinger Bandı ve Fibonacci retracement
+    başlangıçta planlanan ama unutulan iki yöntemdi — eklendi."""
     from market_data.features.price_structure import compute_support_resistance_zones
     from market_data.features.signal_engine import (
+        compute_bollinger_band_levels,
         compute_donchian_channels,
+        compute_fibonacci_price_levels,
         compute_keltner_channels,
         compute_pivot_points,
         compute_volume_profile,
@@ -120,6 +125,15 @@ def compute_price_levels(hourly_data, daily_data, current_price: float) -> dict[
     if keltner is not None:
         levels["keltner_upper"] = keltner["keltner_upper"]
         levels["keltner_lower"] = keltner["keltner_lower"]
+
+    bollinger = compute_bollinger_band_levels(hourly_data)
+    if bollinger is not None:
+        levels["bollinger_upper"] = bollinger["bollinger_upper"]
+        levels["bollinger_lower"] = bollinger["bollinger_lower"]
+
+    fibonacci = compute_fibonacci_price_levels(hourly_data)
+    if fibonacci is not None:
+        levels["fibonacci_nearest"] = fibonacci["fibonacci_nearest"]
 
     return levels
 

@@ -761,6 +761,58 @@ def _fibonacci_signal(
     return nearest_label, position
 
 
+def compute_fibonacci_price_levels(data: list[OHLCV]) -> dict | None:
+    """Faz 312 — kullanıcı isteği: TP/SL Confluence'a (analytics/
+    tp_sl_confluence.py) eklenmesi planlanan ama unutulan iki yöntemden
+    biri. _fibonacci_signal (yukarıda) AYNI swing-nokta/oran mantığını
+    kullanıyor ama SADECE kategorik etiket ("61.8%" gibi) döndürüyordu —
+    confluence'ın ihtiyaç duyduğu ham fiyat seviyesi hiç yoktu. Bu
+    fonksiyon en yakın Fibonacci retracement seviyesinin GERÇEK fiyatını
+    döndürür. Swing high/low yoksa (fail-closed) None — icat edilmiş
+    bir seviye asla üretilmez."""
+    closes = _closes(data)
+    highs = np.array([d.high for d in data], dtype=float)
+    lows = np.array([d.low for d in data], dtype=float)
+    swing_highs, swing_lows = _find_swings(closes)
+    if not swing_highs or not swing_lows:
+        return None
+
+    last_high_idx, last_low_idx = swing_highs[-1], swing_lows[-1]
+    swing_high_price, swing_low_price = highs[last_high_idx], lows[last_low_idx]
+    price_range = swing_high_price - swing_low_price
+    if price_range <= 0:
+        return None
+
+    uptrend = last_high_idx > last_low_idx
+    current = closes[-1]
+    nearest_price, nearest_dist = None, None
+    for ratio in (0.236, 0.382, 0.5, 0.618, 0.786):
+        level_price = (
+            swing_high_price - price_range * ratio if uptrend else swing_low_price + price_range * ratio
+        )
+        dist = abs(current - level_price)
+        if nearest_dist is None or dist < nearest_dist:
+            nearest_dist, nearest_price = dist, level_price
+
+    return {"fibonacci_nearest": float(nearest_price)}
+
+
+def compute_bollinger_band_levels(data: list[OHLCV], period: int = 20, k: float = 2.0) -> dict | None:
+    """Faz 312 — TP/SL Confluence'a eklenmesi planlanan ama unutulan
+    ikinci yöntem. _bollinger_bands (yukarıda) AYNI SMA±k*std matematiği
+    ama SADECE göreli percent_b/bandwidth döndürüyordu — confluence'ın
+    ihtiyaç duyduğu ham üst/alt bant fiyatı hiç yoktu. Yetersiz veri
+    varsa (fail-closed) None."""
+    closes = _closes(data)
+    window = min(period, len(closes))
+    if window < 2:
+        return None
+    recent = closes[-window:]
+    sma = recent.mean()
+    std = recent.std()
+    return {"bollinger_upper": float(sma + k * std), "bollinger_lower": float(sma - k * std)}
+
+
 _WYCKOFF_TR_WINDOW = 30  # trading range değerlendirme penceresi
 _WYCKOFF_TR_CONTRACTION_RATIO = 0.65  # şu anki menzil, ÖNCEKİ menzilin bu oranından DAR olmalı
 _WYCKOFF_TREND_LOOKBACK = 20  # TR öncesi trend penceresi

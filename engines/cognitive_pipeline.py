@@ -617,9 +617,11 @@ class RiskTargetStage:
             target_pct *= scale
 
         # Faz 299-300 — kullanıcı isteği: TP/SL Confluence canlıya bağlandı
-        # ("wire edelim"). Ölçüm katmanında doğrulandı: ATR-tabanlı hedef
-        # gerçek yapısal seviyelere (S/R + Volume Profile + Pivot +
-        # Donchian + Keltner "zone of agreement") SADECE %2-26 oranında
+        # ("wire edelim"). Faz 312'de Bollinger + Fibonacci de eklendi
+        # (planlanmış ama unutulmuştu). Ölçüm katmanında doğrulandı:
+        # ATR-tabanlı hedef gerçek yapısal seviyelere (S/R + Volume
+        # Profile + Pivot + Donchian + Keltner + Bollinger + Fibonacci
+        # "zone of agreement") SADECE %2-26 oranında
         # yakın düşüyor. Fiyat ile ATR hedefi ARASINDA (yani hedefe
         # ulaşmadan ÖNCE karşılaşılacak) en az 2 bağımsız yöntemin
         # birleştiği gerçek bir bölge varsa, hedef o bölgenin hemen önüne

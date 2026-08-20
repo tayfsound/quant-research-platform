@@ -4,7 +4,8 @@ import { Card, PageHeader, Badge, EmptyState, ErrorNote, Spinner } from "../comp
 
 // Faz 299-300 — kullanıcı isteği (2026-08-19): TP/SL için çok-yöntemli
 // confluence ("zone of agreement" — S/R + Volume Profile + Pivot +
-// Donchian + Keltner). RiskTargetStage artık hedefi (SADECE hedefi,
+// Donchian + Keltner + Bollinger + Fibonacci, Faz 312). RiskTargetStage
+// artık hedefi (SADECE hedefi,
 // stop'u değil) gerçek bir yapısal bölgeye yakınsa sıkılaştırıyor —
 // bu sayfa SADECE izleme: mevcut ATR-tabanlı hedefin watchlist
 // genelinde gerçek yapısal desteğe ne sıklıkla denk geldiğini gösterir.
@@ -54,7 +55,7 @@ export default function TpSlConfluence() {
     <div>
       <PageHeader
         title="TP/SL Confluence"
-        description="Zone of agreement — S/R zone clustering + Volume Profile POC/VA + Pivot Points + Donchian + Keltner'den kaç BAĞIMSIZ yöntemin aynı fiyat bölgesinde birleştiği. RiskTargetStage artık hedefi (sadece hedefi) gerçek bir bölgeye yakınsa sıkılaştırıyor — bu sayfa mevcut ATR-tabanlı hedefin gerçek yapısal desteğe ne sıklıkla denk geldiğini izler."
+        description="Zone of agreement — S/R zone clustering + Volume Profile POC/VA + Pivot Points + Donchian + Keltner + Bollinger + Fibonacci'den kaç BAĞIMSIZ yöntemin aynı fiyat bölgesinde birleştiği. RiskTargetStage artık hedefi (sadece hedefi) gerçek bir bölgeye yakınsa sıkılaştırıyor — bu sayfa mevcut ATR-tabanlı hedefin gerçek yapısal desteğe ne sıklıkla denk geldiğini izler."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}

@@ -749,3 +749,41 @@ def test_parabolic_sar_returns_none_for_too_few_bars():
     from market_data.features.signal_engine import compute_parabolic_sar
 
     assert compute_parabolic_sar(_bars([100.0, 101.0])) is None
+
+
+# Faz 312 — kullanıcı isteği: TP/SL Confluence'a (analytics/
+# tp_sl_confluence.py) planlanan ama unutulan iki yöntem — Bollinger Bandı
+# ve Fibonacci retracement'ın confluence'ın ihtiyaç duyduğu HAM fiyat
+# seviyeleri (mevcut compute_technical_signals/compute_pattern_signals
+# sadece göreli/kategorik değer döndürüyordu).
+
+def test_bollinger_band_levels_bracket_the_price():
+    from market_data.features.signal_engine import compute_bollinger_band_levels
+
+    closes = _oscillating_trend(100, 0.5, 40)
+    result = compute_bollinger_band_levels(_bars(closes))
+    assert result["bollinger_lower"] < closes[-1] < result["bollinger_upper"]
+
+
+def test_bollinger_band_levels_returns_none_for_insufficient_data():
+    from market_data.features.signal_engine import compute_bollinger_band_levels
+
+    assert compute_bollinger_band_levels(_bars([100.0])) is None
+
+
+def test_fibonacci_price_levels_returns_a_level_between_the_swing():
+    from market_data.features.signal_engine import compute_fibonacci_price_levels
+
+    closes = _oscillating_trend(100, 1.2, 60)
+    bars = _bars(closes)
+    highs = [b.high for b in bars]
+    lows = [b.low for b in bars]
+    result = compute_fibonacci_price_levels(bars)
+    assert result is not None
+    assert min(lows) <= result["fibonacci_nearest"] <= max(highs)
+
+
+def test_fibonacci_price_levels_returns_none_for_insufficient_data():
+    from market_data.features.signal_engine import compute_fibonacci_price_levels
+
+    assert compute_fibonacci_price_levels(_bars([100.0, 101.0])) is None
