@@ -1,11 +1,17 @@
-# Mevcut Durum -- v1.60.0 (Faz 321: R:R kalibrasyonu — yön-bazlı target_atr_mult/stop_atr_mult)
+# Mevcut Durum -- v1.61.0 (Faz 322: LONG/SHORT kazanma oranı kartı + Swing rozet rengi)
 
 **Tarih:** 2026-08-20
 **Branch:** main
-**Son commit (HEAD):** 94300af (Faz 320) — Faz 321 henüz commit edilmedi (bu değişiklik: `engines/cognitive_pipeline.py`, `database/repositories/app_settings_repository.py`, `services/{macro_shadow_tracker,benched_agent_shadow_tracker,pairs_trader,tp_sl_confluence_gatherer}.py`, `llm_tools.py`, ilgili testler).
-**⚠️ KRİTİK — CANLI SİSTEM HENÜZ ESKİ KODU ÇALIŞTIRIYOR:** Kullanıcı canlı bir pump_fade pozisyonunda (SIGNUSDT, 2026-08-20 17:12 UTC) `regime_size_multiplier` alanının agent_contributions'ta HİÇ olmadığını fark etti — celery worker'lar (12:17'de başlamış) bu oturumdaki HİÇBİR kod değişikliğini (Faz 318 pump_fade gate, Faz 319 AgentMemory, Faz 320 kasa kartı, Faz 321 R:R) henüz yüklemedi. **Bu iş bitip commit edilir edilmez api/worker/beat servisleri restart edilmeli** — aksi halde tüm bu düzeltmeler kâğıt üzerinde kalır.
-**Test:** R:R'ye dokunan hedefli regresyon (121 test) temiz — 2 pairs_trader başarısızlığı `git stash` A/B ile ÖNCEKİ commit'te de aynı şekilde başarısız olduğu doğrulanarak ilgisiz/bilinen kirlilik olarak elendi.
-**Altyapı notu (2026-08-20):** Docker Desktop bu oturumda bir kez çöktü (postgres/redis konteynerleri durdu) — `docker start` ile geri getirildi, veri kaybı yok (agent_performance_records 54.402, decisions 50.268 — çöküş öncesiyle aynı). api/celery worker'lar Docker'a bağlı değil (host'ta native çalışıyor), kendiliğinden toparlandı — ama KOD değişikliklerini almadılar, bkz. yukarıdaki kritik not.
+**Son commit (HEAD):** 5c3d4d3 (Faz 321) — Faz 322 henüz commit edilmedi (bu değişiklik: `api/rest/positions.py`, `database/repositories/decision_persistor.py`, `dashboard/src/{views/Dashboard.tsx,views/Transactions.tsx,components/ui.tsx,index.css}`, ilgili testler).
+**⚠️ Servis restart durumu:** api/worker/beat 4 kök süreç (uvicorn 84261, celery beat 16586, celery worker -Q celery 84262, celery worker -Q slow 84263) bu Faz 322 işi bitince YENİDEN BAŞLATILACAK — Faz 318-322 arası TÜM kod değişikliklerini (pump_fade gate, AgentMemory Postgres, kasa kartı, R:R kalibrasyonu, LONG/SHORT kartı, Swing rengi) tek seferde canlıya alacak şekilde. Kullanıcı canlı bir pump_fade pozisyonunda (SIGNUSDT) bunların HİÇBİRİNİN henüz devrede olmadığını fark etmişti.
+**Test:** by_direction'a dokunan hedefli regresyon (15 test) temiz — 1 pre-existing/ilgisiz kirlilik (`test_performance_endpoint_breaks_down_win_rate_and_pnl_by_trade_type`, `git stash` A/B ile doğrulandı) hariç.
+**Altyapı notu (2026-08-20):** Docker Desktop bu oturumda bir kez çöktü (postgres/redis konteynerleri durdu) — `docker start` ile geri getirildi, veri kaybı yok. api/celery worker'lar Docker'a bağlı değil (host'ta native çalışıyor).
+
+## Faz 322 — Dashboard'a LONG/SHORT kazanma oranı kartı + Transactions "Swing" rozetine kendi rengi (2026-08-20)
+
+Kullanıcı isteği: "genel toplamda long short kazanma oranı kartı." `DecisionPersistor.closed_trades_summary_by_direction()` (yeni) — `closed_trades_summary()` ile AYNI kapsam (status='closed', excluded_from_stats=false, pump_fade DAHİL — mevcut "Kazanma oranı" kartıyla tutarlı), direction'a göre gruplu win/loss sayısı. `GET /api/v1/performance`'a `by_direction` alanı eklendi, Dashboard'a iki yeni kart ("LONG kazanma oranı"/"SHORT kazanma oranı", n kazandı/n kaybetti alt-yazısıyla). Gerçek veriyle doğrulandı: **LONG 876 işlem %95.9 kazanma, SHORT 583 işlem %35.2 kazanma** — bu oturumda tekrar tekrar çıkan LONG/SHORT asimetri bulgusunun (R:R kalibrasyonu, pump_fade rejim gate'i) en çıplak/özet hâli.
+
+Ayrıca: Transactions.tsx'te "Swing" rozeti "Scalp" ile aynı `neutral` tonu paylaştığı için sönük görünüyordu (kullanıcı bulgusu) — palet bilinçli olarak minimal tutulduğundan (index.css'teki tasarım notu: "tek bir güvenli accent... rainbow of status colors değil") yeni bir renk rastgele eklenmedi, mevcut sistemle AYNI stilde (soft-bg + ink metni, hem açık hem koyu tema) tek bir yeni `info` tonu (--color-info, muted teal) eklendi, sadece Swing'e atandı.
 
 ## Faz 321 — R:R kalibrasyonu: gerçek MAE/MFE verisiyle yön-bazlı target_atr_mult/stop_atr_mult (2026-08-20)
 

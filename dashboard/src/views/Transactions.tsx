@@ -89,7 +89,7 @@ const MEDIUM_TERM_TIMEFRAMES = new Set(["4h", "1d"]);
 // stats=true işaretlendi (silinmedi).
 function tradeTypeBadge(
   p: Pick<Position, "timeframe" | "entry_price" | "stop_loss_price" | "pairs_trade" | "trade_type">
-): { label: string; tone: "accent" | "warn" | "neutral"; title?: string } | null {
+): { label: string; tone: "accent" | "warn" | "neutral" | "info"; title?: string } | null {
   // Kullanıcı bulgusu: "Pump-Fade ile açtığı işlem var mı Transactions'ta
   // göremedim." pump_fade_strategy.py'nin açtığı mekanik işlemler backend'de
   // trade_type="pump_fade" olarak geliyor — diğer sezgisel (stop mesafesi
@@ -107,7 +107,9 @@ function tradeTypeBadge(
   if (p.entry_price != null && p.stop_loss_price != null && p.entry_price !== 0) {
     const pct = (Math.abs(p.entry_price - p.stop_loss_price) / p.entry_price) * 100;
     if (pct < 4.5) return { label: "scalp", tone: "neutral" };
-    return { label: "swing", tone: "neutral" };
+    // Kullanıcı bulgusu: "swing" diğer türler gibi neutral kaldığı için
+    // sönük görünüyordu — kendi rengine (info) taşındı.
+    return { label: "swing", tone: "info" };
   }
   return null;
 }

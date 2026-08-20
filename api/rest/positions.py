@@ -380,6 +380,7 @@ def performance_summary(user: AuthContext = Depends(get_current_user)):
             "monthly": monthly,
             "yearly": yearly,
             "by_trade_type": by_trade_type,
+            "by_direction": persistor.closed_trades_summary_by_direction(),
         }
 
 

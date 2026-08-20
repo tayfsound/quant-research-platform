@@ -41,6 +41,7 @@ const badgeTones = {
   rise: "bg-rise-soft text-rise border-transparent",
   fall: "bg-fall-soft text-fall border-transparent",
   warn: "bg-warn-soft text-warn border-transparent",
+  info: "bg-info-soft text-info border-transparent",
 };
 
 export function Badge({ children, tone = "neutral" }: { children: ReactNode; tone?: keyof typeof badgeTones }) {

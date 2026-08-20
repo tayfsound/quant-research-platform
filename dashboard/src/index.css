@@ -24,6 +24,8 @@
   --color-fall-soft: #f8ebe7;
   --color-warn: #b8863a;
   --color-warn-soft: #faf1e3;
+  --color-info: #3b7a8a;
+  --color-info-soft: #e6f0f2;
 
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, ui-sans-serif, sans-serif;
 
@@ -57,6 +59,8 @@
   --color-fall-soft: #33221f;
   --color-warn: #f0c374;
   --color-warn-soft: #362b1c;
+  --color-info: #7ec8d6;
+  --color-info-soft: #1c2e33;
 
   --shadow-layer-1: 0 1px 2px rgba(0, 0, 0, 0.2);
   --shadow-layer-2: 0 6px 16px -4px rgba(0, 0, 0, 0.35), 0 2px 6px -2px rgba(0, 0, 0, 0.25);
@@ -85,6 +89,8 @@
     --color-fall-soft: #33221f;
     --color-warn: #f0c374;
     --color-warn-soft: #362b1c;
+    --color-info: #7ec8d6;
+    --color-info-soft: #1c2e33;
 
     --shadow-layer-1: 0 1px 2px rgba(0, 0, 0, 0.2);
     --shadow-layer-2: 0 6px 16px -4px rgba(0, 0, 0, 0.35), 0 2px 6px -2px rgba(0, 0, 0, 0.25);

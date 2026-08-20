@@ -495,6 +495,38 @@ class DecisionPersistor:
             "manual_full_count": row["manual_full_count"] or 0,
         }
 
+    def closed_trades_summary_by_direction(self) -> dict:
+        """Faz 322 — kullanıcı isteği: "genel toplamda long/short kazanma
+        oranı" — Dashboard'da hiçbir yerde LONG'un mu SHORT'un mu daha
+        başarılı olduğu görünmüyordu. closed_trades_summary() ile AYNI
+        kapsam (status='closed' AND excluded_from_stats=false — pump_fade
+        DAHİL, mevcut "Kazanma oranı" kartıyla AYNI kural, tutarlılık
+        için ayrı bir filtre icat edilmiyor), sadece direction'a göre
+        gruplanmış."""
+        rows = self.session.execute(
+            text(
+                "SELECT direction, count(*) AS trade_count, "
+                "sum(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS wins "
+                "FROM decisions WHERE status = 'closed' AND excluded_from_stats = false "
+                "AND direction IN ('LONG', 'SHORT') "
+                "GROUP BY direction"
+            )
+        ).mappings().all()
+        result = {
+            "LONG": {"trade_count": 0, "win_count": 0, "loss_count": 0, "win_rate": 0.0},
+            "SHORT": {"trade_count": 0, "win_count": 0, "loss_count": 0, "win_rate": 0.0},
+        }
+        for r in rows:
+            trade_count = r["trade_count"] or 0
+            win_count = r["wins"] or 0
+            result[r["direction"]] = {
+                "trade_count": trade_count,
+                "win_count": win_count,
+                "loss_count": trade_count - win_count,
+                "win_rate": (win_count / trade_count) if trade_count else 0.0,
+            }
+        return result
+
     # Faz 268-sonrası: kullanıcı bulgusu — bir gün için hiç GERÇEK (excluded_
     # from_stats=false) kapanış yoksa (o gün hiç işlem olmadığı için ya da
     # o günün tamamı hariç tutulduğu için) date_trunc/GROUP BY o kovayı hiç

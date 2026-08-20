@@ -19,10 +19,10 @@ def _client():
     return TestClient(app)
 
 
-def _closed_trade(pnl: float, symbol: str):
+def _closed_trade(pnl: float, symbol: str, direction: str = "LONG"):
     now = datetime.now(UTC)
     event = DecisionEvent(
-        id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+        id=uuid4(), symbol=symbol, proposed_direction=direction, final_action=direction,
         final_size=1.0, confidence=0.6,
         status="open", entry_price=100.0, quantity=1.0, opened_at=now,
     )
@@ -49,6 +49,49 @@ def test_performance_endpoint_reflects_real_closed_trades():
         assert body["daily"][0]["trade_count"] >= 2
         assert 0.0 <= body["daily"][0]["win_rate"] <= 1.0
         assert body["starting_capital"] > 0
+
+
+def test_performance_endpoint_includes_win_rate_by_direction():
+    """Faz 322 — kullanıcı isteği: "genel toplamda long/short kazanma
+    oranı" kartı. Paylaşımlı test DB'si zaten kirli olduğundan (bkz.
+    project_shared_test_state_bloat) kesin sayı değil, ŞEKİL/tutarlılık
+    doğrulanıyor: her iki yön de mevcut, sayılar birbirini tutuyor."""
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        long_symbol = f"PERFLONG{uuid4().hex[:8]}"
+        short_symbol = f"PERFSHORT{uuid4().hex[:8]}"
+        _closed_trade(pnl=50.0, symbol=long_symbol, direction="LONG")
+        _closed_trade(pnl=-20.0, symbol=short_symbol, direction="SHORT")
+        _closed_trade(pnl=-5.0, symbol=short_symbol, direction="SHORT")
+
+        client = _client()
+        response = client.get("/api/v1/performance", headers=make_authed_headers(Role.VIEWER))
+        body = response.json()
+
+        by_direction = body["by_direction"]
+        assert set(by_direction.keys()) == {"LONG", "SHORT"}
+        for direction in ("LONG", "SHORT"):
+            stats = by_direction[direction]
+            assert stats["trade_count"] == stats["win_count"] + stats["loss_count"]
+            assert 0.0 <= stats["win_rate"] <= 1.0
+        assert by_direction["LONG"]["win_count"] >= 1
+        assert by_direction["SHORT"]["loss_count"] >= 2
+
+
+def test_closed_trades_summary_by_direction_counts_wins_and_losses_separately():
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        symbol = f"PERFDIR{uuid4().hex[:8]}"
+        _closed_trade(pnl=10.0, symbol=symbol, direction="LONG")
+        _closed_trade(pnl=-10.0, symbol=symbol, direction="LONG")
+        _closed_trade(pnl=10.0, symbol=symbol, direction="SHORT")
+
+        with SessionFactory.get_session() as session:
+            result = DecisionPersistor(session).closed_trades_summary_by_direction()
+
+        assert result["LONG"]["trade_count"] >= 2
+        assert result["LONG"]["win_count"] >= 1
+        assert result["LONG"]["loss_count"] >= 1
+        assert result["SHORT"]["trade_count"] >= 1
+        assert result["SHORT"]["win_count"] >= 1
 
 
 def test_trades_endpoint_summary_matches_performance_all_time_even_when_table_is_capped():

@@ -181,6 +181,9 @@ type AllTime = {
 // (api/rest/positions.py::_classify_trade_type) agregasyonu yapılıyor.
 type TradeTypeStat = { trade_count: number; win_rate: number; total_pnl: number };
 
+// Faz 322 — kullanıcı isteği: "genel toplamda long/short kazanma oranı."
+type DirectionStat = { trade_count: number; win_count: number; loss_count: number; win_rate: number };
+
 type PerformanceData = {
   starting_capital: number;
   all_time: AllTime;
@@ -189,6 +192,7 @@ type PerformanceData = {
   monthly: Bucket[];
   yearly: Bucket[];
   by_trade_type: Record<string, TradeTypeStat>;
+  by_direction: Record<"LONG" | "SHORT", DirectionStat>;
 };
 
 // Faz 268-sonrası — kullanıcı isteği: günlük tablo sabit 15 satır yerine
@@ -584,6 +588,22 @@ export default function Dashboard() {
               // defalarca yeniden kullanıldığı için kasadan kat kat büyük
               // çıkması normal) — etiket bunu netleştiriyor.
               sub={`tüm-zamanlar hacmi: ${format(perf.all_time.deployed_notional)}`}
+            />
+            {/* Faz 322 — kullanıcı isteği: "genel toplamda long/short
+                kazanma oranı" kartı — hangi yönün gerçekten kazandırdığı
+                hiçbir yerde görünmüyordu. Kazanma oranı SADECE kapanmış
+                işlemlerden (all_time ile AYNI kapsam, pump_fade dahil). */}
+            <StatCard
+              label="LONG kazanma oranı"
+              value={`%${(perf.by_direction.LONG.win_rate * 100).toFixed(0)}`}
+              tone={perf.by_direction.LONG.win_rate >= 0.5 ? "rise" : "fall"}
+              sub={`${perf.by_direction.LONG.win_count} kazandı / ${perf.by_direction.LONG.loss_count} kaybetti (${perf.by_direction.LONG.trade_count} işlem)`}
+            />
+            <StatCard
+              label="SHORT kazanma oranı"
+              value={`%${(perf.by_direction.SHORT.win_rate * 100).toFixed(0)}`}
+              tone={perf.by_direction.SHORT.win_rate >= 0.5 ? "rise" : "fall"}
+              sub={`${perf.by_direction.SHORT.win_count} kazandı / ${perf.by_direction.SHORT.loss_count} kaybetti (${perf.by_direction.SHORT.trade_count} işlem)`}
             />
           </div>
 
