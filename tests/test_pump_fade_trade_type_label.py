@@ -67,8 +67,8 @@ def test_closed_pump_fade_trade_is_labeled_in_trades_api(client):
 
 
 def test_normal_ai_position_is_not_labeled_pump_fade(client):
-    """experiment_bucket boşsa eski sezgisel sınıflandırma (scalp/gün içi/
-    swing) bozulmamalı — bu bir regresyon testi."""
+    """experiment_bucket boşsa eski sezgisel sınıflandırma (scalp/swing)
+    bozulmamalı — bu bir regresyon testi."""
     symbol = f"AIPOS{uuid4().hex[:8]}"
     now = datetime.now(UTC)
     event = DecisionEvent(

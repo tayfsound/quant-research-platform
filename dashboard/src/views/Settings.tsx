@@ -11,23 +11,17 @@ const THEME_LABELS: Record<ThemePreference, string> = {
 
 type SettingsMap = Record<string, string>;
 
-// Faz 265 — kritik bulgu: bu seçim daha önce (Faz 187) pozisyonu SÜREYE
-// göre zorla kapatıyordu ("~10 dk" gibi). Faz 215'te kullanıcı isteğiyle
-// ("vade dolunca kapatmak bile bile zarar etmek demek") bu tamamen
-// kaldırıldı — pozisyonlar artık SADECE gerçekten stop/hedefe ulaşınca
-// kapanıyor, süre hiç zorlamıyor. Ama seçim boş kalmasın diye: artık
-// stop/hedef MESAFESİNİ belirliyor (dar taban = küçük mesafe = saatler
-// içinde sonuçlanma eğilimi; geniş taban = büyük mesafe = günler/haftalar)
-// — süre garantisi değil, eğilim.
-const HORIZON_LABELS: Record<string, string> = {
-  short: "Scalp (dar hedef, ~1 saatlik ATR)",
-  medium: "Gün içi (orta hedef, ~4 saatlik ATR)",
-  long: "Swing (geniş hedef, günlük ATR)",
-};
-
+// Faz 317-sonrası — kullanıcı kararı: manuel "İşlem vadesi" (Scalp/Gün
+// içi/Swing) seçici Settings'ten tamamen kaldırıldı. Faz 215'ten beri
+// zaten hiçbir şeyi süreye göre zorla kapatmıyordu; geriye kalan tek
+// işlevi (risk tabanının hangi bar aralığından geldiğini seçmek) artık
+// sabit — gerçek "pozisyona göre esnek ayarlama" Adaptive Barrier
+// Engine'den geliyor (bkz. engines/cognitive_pipeline.py::
+// RiskTargetStage._try_adaptive_barrier), manuel bir seçime gerek yok.
+//
 // Faz 214: ajanların sinyal ürettiği mum aralığı — işlem vadesinden
-// (trade_horizon, yukarıda) kasıtlı olarak ayrı. "4h analiz" ≠ "4h
-// pozisyon tutma"; biri sinyal kalitesi, diğeri kasa/likidite kararı.
+// kasıtlı olarak ayrı. "4h analiz" ≠ "4h pozisyon tutma"; biri sinyal
+// kalitesi, diğeri kasa/likidite kararı.
 const CANDLE_TIMEFRAME_LABELS: Record<string, string> = {
   "1m": "1 dakika",
   "5m": "5 dakika",
@@ -389,30 +383,6 @@ export default function Settings() {
             >
               {saved === "kill_switch_consecutive_losses" ? "Kaydedildi ✓" : "Kaydet"}
             </Button>
-          </div>
-        </Card>
-
-        <Card>
-          <h3 className="text-sm font-semibold text-ink mb-1">Stop/hedef mesafesi</h3>
-          <p className="text-xs text-ink-soft mb-3">
-            Pozisyonlar hiçbir zaman süre yüzünden zorla kapatılmaz — sadece gerçekten stop veya hedefe
-            ulaşınca. Bu seçim, o stop/hedefin ne kadar UZAKTA olacağını belirler: dar bir mesafe (Scalp)
-            genelde saatler içinde sonuçlanır, geniş bir mesafe (Swing) günler/haftalar sürebilir.
-          </p>
-          <div className="flex flex-col gap-2">
-            {Object.entries(HORIZON_LABELS).map(([key, label]) => (
-              <button
-                key={key}
-                onClick={() => save("trade_horizon", key)}
-                className={`text-left px-3 py-2 rounded-lg text-sm border transition-colors ${
-                  settings.trade_horizon === key
-                    ? "bg-accent text-white border-accent"
-                    : "bg-canvas-soft text-ink-soft border-line hover:bg-surface-soft"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
           </div>
         </Card>
 

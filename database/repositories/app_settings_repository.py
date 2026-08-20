@@ -27,17 +27,6 @@ DEFAULTS: dict[str, str] = {
     "max_concurrent_positions": "15",
     "max_capital_pct": "0.4",
     "starting_capital": "50000",
-    # Faz 215: kritik bulgu — gerçek canlı veride (289 kapanan işlem)
-    # %64'ü "time_expired" (stop/target'a hiç ulaşmadan sadece vade
-    # dolduğu için, küçük komisyon kaybıyla kapanmış) çıktı. Sebep:
-    # trade_horizon="short" (10 dk) < candle_timeframe="15m" (15 dk) —
-    # pozisyon, sinyalin üretildiği mum bile TAMAMLANMADAN kapanıyordu,
-    # ATR-tabanlı stop/target'ın (15m verisinden hesaplanan, gerçekçi
-    # fiyat hareketi ölçeği) tetiklenmesine hiç fırsat kalmıyordu — bu
-    # da kazanma oranını yapay olarak (sinyal kalitesinden bağımsız)
-    # düşürüyordu. "medium" (4 saat = 16x 15dk mum), stop/target'a
-    # gerçekten ulaşma şansı bırakıyor.
-    "trade_horizon": "medium",
     # Faz 189: "stopsuz işlem yapmasın test modunda bile olsa" — aynı sembol
     # için art arda iki işlem açılışı arasında zorunlu minimum bekleme.
     "min_seconds_between_trades": "60",
@@ -439,27 +428,6 @@ DEFAULTS: dict[str, str] = {
 CANDLE_TIMEFRAMES = ("1m", "5m", "15m", "1h", "4h", "1d")
 DISPLAY_CURRENCIES = ("USD", "BTC", "TRY")
 
-# Faz 265 — kritik bulgu: bu değerler Faz 187'de PositionCloser.
-# hold_seconds için kurulmuştu ("vade dolunca kapat"), ama Faz 215
-# ("bile bile zarar etmek demek bu") bunu tamamen kaldırdı — trade_horizon
-# artık pozisyon SÜRESİNİ hiç etkilemiyor, Settings ekranı hâlâ "Scalp
-# (~10 dk)" diye vaat ediyordu ama seçimin gerçekte hiçbir etkisi yoktu.
-# Kullanıcı isteği: "hem scalp işlem kovalasın hem vade dolunca kapatmasın"
-# — bunun gerçek karşılığı SÜRE değil, stop/hedef MESAFESİ: trade_horizon
-# artık kısa-vadeli katmanın risk tabanını hangi bar aralığından aldığını
-# seçiyor (bkz. services/orchestrator.py::propose, RiskTargetStage hâlâ
-# aynı 2.5x/10x oranı uyguluyor, sadece taban ATR'nin kaynağı değişiyor).
-# Dar taban (1h) = küçük stop/hedef = saatler içinde sonuçlanma eğilimi
-# ("scalp"); geniş taban (1d) = büyük stop/hedef = günler/haftalar
-# ("swing") — ama HİÇBİRİ süre yüzünden zorla kapatılmıyor, sadece
-# gerçekten stop/hedefe ulaşınca.
-TRADE_HORIZON_TO_RISK_TIMEFRAME: dict[str, str] = {
-    "short": "1h",
-    "medium": "4h",
-    "long": "1d",
-}
-
-
 class AppSettingModel(Base):
     __tablename__ = "app_settings"
     key = Column(String(64), primary_key=True)
@@ -514,7 +482,7 @@ class AppSettingsRepository:
         anahtarlar sıfırlanıyor."""
         reset_keys = keys or [
             "max_concurrent_positions", "max_capital_pct", "starting_capital",
-            "trade_horizon", "act_threshold", "reduce_threshold",
+            "act_threshold", "reduce_threshold",
             "min_profit_target_pct", "candle_timeframe", "candle_lookback",
         ]
         for key in reset_keys:

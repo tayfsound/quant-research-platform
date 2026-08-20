@@ -272,8 +272,9 @@ class DecisionPersistor:
         sinden hedge çıkarımı dahil) yapılıyor, burada 2457+ açık
         pozisyonun TAMAMINI Python'a çekip serialize etmek yerine (ağır)
         tek bir SQL agregasyonuyla aynı önceliklendirme sırasıyla
-        (pump_fade > hedge > orta_vadeli > scalp/gün içi/swing)
-        tekrarlanıyor — sonuç grup sayıları, tek tek pozisyon değil."""
+        (pump_fade > hedge > orta_vadeli > scalp/swing — Faz 317'de
+        "gün içi" kovası kaldırıldı) tekrarlanıyor — sonuç grup sayıları,
+        tek tek pozisyon değil."""
         return self._breakdown_by_trade_type("open")
 
     def closed_trade_breakdown_by_trade_type(self) -> list[dict]:
@@ -309,7 +310,6 @@ class DecisionPersistor:
                             WHEN entry_price IS NOT NULL AND stop_loss_price IS NOT NULL AND entry_price != 0 THEN
                                 CASE
                                     WHEN abs(entry_price - stop_loss_price) / entry_price * 100 < 4.5 THEN 'scalp'
-                                    WHEN abs(entry_price - stop_loss_price) / entry_price * 100 < 9.0 THEN 'gun_ici'
                                     ELSE 'swing'
                                 END
                             ELSE NULL

@@ -624,27 +624,54 @@ class RiskTargetStage:
         # yakın düşüyor. Fiyat ile ATR hedefi ARASINDA (yani hedefe
         # ulaşmadan ÖNCE karşılaşılacak) en az 2 bağımsız yöntemin
         # birleştiği gerçek bir bölge varsa, hedef o bölgenin hemen önüne
-        # çekiliyor — daha erken, gerçekçi bir kâr alımı. SADECE stop
-        # DEĞİL sadece hedef ayarlanıyor, ve SADECE sıkılaştırıyor (hedefi
-        # her zaman fiyata daha YAKIN bir noktaya çeker, asla daha uzağa
-        # taşımaz — Kelly/CPPI/trailing stop ile AYNI ilke). Uygun bir
-        # bölge yoksa (fail-closed) davranış hiç değişmez.
+        # çekiliyor — daha erken, gerçekçi bir kâr alımı. SADECE
+        # sıkılaştırıyor (hedefi her zaman fiyata daha YAKIN bir noktaya
+        # çeker, asla daha uzağa taşımaz — Kelly/CPPI/trailing stop ile
+        # AYNI ilke). Uygun bir bölge yoksa (fail-closed) davranış hiç
+        # değişmez.
+        #
+        # Faz 317-sonrası — kullanıcı bulgusu: "SL'de de faydalı olmaz
+        # mıydı o veri?" Haklı — AYNI confluence bölgeleri artık stop için
+        # de kullanılıyor (bkz. snap_stop_to_confluence docstring'i).
+        # Stop-tarafı GÜVENLİ, çünkü aday bölgeler TANIM GEREĞİ fiyat İLE
+        # mevcut ATR-stop ARASINDA kalıyor — hangi bölge seçilirse
+        # seçilsin sonuç asla mevcut ATR-stop'tan DAHA UZAĞA gidemez,
+        # riski ASLA artırmaz.
         confluence_zones = (ctx.market.features or {}).get("confluence_zones") or []
         if confluence_zones:
-            from analytics.tp_sl_confluence import snap_target_to_confluence
+            from analytics.tp_sl_confluence import snap_stop_to_confluence, snap_target_to_confluence
 
             raw_target_price = (
                 current_price * (1 + target_pct) if direction == "LONG"
                 else current_price * (1 - target_pct)
             )
-            adjusted_target_price, used_zone = snap_target_to_confluence(
+            adjusted_target_price, used_target_zone = snap_target_to_confluence(
                 direction, current_price, raw_target_price, confluence_zones
             )
-            if used_zone is not None:
+            if used_target_zone is not None:
                 target_pct = abs(adjusted_target_price - current_price) / current_price
                 ctx.cognition.relevant_knowledge.append({
                     "type": "tp_sl_confluence",
-                    "data": {"zone": used_zone, "adjusted_target_pct": round(target_pct, 6)},
+                    "data": {"zone": used_target_zone, "adjusted_target_pct": round(target_pct, 6)},
+                })
+
+            raw_stop_price = (
+                current_price * (1 - stop_pct) if direction == "LONG"
+                else current_price * (1 + stop_pct)
+            )
+            adjusted_stop_price, used_stop_zone = snap_stop_to_confluence(
+                direction, current_price, raw_stop_price, confluence_zones
+            )
+            if used_stop_zone is not None:
+                # min_stop_pct tabanı (Faz 268-sonrası — "scalp bölgesi"
+                # gerçek olayı: TEK BAŞINA toplam zararın %92'sini
+                # oluşturmuştu, bkz. yukarıdaki sınıf yorumu) confluence'tan
+                # da MUAF DEĞİL — gerçek bir yapısal seviye bile olsa,
+                # stop bu tabanın altına asla inmiyor.
+                stop_pct = max(abs(adjusted_stop_price - current_price) / current_price, min_stop_pct)
+                ctx.cognition.relevant_knowledge.append({
+                    "type": "sl_confluence",
+                    "data": {"zone": used_stop_zone, "adjusted_stop_pct": round(stop_pct, 6)},
                 })
 
         ctx.decision.stop_loss = current_price * stop_pct

@@ -7,7 +7,6 @@ from database.repositories.app_settings_repository import (
     CANDLE_TIMEFRAMES,
     DEFAULTS,
     DISPLAY_CURRENCIES,
-    TRADE_HORIZON_TO_RISK_TIMEFRAME,
     AppSettingsRepository,
 )
 from database.session_factory import SessionFactory
@@ -39,12 +38,6 @@ def _validate(key: str, value: str) -> None:
                 raise ValueError
         except ValueError:
             raise HTTPException(400, "starting_capital must be a positive number")
-    elif key == "trade_horizon":
-        # Faz 265: artık pozisyon süresini değil, kısa-vadeli katmanın risk
-        # (stop/hedef) tabanını hangi bar aralığından aldığını seçiyor —
-        # bkz. TRADE_HORIZON_TO_RISK_TIMEFRAME üstündeki not.
-        if value not in TRADE_HORIZON_TO_RISK_TIMEFRAME:
-            raise HTTPException(400, f"trade_horizon must be one of {list(TRADE_HORIZON_TO_RISK_TIMEFRAME)}")
     elif key == "min_seconds_between_trades":
         try:
             if int(value) < 0:
@@ -265,7 +258,7 @@ def get_settings_(user: AuthContext = Depends(get_current_user)):
 
 @router.get("/defaults")
 def get_defaults(user: AuthContext = Depends(get_current_user)):
-    return {"defaults": DEFAULTS, "trade_horizon_risk_timeframe": TRADE_HORIZON_TO_RISK_TIMEFRAME}
+    return {"defaults": DEFAULTS}
 
 
 @router.get("/currency-rates")

@@ -356,10 +356,10 @@ def compute_higher_timeframe_trend(higher_timeframe_bars: list[OHLCV]) -> str | 
 
     compute_technical_signals'daki KISA-vadeli trend ile AYNI EMA12/26
     kesişim mantığı — ama burada `higher_timeframe_bars`'a (services/
-    orchestrator.py'nin zaten TRADE_HORIZON_TO_RISK_TIMEFRAME'e göre
-    çektiği "daily_data"/risk barları — trade_horizon="medium" iken 4h,
-    ölçümün yapıldığı AYNI zaman dilimi) uygulanıyor. Ekstra bir ağ
-    isteği YOK — zaten ATR/price_levels için çekilen veri yeniden
+    orchestrator.py'nin zaten çektiği "daily_data"/risk barları — sabit
+    4h, ölçümün yapıldığı AYNI zaman dilimi; Faz 317'de bu tabanı
+    seçen manuel trade_horizon ayarı kaldırıldı) uygulanıyor. Ekstra bir
+    ağ isteği YOK — zaten ATR/price_levels için çekilen veri yeniden
     kullanılıyor. Yeterli bar yoksa None (fail-closed — icat edilmiş bir
     trend asla üretilmez, agents/technical_agent.py bunu "veri yok"
     olarak ele alıp confidence'a hiç dokunmuyor)."""

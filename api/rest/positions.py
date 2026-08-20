@@ -38,10 +38,18 @@ def _extract_pairs_trade(row: dict) -> str | None:
 # tiplerinden hangileri başarılı olmuş, dashboard'a otomatik yansısın."
 # Transactions.tsx::tradeTypeBadge() ile AYNI sınıflandırma — tek gerçek
 # kaynak, biri backend (agregasyon) biri frontend (satır rozeti) için
-# burada tekrarlanıyor. Eşikler (%4.5 / %9) gerçek kapanmış işlem
-# dağılımından kalibre edildi (Faz 268ad).
+# burada tekrarlanıyor. Eşik (%4.5) gerçek kapanmış işlem dağılımından
+# kalibre edildi (Faz 268ad).
+#
+# Faz 317 — kullanıcı kararı: "gün içi" (%4.5-%9) kovası kaldırıldı.
+# Gerçek veriyle doğrulandı: 419 "gün içi" işleminin TAMAMI 2026-08-06/14
+# arası, %70'i manual_full (gerçek AI kararı değil), ortalama pozisyon
+# büyüklüğü $27.73 — eski/kirli test verisi, o tarihten bu yana tek bir
+# yeni "gün içi" işlem yok. Kullanıcı: "gün içi işlem diye bir şey
+# kalmasın... zaten işlem almıyormuş ölü yatırım." Geçmiş kirli satırlar
+# migration faz317 ile excluded_from_stats=true işaretlendi (silinmedi);
+# kategori scalp/swing ikili ayrımına birleştirildi.
 _SCALP_MAX_STOP_PCT = 4.5
-_GUN_ICI_MAX_STOP_PCT = 9.0
 
 
 def _classify_trade_type(row: dict) -> str | None:
@@ -49,7 +57,7 @@ def _classify_trade_type(row: dict) -> str | None:
     # mı Transactions'ta göremedim." Kök neden: pump_fade_strategy.py bu
     # işlemleri experiment_bucket="pump_fade_v1" ile etiketliyordu ama bu
     # sütun ne burada ne de _serialize()'da hiç okunmuyordu — pump-fade
-    # işlemleri sessizce stop-mesafesi sezgiselliğine (scalp/gün içi/swing)
+    # işlemleri sessizce stop-mesafesi sezgiselliğine (scalp/swing)
     # düşüp normal AI işlemlerinden ayırt edilemez oluyordu. Diğer
     # dallardan ÖNCE kontrol ediliyor çünkü mekanik strateji, stop mesafesi
     # tesadüfen scalp/swing aralığına denk gelse bile kendi kimliğini
@@ -66,8 +74,6 @@ def _classify_trade_type(row: dict) -> str | None:
         pct = abs(entry_price - stop_loss_price) / entry_price * 100
         if pct < _SCALP_MAX_STOP_PCT:
             return "scalp"
-        if pct < _GUN_ICI_MAX_STOP_PCT:
-            return "gun_ici"
         return "swing"
     return None
 

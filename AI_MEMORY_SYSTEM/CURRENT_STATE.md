@@ -2,7 +2,7 @@
 
 **Tarih:** 2026-08-20
 **Branch:** main
-**Son commit (HEAD):** 71d4bd5 (Faz 315: Execution Layer, Faz 1) — Faz 316 çalışması aşağıda anlatıldığı gibi TAMAMLANDI ve tam suite ile doğrulandı ama HENÜZ commit edilmedi (kullanıcı onayı bekleniyor). Faz 315 de henüz push edilmedi, servis restart'ı bekleniyor.
+**Son commit (HEAD):** 21dca03 (Faz 316: HTF confluence + benched ajan itirazı gölge pozisyon + küçük temizlikler) — henüz push edilmedi, servis restart'ı bekleniyor (Faz 315 71d4bd5 dahil).
 **Test:** tam suite (1548 passed, 1 skipped, 1 xpassed, 8 failed). Başarısızlıkların TAMAMI Faz 316 ile ilgisiz: `test_calibration_api`/`test_council_orchestrator` x3/`test_red_team` x2/`test_performance_api` — `project_shared_test_state_bloat` hafıza notunda zaten belgelenen, paylaşılan `quantdb_test`teki birikmiş geçmiş veriden kaynaklanan bilinen flake'ler (izole çalıştırıldığında da aynı şekilde başarısız); `test_llm_reasoner_timeout` — gerçek dış LLM ağ isteği zaman aşımı (izole doğrulandı, koddan bağımsız).
 
 ## Faz 316 — Çok-zamanlı dilim (HTF) confluence + benched ajan itirazı gölge pozisyon + küçük temizlikler (2026-08-20)
@@ -17,7 +17,9 @@ Execution Layer'ın hemen ardından, kullanıcının "Technical Agent iki gün �
 
 **4) Küçük temizlikler:** Transactions.tsx'te kapalı işlem kartında "Kaldıraç" alanı koşullu render ediliyordu (leverage yoksa DOM'dan tamamen çıkıp sonraki hücreleri sola kaydırıyordu) — `OpenPositionRow`'daki "hep render + spot fallback" desenine getirildi. `contracts/experiment_registry.py` (Faz 233'te tablosu kaldırılmıştı, kod tamamen ölüydü — `engines/cognitive_pipeline.py`'de kullanılmayan bir import dışında hiçbir gerçek çağıran yoktu) tamamen silindi.
 
-**Açık kalan takip maddesi:** commit onayı bekleniyor (Execution Layer gibi, henüz istenmedi).
+**5) NUPL/SOPR/Realized Price eklendi (kota tekrar açılınca canlı doğrulandı, 2026-08-20).** `market_data/onchain/onchain_provider.py`'ye MVRV ile AYNI ücretsiz kaynak/önbellek deseniyle üç yeni fetch fonksiyonu (`fetch_nupl`/`fetch_sopr`/`fetch_realized_price`) — üçü de canlı test edildi (sırasıyla 0.2452 / 1.0012 / 52255.99$). `mvrv_ratio`/`mayer_multiple` ile AYNI kasıtlı kapsam: henüz hiçbir ajana/pump_fade'e bağlanmadı, SADECE gözlem — kalibrasyon için gerçek veri birikmesi gerekiyor. Bu değişiklik henüz commit edilmedi.
+
+**Açık kalan takip maddesi:** commit onayı bekleniyor (Execution Layer/Faz 316 gibi, henüz istenmedi).
 
 ## Faz 315 — Execution Layer, Faz 1: gerçek Binance Futures Testnet emir gönderimi (2026-08-20)
 

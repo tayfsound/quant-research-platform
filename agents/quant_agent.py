@@ -2,6 +2,22 @@
 from contracts.agent import AgentDomain, AgentOpinion
 from contracts.quant import QuantContext
 
+# Faz 317-sonrası — kullanıcı bulgusu (2026-08-20): "Quant ajanın isabeti
+# sıfıra indi." Gerçek geçmiş veriyle ölçüldü (1333 kapanmış işlem,
+# feature_ic.py metodolojisiyle): bu ajanın nihai yönü long_term_trend_
+# regime (200-EMA tabanlı, YAVAŞ/gecikmeli) ile AYNI taraftaysa
+# ("agree" — ör. LONG + bull_trend) kazanma oranı SADECE %27.9 (n=308,
+# ortalama getiri -%3.94) — yazı turadan kötü. TERS taraftaysa
+# ("disagree") %71.4 (n=7) — ama bu örneklem (7) istatistiksel olarak
+# GÜVENİLMEZ, kalıcı bir "tersine çevir" kararı için yetersiz. Bu yüzden
+# SADECE "agree" durumunda confidence indiriliyor (gerçek, sağlam
+# kanıtlı n=308) — "disagree" durumunda HİÇBİR ayarlama yapılmıyor
+# (yetersiz kanıt, kalıcı ters çevirme riskli olurdu — piyasa tekrar
+# gerçek mean-reverting bir rejime dönerse bu ajanın Z-score mantığı
+# muhtemelen yeniden işe yarar, kör bir kalıcı inversiyon o zaman bizi
+# YANLIŞ tarafta bırakırdı). Yön ASLA değişmiyor, SADECE confidence.
+_TREND_AGREEMENT_CONFIDENCE_DISCOUNT = 0.6
+
 
 class QuantAgent:
     def __init__(self):
@@ -109,6 +125,19 @@ class QuantAgent:
             direction = "WAIT"
 
         confidence = min(abs(score) / 4.0, 0.85)
+
+        # Faz 317-sonrası — bkz. _TREND_AGREEMENT_CONFIDENCE_DISCOUNT
+        # üstündeki yorum. SADECE "agree" durumunda (gerçek, n=308 kanıt)
+        # indiriliyor — direction ASLA değişmiyor.
+        if direction in ("LONG", "SHORT") and context.long_term_trend_regime in ("bull_trend", "bear_trend"):
+            agent_side = "bull_trend" if direction == "LONG" else "bear_trend"
+            if context.long_term_trend_regime == agent_side:
+                confidence *= _TREND_AGREEMENT_CONFIDENCE_DISCOUNT
+                caveats.append(
+                    f"Yön, uzun vadeli rejimle ({context.long_term_trend_regime}) AYNI tarafta — "
+                    "geçmiş veride bu durum daha düşük isabetle ilişkili (n=308, %27.9 kazanma), "
+                    "confidence indirildi"
+                )
 
         return AgentOpinion(
             agent_id=self.agent_id,

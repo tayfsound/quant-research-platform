@@ -9,7 +9,10 @@ from market_data.onchain.onchain_provider import (
     fetch_mvrv_ratio,
     fetch_mvrv_zscore,
     fetch_network_activity_trend,
+    fetch_nupl,
+    fetch_realized_price,
     fetch_solana_tps,
+    fetch_sopr,
     fetch_stablecoin_dominance_vs_eth_pct,
     fetch_total2_total3_market_cap_usd,
     fetch_usdt_total_supply,
@@ -192,6 +195,57 @@ def test_mvrv_ratio_and_zscore_use_separate_cache_keys():
     # fetch'e düşer, ama testin amacı: iki farklı anahtarın birbirine
     # KARIŞMADIĞINI (aynı sözlükte bağımsız yaşadığını) doğrulamak.
     assert onchain_provider._MVRV_CACHE["mvrv_zscore"][1] != onchain_provider._MVRV_CACHE["mvrv_ratio"][1]
+    onchain_provider._MVRV_CACHE.clear()
+
+
+def test_fetch_nupl_returns_a_real_plausible_value():
+    """Faz 316-sonrası — Net Unrealized Profit/Loss. Canlı doğrulandı
+    (2026-08-20): 0.2452. Tanım gereği -1 ile 1 arasında (tüm piyasa
+    kâr/zarar oranının net değeri, sınırları aşamaz)."""
+    onchain_provider._MVRV_CACHE.clear()
+    value = fetch_nupl()
+    if value is not None:
+        assert -1.0 <= value <= 1.0
+    onchain_provider._MVRV_CACHE.clear()
+
+
+def test_fetch_sopr_returns_a_real_plausible_value():
+    """Canlı doğrulandı (2026-08-20): 1.0012. Tarihsel olarak hiç 0'ın
+    altına ya da 3'ün üstüne çıkmadı."""
+    onchain_provider._MVRV_CACHE.clear()
+    value = fetch_sopr()
+    if value is not None:
+        assert 0.0 < value < 3.0
+    onchain_provider._MVRV_CACHE.clear()
+
+
+def test_fetch_realized_price_returns_a_real_plausible_value():
+    """Canlı doğrulandı (2026-08-20): 52255.99 (BTC hiç bu kadar ucuz
+    olmadı, ama gerçekleşen fiyat ortalaması güncel piyasa fiyatının
+    çok altında/üstünde olamaz — kaba bir makuliyet aralığı)."""
+    onchain_provider._MVRV_CACHE.clear()
+    value = fetch_realized_price()
+    if value is not None:
+        assert 1_000.0 < value < 1_000_000.0
+    onchain_provider._MVRV_CACHE.clear()
+
+
+def test_nupl_sopr_realized_price_use_separate_cache_keys_from_mvrv():
+    """mvrv_ratio/mvrv_zscore/nupl/sopr/realized_price hepsi AYNI
+    _MVRV_CACHE sözlüğünü paylaşıyor (farklı anahtarlarla) — hiçbiri
+    diğerinin önbelleğini yanlışlıkla döndürmemeli."""
+    onchain_provider._MVRV_CACHE.clear()
+    onchain_provider._MVRV_CACHE["mvrv_ratio"] = (0.0, 1.3248)
+    onchain_provider._MVRV_CACHE["nupl"] = (0.0, 0.2452)
+    onchain_provider._MVRV_CACHE["sopr"] = (0.0, 1.0012)
+    onchain_provider._MVRV_CACHE["realized_price"] = (0.0, 52255.99)
+    values = {
+        onchain_provider._MVRV_CACHE["mvrv_ratio"][1],
+        onchain_provider._MVRV_CACHE["nupl"][1],
+        onchain_provider._MVRV_CACHE["sopr"][1],
+        onchain_provider._MVRV_CACHE["realized_price"][1],
+    }
+    assert len(values) == 4
     onchain_provider._MVRV_CACHE.clear()
 
 

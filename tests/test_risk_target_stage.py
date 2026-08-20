@@ -428,6 +428,85 @@ def test_risk_target_stage_snaps_short_target_to_confluence_zone():
     assert 1.0 < result.decision.take_profit < 1.5
 
 
+def test_risk_target_stage_snaps_stop_to_confluence_zone_when_present():
+    """Faz 317-sonrası — kullanıcı bulgusu: "SL'de de faydalı olmaz
+    mıydı o veri?" Ham stop: 100 * (1 - 0.05) = 95.0 (min_stop_pct
+    tabanı 0.045 -> 95.5, henüz devrede değil çünkü 0.05 > 0.045).
+    Aradaki (95.0-100) 2 bağımsız yöntemin birleştiği gerçek bir
+    destek: 95.3 — stop fiyata daha YAKIN bir noktaya (95.3'ün hemen
+    altına, ama hâlâ taban 0.045'in ÜSTÜNDE) çekilmeli."""
+    ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
+    ctx.market.features["confluence_zones"] = [
+        {"level": 95.3, "method_count": 2, "contributing_methods": ["sr_support", "pivot_s1"]}
+    ]
+    result = RiskTargetStage().execute(ctx)
+
+    # Stop artık 5.0 (100-95) DEĞİL, 95.3'ün hemen altına çekilmiş —
+    # fiyata olan mesafesi KÜÇÜLMÜŞ, ama taban (4.5) hâlâ AŞILMAMIŞ.
+    assert 4.5 < result.decision.stop_loss < 5.0
+    # Hedef HİÇ etkilenmemeli (bu senaryoda hedef aralığında zone yok).
+    assert abs(result.decision.take_profit - 2.8) < 1e-9
+
+
+def test_risk_target_stage_snaps_short_stop_to_confluence_zone():
+    ctx = _ctx(direction="SHORT", daily_atr_pct=0.02, current_price=100.0)
+    # Ham stop: 100 * 1.05 = 105.0. Aradaki (100-105) gerçek bir bölge: 104.7.
+    ctx.market.features["confluence_zones"] = [
+        {"level": 104.7, "method_count": 2, "contributing_methods": ["sr_resistance", "volume_profile_poc"]}
+    ]
+    result = RiskTargetStage().execute(ctx)
+    assert 4.5 < result.decision.stop_loss < 5.0
+
+
+def test_risk_target_stage_stop_confluence_never_breaches_the_min_stop_pct_floor(monkeypatch):
+    """Kritik güvenlik testi: Faz 268-sonrası'nın min_stop_pct tabanı
+    (gerçek olay: "scalp bölgesi" tek başına toplam zararın %92'sini
+    oluşturmuştu) confluence'tan da MUAF DEĞİL — gerçek bir yapısal
+    seviye bile olsa, stop bu tabanın altına asla inmemeli."""
+    from database.repositories.app_settings_repository import AppSettingsRepository
+    from database.session_factory import SessionFactory
+
+    with SessionFactory.get_session() as session:
+        AppSettingsRepository(session).set("min_stop_pct", "0.045", updated_by="test")
+
+    try:
+        ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
+        # Ham stop zaten min_stop_pct tabanına (100*(1-0.045)=95.5) çekilmiş
+        # olacak. Confluence bölgesi bu tabanın da İÇİNDE (99.0) — taban
+        # olmasaydı stop fiyata çok daha yakına (99.0 civarı) çekilirdi.
+        ctx.market.features["confluence_zones"] = [
+            {"level": 99.0, "method_count": 2, "contributing_methods": ["sr_support", "pivot_s1"]}
+        ]
+        result = RiskTargetStage().execute(ctx)
+
+        # Stop tabanın (4.5) altına ASLA inmemeli.
+        assert result.decision.stop_loss >= 4.5 - 1e-9
+    finally:
+        with SessionFactory.get_session() as session:
+            from database.repositories.app_settings_repository import DEFAULTS
+            AppSettingsRepository(session).set("min_stop_pct", DEFAULTS["min_stop_pct"], updated_by="test")
+
+
+def test_risk_target_stage_ignores_confluence_zone_beyond_stop():
+    """Bölge stop'un ÖTESİNDEYSE (fiyattan stop'a giden yolda
+    karşılaşılmıyor) stop hiç değişmemeli."""
+    ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
+    ctx.market.features["confluence_zones"] = [
+        {"level": 50.0, "method_count": 2, "contributing_methods": ["sr_support", "pivot_s1"]}
+    ]
+    result = RiskTargetStage().execute(ctx)
+    assert abs(result.decision.stop_loss - 5.0) < 1e-9
+
+
+def test_risk_target_stage_ignores_weak_confluence_zone_for_stop():
+    ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
+    ctx.market.features["confluence_zones"] = [
+        {"level": 97.5, "method_count": 1, "contributing_methods": ["sr_support"]}
+    ]
+    result = RiskTargetStage().execute(ctx)
+    assert abs(result.decision.stop_loss - 5.0) < 1e-9
+
+
 def test_decision_fusion_still_forces_wait_without_risk_target_stage():
     """Regresyon kilidi: RiskTargetStage atlanırsa (eski, bug'lı davranış)
     DecisionFusion hâlâ her zaman WAIT'e zorlamalı — bu testin kendisi

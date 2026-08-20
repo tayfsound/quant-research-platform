@@ -177,3 +177,55 @@ def snap_target_to_confluence(
     buffer = tolerance_pct / 2  # bölgenin TAM üstüne değil, hemen önüne
     adjusted = nearest["level"] * (1 - buffer) if direction == "LONG" else nearest["level"] * (1 + buffer)
     return adjusted, nearest
+
+
+def snap_stop_to_confluence(
+    direction: str,
+    current_price: float,
+    stop_price: float,
+    zones: list[dict],
+    tolerance_pct: float = 0.005,
+    min_method_count: int = 2,
+) -> tuple[float, dict | None]:
+    """Faz 317-sonrası — kullanıcı bulgusu: aynı 7-yöntemli confluence
+    verisi (compute_price_levels) SADECE hedefe uygulanıyordu, stop'a hiç
+    dokunmuyordu — "SL'de de faydalı olmaz mıydı o veri?" Gerçek trading
+    pratiğiyle de örtüşüyor: stop, rastgele bir ATR mesafesi yerine
+    GERÇEK bir desteğin/direncin hemen ÖTESİNE konmalı.
+
+    ATR-tabanlı stop ile şu anki fiyat ARASINDA gerçek bir confluence
+    bölgesi (>=min_method_count bağımsız yöntem) varsa — yani fiyatın
+    stop'a ulaşmadan ÖNCE gerçek bir destek/dirençle karşılaşacağı
+    anlamına gelir — stop o bölgenin hemen ötesine (fiyata daha YAKIN)
+    çekilir.
+
+    snap_target_to_confluence ile AYNI "sadece sıkılaştırır" garantisi —
+    ama BURADA garanti YAPI GEREĞİ kesin: candidate zone'lar TANIM
+    GEREĞİ fiyat İLE mevcut ATR-stop ARASINDA kaldığı için, seçilen
+    zone ne olursa olsun sonuç asla mevcut ATR-stop'tan DAHA UZAĞA
+    gidemez — riski ASLA artırmaz (Kelly/CPPI/breakeven ratchet ile
+    AYNI ilke). Uygun bir bölge yoksa (fail-closed) orijinal stop_price
+    aynen döner.
+
+    Döner: (nihai_stop_price, kullanılan_zone_ya_da_None)."""
+    if current_price <= 0 or not zones:
+        return stop_price, None
+
+    candidates = [
+        z for z in zones
+        if z["method_count"] >= min_method_count
+        and (
+            (direction == "LONG" and stop_price < z["level"] < current_price)
+            or (direction == "SHORT" and current_price < z["level"] < stop_price)
+        )
+    ]
+    if not candidates:
+        return stop_price, None
+
+    # Fiyata en YAKIN (yani stop'a ulaşmadan İLK karşılaşılacak) bölge —
+    # stop'u mümkün olan en erken gerçekçi (fiyata en yakın, en sıkı)
+    # noktaya çeker.
+    nearest = min(candidates, key=lambda z: abs(z["level"] - current_price))
+    buffer = tolerance_pct / 2  # bölgenin TAM üstüne değil, hemen ÖTESİNE (koruma payı)
+    adjusted = nearest["level"] * (1 - buffer) if direction == "LONG" else nearest["level"] * (1 + buffer)
+    return adjusted, nearest

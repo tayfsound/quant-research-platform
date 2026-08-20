@@ -208,7 +208,6 @@ const PERIOD_TABS: { key: keyof Pick<PerformanceData, "daily" | "weekly" | "mont
 
 const TRADE_TYPE_LABELS: Record<string, string> = {
   scalp: "Scalp",
-  gun_ici: "Gün içi",
   swing: "Swing",
   orta_vadeli: "Orta vadeli",
   hedge: "Hedge",
@@ -223,7 +222,7 @@ const TRADE_TYPE_LABELS: Record<string, string> = {
 // görünmüyordu — TRADE_TYPE_ORDER.filter(...) listede olmayan hiçbir
 // key'i render etmiyor, backend'in döndürdüğü YENİ bir tür sessizce
 // kayboluyordu.
-const TRADE_TYPE_ORDER = ["scalp", "gun_ici", "swing", "orta_vadeli", "hedge", "pump_fade"];
+const TRADE_TYPE_ORDER = ["scalp", "swing", "orta_vadeli", "hedge", "pump_fade"];
 
 // Kullanıcı isteği: "işlem türüne göre açık pozisyonlar diye bir yer
 // eklemişsin güzel ama kapanmış işlemlerin olduğu kısıma ratioları
@@ -570,7 +569,7 @@ export default function Dashboard() {
 
           <TradeTypeBreakdownTable
             title="İşlem türüne göre açık pozisyonlar"
-            description="Scalp/gün içi/orta vadeli/swing stop mesafesine ve zaman dilimine göre; Pump-Fade ve hedge kendi mekanik stratejilerinin etiketiyle ayrılıyor (bkz. Transactions'taki aynı rozetler)."
+            description="Scalp/orta vadeli/swing stop mesafesine ve zaman dilimine göre; Pump-Fade ve hedge kendi mekanik stratejilerinin etiketiyle ayrılıyor (bkz. Transactions'taki aynı rozetler)."
             rows={typeBreakdown}
           />
 
@@ -709,7 +708,7 @@ export default function Dashboard() {
                 İşlem Tipine Göre Performans
               </h3>
               <p className="text-xs text-ink-faint mb-3">
-                Scalp/gün içi/swing, pozisyonun gerçek stop mesafesinden (Transactions'taki rozetlerle aynı
+                Scalp/swing, pozisyonun gerçek stop mesafesinden (Transactions'taki rozetlerle aynı
                 sınıflandırma) belirleniyor; orta vadeli ve hedge ayrı katman/mekanizmalar.
               </p>
               <Card padded={false}>

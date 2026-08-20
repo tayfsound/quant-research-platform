@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends
 
 from config import get_settings
 from contracts.auth import Role
-from database.repositories.app_settings_repository import TRADE_HORIZON_TO_RISK_TIMEFRAME
 from market_data.ingestion.data_provider import get_ohlcv_provider
 from services.auth_service import AuthContext, require_role
 from services.cognitive_engine import CognitiveEngine
@@ -35,7 +34,6 @@ def run_cognitive_cycle(
         settings_repo = AppSettingsRepository(session)
         timeframe = settings_repo.get("candle_timeframe")
         lookback = int(settings_repo.get("candle_lookback"))
-        trade_horizon = settings_repo.get("trade_horizon")
 
     provider = get_ohlcv_provider()
     data = provider.get_ohlcv(symbol, timeframe, limit=lookback)
@@ -64,12 +62,11 @@ def run_cognitive_cycle(
         ctx.risk.consecutive_losses = risk_state["consecutive_losses"]
         ctx.risk.kill_switch_consecutive_losses = risk_state["kill_switch_consecutive_losses"]
     else:
-        # Faz 262/265: risk ölçeklendirmesi için trade_horizon'a göre
-        # seçilen bar aralığı — bkz. services/orchestrator.py::propose
-        # üstündeki not. Bu endpoint orchestrator.propose()'un (kısa-vadeli)
-        # manuel tetikleme karşılığı, aynı risk tabanını kullanmalı.
-        risk_timeframe = TRADE_HORIZON_TO_RISK_TIMEFRAME.get(trade_horizon, "4h")
-        risk_data = _get_risk_bars_cached(provider, symbol, timeframe=risk_timeframe, limit=60)
+        # Faz 317-sonrası — trade_horizon ayarı kaldırıldı (bkz. services/
+        # orchestrator.py::propose üstündeki AYNI not), sabit 4h. Bu
+        # endpoint orchestrator.propose()'un (kısa-vadeli) manuel tetikleme
+        # karşılığı, aynı risk tabanını kullanmalı.
+        risk_data = _get_risk_bars_cached(provider, symbol, timeframe="4h", limit=60)
         ctx = build_cognitive_context(symbol, timeframe, data, daily_data=risk_data)
 
     result = engine.run(ctx)

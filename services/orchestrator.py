@@ -6,7 +6,6 @@ from typing import Any
 import structlog
 
 from observability.metrics import decision_pipeline_latency_seconds
-from database.repositories.app_settings_repository import TRADE_HORIZON_TO_RISK_TIMEFRAME
 from database.repositories.risk_limit_repository import load_active_limits
 from services.risk_state import load_position_risk_state
 from market_data.ingestion.data_provider import get_ohlcv_provider, OHLCVProvider
@@ -430,27 +429,21 @@ class CognitiveOrchestrator:
             # (bkz. services/risk_state.py).
             medium_term_enabled = settings_repo.get("medium_term_enabled") == "true"
             medium_term_timeframe = settings_repo.get("medium_term_timeframe")
-            # Faz 265 — kullanıcı isteği: "İşlem vadesi" (Scalp/Gün içi/
-            # Swing) artık hiçbir şeyi zorla kapatmıyor (Faz 215) ama YİNE
-            # DE gerçek bir anlamı olsun istedi — artık kısa-vadeli
-            # katmanın risk (stop/hedef) tabanını hangi bar aralığından
-            # aldığını seçiyor. Dar taban (1h) = küçük mesafe = saatler
-            # içinde sonuçlanma eğilimi ("scalp"); geniş taban (1d) =
-            # büyük mesafe = günler/haftalar ("swing") — ama hiçbiri süre
-            # yüzünden zorla kapatılmıyor, sadece gerçekten ulaşınca.
-            trade_horizon = settings_repo.get("trade_horizon")
 
         data = self.data_provider.get_ohlcv(symbol, timeframe, limit=lookback)
         if not data:
             return None
 
-        # Faz 262/265: risk (stop/hedef) tabanı artık trade_horizon'a göre
-        # seçilen bar aralığından geliyor — aynı 1:4 oran (kalibrasyon için
-        # hâlâ gerekli, bkz. RiskTargetStage) artık kullanıcının seçtiği
-        # ölçeğe uygulanıyor. Orta-vadeli katman (propose_medium_term) hâlâ
-        # gerçek günlük bar kullanıyor — "sabırlı, nadir, büyük" profil
-        # orada kalmalı, bu ayardan etkilenmiyor.
-        risk_timeframe = TRADE_HORIZON_TO_RISK_TIMEFRAME.get(trade_horizon, "4h")
+        # Faz 317-sonrası — kullanıcı kararı: manuel "İşlem vadesi" (Scalp/
+        # Gün içi/Swing) seçimi Settings'ten tamamen kaldırıldı. Faz 215'ten
+        # beri zaten hiçbir şeyi süreye göre zorla kapatmıyordu (bkz. eski
+        # yorum) — geriye kalan tek gerçek işlevi risk (stop/hedef) tabanının
+        # hangi bar aralığından geldiğini seçmekti, o da artık sabit 4h
+        # (eski "medium" varsayılanı). Gerçek "pozisyona göre esnek ayarlama"
+        # zaten Adaptive Barrier Engine'den geliyor (bkz. RiskTargetStage.
+        # _try_adaptive_barrier) — bu sabit sadece o mekanizmanın hiç kova
+        # bulamadığı durumlardaki statik ATR yedeğinin veri kaynağı.
+        risk_timeframe = "4h"
         risk_data = _get_risk_bars_cached(self.data_provider, symbol, timeframe=risk_timeframe, limit=60)
 
         ctx = self._build_context(
@@ -508,7 +501,6 @@ class CognitiveOrchestrator:
             lookback = int(settings_repo.get("candle_lookback"))
             medium_term_enabled = settings_repo.get("medium_term_enabled") == "true"
             medium_term_timeframe = settings_repo.get("medium_term_timeframe")
-            trade_horizon = settings_repo.get("trade_horizon")
             cascade_timeframes_raw = settings_repo.get("multi_timeframe_cascade_timeframes")
 
         if timeframes is None:
@@ -542,7 +534,9 @@ class CognitiveOrchestrator:
         if not data:
             return None
 
-        risk_timeframe = TRADE_HORIZON_TO_RISK_TIMEFRAME.get(trade_horizon, "4h")
+        # Faz 317-sonrası — trade_horizon ayarı kaldırıldı (bkz. propose()
+        # üstündeki AYNI not), sabit 4h.
+        risk_timeframe = "4h"
         risk_data = _get_risk_bars_cached(self.data_provider, symbol, timeframe=risk_timeframe, limit=60)
 
         ctx = self._build_context(

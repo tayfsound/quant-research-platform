@@ -99,10 +99,16 @@ def test_feature_contributions_sum_to_the_implied_raw_score():
     """Faz 268-sonrası: Feature Importance — SHAP gibi bir yaklaşık yöntem
     DEĞİL, bu ajanın skorlaması zaten kesin/katkısal. feature_contributions
     her zaman GERÇEK score'a (confidence = min(|score|/4.0, 0.85)) eşit
-    toplanmalı — icat edilmiş/eksik bir katkı dökümü asla üretilmemeli."""
+    toplanmalı — icat edilmiş/eksik bir katkı dökümü asla üretilmemeli.
+
+    long_term_trend_regime="insufficient_data" KASITLI — Faz 317-sonrası
+    trend-uyum indirimi (bkz. _TREND_AGREEMENT_CONFIDENCE_DISCOUNT) bu
+    testin izole etmeye çalıştığı score->confidence ilişkisini bozar,
+    ayrı bir test (test_trend_agreement_discounts_confidence_but_keeps_
+    feature_contributions_at_raw_score) onu zaten kapsıyor."""
     agent = QuantAgent()
     opinion = agent.analyze(QuantContext(
-        zscore=-2.5, hurst_exponent=0.3, long_term_trend_regime="bull_trend",
+        zscore=-2.5, hurst_exponent=0.3, long_term_trend_regime="insufficient_data",
     ))
     implied_score = sum(opinion.feature_contributions.values())
     # confidence = min(|score|/4.0, 0.85) -> |score| = confidence*4.0 (tavana çarpmadığı sürece)
@@ -133,6 +139,52 @@ def test_feature_contributions_reflect_the_changepoint_discount():
         long_term_trend_regime="bull_trend", regime_changepoint_detected=True,
     ))
     assert abs(opinion.feature_contributions["long_term_trend_regime"] - 0.3) < 1e-6
+
+
+def test_trend_agreement_discounts_confidence_when_direction_matches_long_term_regime():
+    """Faz 317-sonrası — kullanıcı bulgusu: "Quant ajanın isabeti sıfıra
+    indi." Gerçek geçmiş veri (1333 kapanmış işlem) ölçüldü: yön
+    long_term_trend_regime ile AYNI tarafta olduğunda ("agree") kazanma
+    oranı sadece %27.9 (n=308) — confidence indirilmeli, direction ASLA
+    değişmemeli."""
+    agent = QuantAgent()
+    # zscore=-2.5 + hurst=0.3 (mean-reverting) -> LONG bahsi (+2.0).
+    # long_term_trend_regime=bull_trend -> AYNI taraf (LONG), +1.0.
+    agreeing = agent.analyze(QuantContext(
+        zscore=-2.5, hurst_exponent=0.3, long_term_trend_regime="bull_trend",
+    ))
+    baseline = agent.analyze(QuantContext(
+        zscore=-2.5, hurst_exponent=0.3, long_term_trend_regime="insufficient_data",
+    ))
+    assert agreeing.direction == "LONG"
+    assert baseline.direction == "LONG"
+    # baseline: score=2.0 -> confidence=0.5. agreeing: score=3.0 (2.0+1.0)
+    # -> ham confidence=0.75, indirimden sonra 0.75*0.6=0.45 — baseline'dan
+    # (0.5) bile DAHA DÜŞÜK, ham skor daha yüksek olmasına rağmen.
+    assert agreeing.confidence < baseline.confidence
+    assert any("uzun vadeli rejimle" in c.lower() for c in agreeing.caveats)
+
+
+def test_trend_disagreement_never_changes_confidence_insufficient_evidence():
+    """AYNI ölçümde "disagree" kovası sadece n=7 — istatistiksel olarak
+    güvenilmez, kalıcı bir ayarlama YAPILMAMALI (ne indirim ne artırım)."""
+    agent = QuantAgent()
+    # zscore=-2.5 + hurst=0.3 -> LONG bahsi (+2.0). long_term_trend_regime
+    # =bear_trend -> TERS taraf (LONG vs bear_trend), -1.0. score=1.0.
+    disagreeing = agent.analyze(QuantContext(
+        zscore=-2.5, hurst_exponent=0.3, long_term_trend_regime="bear_trend",
+    ))
+    assert disagreeing.direction == "LONG"
+    # confidence = min(1.0/4.0, 0.85) = 0.25 — HİÇ ayarlama yok.
+    assert abs(disagreeing.confidence - 0.25) < 1e-9
+    assert not any("uzun vadeli rejimle" in c.lower() for c in disagreeing.caveats)
+
+
+def test_trend_agreement_discount_never_fires_on_wait():
+    agent = QuantAgent()
+    opinion = agent.analyze(QuantContext(hurst_exponent=0.5, long_term_trend_regime="bull_trend"))
+    assert opinion.direction == "WAIT"
+    assert not any("uzun vadeli rejimle" in c.lower() for c in opinion.caveats)
 
 
 def test_regime_changepoint_has_no_effect_without_a_long_term_regime_signal():

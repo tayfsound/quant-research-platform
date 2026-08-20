@@ -1,10 +1,11 @@
 """GET /api/v1/positions/breakdown-by-type — kullanıcı isteği: "scalp,
-gün içi, orta vade vs. farklı işlem türlerinin ne kadarı short ne kadarı
+orta vade vs. farklı işlem türlerinin ne kadarı short ne kadarı
 long pozisyonmuş, dashboard'da bir tabloda göreyim." Bu testler, SQL
 agregasyonunun api/rest/positions.py::_classify_trade_type() ile AYNI
-önceliklendirme sırasını (pump_fade > hedge > orta_vadeli > scalp/gün
-içi/swing) uyguladığını, gerçek verilerle önce/sonra farkı üzerinden
-doğruluyor — paylaşılan dev DB'deki ambient veriden etkilenmez."""
+önceliklendirme sırasını (pump_fade > hedge > orta_vadeli > scalp/swing —
+Faz 317'de "gün içi" ara kovası kaldırıldı) uyguladığını, gerçek
+verilerle önce/sonra farkı üzerinden doğruluyor — paylaşılan dev DB'deki
+ambient veriden etkilenmez."""
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -68,20 +69,24 @@ def test_classifies_medium_term_timeframe(client):
     assert after.get(("orta_vadeli", "LONG"), 0) == before.get(("orta_vadeli", "LONG"), 0) + 1
 
 
-def test_classifies_scalp_gun_ici_swing_by_stop_distance(client):
+def test_classifies_scalp_and_swing_by_stop_distance(client):
+    """Faz 317 — "gün içi" ara kovası kaldırıldı (kullanıcı: eski/kirli
+    test verisiydi, %70'i manual_full, tek bir yeni işlem yok). %4.5
+    üzerindeki her stop mesafesi artık doğrudan swing."""
     before = _counts(client)
     scalp_symbol = f"BRKSC{uuid4().hex[:8]}"
-    gun_ici_symbol = f"BRKGI{uuid4().hex[:8]}"
+    mid_range_symbol = f"BRKMR{uuid4().hex[:8]}"
     swing_symbol = f"BRKSW{uuid4().hex[:8]}"
 
     _open(scalp_symbol, "LONG", stop_loss_price=98.0, take_profit_price=105.0)  # %2 -> scalp
-    _open(gun_ici_symbol, "LONG", stop_loss_price=94.0, take_profit_price=110.0)  # %6 -> gün içi
+    _open(mid_range_symbol, "LONG", stop_loss_price=94.0, take_profit_price=110.0)  # %6 -> swing (eski "gün içi")
     _open(swing_symbol, "SHORT", stop_loss_price=112.0, take_profit_price=80.0)  # %12 -> swing
 
     after = _counts(client)
     assert after.get(("scalp", "LONG"), 0) == before.get(("scalp", "LONG"), 0) + 1
-    assert after.get(("gun_ici", "LONG"), 0) == before.get(("gun_ici", "LONG"), 0) + 1
+    assert after.get(("swing", "LONG"), 0) == before.get(("swing", "LONG"), 0) + 1
     assert after.get(("swing", "SHORT"), 0) == before.get(("swing", "SHORT"), 0) + 1
+    assert "gun_ici" not in {t for t, _ in after}
 
 
 def test_excluded_from_stats_position_is_not_counted_in_breakdown(client):

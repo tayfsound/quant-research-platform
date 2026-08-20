@@ -54,6 +54,14 @@ _BITCOIN_DATA_MVRV_ZSCORE_URL = "https://bitcoin-data.com/v1/mvrv-zscore/last"
 # "/v1/{metrik}/last" kalıbına güvenerek kör tahmin eklemek yerine,
 # SADECE gerçekten canlı test edilmiş MVRV eklendi.
 _BITCOIN_DATA_MVRV_URL = "https://bitcoin-data.com/v1/mvrv/last"
+# Faz 316-sonrası — kullanıcı isteği: yukarıdaki not "tam yolları saatlik
+# kota doluyken teyit edilemedi" diyordu — kota tekrar açılınca (2026-08-20)
+# üçü de CANLI doğrulandı: GET /v1/nupl/last -> {"nupl":0.2452},
+# GET /v1/sopr/last -> {"sopr":1.0012},
+# GET /v1/realized-price/last -> {"realizedPrice":52255.99}.
+_BITCOIN_DATA_NUPL_URL = "https://bitcoin-data.com/v1/nupl/last"
+_BITCOIN_DATA_SOPR_URL = "https://bitcoin-data.com/v1/sopr/last"
+_BITCOIN_DATA_REALIZED_PRICE_URL = "https://bitcoin-data.com/v1/realized-price/last"
 # Faz 306 — kullanıcı isteği: pump-fade'in gerçek risk sürücüsünün BTC
 # yönü değil "kaç coin aynı anda pompalanıyor" yoğunluğu olduğu (bkz.
 # services/pump_fade_strategy.py::_compute_density_size_multiplier)
@@ -270,6 +278,75 @@ def fetch_mvrv_ratio() -> float | None:
     except Exception as exc:
         logger.warning("bitcoin-data.com MVRV ratio fetch failed: %s", exc)
         _MVRV_CACHE["mvrv_ratio"] = (time.monotonic(), None)
+        return None
+
+
+def fetch_nupl() -> float | None:
+    """Faz 316-sonrası — Net Unrealized Profit/Loss: piyasadaki toplam
+    kâr/zarar durumunun (gerçekleşen değere göre) net oranı. >0.75
+    "euphoria" (tarihsel tepe bölgeleri), <0 "capitulation" (tarihsel dip
+    bölgeleri) — klasik on-chain rejim sınıflandırması. MVRV ile AYNI
+    ücretsiz kaynak/önbellek disiplini (1 saat TTL, bitcoin-data.com'un
+    sıkı saatlik limitini aşmamak için ZORUNLU). Henüz hiçbir ajana
+    bağlanmadı — MVRV ratio/Mayer Multiple gibi (bkz. o alanların kendi
+    yorumları) sadece gözlem/gelecekteki kalibrasyon için."""
+    cached = _MVRV_CACHE.get("nupl")
+    if cached and (time.monotonic() - cached[0]) < _MVRV_CACHE_TTL_SECONDS:
+        return cached[1]
+
+    try:
+        response = httpx.get(_BITCOIN_DATA_NUPL_URL, timeout=10)
+        response.raise_for_status()
+        value = float(response.json()["nupl"])
+        _MVRV_CACHE["nupl"] = (time.monotonic(), value)
+        return value
+    except Exception as exc:
+        logger.warning("bitcoin-data.com NUPL fetch failed: %s", exc)
+        _MVRV_CACHE["nupl"] = (time.monotonic(), None)
+        return None
+
+
+def fetch_sopr() -> float | None:
+    """Faz 316-sonrası — Spent Output Profit Ratio: o gün hareket eden
+    coinlerin ortalama olarak kârla mı zararla mı satıldığı (>1 kâr, <1
+    zarar, ~1 "SOPR reset" — genelde yerel destek/direnç). Henüz hiçbir
+    ajana bağlanmadı, sadece gözlem."""
+    cached = _MVRV_CACHE.get("sopr")
+    if cached and (time.monotonic() - cached[0]) < _MVRV_CACHE_TTL_SECONDS:
+        return cached[1]
+
+    try:
+        response = httpx.get(_BITCOIN_DATA_SOPR_URL, timeout=10)
+        response.raise_for_status()
+        value = float(response.json()["sopr"])
+        _MVRV_CACHE["sopr"] = (time.monotonic(), value)
+        return value
+    except Exception as exc:
+        logger.warning("bitcoin-data.com SOPR fetch failed: %s", exc)
+        _MVRV_CACHE["sopr"] = (time.monotonic(), None)
+        return None
+
+
+def fetch_realized_price() -> float | None:
+    """Faz 316-sonrası — Realized Price: piyasadaki tüm coinlerin son
+    hareket ettikleri fiyatın ortalaması (MVRV oranının paydası, ham
+    dolar cinsinden). Güncel fiyatla karşılaştırmak MVRV oranıyla AYNI
+    bilgiyi verir ama mutlak bir "ortalama maliyet tabanı" seviyesi
+    olarak da tek başına anlamlı. Henüz hiçbir ajana bağlanmadı, sadece
+    gözlem."""
+    cached = _MVRV_CACHE.get("realized_price")
+    if cached and (time.monotonic() - cached[0]) < _MVRV_CACHE_TTL_SECONDS:
+        return cached[1]
+
+    try:
+        response = httpx.get(_BITCOIN_DATA_REALIZED_PRICE_URL, timeout=10)
+        response.raise_for_status()
+        value = float(response.json()["realizedPrice"])
+        _MVRV_CACHE["realized_price"] = (time.monotonic(), value)
+        return value
+    except Exception as exc:
+        logger.warning("bitcoin-data.com Realized Price fetch failed: %s", exc)
+        _MVRV_CACHE["realized_price"] = (time.monotonic(), None)
         return None
 
 

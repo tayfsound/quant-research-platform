@@ -23,7 +23,6 @@ def test_get_settings_returns_defaults_when_nothing_set():
         body = response.json()["settings"]
         assert body["trading_mode"] in ("test", "live")
         assert "max_concurrent_positions" in body
-        assert "trade_horizon" in body
 
 
 def test_admin_can_set_trading_mode_and_it_persists():

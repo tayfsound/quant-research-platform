@@ -72,15 +72,21 @@ const MEDIUM_TERM_TIMEFRAMES = new Set(["4h", "1d"]);
 
 // Faz 268ad: kullanıcı isteği — "orta vadeli" etiketinin aynısı diğer
 // işlem türleri için de (scalp/swing) yapılsın, ayrıca hedge işlemler de
-// görünür olsun. Kısa-vadeli katmanın SİNYAL zaman dilimi hep "5m" (trade_
-// horizon ayarından etkilenmiyor) — o yüzden Scalp/Gün içi/Swing ayrımı
-// timeframe alanından çıkarılamıyor. Bunun yerine pozisyonun GERÇEK stop
-// mesafesinden (|entry - stop| / entry) sınıflandırılıyor — bu, açılış
-// anında hangi risk tabanının (1h/4h/1d ATR) kullanıldığını doğrudan
-// yansıtıyor ve trade_horizon ayarı sonradan değişse bile geçmiş
-// pozisyonların etiketi bozulmuyor. Eşikler (%4.5 / %9) gerçek kapanmış
-// işlem verisindeki kümelerden kalibre edildi (~%4 scalp, ~%5-8 gün içi,
-// ~%14 swing kümeleri net ayrışıyor).
+// görünür olsun. Kısa-vadeli katmanın SİNYAL zaman dilimi hep "5m" —
+// o yüzden Scalp/Swing ayrımı timeframe alanından çıkarılamıyor. Bunun
+// yerine pozisyonun GERÇEK stop mesafesinden (|entry - stop| / entry)
+// sınıflandırılıyor — açılış anında hangi risk tabanının kullanıldığını
+// doğrudan yansıtıyor, hiçbir ayara bağımlı değil (Faz 317'de bu tabanı
+// seçen manuel "işlem vadesi" ayarı zaten kaldırıldı). Eşik (%4.5) gerçek
+// kapanmış işlem verisindeki kümelerden kalibre edildi.
+//
+// Faz 317 — kullanıcı kararı: "gün içi" (%4.5-%9) ara kovası kaldırıldı.
+// Gerçek veriyle doğrulandı: 419 "gün içi" işleminin TAMAMI 2026-08-06/14
+// arası, %70'i manual_full (gerçek AI kararı değil), ortalama pozisyon
+// büyüklüğü $27.73 — eski/kirli test verisi (o tarihten bu yana tek bir
+// yeni "gün içi" işlem yok). Kullanıcı: "zaten işlem almıyormuş ölü
+// yatırım." Geçmiş kirli satırlar migration faz317 ile excluded_from_
+// stats=true işaretlendi (silinmedi).
 function tradeTypeBadge(
   p: Pick<Position, "timeframe" | "entry_price" | "stop_loss_price" | "pairs_trade" | "trade_type">
 ): { label: string; tone: "accent" | "warn" | "neutral"; title?: string } | null {
@@ -101,7 +107,6 @@ function tradeTypeBadge(
   if (p.entry_price != null && p.stop_loss_price != null && p.entry_price !== 0) {
     const pct = (Math.abs(p.entry_price - p.stop_loss_price) / p.entry_price) * 100;
     if (pct < 4.5) return { label: "scalp", tone: "neutral" };
-    if (pct < 9) return { label: "gün içi", tone: "neutral" };
     return { label: "swing", tone: "neutral" };
   }
   return null;
@@ -548,7 +553,7 @@ function sinceCutoffMs(minutes: number): number {
 // zaten hem açık hem kapalı pozisyonlar için AYNI sınıflandırmayı
 // üretiyor — filtre seçenekleri onunla BİREBİR aynı, ayrı bir taksonomi
 // icat edilmedi.
-type TypeFilter = "all" | "pump_fade" | "hedge" | "orta_vadeli" | "scalp" | "gun_ici" | "swing";
+type TypeFilter = "all" | "pump_fade" | "hedge" | "orta_vadeli" | "scalp" | "swing";
 type DirectionFilter = "all" | "LONG" | "SHORT";
 type OutcomeFilter = "all" | "profit" | "loss";
 
@@ -558,7 +563,6 @@ const TYPE_FILTER_OPTIONS: { value: TypeFilter; label: string }[] = [
   { value: "hedge", label: "Hedge" },
   { value: "orta_vadeli", label: "Orta vadeli" },
   { value: "scalp", label: "Scalp" },
-  { value: "gun_ici", label: "Gün içi" },
   { value: "swing", label: "Swing" },
 ];
 
@@ -569,7 +573,6 @@ function matchesTypeFilter(p: Position, filter: TypeFilter): boolean {
     : badge?.label === "hedge" ? "hedge"
     : badge?.label === "orta vadeli" ? "orta_vadeli"
     : badge?.label === "scalp" ? "scalp"
-    : badge?.label === "gün içi" ? "gun_ici"
     : badge?.label === "swing" ? "swing"
     : null;
   return badgeKey === filter;

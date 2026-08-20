@@ -5,6 +5,7 @@ sayımı)."""
 from analytics.tp_sl_confluence import (
     compute_confluence_zones,
     find_nearby_confluence_zone,
+    snap_stop_to_confluence,
     snap_target_to_confluence,
 )
 
@@ -90,3 +91,64 @@ def test_snap_target_to_confluence_picks_nearest_zone_when_multiple_in_range():
     ]
     adjusted, used_zone = snap_target_to_confluence("LONG", 100.0, 110.0, zones)
     assert used_zone["level"] == 103.0  # fiyata daha yakın olan, ilk karşılaşılacak bölge
+
+
+def test_snap_stop_to_confluence_tightens_long_stop_to_zone_in_between():
+    """LONG: fiyat 100, ham stop 90. 95'te 2 yöntemin birleştiği gerçek
+    bir destek var — stop bu desteğin HEMEN ÖTESİNE (90'dan uzak değil,
+    90-100 arasında, 95'e yakın, fiyata daha YAKIN) çekilmeli."""
+    zones = [{"level": 95.0, "method_count": 2, "contributing_methods": ["sr_support", "pivot_s1"]}]
+    adjusted, used_zone = snap_stop_to_confluence("LONG", 100.0, 90.0, zones)
+    assert used_zone is not None
+    assert 90.0 < adjusted < 95.0  # zone'un hemen altına çekildi — fiyata mevcut stop'tan daha yakın
+
+
+def test_snap_stop_to_confluence_tightens_short_stop_to_zone_in_between():
+    zones = [{"level": 105.0, "method_count": 2, "contributing_methods": ["sr_resistance", "pivot_r1"]}]
+    adjusted, used_zone = snap_stop_to_confluence("SHORT", 100.0, 110.0, zones)
+    assert used_zone is not None
+    assert 105.0 < adjusted < 110.0  # fiyata mevcut stop'tan daha yakın
+
+
+def test_snap_stop_to_confluence_never_moves_stop_further_than_original():
+    """Kritik güvenlik testi: hangi zone seçilirse seçilsin (aday
+    kümesi fiyat İLE mevcut stop ARASINDA tanımlı olduğu için), sonuç
+    ASLA orijinal stop'tan daha UZAĞA gidemez — riski asla artırmaz."""
+    original_stop = 90.0
+    zones = [{"level": 91.5, "method_count": 2, "contributing_methods": ["a", "b"]}]
+    adjusted, used_zone = snap_stop_to_confluence("LONG", 100.0, original_stop, zones)
+    assert used_zone is not None
+    # LONG'da stop'un fiyata olan mesafesi KÜÇÜLMELİ (adjusted > original_stop).
+    assert adjusted > original_stop
+
+
+def test_snap_stop_to_confluence_ignores_zone_beyond_stop():
+    """Confluence bölgesi stop'un ÖTESİNDEYSE (fiyattan stop'a giden
+    yolda karşılaşılmıyor) hiç kullanılmamalı — stop asla daha UZAĞA
+    taşınmaz."""
+    zones = [{"level": 80.0, "method_count": 2, "contributing_methods": ["a", "b"]}]
+    adjusted, used_zone = snap_stop_to_confluence("LONG", 100.0, 90.0, zones)
+    assert used_zone is None
+    assert adjusted == 90.0
+
+
+def test_snap_stop_to_confluence_ignores_weak_zone_below_min_method_count():
+    zones = [{"level": 95.0, "method_count": 1, "contributing_methods": ["sr_support"]}]
+    adjusted, used_zone = snap_stop_to_confluence("LONG", 100.0, 90.0, zones)
+    assert used_zone is None
+    assert adjusted == 90.0
+
+
+def test_snap_stop_to_confluence_fail_closed_with_no_zones():
+    adjusted, used_zone = snap_stop_to_confluence("LONG", 100.0, 90.0, [])
+    assert used_zone is None
+    assert adjusted == 90.0
+
+
+def test_snap_stop_to_confluence_picks_nearest_zone_when_multiple_in_range():
+    zones = [
+        {"level": 92.0, "method_count": 2, "contributing_methods": ["a", "b"]},
+        {"level": 97.0, "method_count": 2, "contributing_methods": ["c", "d"]},
+    ]
+    adjusted, used_zone = snap_stop_to_confluence("LONG", 100.0, 90.0, zones)
+    assert used_zone["level"] == 97.0  # fiyata daha yakın olan, ilk karşılaşılacak bölge
