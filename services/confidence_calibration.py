@@ -28,6 +28,7 @@ kaynak."""
 import time
 
 from services.agent_memory import asset_class_of_symbol as _asset_class_of_symbol
+from services.agent_memory import crypto_cap_tier as _crypto_cap_tier
 from services.agent_memory import get_reliability_legacy_cutoff
 
 _MIN_BUCKET_SAMPLES = 20
@@ -87,6 +88,84 @@ def get_calibration_curve(force_refresh: bool = False) -> list[tuple[float, floa
             _cache["curve"] = []
         _cache["computed_at"] = now
     return _cache["curve"]
+
+
+# Faz 325 — kullanıcı bulgusu: DecisionFusion'ın GERÇEKTEN kullandığı bu
+# kalibrasyon eğrisi (compute_calibration_curve, yukarıda) tek bir küresel
+# kova — kripto içi büyük-cap/küçük-cap ayrımı YOK. Gerçek veriyle
+# ölçüldü (bkz. services/agent_memory.py::crypto_cap_tier üstündeki not):
+# confidence=0.4'te büyük-cap %77.7 (n=139) küçük-cap %42.5 (n=106) — 35
+# puanlık gerçek fark. compute_calibration_curve() ile AYNI SQL/kesim/
+# kova mantığı, ek olarak symbol'e göre tier'a ayrılıyor.
+def compute_market_cap_tier_calibration_curves() -> dict[str, list[tuple[float, float]]]:
+    from collections import defaultdict
+
+    from sqlalchemy import text
+
+    from database.session_factory import SessionFactory
+
+    cutoff = get_reliability_legacy_cutoff()
+    query = (
+        "SELECT symbol, confidence, pnl FROM decisions "
+        "WHERE status = 'closed' AND excluded_from_stats = false AND confidence IS NOT NULL"
+    )
+    params: dict = {}
+    if cutoff is not None:
+        query += " AND closed_at >= :cutoff"
+        params["cutoff"] = cutoff
+
+    buckets: dict[tuple[str, float], list[float]] = defaultdict(list)
+    with SessionFactory.get_session() as session:
+        rows = session.execute(text(query), params).fetchall()
+
+    for symbol, confidence, pnl in rows:
+        if confidence is None:
+            continue
+        tier = _crypto_cap_tier(symbol)
+        if tier is None:
+            continue
+        bucket = round(float(confidence), 1)
+        buckets[(tier, bucket)].append(1.0 if (pnl or 0.0) > 0 else 0.0)
+
+    curves: dict[str, list[tuple[float, float]]] = {"large_cap": [], "small_cap": []}
+    for (tier, bucket), outcomes in sorted(buckets.items()):
+        if len(outcomes) < _MIN_BUCKET_SAMPLES:
+            continue
+        curves[tier].append((bucket, sum(outcomes) / len(outcomes)))
+    return curves
+
+
+_market_cap_tier_cache: dict = {"curves": None, "computed_at": 0.0}
+
+
+def get_market_cap_tier_calibration_curves(force_refresh: bool = False) -> dict[str, list[tuple[float, float]]]:
+    now = time.time()
+    if (
+        force_refresh
+        or _market_cap_tier_cache["curves"] is None
+        or (now - _market_cap_tier_cache["computed_at"]) > _CACHE_TTL_SECONDS
+    ):
+        try:
+            _market_cap_tier_cache["curves"] = compute_market_cap_tier_calibration_curves()
+        except Exception:
+            _market_cap_tier_cache["curves"] = {}
+        _market_cap_tier_cache["computed_at"] = now
+    return _market_cap_tier_cache["curves"]
+
+
+def get_calibration_curve_for_symbol(symbol: str | None) -> list[tuple[float, float]]:
+    """DecisionFusion'ın gerçekten çağırdığı yer — symbol verilirse ÖNCE
+    o sembolün büyük-cap/küçük-cap eğrisine bakılır (yeterli örneklem
+    varsa); yoksa (ya da symbol kripto değilse/verilmezse) tek küresel
+    eğriye (get_calibration_curve) düşülür — eski davranışla birebir
+    uyumlu, fail-closed."""
+    if symbol:
+        tier = _crypto_cap_tier(symbol)
+        if tier is not None:
+            tier_curve = get_market_cap_tier_calibration_curves().get(tier)
+            if tier_curve:
+                return tier_curve
+    return get_calibration_curve()
 
 
 def calibrate_confidence(raw_confidence: float, curve: list[tuple[float, float]] | None = None) -> float:

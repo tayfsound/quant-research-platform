@@ -110,7 +110,7 @@ def test_decision_fusion_reduces_confidence_on_memory_direction_conflict(monkeyp
     # calibrate_confidence gerçek DB'deki (paylaşılan test ortamı, kırılgan)
     # ampirik eğriye bağlı — burada izole etmek için identity'e sabitleniyor
     # (bu turdaki red-team testi düzeltmesinde kurulan AYNI desen).
-    monkeypatch.setattr("services.decision_fusion.calibrate_confidence", lambda c: c)
+    monkeypatch.setattr("services.decision_fusion.calibrate_confidence", lambda c, curve=None: c)
     fusion = DecisionFusion()
 
     # confidence=0.4, win=3, loss=1 -> breakeven confidence 0.25 — EV

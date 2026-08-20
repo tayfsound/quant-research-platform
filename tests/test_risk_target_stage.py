@@ -115,7 +115,7 @@ def test_decision_fusion_no_longer_forces_wait_once_real_targets_are_set(monkeyp
     değeri değiştirmeyecek şekilde (boş eğri = fail-closed, zaten
     kalibrasyonun kendi davranışı) sabitleniyor — kalibrasyonun KENDİSİ
     tests/test_confidence_calibration.py'de ayrıca test ediliyor."""
-    monkeypatch.setattr("services.decision_fusion.calibrate_confidence", lambda raw_confidence: raw_confidence)
+    monkeypatch.setattr("services.decision_fusion.calibrate_confidence", lambda raw_confidence, curve=None: raw_confidence)
 
     ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0, confidence=0.85)
     ctx = RiskTargetStage().execute(ctx)

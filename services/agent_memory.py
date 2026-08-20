@@ -56,6 +56,34 @@ def asset_class_of_symbol(symbol: str) -> str:
     return "other"
 
 
+# Faz 325 — kullanıcı bulgusu (Grok/Kimi denetimi sonrası kendi
+# gündeminden): "kripto içi büyük-cap/küçük-cap ayrımı olsa daha güzel
+# olmaz mıydı?" Gerçek veriyle ölçüldü (1521 kapanmış karar, confidence
+# kovasına göre): aynı beyan edilen confidence=0.4'te büyük-cap gerçek
+# kazanma oranı %77.7 (n=139), küçük-cap sadece %42.5 (n=106) — 35 puanlık
+# fark, küçük örneklemden değil. Tek küresel kalibrasyon eğrisi (services/
+# confidence_calibration.py::compute_calibration_curve) bu ikisini
+# harmanlayıp small-cap kararları olduğundan çok daha güvenilir
+# gösteriyordu. Liste, gerçek piyasa değeri API'sine bağlı DEĞİL (böyle
+# bir kaynak henüz wire edilmedi) — Binance'te işlem gören, iyi bilinen
+# ~15 büyük-cap coin'in elle seçilmiş, açıklanabilir bir listesi; icat
+# edilmiş bir eşik değil, "genel olarak kabul edilen büyük-cap" seti.
+_CRYPTO_LARGE_CAP_SYMBOLS = frozenset({
+    "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT",
+    "DOGEUSDT", "TRXUSDT", "LINKUSDT", "DOTUSDT", "AVAXUSDT", "BCHUSDT",
+    "LTCUSDT", "UNIUSDT", "XLMUSDT", "NEARUSDT",
+})
+
+
+def crypto_cap_tier(symbol: str) -> str | None:
+    """"large_cap"/"small_cap" — SADECE asset_class_of_symbol(symbol)
+    "crypto" ise anlamlı, aksi halde None (gold/equity/other için bu
+    ayrım hiç ölçülmedi, uygulanmıyor)."""
+    if asset_class_of_symbol(symbol) != "crypto":
+        return None
+    return "large_cap" if (symbol or "").upper() in _CRYPTO_LARGE_CAP_SYMBOLS else "small_cap"
+
+
 def _effective_decision_timestamp(record: AgentPerformanceRecord):
     """decision_opened_at (DB'den, tz-aware/UTC) ile timestamp (datetime.now(),
     tz-naive) AYNI kayıt kümesinde karışabiliyor — Python ikisini doğrudan

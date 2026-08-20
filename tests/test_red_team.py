@@ -85,7 +85,7 @@ def test_severe_whipsaw_eventually_trips_the_kill_switch(engine):
     mekanizmayı sentetik olarak üretip, kill switch'in GERÇEKTEN
     devreye girdiğini doğrular."""
     bars = whipsaw_chop(n_bars=150, period_bars=15, amplitude_pct=0.06)
-    with patch("services.decision_fusion.calibrate_confidence", side_effect=lambda x: x):
+    with patch("services.decision_fusion.calibrate_confidence", side_effect=lambda x, curve=None: x):
         result = run_red_team_scenario(
             bars, scenario_name="whipsaw", kill_switch_consecutive_losses=4,
             max_drawdown_limit_pct=0.9, engine=engine,
@@ -102,7 +102,7 @@ def test_kill_switch_disabled_means_losses_keep_accumulating(engine):
     Kill switch'in GERÇEKTEN bir şey değiştirdiğini (aksi halde ne işe
     yaradığı belirsiz kalırdı) kanıtlayan karşılaştırma testi."""
     bars = whipsaw_chop(n_bars=150, period_bars=15, amplitude_pct=0.06)
-    with patch("services.decision_fusion.calibrate_confidence", side_effect=lambda x: x):
+    with patch("services.decision_fusion.calibrate_confidence", side_effect=lambda x, curve=None: x):
         disabled = run_red_team_scenario(
             bars, scenario_name="whipsaw_disabled", kill_switch_consecutive_losses=0,
             max_drawdown_limit_pct=0.9, engine=engine,

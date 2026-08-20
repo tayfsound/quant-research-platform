@@ -2,7 +2,7 @@
 from contracts.belief import Belief
 from contracts.context import CognitiveCycleContext
 from contracts.contexts.decision import ActionType
-from services.confidence_calibration import calibrate_confidence
+from services.confidence_calibration import calibrate_confidence, get_calibration_curve_for_symbol
 from services.inner_critic import InnerCritic
 
 
@@ -22,7 +22,13 @@ class DecisionFusion:
         # yerine gerçek geçmiş kararlardan çıkarılan ampirik kalibrasyon
         # eğrisinden geçirilmiş halini kullanıyor — yeterli veri yoksa
         # (fail-closed) ham değer değişmeden kalıyor.
-        confidence = calibrate_confidence(raw_confidence)
+        # Faz 325 — kullanıcı bulgusu: kripto içi büyük-cap/küçük-cap
+        # ayrımı gerçek veriyle ölçüldü (35 puanlık fark, bkz. services/
+        # confidence_calibration.py::compute_market_cap_tier_calibration_
+        # curves üstündeki not) — symbol verilirse önce o eğriye bakılır,
+        # yeterli veri yoksa (fail-closed) tek küresel eğriye düşülür.
+        curve = get_calibration_curve_for_symbol(ctx.market.symbol)
+        confidence = calibrate_confidence(raw_confidence, curve=curve)
 
         # Faz 268-sonrası — kritik bulgu (üçüncü taraf inceleme + kod
         # doğrulaması): InnerCritic instantiate ediliyordu ama .review()

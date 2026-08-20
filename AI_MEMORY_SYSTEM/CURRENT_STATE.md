@@ -1,11 +1,17 @@
-# Mevcut Durum -- v1.63.0 (Faz 324: property-based testler + gerçek bir Kelly bug'ı bulundu/düzeltildi)
+# Mevcut Durum -- v1.64.0 (Faz 325: kripto büyük-cap/küçük-cap confidence kalibrasyon ayrımı)
 
 **Tarih:** 2026-08-20
 **Branch:** main
-**Son commit (HEAD):** 2784728 (Faz 323) — Faz 324 henüz commit edilmedi (bu değişiklik: `services/kelly_sizing.py`, `pyproject.toml` (+hypothesis), yeni `tests/property/` — 3 dosya, 17 test).
-**Servis durumu (2026-08-20):** uvicorn Faz 323 sonrası tekrar restart edildi (`--reload` OLMADAN çalıştığı için dosya değişiklikleri otomatik yüklenmiyor — bir daha "kod-only değişiklik restart gerektirmez" varsayımı yapılmayacak, HER backend .py değişikliği sonrası uvicorn/worker restart GEREKİR). Yeni PID: 68114. Faz 324 (kelly_sizing.py) için de aynı sebeple restart gerekecek — bu Faz commit edilince yapılacak.
-**Test:** yeni property-test'lere + ilgili mevcut testlere dokunan hedefli regresyon (95 test) temiz.
+**Son commit (HEAD):** ca2c653 (Faz 324) — Faz 325 henüz commit edilmedi (bu değişiklik: `services/agent_memory.py`, `services/confidence_calibration.py`, `services/decision_fusion.py`, ilgili testler).
+**⚠️ Servis durumu:** Faz 325, `DecisionFusion.evaluate()`'i (CANLI karar hattının bir parçası) değiştiriyor — `--reload` olmadan çalışan uvicorn/celery worker'lar dosya değişikliğini otomatik almıyor (bu dersi bugün ikinci kez öğrendik). Bu Faz commit edilince worker'lar (en azından `-Q celery`, trading cycle'ı çalıştıran) YENİDEN BAŞLATILMALI.
+**Test:** yeni kalibrasyon testlerine + DecisionFusion/RedTeam/InnerCritic'e dokunan hedefli regresyon (82 test) temiz.
 **Altyapı notu (2026-08-20):** Docker Desktop bu oturumda bir kez çöktü (postgres/redis konteynerleri durdu) — `docker start` ile geri getirildi, veri kaybı yok.
+
+## Faz 325 — kripto içi büyük-cap/küçük-cap confidence kalibrasyon ayrımı (2026-08-20)
+
+Kullanıcının uzun süredir izlemede tuttuğu madde ("confidence_calibration.py tek 'crypto' kovası") gerçek veriyle ölçüldü ve gerçek, önemli bir bulgu çıktı: `DecisionFusion`'ın EV kapısının kullandığı tek küresel kalibrasyon eğrisinde (`compute_calibration_curve`), confidence=0.4 kovasında büyük-cap kazanma oranı **%77.7** (n=139) iken küçük-cap sadece **%42.5** (n=106) — 35 puanlık gerçek fark, küçük örneklemden değil. Tek eğri bu ikisini harmanlayıp small-cap kararları olduğundan çok daha güvenilir gösteriyordu (EV kapısını yanlışlıkla geçirme riski).
+
+`services/agent_memory.py::crypto_cap_tier(symbol)` — 16 bilinen büyük-cap coin'in elle seçilmiş, açıklanabilir listesi (piyasa değeri API'sine bağlı değil, henüz wire edilmedi). `services/confidence_calibration.py::compute_market_cap_tier_calibration_curves()` — `compute_calibration_curve()` ile AYNI SQL/kesim/kova mantığı, ek olarak tier'a ayrılmış. `get_calibration_curve_for_symbol(symbol)` — `calibrate_domain_confidence`'ın asset-class fallback deseniyle AYNI: tier için yeterli veri varsa ona, yoksa (fail-closed) mevcut tek küresel eğriye düşer. `DecisionFusion.evaluate()` artık `ctx.market.symbol`'ü bu fonksiyona geçiriyor — eski davranış (global eğri) hiçbir zaman bozulmuyor, sadece yeterli veri olduğunda daha keskin bir tahmine geçiliyor.
 
 ## Faz 324 — Test stratejisi: property-based testler (hypothesis) + gerçek bir Kelly bug'ı bulundu (2026-08-20)
 

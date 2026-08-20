@@ -300,3 +300,113 @@ def test_calibrate_domain_confidence_without_symbol_uses_global_curve_unchanged(
     monkeypatch.setattr(cc, "get_domain_calibration_curves", lambda: {"technical": [(0.3, 0.9)]})
     result = cc.calibrate_domain_confidence("technical", 0.3)
     assert result == 0.9
+
+
+# Faz 325 — kullanıcı bulgusu: DecisionFusion'ın GERÇEKTEN kullandığı
+# (compute_calibration_curve -> get_calibration_curve) tek küresel eğri,
+# kripto içi büyük-cap/küçük-cap ayrımı hiç yapmıyordu. Gerçek veriyle
+# ölçüldü: confidence=0.4'te büyük-cap %77.7 (n=139) küçük-cap %42.5
+# (n=106) — 35 puanlık gerçek fark.
+def test_crypto_cap_tier_classifies_known_large_caps():
+    from services.agent_memory import crypto_cap_tier
+
+    assert crypto_cap_tier("BTCUSDT") == "large_cap"
+    assert crypto_cap_tier("ETHUSDT") == "large_cap"
+    assert crypto_cap_tier("SOMEOBSCURECOINUSDT") == "small_cap"
+
+
+def test_crypto_cap_tier_is_none_for_non_crypto():
+    from services.agent_memory import crypto_cap_tier
+
+    assert crypto_cap_tier("XAUTUSDT") is None
+    assert crypto_cap_tier("AAPL") is None
+    assert crypto_cap_tier("GC=F") is None
+    assert crypto_cap_tier(None) is None
+
+
+def test_get_calibration_curve_for_symbol_prefers_tier_curve_over_global(monkeypatch):
+    """symbol verilirse ve o tier için yeterli veri varsa, GLOBAL eğri
+    yerine tier eğrisi kullanılmalı — global (0.9) ile tier eğrisi (0.4)
+    kasıtlı olarak ÇOK farklı, hangisinin gerçekten kullanıldığını
+    ayırt edebilmek için."""
+    from services import confidence_calibration as cc
+
+    monkeypatch.setattr(cc, "get_calibration_curve", lambda: [(0.3, 0.9)])
+    monkeypatch.setattr(
+        cc, "get_market_cap_tier_calibration_curves",
+        lambda: {"large_cap": [(0.3, 0.4)], "small_cap": []},
+    )
+
+    assert cc.get_calibration_curve_for_symbol("BTCUSDT") == [(0.3, 0.4)]
+
+
+def test_get_calibration_curve_for_symbol_falls_back_to_global_without_tier_data(monkeypatch):
+    """Fail-closed: tier için (henüz) yeterli veri yoksa, mevcut global
+    eğriye düşülmeli — eski davranış hiç bozulmamalı."""
+    from services import confidence_calibration as cc
+
+    monkeypatch.setattr(cc, "get_calibration_curve", lambda: [(0.3, 0.9)])
+    monkeypatch.setattr(cc, "get_market_cap_tier_calibration_curves", lambda: {})
+
+    assert cc.get_calibration_curve_for_symbol("BTCUSDT") == [(0.3, 0.9)]
+
+
+def test_get_calibration_curve_for_symbol_falls_back_to_global_for_non_crypto(monkeypatch):
+    """Bu ayrım SADECE kripto için ölçüldü — kripto-dışı bir sembol için
+    tier eğrisine hiç bakılmamalı."""
+    from services import confidence_calibration as cc
+
+    monkeypatch.setattr(cc, "get_calibration_curve", lambda: [(0.3, 0.9)])
+    monkeypatch.setattr(
+        cc, "get_market_cap_tier_calibration_curves",
+        lambda: {"large_cap": [(0.3, 0.4)], "small_cap": [(0.3, 0.2)]},
+    )
+
+    assert cc.get_calibration_curve_for_symbol("XAUTUSDT") == [(0.3, 0.9)]
+
+
+def test_get_calibration_curve_for_symbol_without_symbol_uses_global(monkeypatch):
+    from services import confidence_calibration as cc
+
+    monkeypatch.setattr(cc, "get_calibration_curve", lambda: [(0.3, 0.9)])
+    assert cc.get_calibration_curve_for_symbol(None) == [(0.3, 0.9)]
+
+
+def test_compute_market_cap_tier_calibration_curves_separates_large_and_small_cap(tmp_path, monkeypatch):
+    """Gerçek DB'ye bağlanmadan, SQL sorgusunun döndürdüğü satırları
+    taklit ederek tier ayrımının doğru hesaplandığını doğrular."""
+    from services import confidence_calibration as cc
+
+    class _FakeResult:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def fetchall(self):
+            return self._rows
+
+    class _FakeSession:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def execute(self, *args, **kwargs):
+            return _FakeResult(self._rows)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    # BTCUSDT (large_cap): 0.3 kovasında 20 kayıt, %90 kazandı.
+    # OBSCUREUSDT (small_cap): AYNI kova, 20 kayıt, %30 kazandı.
+    rows = [("BTCUSDT", 0.3, 1.0 if i < 18 else -1.0) for i in range(20)]
+    rows += [("OBSCUREUSDT", 0.3, 1.0 if i < 6 else -1.0) for i in range(20)]
+
+    from database.session_factory import SessionFactory
+
+    monkeypatch.setattr(cc, "get_reliability_legacy_cutoff", lambda: None)
+    monkeypatch.setattr(SessionFactory, "get_session", staticmethod(lambda: _FakeSession(rows)))
+
+    curves = cc.compute_market_cap_tier_calibration_curves()
+    assert curves["large_cap"] == [(0.3, 0.9)]
+    assert curves["small_cap"] == [(0.3, 0.3)]
