@@ -91,6 +91,32 @@ def test_self_model_computes_dsr_from_real_closed_trades():
         assert result["inputs"]["recent_dsr"] is not None
 
 
+def test_get_cached_self_reliability_snapshot_shares_one_computation(monkeypatch):
+    """Faz 310 — MetaStage'in (engines/cognitive_pipeline.py) çağırdığı
+    TTL'li sürüm: bir trading cycle'ında watchlist'teki her sembol için
+    tekrar tekrar pahalı hesaplama (2000 kararlık feature drift dahil)
+    YAPILMAMALI — art arda çağrılar TEK bir gerçek hesaplamayı paylaşmalı."""
+    import services.self_model_gatherer as gatherer_module
+
+    gatherer_module._snapshot_cache = None
+    calls = {"count": 0}
+    real_gather = gatherer_module.gather_self_reliability_snapshot
+
+    def counting_gather():
+        calls["count"] += 1
+        return real_gather()
+
+    monkeypatch.setattr(gatherer_module, "gather_self_reliability_snapshot", counting_gather)
+
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        gatherer_module.get_cached_self_reliability_snapshot()
+        gatherer_module.get_cached_self_reliability_snapshot()
+        gatherer_module.get_cached_self_reliability_snapshot()
+
+    assert calls["count"] == 1
+    gatherer_module._snapshot_cache = None
+
+
 def test_self_model_reports_requires_auth():
     with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
         client = _client()

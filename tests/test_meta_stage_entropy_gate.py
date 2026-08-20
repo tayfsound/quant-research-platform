@@ -30,7 +30,20 @@ def _supportive_opinions() -> list[AgentOpinion]:
     return opinions
 
 
-def test_high_entropy_downgrades_act_to_reduce():
+def _mock_healthy_self_reliability(monkeypatch):
+    """Faz 310 — MetaStage artık self-model'i de kontrol ediyor
+    (tests/test_meta_stage_self_reliability_gate.py). Bu dosya SADECE
+    entropy gate'i izole test etmek istiyor — gerçek DB'nin (quantdb_test,
+    oturum boyunca biriken kararlarla) o anki DSR/ECE durumuna göre
+    kırılgan olmasın diye sağlıklı sabit değerlerle mock'lanıyor."""
+    monkeypatch.setattr(
+        "services.self_model_gatherer.get_cached_self_reliability_snapshot",
+        lambda: {"inputs": {"recent_dsr": 0.99, "ece": 0.02}},
+    )
+
+
+def test_high_entropy_downgrades_act_to_reduce(monkeypatch):
+    _mock_healthy_self_reliability(monkeypatch)
     ctx = CognitiveCycleContext()
     ctx.risk.trading_mode = "live"
     ctx.decision.proposed_size = 1.0
@@ -43,9 +56,10 @@ def test_high_entropy_downgrades_act_to_reduce():
     assert result_ctx.decision.final_size > 0.0
 
 
-def test_normal_entropy_keeps_full_act_size():
+def test_normal_entropy_keeps_full_act_size(monkeypatch):
     """Eşiğin (1.5) altında bir entropy — mevcut davranış hiç değişmemeli,
     tam ACT boyutu (Kelly çarpanı hariç) korunmalı."""
+    _mock_healthy_self_reliability(monkeypatch)
     ctx = CognitiveCycleContext()
     ctx.risk.trading_mode = "live"
     ctx.decision.proposed_size = 1.0
@@ -56,9 +70,10 @@ def test_normal_entropy_keeps_full_act_size():
     assert result_ctx.decision.action in (ActionType.ENTER_LONG, ActionType.ENTER_SHORT)
 
 
-def test_entropy_gate_does_not_affect_wait_decisions():
+def test_entropy_gate_does_not_affect_wait_decisions(monkeypatch):
     """Zaten WAIT'e düşmüş bir karar entropy yüzünden REDUCE'a
     YÜKSELMEMELİ — bu kapı SADECE ACT'i sıkılaştırır, asla gevşetmez."""
+    _mock_healthy_self_reliability(monkeypatch)
     ctx = CognitiveCycleContext()
     ctx.risk.trading_mode = "live"
     ctx.decision.proposed_size = 1.0

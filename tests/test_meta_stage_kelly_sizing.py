@@ -29,9 +29,23 @@ def _supportive_opinions() -> list[AgentOpinion]:
     return opinions
 
 
+def _mock_healthy_self_reliability(monkeypatch):
+    """Faz 310 — MetaStage artık self-model'i de kontrol ediyor
+    (tests/test_meta_stage_self_reliability_gate.py). Bu dosya SADECE
+    Kelly çarpanının uygulandığını izole test etmek istiyor — gerçek
+    DB'nin (quantdb_test, oturum boyunca biriken kararlarla) o anki
+    DSR/ECE durumuna göre kırılgan olmasın diye sağlıklı sabit
+    değerlerle mock'lanıyor."""
+    monkeypatch.setattr(
+        "services.self_model_gatherer.get_cached_self_reliability_snapshot",
+        lambda: {"inputs": {"recent_dsr": 0.99, "ece": 0.02}},
+    )
+
+
 def test_act_tier_final_size_is_scaled_by_kelly_multiplier(monkeypatch):
     import engines.cognitive_pipeline as pipeline_module
 
+    _mock_healthy_self_reliability(monkeypatch)
     monkeypatch.setattr(pipeline_module, "kelly_size_multiplier", lambda confidence, regime=None: 0.3)
 
     ctx = CognitiveCycleContext()
@@ -50,6 +64,7 @@ def test_act_tier_with_no_kelly_data_keeps_full_size(monkeypatch):
     (tam boyut) hiç değişmemeli, regresyon yok."""
     import engines.cognitive_pipeline as pipeline_module
 
+    _mock_healthy_self_reliability(monkeypatch)
     monkeypatch.setattr(pipeline_module, "kelly_size_multiplier", lambda confidence, regime=None: 1.0)
 
     ctx = CognitiveCycleContext()
@@ -71,6 +86,7 @@ def test_act_tier_kelly_multiplier_never_increases_size_beyond_proposed(monkeypa
     (büyümediğini) kanıtlıyoruz."""
     import engines.cognitive_pipeline as pipeline_module
 
+    _mock_healthy_self_reliability(monkeypatch)
     monkeypatch.setattr(pipeline_module, "kelly_size_multiplier", lambda confidence, regime=None: 0.6)
 
     ctx = CognitiveCycleContext()

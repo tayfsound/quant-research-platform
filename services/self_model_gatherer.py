@@ -6,6 +6,8 @@ canlı API rotası (api/rest/self_model.py) hem haftalık Celery task
 çağırıyor, iki yerde tekrar yazılmıyor (4 farklı alt sistemi birleştiren
 bir toplama mantığı — calibration/feature_ic'in tek-sinyalli, tekrar
 yazmaya değer bulunmayan basitliğinden farklı)."""
+import time
+
 from sqlalchemy import text
 
 from analytics.model_drift import compute_feature_drift
@@ -88,3 +90,29 @@ def gather_self_reliability_snapshot() -> dict:
         known_feature_drift_count=known_feature_drift_count,
         concept_drift_detected=concept_drift_detected,
     )
+
+
+# Faz 310 — kullanıcı isteği: "self modeli karar hattına bağlayalım."
+# gather_self_reliability_snapshot() içindeki en pahalı adım
+# (known_feature_drift_count -> compute_feature_drift, 2000 kararlık
+# PSI/KS-test) bir trading cycle'ında watchlist'teki HER sembol için
+# MetaStage'den çağrılırsa tekrar tekrar (sembol başına bir kez)
+# çalışırdı — market_data/onchain/onchain_provider.py::_cached() ile
+# AYNI disiplin: kısa bir TTL'lik önbellek, bir cycle içindeki tüm
+# sembollerin AYNI anlık görüntüyü paylaşmasını sağlıyor.
+_SNAPSHOT_CACHE_TTL_SECONDS = 1800
+_snapshot_cache: tuple[float, dict] | None = None
+
+
+def get_cached_self_reliability_snapshot() -> dict:
+    """MetaStage'in (engines/cognitive_pipeline.py) çağırdığı, TTL'li
+    önbellekli sürüm — canlı API rotası/haftalık Celery task hâlâ taze
+    gather_self_reliability_snapshot()'ı doğrudan kullanıyor, bu SADECE
+    yüksek frekanslı karar hattı için."""
+    global _snapshot_cache
+    now = time.monotonic()
+    if _snapshot_cache is not None and (now - _snapshot_cache[0]) < _SNAPSHOT_CACHE_TTL_SECONDS:
+        return _snapshot_cache[1]
+    snapshot = gather_self_reliability_snapshot()
+    _snapshot_cache = (now, snapshot)
+    return snapshot

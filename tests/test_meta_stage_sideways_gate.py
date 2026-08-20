@@ -26,6 +26,19 @@ def _supportive_opinions() -> list[AgentOpinion]:
     return opinions
 
 
+def _mock_healthy_self_reliability(monkeypatch):
+    """Faz 310 — MetaStage artık self-model'i de kontrol ediyor
+    (tests/test_meta_stage_self_reliability_gate.py). Bu dosya SADECE
+    sideways-market gate'i izole test etmek istiyor — gerçek DB'nin
+    (quantdb_test, oturum boyunca biriken kararlarla) o anki DSR/ECE
+    durumuna göre kırılgan olmasın diye sağlıklı sabit değerlerle
+    mock'lanıyor."""
+    monkeypatch.setattr(
+        "services.self_model_gatherer.get_cached_self_reliability_snapshot",
+        lambda: {"inputs": {"recent_dsr": 0.99, "ece": 0.02}},
+    )
+
+
 def _ctx(
     adx: float | None, long_term_trend_regime: str | None,
     hurst_exponent: float | None = None, bollinger_bandwidth: float | None = None,
@@ -45,7 +58,8 @@ def _ctx(
     return ctx
 
 
-def test_low_adx_and_transition_regime_forces_wait():
+def test_low_adx_and_transition_regime_forces_wait(monkeypatch):
+    _mock_healthy_self_reliability(monkeypatch)
     ctx = _ctx(adx=15.0, long_term_trend_regime="transition")
     stage = MetaStage()
     result_ctx = stage.execute(ctx, _long_belief(), _supportive_opinions())
@@ -54,9 +68,10 @@ def test_low_adx_and_transition_regime_forces_wait():
     assert result_ctx.decision.final_size == 0.0
 
 
-def test_low_adx_but_clear_bull_trend_does_not_force_wait():
+def test_low_adx_but_clear_bull_trend_does_not_force_wait(monkeypatch):
     """ADX düşük olsa bile uzun vadeli rejim NET (bull_trend) ise gate
     tetiklenmemeli — sadece İKİSİ birden belirsizken devreye girer."""
+    _mock_healthy_self_reliability(monkeypatch)
     ctx = _ctx(adx=15.0, long_term_trend_regime="bull_trend")
     stage = MetaStage()
     result_ctx = stage.execute(ctx, _long_belief(), _supportive_opinions())
@@ -64,9 +79,10 @@ def test_low_adx_but_clear_bull_trend_does_not_force_wait():
     assert result_ctx.decision.action != ActionType.WAIT
 
 
-def test_high_adx_with_transition_regime_does_not_force_wait():
+def test_high_adx_with_transition_regime_does_not_force_wait(monkeypatch):
     """Uzun vadeli rejim belirsiz olsa bile ADX güçlü bir kısa vadeli
     trend gösteriyorsa (>=20) gate tetiklenmemeli."""
+    _mock_healthy_self_reliability(monkeypatch)
     ctx = _ctx(adx=30.0, long_term_trend_regime="transition")
     stage = MetaStage()
     result_ctx = stage.execute(ctx, _long_belief(), _supportive_opinions())
@@ -74,9 +90,10 @@ def test_high_adx_with_transition_regime_does_not_force_wait():
     assert result_ctx.decision.action != ActionType.WAIT
 
 
-def test_missing_adx_does_not_force_wait():
+def test_missing_adx_does_not_force_wait(monkeypatch):
     """adx özelliği hiç yoksa (ör. yetersiz bar geçmişi) fail-closed —
     gate icat edilmiş bir değerle tetiklenmez."""
+    _mock_healthy_self_reliability(monkeypatch)
     ctx = _ctx(adx=None, long_term_trend_regime="transition")
     stage = MetaStage()
     result_ctx = stage.execute(ctx, _long_belief(), _supportive_opinions())
@@ -84,10 +101,11 @@ def test_missing_adx_does_not_force_wait():
     assert result_ctx.decision.action != ActionType.WAIT
 
 
-def test_insufficient_data_regime_does_not_force_wait():
+def test_insufficient_data_regime_does_not_force_wait(monkeypatch):
     """long_term_trend_regime='insufficient_data' (transition DEĞİL) gate'i
     tetiklememeli — bu, "rejim belirsiz/karışık" değil "henüz yeterli
     geçmiş yok" anlamına geliyor, ayrı bir durum."""
+    _mock_healthy_self_reliability(monkeypatch)
     ctx = _ctx(adx=15.0, long_term_trend_regime="insufficient_data")
     stage = MetaStage()
     result_ctx = stage.execute(ctx, _long_belief(), _supportive_opinions())
@@ -101,10 +119,11 @@ def test_insufficient_data_regime_does_not_force_wait():
 # edici değil) — SADECE gerçekten sıkışmış bir Bollinger bandwidth'le
 # (<0.03, gerçek dağılımın alt %0.5'i) birleşince anlamlı.
 
-def test_hurst_dead_zone_and_extreme_bollinger_squeeze_forces_wait_even_with_strong_adx():
+def test_hurst_dead_zone_and_extreme_bollinger_squeeze_forces_wait_even_with_strong_adx(monkeypatch):
     """İkinci yol: ADX güçlü olsa (gate'in eski koşulunu geçmese) bile,
     Hurst dead-zone + gerçekten aşırı sıkışmış Bollinger bandwidth AYNI
     ANDA varsa yatay piyasa olarak sayılmalı."""
+    _mock_healthy_self_reliability(monkeypatch)
     ctx = _ctx(adx=30.0, long_term_trend_regime="bull_trend", hurst_exponent=0.50, bollinger_bandwidth=0.01)
     stage = MetaStage()
     result_ctx = stage.execute(ctx, _long_belief(), _supportive_opinions())
@@ -112,10 +131,11 @@ def test_hurst_dead_zone_and_extreme_bollinger_squeeze_forces_wait_even_with_str
     assert result_ctx.decision.action == ActionType.WAIT
 
 
-def test_hurst_dead_zone_alone_without_bollinger_squeeze_does_not_force_wait():
+def test_hurst_dead_zone_alone_without_bollinger_squeeze_does_not_force_wait(monkeypatch):
     """Hurst dead-zone TEK BAŞINA (gerçek dağılımda %76 oranında true)
     gate'i tetiklememeli — ayırt edici değil, sadece gerçek bir sıkışmayla
     birlikte anlam kazanıyor."""
+    _mock_healthy_self_reliability(monkeypatch)
     ctx = _ctx(adx=30.0, long_term_trend_regime="bull_trend", hurst_exponent=0.50, bollinger_bandwidth=0.15)
     stage = MetaStage()
     result_ctx = stage.execute(ctx, _long_belief(), _supportive_opinions())
@@ -123,9 +143,10 @@ def test_hurst_dead_zone_alone_without_bollinger_squeeze_does_not_force_wait():
     assert result_ctx.decision.action != ActionType.WAIT
 
 
-def test_extreme_bollinger_squeeze_alone_without_hurst_dead_zone_does_not_force_wait():
+def test_extreme_bollinger_squeeze_alone_without_hurst_dead_zone_does_not_force_wait(monkeypatch):
     """Aşırı sıkışmış Bollinger bandwidth TEK BAŞINA (Hurst net trendliyken)
     gate'i tetiklememeli — ikisi BİRLİKTE gerekiyor."""
+    _mock_healthy_self_reliability(monkeypatch)
     ctx = _ctx(adx=30.0, long_term_trend_regime="bull_trend", hurst_exponent=0.85, bollinger_bandwidth=0.01)
     stage = MetaStage()
     result_ctx = stage.execute(ctx, _long_belief(), _supportive_opinions())
@@ -133,10 +154,11 @@ def test_extreme_bollinger_squeeze_alone_without_hurst_dead_zone_does_not_force_
     assert result_ctx.decision.action != ActionType.WAIT
 
 
-def test_moderate_bollinger_squeeze_below_typical_but_above_extreme_threshold_does_not_force_wait():
+def test_moderate_bollinger_squeeze_below_typical_but_above_extreme_threshold_does_not_force_wait(monkeypatch):
     """Bollinger bandwidth eşiğin (0.03) hemen üstündeyse (ör. p10 civarı,
     0.05) — "biraz sıkışmış" ama "gerçekten aşırı" değil — Hurst dead-zone
     olsa bile gate tetiklenmemeli, eşik gerçekten sıkı tutuluyor."""
+    _mock_healthy_self_reliability(monkeypatch)
     ctx = _ctx(adx=30.0, long_term_trend_regime="bull_trend", hurst_exponent=0.50, bollinger_bandwidth=0.05)
     stage = MetaStage()
     result_ctx = stage.execute(ctx, _long_belief(), _supportive_opinions())

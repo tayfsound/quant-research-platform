@@ -331,6 +331,43 @@ class MetaStage:
         if belief.entropy >= 1.5 and meta["decision"] == "ACT":
             meta["decision"] = "REDUCE"
 
+        # Faz 310 — kullanıcı isteği: "self modeli karar hattına
+        # bağlayalım." Self-Model (services/self_model_gatherer.py) şu ana
+        # kadar SADECE dashboard raporuydu — sistem "kendine ne kadar
+        # güvendiğini" biliyordu ama bu bilgiyi kararlarında hiç
+        # kullanmıyordu (3. dış rapor bulgusu, kullanıcı doğrulattı).
+        #
+        # kill_switch_active ve concept_drift_detected BİLEREK burada
+        # TEKRAR kontrol edilmiyor — ilki zaten ctx.risk.ai_enabled'ı
+        # kalıcı olarak false'a çekip RiskGateStage'de reddediyor
+        # (engines/risk_engine.py), ikincisi zaten ctx.risk.concept_drift_
+        # reason ile ayrı bir RiskReason olarak enforce ediliyor — burada
+        # da tekrarlamak çift cezalandırma olurdu. Bu gate'in kattığı
+        # GERÇEKTEN yeni bilgi: recent_dsr (istatistiksel beceri güveni)
+        # ve ece (kalibrasyon kalitesi) — ikisi de şu ana kadar hiçbir
+        # yerde canlı kararı etkilemiyordu.
+        try:
+            from analytics.self_model import (
+                DEGRADED_DSR_THRESHOLD,
+                POOR_CALIBRATION_ECE_THRESHOLD,
+                UNTRUSTWORTHY_DSR_THRESHOLD,
+            )
+            from services.self_model_gatherer import get_cached_self_reliability_snapshot
+
+            self_reliability_inputs = get_cached_self_reliability_snapshot()["inputs"]
+            recent_dsr = self_reliability_inputs.get("recent_dsr")
+            ece = self_reliability_inputs.get("ece")
+
+            if recent_dsr is not None and recent_dsr < UNTRUSTWORTHY_DSR_THRESHOLD:
+                meta["decision"] = "WAIT"
+            elif meta["decision"] == "ACT" and (
+                (recent_dsr is not None and recent_dsr < DEGRADED_DSR_THRESHOLD)
+                or (ece is not None and ece > POOR_CALIBRATION_ECE_THRESHOLD)
+            ):
+                meta["decision"] = "REDUCE"
+        except Exception as exc:
+            structlog.get_logger().warning("self_reliability_gate_failed", error=str(exc))
+
         if meta["decision"] == "WAIT":
             ctx.decision.action = ActionType.WAIT
             ctx.decision.final_size = 0.0
