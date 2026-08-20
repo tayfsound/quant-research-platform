@@ -1,6 +1,6 @@
-"""GET /api/v1/research-summary/ — Faz 326: kullanıcı isteği, 10 Grup B
-(ölçüm-only) araştırma modülünü tek istekte, canlı hesaplanmış olarak
-toplar."""
+"""GET /api/v1/research-summary/ — Faz 326: kullanıcı isteği, Grup B
+(ölçüm-only) araştırma modüllerini tek istekte, canlı hesaplanmış olarak
+toplar (Faz 331'de Agent Combination Reliability eklenip 11'e çıktı)."""
 from unittest.mock import patch
 
 import pytest
@@ -34,9 +34,9 @@ def test_gather_research_summary_returns_all_ten_modules_in_fixed_order():
 
 
 def test_gather_research_summary_isolates_a_single_module_failure(monkeypatch):
-    """Bir modülün hatası (ör. dış API zaman aşımı) diğer 9'unu
+    """Bir modülün hatası (ör. dış API zaman aşımı) diğerlerini
     engellememeli — fail-closed, sessiz değil: hata mesajı açıkça
-    dönüyor, sonuç hâlâ TÜM 10 kaydı içeriyor."""
+    dönüyor, sonuç hâlâ TÜM kayıtları içeriyor."""
     from services import research_summary_gatherer as rsg
 
     def _boom(key, label, view, module_path, func_name):
@@ -60,4 +60,5 @@ def test_research_summary_endpoint_returns_live_data():
         response = client.get("/api/v1/research-summary/", headers=make_authed_headers(Role.VIEWER))
         assert response.status_code == 200
         body = response.json()
-        assert len(body["modules"]) == 10
+        from services.research_summary_gatherer import _MODULES
+        assert len(body["modules"]) == len(_MODULES)

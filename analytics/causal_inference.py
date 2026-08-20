@@ -69,3 +69,25 @@ def compute_granger_causality(
         "granger_causes": bool(best_p_value < SIGNIFICANCE_LEVEL),
         "sample_size": len(cause_series),
     }
+
+
+def apply_fdr_correction(p_values: list[float], alpha: float = SIGNIFICANCE_LEVEL) -> list[bool]:
+    """Faz 331 — kullanıcı isteği (harici bir AI incelemesinden): tek bir
+    varlık çiftini test etmek yerine bu sistem BTC/ETH'yi onlarca varlığa
+    karşı (gerçek veride ~96 çift) AYNI ANDA test ediyor — her testi
+    bağımsız α=0.05 ile değerlendirmek, gerçek ilişki hiç olmasa bile
+    SADECE şans eseri ~%5×96≈4.8 "anlamlı" sonuç üretir (multiple testing
+    problemi). Benjamini-Hochberg FDR düzeltmesi (Benjamini & Hochberg,
+    1995) — standart, literatürde kesin tanımlı bir yöntem — p-value'ları
+    sıralayıp her birini KENDİ sırasına göre daha sıkı bir eşikle test
+    ediyor, "keşfedilen ilişkilerin beklenen yanlış-pozitif oranı"nı alpha
+    altında tutuyor. Girdi listesindeki SIRAYLA aynı uzunlukta bool listesi
+    döner (hangi p-value FDR-düzeltilmiş anlamlılığı geçti). Boş girdi ->
+    boş çıktı (fail-closed, icat edilmiş bir sonuç yok)."""
+    if not p_values:
+        return []
+
+    from statsmodels.stats.multitest import multipletests
+
+    reject, _, _, _ = multipletests(p_values, alpha=alpha, method="fdr_bh")
+    return [bool(r) for r in reject]

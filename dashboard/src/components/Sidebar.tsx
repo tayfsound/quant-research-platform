@@ -25,6 +25,7 @@ const GROUPS: { label: string; items: { key: string; label: string }[] }[] = [
       { key: "opportunity-quality", label: "Opportunity Quality" },
       { key: "agent-ablation", label: "Agent Ablation" },
       { key: "tp-sl-confluence", label: "TP/SL Confluence" },
+      { key: "agent-combination-reliability", label: "Ajan Kombinasyonu Güvenilirliği" },
       { key: "llm-critic", label: "Respond" },
     ],
   },

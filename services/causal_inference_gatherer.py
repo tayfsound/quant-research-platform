@@ -15,7 +15,7 @@ test ediliyor — "BTC/ETH'nin hareketi diğer varlıkları öngörüyor mu"
 sorusuna gerçek veriyle cevap."""
 from market_data.ingestion.data_provider import RoutingProvider
 
-from analytics.causal_inference import compute_granger_causality
+from analytics.causal_inference import apply_fdr_correction, compute_granger_causality
 
 CAUSE_SYMBOLS = ["BTCUSDT", "ETHUSDT"]
 
@@ -56,7 +56,14 @@ def gather_causal_relationships() -> dict:
     cause_returns = {s: r for s in CAUSE_SYMBOLS if (r := _fetch_returns(provider, s)) is not None}
     effect_returns = {s: r for s in EFFECT_SYMBOLS if (r := _fetch_returns(provider, s)) is not None}
 
-    relationships = []
+    # Faz 331 — kritik bulgu (harici AI incelemesi + kullanıcı onayı):
+    # ~96 çiftin HER BİRİNİ bağımsız α=0.05 ile "anlamlı" sayıp raporlamak
+    # multiple-testing problemi yaratıyor — gerçek ilişki hiç olmasa bile
+    # şans eseri ~5 "anlamlı" sonuç beklenir. FDR düzeltmesi için TÜM
+    # test edilen çiftlerin p-value'sına ihtiyaç var (sadece ham-anlamlı
+    # olanların değil) — önce hepsi toplanıyor, DAHA SONRA tek seferde
+    # düzeltiliyor (bkz. analytics/causal_inference.py::apply_fdr_correction).
+    all_results = []
     pairs_tested = 0
     for cause_symbol, cause_series in cause_returns.items():
         for effect_symbol, effect_series in effect_returns.items():
@@ -69,19 +76,40 @@ def gather_causal_relationships() -> dict:
             result = compute_granger_causality(
                 cause_series[-n:], effect_series[-n:], max_lag=MAX_LAG
             )
-            if result is not None and result["granger_causes"]:
-                relationships.append({
-                    "cause": cause_symbol,
-                    "effect": effect_symbol,
-                    "best_lag": result["best_lag"],
-                    "best_p_value": result["best_p_value"],
-                    "sample_size": result["sample_size"],
-                })
+            if result is not None:
+                all_results.append((cause_symbol, effect_symbol, result))
+
+    fdr_flags = apply_fdr_correction([r["best_p_value"] for _, _, r in all_results])
+
+    # Geriye dönük uyumluluk: significant_relationships hep ham (düzeltilmemiş)
+    # p<0.05 anlamına geliyordu, dashboard/testler buna bağlı — davranışı
+    # DEĞİŞTİRMİYORUZ, sadece her satıra ek bir fdr_significant bayrağı
+    # ekleyip AYRICA sadece FDR'ı geçenlerin listesini sunuyoruz (görünüm
+    # daralıyor/netleşiyor, hiçbir eski tüketici kırılmıyor).
+    relationships = []
+    fdr_significant_relationships = []
+    for (cause_symbol, effect_symbol, result), fdr_ok in zip(all_results, fdr_flags):
+        if not result["granger_causes"]:
+            continue
+        row = {
+            "cause": cause_symbol,
+            "effect": effect_symbol,
+            "best_lag": result["best_lag"],
+            "best_p_value": result["best_p_value"],
+            "sample_size": result["sample_size"],
+            "fdr_significant": fdr_ok,
+        }
+        relationships.append(row)
+        if fdr_ok:
+            fdr_significant_relationships.append(row)
 
     relationships.sort(key=lambda r: r["best_p_value"])
+    fdr_significant_relationships.sort(key=lambda r: r["best_p_value"])
     return {
         "cause_symbols_tested": list(cause_returns.keys()),
         "effect_symbols_tested": list(effect_returns.keys()),
         "pairs_tested": pairs_tested,
         "significant_relationships": relationships,
+        "fdr_significant_relationships": fdr_significant_relationships,
+        "fdr_alpha": 0.05,
     }

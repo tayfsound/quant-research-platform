@@ -445,6 +445,29 @@ def refresh_causal_inference_report_task() -> dict:
     return {"id": str(report.id), "significant_relationship_count": len(result.get("significant_relationships", []))}
 
 
+@celery_app.task(name="refresh_agent_combination_reliability_report_task")
+def refresh_agent_combination_reliability_report_task() -> dict:
+    """Faz 331 — kullanıcı isteği (harici bir AI incelemesinin önerdiği,
+    defalarca gündeme gelip ertelenen bir madde): Opportunity Quality
+    (Faz 569-593) KAÇ ajanın anlaştığını win_rate ile ilişkilendiriyordu,
+    bu HANGİ ajan İKİLİLERİNİN birlikte anlaştığını ilişkilendiriyor
+    (analytics/agent_combination_reliability.py). SADECE ölçüm/kayıt —
+    hiçbir ajan ağırlığını/karar mantığını değiştirmiyor."""
+    from contracts.agent_combination_reliability_report import AgentCombinationReliabilityReport
+    from database.repositories.agent_combination_reliability_report_repository import (
+        AgentCombinationReliabilityReportRepository,
+    )
+    from database.session_factory import SessionFactory
+    from services.agent_combination_reliability_gatherer import gather_agent_combination_reliability
+
+    result = gather_agent_combination_reliability()
+    with SessionFactory.get_session() as session:
+        report = AgentCombinationReliabilityReport(result=result)
+        AgentCombinationReliabilityReportRepository(session).save(report)
+
+    return {"id": str(report.id), "pair_count": len(result.get("pairs", []))}
+
+
 @celery_app.task(name="refresh_collective_intelligence_report_task")
 def refresh_collective_intelligence_report_task() -> dict:
     """Cognitive Core 10.0 — kullanıcı isteği: council'i hiç etkilemeyen,

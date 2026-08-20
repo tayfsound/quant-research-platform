@@ -15,6 +15,7 @@ type CausalRelationship = {
   best_lag: number;
   best_p_value: number;
   sample_size: number;
+  fdr_significant: boolean;
 };
 
 type CausalResult = {
@@ -22,6 +23,8 @@ type CausalResult = {
   effect_symbols_tested: string[];
   pairs_tested: number;
   significant_relationships: CausalRelationship[];
+  fdr_significant_relationships: CausalRelationship[];
+  fdr_alpha: number;
 };
 
 type CausalReport = {
@@ -78,7 +81,12 @@ export default function CausalInference() {
         ) : (
           <div className="overflow-x-auto">
             <p className="text-xs text-ink-faint mb-2">
-              {live.pairs_tested} çift test edildi, {live.significant_relationships.length} anlamlı ilişki bulundu.
+              {live.pairs_tested} çift test edildi, {live.significant_relationships.length} anlamlı ilişki bulundu
+              (ham p&lt;0.05) — bunların <strong>{live.fdr_significant_relationships?.length ?? 0}</strong> tanesi
+              çoklu-test düzeltmesinden (Benjamini-Hochberg FDR, α={live.fdr_alpha ?? 0.05}) sonra da hayatta kalıyor.
+              {live.pairs_tested} bağımsız test tek tek α=0.05 ile değerlendirilirse, gerçek ilişki hiç olmasa bile
+              şans eseri ~{Math.round(live.pairs_tested * 0.05)} "anlamlı" sonuç beklenir — FDR sütunu (yeşil ✓)
+              bu şans eseri sonuçları eleyip gerçekten güvenilir olanları işaretliyor.
             </p>
             <table className="w-full text-xs">
               <thead>
@@ -88,6 +96,7 @@ export default function CausalInference() {
                   <th className="py-2 pr-4">En iyi gecikme (saat)</th>
                   <th className="py-2 pr-4">p-değeri</th>
                   <th className="py-2 pr-4">Örneklem</th>
+                  <th className="py-2 pr-4">FDR sonrası</th>
                 </tr>
               </thead>
               <tbody>
@@ -100,6 +109,9 @@ export default function CausalInference() {
                       <Badge tone={r.best_p_value < 0.01 ? "rise" : "accent"}>{r.best_p_value.toFixed(4)}</Badge>
                     </td>
                     <td className="py-2 pr-4 text-ink-soft">{r.sample_size}</td>
+                    <td className="py-2 pr-4">
+                      {r.fdr_significant ? <Badge tone="rise">geçti ✓</Badge> : <Badge tone="neutral">elendi</Badge>}
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -1,9 +1,23 @@
-# Mevcut Durum -- v1.69.0 (Faz 330: pump_fade kümülatif sermaye tavanı + capital_used_pct marjin düzeltmesi)
+# Mevcut Durum -- v1.70.0 (Faz 331: Agent Combination Reliability + Causal Inference FDR düzeltmesi)
 
-**Tarih:** 2026-08-20
+**Tarih:** 2026-08-21
 **Branch:** main
-**Son commit (HEAD):** Faz 330 henüz commit edilmedi (bu segment sonunda commitlenecek).
-**⚠️ Servis durumu:** uvicorn (API) + celery `-Q celery` worker YENİDEN BAŞLATILMALI — `services/pump_fade_strategy.py`/`services/risk_state.py`/`services/decision_fusion.py`/`engines/cognitive_pipeline.py` (canlı karar hattı) değişti.
+**Son commit (HEAD):** Faz 330 (`50cc640`) — Faz 331 bu segment sonunda commitlenecek.
+**⚠️ Servis durumu:** uvicorn + celery `-Q celery` worker'lar Faz 329/330 için zaten yeniden başlatıldı (sağlıklı). Faz 331 (yeni router/API, `api/main.py` değişti) için BİR RESTART DAHA gerekiyor.
+
+## Faz 331 — Agent Combination Reliability (yeni Grup B modülü) + Causal Inference'a FDR düzeltmesi (2026-08-21)
+
+Kullanıcı, harici bir GPT incelemesinin (Genel Özet panelini okuyup yazdığı uzun bir rapor) önerdiği maddelerden ikisini onayladı: "kolay olanlar" (Brier yeniden ölçüm + FDR düzeltmesi) ve — birden fazla kez ertelenmiş, kullanıcının ısrarla "es geçmeyelim" dediği — **ajan-kombinasyonu koşullu güvenilirliği**. Council mimarisinin kendisini yeniden tasarlama önerisi (rapor madde 2) kullanıcı onayıyla "ileride" olarak bırakıldı.
+
+**1) Causal Inference — Benjamini-Hochberg FDR düzeltmesi.** Kök sorun: BTC/ETH × 47 varlık ~96 çift AYNI ANDA bağımsız α=0.05 ile test ediliyordu — gerçek ilişki hiç olmasa bile şans eseri ~5 "anlamlı" sonuç beklenir (multiple testing). `analytics/causal_inference.py::apply_fdr_correction()` (yeni, statsmodels.stats.multitest.multipletests) eklendi; `services/causal_inference_gatherer.py` artık TÜM test edilen çiftlerin p-value'sını toplayıp tek seferde FDR uyguluyor. Geriye dönük uyumluluk: `significant_relationships` (ham p<0.05) davranışı DEĞİŞMEDİ, her satıra ek `fdr_significant` bayrağı + ayrı `fdr_significant_relationships` listesi eklendi. Dashboard (`CausalInference.tsx`) yeni "FDR sonrası" sütunu gösteriyor.
+
+**2) Agent Combination Reliability — YENİ Grup B modülü.** Opportunity Quality (Faz 569-593) council'de KAÇ ajanın anlaştığını (Shannon entropi) win_rate ile ilişkilendiriyordu — bu modül HANGİ ajan İKİLİLERİNİN birlikte anlaştığını ilişkilendiriyor. Neden ikili (36 çift, C(9,2)) ve tam altküme (2^9=512) değil: örneklem (~1400) altkümede hücre başına anlamsızca küçülür, aşırı uydurma riski yüksek olurdu — causal_inference.py'nin çift-bazlı test deseniyle AYNI ilke. `analytics/agent_combination_reliability.py` (saf: `agreeing_domains_for_decision` — agent_ablation.py'nin `reconstruct_opinions`'ını yeniden kullanıyor; `compute_pairwise_combination_reliability` — her ikili için "her ikisi de nihai yönle aynı yönde oy verdi" kovasının win_rate'ini genel ortalamayla karşılaştırıyor, iki-oranlı z-testi + AYNI FDR düzeltmesiyle). `services/agent_combination_reliability_gatherer.py` (gerçek veri, pump_fade_v1 hariç — Opportunity Quality/Agent Ablation ile AYNI dışlama). Tam stack: contract (`contracts/agent_combination_reliability_report.py`), migration (`faz331`, hem quantdb hem quantdb_test'e uygulandı), repository, `GET /agent-combination-reliability/` + `/reports`, haftalık celery task (`refresh_agent_combination_reliability_report_task`), `AgentCombinationReliability.tsx` (Sidebar → Research), `research_summary_gatherer.py::_MODULES`'e eklendi (artık 11 modül).
+
+**Gerçek, canlı sonuç (1416 işlem, pump_fade hariç, genel ortalama %71.6):** `macro` domain'i HER üst sırada — macro+quant n=35 %100, macro+technical n=390 %98.0, macro+sentiment n=309 %96.1, macro+order_flow n=243 %95.5, macro+pattern n=314 %94.9 — hepsi baseline'ın 22-28 puan üstünde ve FDR'ı geçiyor. Bu, aynı GPT raporunun BAĞIMSIZ bir bulgusuyla (Direction Prediction'da Macro'nun en düşük/en iyi Brier skoruna sahip olduğu, 0.152/n=831) doğrudan örtüşüyor — iki ayrı ölçüm yöntemi aynı sonuca işaret ediyor.
+
+**Test:** `tests/test_agent_combination_reliability.py` (7, saf fonksiyonlar — FDR'ın gerçek edge'i koruyup gürültüyü elediği dahil), `tests/test_agent_combination_reliability_wiring.py` (5, API+task+repo uçtan uca), `tests/test_causal_inference.py`/`_wiring.py` (FDR eklentisiyle güncellendi), `tests/test_research_summary.py` (11 modül, hardcoded "10" kaldırıldı, dinamik `len(_MODULES)`'e geçirildi) — toplam 47+ test, hepsi temiz.
+
+**Ayrıca bu segmentte (Faz 329/330, önceden commitlendi):** `Decision.stop_loss/take_profit` → `stop_loss_distance/take_profit_distance` (Kimi'nin bulduğu adlandırma tuzağı, davranış değişmedi); pump_fade'in kümülatif sermaye tavanı yokmuş — "sadece kripto alıyor" görüntüsünün asıl sebebi ana council döngüsünün `MAX_CAPITAL_PCT` kapısında %915-980 okunan (kaldıraçlı notional/marjin karışıklığı + pump_fade'in tavansız büyümesi) kilitlenme imiş; `pump_fade_max_total_capital_pct` yeni ayarı (varsayılan %20) eklendi. Binance Futures Testnet API anahtarları alındı, doğrulandı ($5000 sanal bakiye).
 
 ## Faz 330 — "Sistem sadece kripto alıyor" araştırması -> pump_fade'in kümülatif sermaye tavanı yokmuş, ana council döngüsü tamamen kilitlenmiş (2026-08-20)
 
