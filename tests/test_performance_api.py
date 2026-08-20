@@ -133,8 +133,16 @@ def test_performance_endpoint_breaks_down_win_rate_and_pnl_by_trade_type():
     """Faz 268f — kullanıcı isteği: "kısa/orta/uzun/swing/scalp gibi işlem
     tiplerinden hangileri başarılı olmuş, dashboard'a otomatik yansısın."
     Transactions.tsx::tradeTypeBadge() ile AYNI sınıflandırma (stop
-    mesafesi %4.5/%9 eşikleri, timeframe 4h/1d = orta_vadeli) burada da
-    uygulanıp /performance'a by_trade_type olarak ekleniyor mu?"""
+    mesafesi %4.5/%9 eşikleri) burada da uygulanıp /performance'a
+    by_trade_type olarak ekleniyor mu?
+
+    Faz 323 — kullanıcı bulgusu: "orta_vadeli" (timeframe IN ('4h','1d'))
+    kategorisi tamamen kaldırıldı — candle_timeframe gibi ilgisiz bir
+    ayara bağımlı, kırılgan bir vekildi (6 gün boyunca scalp/swing'i hiç
+    yeni kayıt almadan dondurmuştu). Bu test artık timeframe='4h' bir
+    işlemin GERÇEK stop mesafesine göre (silinmeden) doğru sınıflandığını
+    kanıtlıyor — eskiden bu senaryo yanlışlıkla "orta_vadeli"ye
+    düşüyordu, artık stop mesafesi %2 < %4.5 olduğu için scalp'e giriyor."""
     from contracts.decision_event import DecisionEvent
 
     now = datetime.now(UTC)
@@ -152,23 +160,24 @@ def test_performance_endpoint_breaks_down_win_rate_and_pnl_by_trade_type():
             repo.close_position(decision_id=str(event.id), exit_price=entry_price, pnl=pnl, closed_at=now)
 
     scalp_symbol = f"TTSCALP{uuid4().hex[:6]}"
-    orta_symbol = f"TTORTA{uuid4().hex[:6]}"
+    swing_4h_symbol = f"TTSWING4H{uuid4().hex[:6]}"
 
     # Scalp: |entry-stop|/entry = %2 < %4.5 eşiği. İki işlem, biri kazanç
     # biri kayıp -> win_rate tam %50, hesabı elle doğrulanabilir.
     _closed_with(scalp_symbol, pnl=10.0, entry_price=100.0, stop_loss_price=98.0)
     _closed_with(scalp_symbol, pnl=-5.0, entry_price=100.0, stop_loss_price=98.0)
-    # Orta vadeli: timeframe=4h, stop mesafesinden bağımsız her zaman kazandı.
-    _closed_with(orta_symbol, pnl=20.0, entry_price=100.0, stop_loss_price=98.0, timeframe="4h")
+    # timeframe='4h' ama stop mesafesi %10 (>= %4.5) -> artık swing'e
+    # girmeli, "orta_vadeli" diye ayrı bir kovaya değil.
+    _closed_with(swing_4h_symbol, pnl=20.0, entry_price=100.0, stop_loss_price=90.0, timeframe="4h")
 
     client = _client()
     response = client.get("/api/v1/performance", headers=make_authed_headers(Role.VIEWER))
     assert response.status_code == 200
     by_type = response.json()["by_trade_type"]
 
+    assert "orta_vadeli" not in by_type
     assert by_type["scalp"]["trade_count"] >= 2
-    assert by_type["orta_vadeli"]["trade_count"] >= 1
-    assert by_type["orta_vadeli"]["win_rate"] == 1.0
+    assert by_type["swing"]["trade_count"] >= 1
 
 
 def test_deployed_notional_reflects_real_margin_not_leveraged_notional():

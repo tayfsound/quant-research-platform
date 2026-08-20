@@ -48,13 +48,19 @@ def test_requires_auth(client):
     assert response.status_code in (401, 403)
 
 
-def test_classifies_closed_medium_term_timeframe(client):
+def test_classifies_by_real_stop_distance_regardless_of_timeframe(client):
+    """Faz 323 — kullanıcı bulgusu: "orta_vadeli" (timeframe IN ('4h','1d'))
+    kovası kaldırıldı — candle_timeframe gibi ilgisiz bir ayara bağımlı,
+    kırılgan bir vekildi (6 gün boyunca scalp/swing'i hiç yeni kayıt
+    almadan dondurmuştu). timeframe='1d' olsa bile sınıflandırma artık
+    SADECE gerçek stop mesafesine bakıyor — burada %2 (< %4.5) -> scalp."""
     before = _counts(client)
     symbol = f"CBRKMT{uuid4().hex[:8]}"
     _open_and_close(symbol, "SHORT", stop_loss_price=102.0, take_profit_price=95.0, timeframe="1d")
 
     after = _counts(client)
-    assert after.get(("orta_vadeli", "SHORT"), 0) == before.get(("orta_vadeli", "SHORT"), 0) + 1
+    assert after.get(("scalp", "SHORT"), 0) == before.get(("scalp", "SHORT"), 0) + 1
+    assert "orta_vadeli" not in {t for t, _ in after}
 
 
 def test_excluded_from_stats_trade_is_not_counted_in_breakdown(client):

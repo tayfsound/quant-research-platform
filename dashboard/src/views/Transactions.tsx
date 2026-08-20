@@ -65,11 +65,6 @@ function effectiveExitReason(exitReason: string | null, pnl: number | null): str
   return exitReason;
 }
 
-// Faz 259: orta-vadeli katman kısa-vadeliden ayrı bir sinyal zaman dilimi
-// kullanıyor (4h/1d) — dashboard'da hangi pozisyonun hangi katmandan
-// geldiğini ayırt edebilmek için.
-const MEDIUM_TERM_TIMEFRAMES = new Set(["4h", "1d"]);
-
 // Faz 268ad: kullanıcı isteği — "orta vadeli" etiketinin aynısı diğer
 // işlem türleri için de (scalp/swing) yapılsın, ayrıca hedge işlemler de
 // görünür olsun. Kısa-vadeli katmanın SİNYAL zaman dilimi hep "5m" —
@@ -87,8 +82,19 @@ const MEDIUM_TERM_TIMEFRAMES = new Set(["4h", "1d"]);
 // yeni "gün içi" işlem yok). Kullanıcı: "zaten işlem almıyormuş ölü
 // yatırım." Geçmiş kirli satırlar migration faz317 ile excluded_from_
 // stats=true işaretlendi (silinmedi).
+//
+// Faz 323 — kullanıcı bulgusu: "swing 6 gündür yeni işlem almıyor" +
+// "scalp %100 başarılı görünüyor, mantıksız." Kök neden: "orta vadeli"
+// (timeframe IN ('4h','1d')) kategorisi risk profiliyle değil HANGİ
+// MEKANİZMANIN kararı verdiğiyle ilgili kırılgan bir ayrımdı — hem gerçek
+// bir A/B deneyinden (multi_timeframe_cascade_v1) hem de candle_timeframe
+// ayarının 6 gün yanlışlıkla 4h/1d'de kalmasından (Faz316) besleniyordu,
+// scalp/swing'i o süre boyunca hiç yeni kayıt almadan dondurmuştu. Deney
+// karşılaştırması zaten experiment_bucket üzerinden ayrı yapılıyor — bu
+// üçüncü kategori tamamen kaldırıldı, artık HER işlem (deneyler dahil)
+// SADECE gerçek stop mesafesine göre scalp/swing'e ayrılıyor.
 function tradeTypeBadge(
-  p: Pick<Position, "timeframe" | "entry_price" | "stop_loss_price" | "pairs_trade" | "trade_type">
+  p: Pick<Position, "entry_price" | "stop_loss_price" | "pairs_trade" | "trade_type">
 ): { label: string; tone: "accent" | "warn" | "neutral" | "info"; title?: string } | null {
   // Kullanıcı bulgusu: "Pump-Fade ile açtığı işlem var mı Transactions'ta
   // göremedim." pump_fade_strategy.py'nin açtığı mekanik işlemler backend'de
@@ -100,9 +106,6 @@ function tradeTypeBadge(
   }
   if (p.pairs_trade) {
     return { label: "hedge", tone: "warn", title: `Pairs trade: ${p.pairs_trade}` };
-  }
-  if (p.timeframe && MEDIUM_TERM_TIMEFRAMES.has(p.timeframe)) {
-    return { label: "orta vadeli", tone: "accent" };
   }
   if (p.entry_price != null && p.stop_loss_price != null && p.entry_price !== 0) {
     const pct = (Math.abs(p.entry_price - p.stop_loss_price) / p.entry_price) * 100;
@@ -555,7 +558,7 @@ function sinceCutoffMs(minutes: number): number {
 // zaten hem açık hem kapalı pozisyonlar için AYNI sınıflandırmayı
 // üretiyor — filtre seçenekleri onunla BİREBİR aynı, ayrı bir taksonomi
 // icat edilmedi.
-type TypeFilter = "all" | "pump_fade" | "hedge" | "orta_vadeli" | "scalp" | "swing";
+type TypeFilter = "all" | "pump_fade" | "hedge" | "scalp" | "swing";
 type DirectionFilter = "all" | "LONG" | "SHORT";
 type OutcomeFilter = "all" | "profit" | "loss";
 
@@ -563,7 +566,6 @@ const TYPE_FILTER_OPTIONS: { value: TypeFilter; label: string }[] = [
   { value: "all", label: "Tüm türler" },
   { value: "pump_fade", label: "Pump-Fade" },
   { value: "hedge", label: "Hedge" },
-  { value: "orta_vadeli", label: "Orta vadeli" },
   { value: "scalp", label: "Scalp" },
   { value: "swing", label: "Swing" },
 ];
@@ -573,7 +575,6 @@ function matchesTypeFilter(p: Position, filter: TypeFilter): boolean {
   const badge = tradeTypeBadge(p);
   const badgeKey = badge?.label === "Pump-Fade" ? "pump_fade"
     : badge?.label === "hedge" ? "hedge"
-    : badge?.label === "orta vadeli" ? "orta_vadeli"
     : badge?.label === "scalp" ? "scalp"
     : badge?.label === "swing" ? "swing"
     : null;

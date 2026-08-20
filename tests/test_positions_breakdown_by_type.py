@@ -2,10 +2,10 @@
 orta vade vs. farklı işlem türlerinin ne kadarı short ne kadarı
 long pozisyonmuş, dashboard'da bir tabloda göreyim." Bu testler, SQL
 agregasyonunun api/rest/positions.py::_classify_trade_type() ile AYNI
-önceliklendirme sırasını (pump_fade > hedge > orta_vadeli > scalp/swing —
-Faz 317'de "gün içi" ara kovası kaldırıldı) uyguladığını, gerçek
-verilerle önce/sonra farkı üzerinden doğruluyor — paylaşılan dev DB'deki
-ambient veriden etkilenmez."""
+önceliklendirme sırasını (pump_fade > hedge > scalp/swing — Faz 317'de
+"gün içi", Faz 323'te "orta_vadeli" ara kovaları kaldırıldı) uyguladığını,
+gerçek verilerle önce/sonra farkı üzerinden doğruluyor — paylaşılan dev
+DB'deki ambient veriden etkilenmez."""
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -60,13 +60,19 @@ def test_classifies_pump_fade_before_stop_distance_heuristic(client):
     assert after.get(("pump_fade", "SHORT"), 0) == before.get(("pump_fade", "SHORT"), 0) + 1
 
 
-def test_classifies_medium_term_timeframe(client):
+def test_timeframe_no_longer_affects_classification(client):
+    """Faz 323 — kullanıcı bulgusu: "orta_vadeli" (timeframe IN ('4h','1d'))
+    kovası kaldırıldı — candle_timeframe gibi ilgisiz bir ayara bağımlı,
+    kırılgan bir vekildi (6 gün boyunca scalp/swing'i hiç yeni kayıt
+    almadan dondurmuştu). timeframe='4h' olsa bile sınıflandırma artık
+    SADECE gerçek stop mesafesine bakıyor — burada %2 (< %4.5) -> scalp."""
     before = _counts(client)
     symbol = f"BRKMT{uuid4().hex[:8]}"
     _open(symbol, "LONG", stop_loss_price=98.0, take_profit_price=105.0, timeframe="4h")
 
     after = _counts(client)
-    assert after.get(("orta_vadeli", "LONG"), 0) == before.get(("orta_vadeli", "LONG"), 0) + 1
+    assert after.get(("scalp", "LONG"), 0) == before.get(("scalp", "LONG"), 0) + 1
+    assert "orta_vadeli" not in {t for t, _ in after}
 
 
 def test_classifies_scalp_and_swing_by_stop_distance(client):

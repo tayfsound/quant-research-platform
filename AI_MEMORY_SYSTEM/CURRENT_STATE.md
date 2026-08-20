@@ -1,11 +1,19 @@
-# Mevcut Durum -- v1.61.0 (Faz 322: LONG/SHORT kazanma oranı kartı + Swing rozet rengi)
+# Mevcut Durum -- v1.62.0 (Faz 323: "orta_vadeli" trade-type kaldırıldı + Strateji getirisi kartı düzeltildi)
 
 **Tarih:** 2026-08-20
 **Branch:** main
-**Son commit (HEAD):** 5c3d4d3 (Faz 321) — Faz 322 henüz commit edilmedi (bu değişiklik: `api/rest/positions.py`, `database/repositories/decision_persistor.py`, `dashboard/src/{views/Dashboard.tsx,views/Transactions.tsx,components/ui.tsx,index.css}`, ilgili testler).
-**⚠️ Servis restart durumu:** api/worker/beat 4 kök süreç (uvicorn 84261, celery beat 16586, celery worker -Q celery 84262, celery worker -Q slow 84263) bu Faz 322 işi bitince YENİDEN BAŞLATILACAK — Faz 318-322 arası TÜM kod değişikliklerini (pump_fade gate, AgentMemory Postgres, kasa kartı, R:R kalibrasyonu, LONG/SHORT kartı, Swing rengi) tek seferde canlıya alacak şekilde. Kullanıcı canlı bir pump_fade pozisyonunda (SIGNUSDT) bunların HİÇBİRİNİN henüz devrede olmadığını fark etmişti.
-**Test:** by_direction'a dokunan hedefli regresyon (15 test) temiz — 1 pre-existing/ilgisiz kirlilik (`test_performance_endpoint_breaks_down_win_rate_and_pnl_by_trade_type`, `git stash` A/B ile doğrulandı) hariç.
-**Altyapı notu (2026-08-20):** Docker Desktop bu oturumda bir kez çöktü (postgres/redis konteynerleri durdu) — `docker start` ile geri getirildi, veri kaybı yok. api/celery worker'lar Docker'a bağlı değil (host'ta native çalışıyor).
+**Son commit (HEAD):** eb1c1da (Faz 322) — Faz 323 henüz commit edilmedi (bu değişiklik: `api/rest/positions.py`, `database/repositories/decision_persistor.py`, `dashboard/src/views/{Dashboard.tsx,Transactions.tsx}`, ilgili testler).
+**Servis durumu:** Faz 318-322 için servisler bu oturumda YENİDEN BAŞLATILDI (yeni PID'ler: uvicorn 61137, celery beat 61143, worker -Q celery 61139, worker -Q slow 61141) — `/health` 200, hatasız. Faz 323 sadece dashboard/rapor katmanını değiştiriyor (RiskTargetStage/canlı karar mantığına dokunmadı) — bu iş bitince yeniden restart GEREKMEZ, sadece commit yeterli (API zaten her istekte `_classify_trade_type()`'ı çalıştırıyor).
+**Test:** trade-type sınıflandırmasına dokunan hedefli regresyon (211 test) temiz — 3 pre-existing/ilgisiz kirlilik (`test_calibration_api`, 2x `test_pairs_trader`, hepsi `git stash` A/B ile doğrulandı) hariç.
+**Altyapı notu (2026-08-20):** Docker Desktop bu oturumda bir kez çöktü (postgres/redis konteynerleri durdu) — `docker start` ile geri getirildi, veri kaybı yok.
+
+## Faz 323 — "orta_vadeli" trade-type kaldırıldı + "Strateji getirisi" kartı düzeltildi (2026-08-20)
+
+Kullanıcı bulgusu: "swing 6 gündür yeni işlem almıyor" + "scalp %100 başarılı görünüyor, mantıksız." Kök neden bulundu: `_classify_trade_type()` `timeframe IN ('4h','1d')` ise diğer her şeyden ÖNCE "orta_vadeli" döndürüyordu — ama `decisions.timeframe`, risk profiliyle değil `candle_timeframe` ayarının karar anındaki değeriyle ilgili, kırılgan bir alan. İki gerçek kaynağı vardı: (1) ~1016 işlem gerçek bir A/B deneyinden (`multi_timeframe_cascade_v1`, `services/orchestrator.py::run_portfolio_aware_cycle`) — "control" kolu bile normal `propose()` ile AYNI mekanizma, sadece deney etiketi taşıyordu; (2) ~108 işlem `candle_timeframe`'in 2026-08-14→08-20 arası yanlışlıkla 4h/1d'de kalmasından (Faz316'da bulunan/düzeltilen AYNI ayar sorunu, audit_log'da doğrulandı: admin 08-14 14:54 değiştirmiş, 08-20 14:45 düzeltilmiş) — scalp/swing'i tam 6 gün boyunca hiç yeni kayıt almadan dondurmuştu. Her iki kaynak da gerçek stop mesafesine göre incelendiğinde doğal bir scalp/swing dağılımı gösteriyordu (control: ort. %1.13 dar / %9.80 geniş) — "orta_vadeli" hiçbir zaman risk-profili temelli bir kategori olmamış, sadece hangi mekanizmanın kararı verdiğiyle ilgiliymiş, ki bu zaten `experiment_bucket`/`services/ab_testing.py` üzerinden ayrı takip ediliyor.
+
+Kullanıcı kararıyla: "orta_vadeli" TAMAMEN kaldırıldı (`api/rest/positions.py::_classify_trade_type`, `database/repositories/decision_persistor.py::_breakdown_by_trade_type` SQL CASE'i, `Transactions.tsx::tradeTypeBadge`, `Dashboard.tsx::TRADE_TYPE_LABELS/ORDER`) — artık HER işlem (deneyler dahil) SADECE gerçek stop mesafesine göre scalp/swing'e ayrılıyor, `candle_timeframe` gibi ilgisiz ayarlara karşı tamamen bağışık. `target_atr_mult_long/short` (Faz 321) ayarları etkilenmedi — yöne göre çalışıyorlar, trade-type etiketinden bağımsız.
+
+Ayrıca kullanıcı bulgusu: "Strateji getirisi" kartı `roi_pct_on_deployed` (tüm-zamanlar hacmine göre getiri, %2.65) gösteriyordu — kasa 500k'dan 574k'ya (gerçek +%14.86) çıkmışken bu "başarısız" gibi görünen, yanıltıcı bir sayıydı. Kart artık gerçek kasa büyümesini (`roi_pct`) gösteriyor, hacim-bazlı oran ikincil bir açıklama metnine taşındı.
 
 ## Faz 322 — Dashboard'a LONG/SHORT kazanma oranı kartı + Transactions "Swing" rozetine kendi rengi (2026-08-20)
 

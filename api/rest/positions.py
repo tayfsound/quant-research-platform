@@ -49,6 +49,25 @@ def _extract_pairs_trade(row: dict) -> str | None:
 # kalmasın... zaten işlem almıyormuş ölü yatırım." Geçmiş kirli satırlar
 # migration faz317 ile excluded_from_stats=true işaretlendi (silinmedi);
 # kategori scalp/swing ikili ayrımına birleştirildi.
+#
+# Faz 323 — kullanıcı bulgusu: "orta_vadeli" (timeframe IN ('4h','1d'))
+# kategorisi de kaldırıldı. Kök neden: `timeframe` (decisions.timeframe,
+# candle_timeframe ayarının karar anındaki değeri) risk profiliyle değil
+# HANGİ MEKANİZMANIN kararı verdiğiyle ilgili — kırılgan bir vekildi.
+# İki gerçek kaynağı vardı: (1) ~1016 işlem gerçek bir A/B deneyinden
+# (multi_timeframe_cascade_v1, services/orchestrator.py::
+# run_portfolio_aware_cycle) — "control" kolu bile normal propose() ile
+# AYNI mekanizma, sadece deney etiketi taşıyordu; (2) ~108 işlem
+# candle_timeframe'in 2026-08-14→08-20 arası yanlışlıkla 4h/1d'de
+# kalmasından (Faz316'da bulunan/düzeltilen AYNI ayar sorunu) — scalp/
+# swing'i 6 gün boyunca hiç yeni kayıt almadan dondurmuştu. Her iki
+# kaynak da gerçek stop mesafesine göre incelendiğinde doğal bir scalp/
+# swing dağılımı gösteriyordu (control: ort. %1.13 dar / %9.80 geniş).
+# Deney karşılaştırması zaten experiment_bucket üzerinden ayrı yapılıyor
+# (services/ab_testing.py) — dashboard'da risk-profili sınıflandırmasıyla
+# ÇAKIŞAN, candle_timeframe gibi ilgisiz ayarlara karşı kırılgan üçüncü
+# bir kategoriye gerek yok. Artık HER işlem (deneyler dahil) SADECE gerçek
+# stop mesafesine göre scalp/swing'e ayrılıyor.
 _SCALP_MAX_STOP_PCT = 4.5
 
 
@@ -66,8 +85,6 @@ def _classify_trade_type(row: dict) -> str | None:
         return "pump_fade"
     if _extract_pairs_trade(row):
         return "hedge"
-    if row.get("timeframe") in ("4h", "1d"):
-        return "orta_vadeli"
     entry_price = row.get("entry_price")
     stop_loss_price = row.get("stop_loss_price")
     if entry_price and stop_loss_price and entry_price != 0:

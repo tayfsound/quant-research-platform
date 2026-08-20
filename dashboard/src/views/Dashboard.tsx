@@ -213,7 +213,6 @@ const PERIOD_TABS: { key: keyof Pick<PerformanceData, "daily" | "weekly" | "mont
 const TRADE_TYPE_LABELS: Record<string, string> = {
   scalp: "Scalp",
   swing: "Swing",
-  orta_vadeli: "Orta vadeli",
   hedge: "Hedge",
   pump_fade: "Pump-Fade",
 };
@@ -226,7 +225,12 @@ const TRADE_TYPE_LABELS: Record<string, string> = {
 // görünmüyordu — TRADE_TYPE_ORDER.filter(...) listede olmayan hiçbir
 // key'i render etmiyor, backend'in döndürdüğü YENİ bir tür sessizce
 // kayboluyordu.
-const TRADE_TYPE_ORDER = ["scalp", "swing", "orta_vadeli", "hedge", "pump_fade"];
+//
+// Faz 323 — "orta_vadeli" kaldırıldı: candle_timeframe gibi ilgisiz
+// ayarlara bağımlı, kırılgan bir kategoriydi (bkz. api/rest/positions.py::
+// _classify_trade_type üstündeki not) — artık her işlem gerçek stop
+// mesafesine göre scalp/swing'e ayrılıyor.
+const TRADE_TYPE_ORDER = ["scalp", "swing", "hedge", "pump_fade"];
 
 // Kullanıcı isteği: "işlem türüne göre açık pozisyonlar diye bir yer
 // eklemişsin güzel ama kapanmış işlemlerin olduğu kısıma ratioları
@@ -578,16 +582,19 @@ export default function Dashboard() {
               value={format(perf.all_time.total_pnl)}
               tone={perf.all_time.total_pnl > 0 ? "rise" : perf.all_time.total_pnl < 0 ? "fall" : "neutral"}
             />
+            {/* Faz 322-sonrası — kullanıcı bulgusu: bu kart eskiden roi_pct_
+                on_deployed (tüm-zamanlar hacmine göre getiri) gösteriyordu —
+                500k'yı 574k yapmış (gerçek +%14.9) bir kullanıcıya %2.65
+                gibi "başarısız" görünen, yanıltıcı bir sayıydı. Kasa GERÇEK
+                bir büyüklüğe (500k) ayarlıyken roi_pct (gerçek sermaye
+                getirisi) artık anlamlı — kart buna çevrildi. Hacim-bazlı
+                oran (roi_pct_on_deployed) icat edilmiş/silinmiş değil,
+                sadece ikincil bir bilgi olarak alt metne taşındı. */}
             <StatCard
               label="Strateji getirisi"
-              value={`%${(perf.all_time.roi_pct_on_deployed * 100).toFixed(3)}`}
-              tone={perf.all_time.roi_pct_on_deployed > 0 ? "rise" : perf.all_time.roi_pct_on_deployed < 0 ? "fall" : "neutral"}
-              // Faz 319 — kullanıcı bulgusu: "kullanılan" kasadan şu an
-              // ayrılmış/kilitli sermaye gibi okunuyordu, kafa karıştırdı.
-              // Bu aslında TÜM ZAMANLARIN toplam işlem hacmi (aynı sermaye
-              // defalarca yeniden kullanıldığı için kasadan kat kat büyük
-              // çıkması normal) — etiket bunu netleştiriyor.
-              sub={`tüm-zamanlar hacmi: ${format(perf.all_time.deployed_notional)}`}
+              value={`%${(perf.all_time.roi_pct * 100).toFixed(2)}`}
+              tone={perf.all_time.roi_pct > 0 ? "rise" : perf.all_time.roi_pct < 0 ? "fall" : "neutral"}
+              sub={`kasa: ${format(perf.starting_capital)} -> ${format(perf.starting_capital + perf.all_time.total_pnl)}`}
             />
             {/* Faz 322 — kullanıcı isteği: "genel toplamda long/short
                 kazanma oranı" kartı — hangi yönün gerçekten kazandırdığı
@@ -609,7 +616,7 @@ export default function Dashboard() {
 
           <TradeTypeBreakdownTable
             title="İşlem türüne göre açık pozisyonlar"
-            description="Scalp/orta vadeli/swing stop mesafesine ve zaman dilimine göre; Pump-Fade ve hedge kendi mekanik stratejilerinin etiketiyle ayrılıyor (bkz. Transactions'taki aynı rozetler)."
+            description="Scalp/swing gerçek stop mesafesine göre; Pump-Fade ve hedge kendi mekanik stratejilerinin etiketiyle ayrılıyor (bkz. Transactions'taki aynı rozetler)."
             rows={typeBreakdown}
           />
 
@@ -620,10 +627,13 @@ export default function Dashboard() {
           />
 
           <p className="text-xs text-ink-soft mb-4">
-            Kasa büyüklüğüne göre ROI: %{(perf.all_time.roi_pct * 100).toFixed(6)} (sermaye:{" "}
-            {perf.starting_capital.toLocaleString()} — test için çok büyük bir değere ayarlıysa bu oran
-            her zaman ~0 görünür, stratejinin gerçek performansı yukarıdaki "kullanılan sermayeye göre"
-            değeridir).
+            Hacim-bazlı getiri (tüm-zamanlar toplam işlem hacmine göre): %
+            {(perf.all_time.roi_pct_on_deployed * 100).toFixed(3)} — kullanılan hacim:{" "}
+            {format(perf.all_time.deployed_notional)}. Bu, yukarıdaki "Strateji getirisi" (gerçek kasa
+            büyümesi) kartından FARKLI bir sayı: aynı sermaye defalarca yeniden kullanıldığı için hacim
+            kasadan kat kat büyük çıkar — bu oran o yüzden düşük görünür, "başarısız" anlamına gelmez.
+            Kasa ({perf.starting_capital.toLocaleString()}) test için gerçekçi olmayan çok büyük bir
+            değere ayarlıysa Strateji getirisi kartı ~%0'a yuvarlanır, o durumda burası daha güvenilirdir.
           </p>
 
           {periodTab === "daily" && (
@@ -749,7 +759,7 @@ export default function Dashboard() {
               </h3>
               <p className="text-xs text-ink-faint mb-3">
                 Scalp/swing, pozisyonun gerçek stop mesafesinden (Transactions'taki rozetlerle aynı
-                sınıflandırma) belirleniyor; orta vadeli ve hedge ayrı katman/mekanizmalar.
+                sınıflandırma) belirleniyor; pump-fade ve hedge ayrı mekanik stratejiler.
               </p>
               <Card padded={false}>
                 <div className="overflow-x-auto">
