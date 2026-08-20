@@ -12,6 +12,12 @@ agent_memory_history/agent_memory.json'a (WeightOptimizer'ın ağırlık
 test çöpü çıktı. .gitignore'daki "tmp_test_memory/" satırı bu niyetin
 izi ama hiç bağlanmamıştı — şimdi bağlanıyor.
 
+Faz 319: AgentMemory JSON dosyasından Postgres/TimescaleDB'ye taşındı
+(agent_performance_records tablosu, quantdb_test'te de migrate edilmiş
+olmalı). AGENT_MEMORY_STORAGE_PATH artık bir dosya yolu değil — yeni
+`namespace` sütununun değeri, ama izolasyon rolü (testlerin paylaşımlı
+canlı/gerçek namespace'ten [''] ayrılması) AYNI kaldı.
+
 Bu dosya en üstte, `config`/`database` hiçbir yerden import edilmeden ÖNCE
 ortam değişkenlerini test DB'sine çeviriyor — `config.get_settings()`
 `@lru_cache`'li olduğu için ilk çağrıldığı andaki ortam değişkenleri kalıcı

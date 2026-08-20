@@ -1,28 +1,33 @@
-"""Agent Memory — persistent storage backed by JSON."""
+"""Agent Memory — persistent storage backed by Postgres/TimescaleDB."""
 
-import fcntl
-import json
 import os
-import tempfile
-from pathlib import Path
+
+from sqlalchemy import text
 
 from contracts.agent_performance import (
     AgentPerformanceRecord,
     AgentPerformanceSummary,
 )
+from database.session_factory import SessionFactory
 
-# Faz 243: kritik bulgu — testler (çoğu AgentMemory() varsayılanıyla, path
-# belirtmeden) gerçek "agent_memory_history/agent_memory.json"a yazıyordu.
-# Bu, WeightOptimizer'ın gerçek ağırlık önerilerini hesapladığı DOSYAYA
-# doğrudan test çöpü karıştırıyordu — 60.519 kayıttan 21.649'u ("(boş)"
-# sembol ya da MEMWIRE/LEARN/POS... test fixture sembolleri) gerçek işlem
-# değildi. Projede AYNI sınıf sorun veritabanı için zaten yaşanmış ve
-# çözülmüştü (bkz. conftest.py, quantdb_test yönlendirmesi) — buradaki
-# .gitignore'daki "tmp_test_memory/" satırı da bu niyetin izi ama hiç
-# hayata geçirilmemişti. Artık conftest.py bu env var'ı test'lere özel bir
-# dizine ayarlıyor, testler AgentMemory()'yi path belirtmeden çağırsa bile
-# gerçek dosyaya asla dokunmuyor.
-_DEFAULT_STORAGE_PATH = os.environ.get("AGENT_MEMORY_STORAGE_PATH", "agent_memory_history")
+# Faz 319 — kullanıcı isteği: agent_memory_history/agent_memory.json (tek
+# dosya, fcntl kilitli, 60.519 kayıt) yerine gerçek bir Postgres tablosu
+# (decisions/weight_approvals ile AYNI TimescaleDB hypertable deseni, bkz.
+# faz319 migration). Gerçek geçmiş veri scripts/migrate_agent_memory_to_
+# postgres.py ile bir kerelik taşındı.
+#
+# `_DEFAULT_NAMESPACE`/`storage_path` artık bir dosya yolu DEĞİL — yeni
+# `namespace` sütununun değeri. Bu KASITLI: testler (38 çağrı noktası)
+# bugüne kadar AgentMemory(storage_path=str(tmp_path/...)) ile GERÇEK bir
+# izolasyon alıyordu (her test kendi boş JSON dizinini kullanır, paylaşımlı
+# canlı dosyaya ya da birbirine asla karışmaz). Bu davranışı Postgres'te
+# birebir korumak için storage_path string'i artık doğrudan namespace
+# sütununa yazılıyor/filtreleniyor — hiçbir test dosyası değişmedi.
+# Gerçek/canlı kayıtlar (AgentMemory() varsayılanı) namespace='' kullanır.
+# conftest.py de değişmedi: AGENT_MEMORY_STORAGE_PATH ortam değişkeni artık
+# bir dizin yolu değil ama string olarak AYNI izolasyon rolünü (testlerin
+# paylaşımlı canlı namespace'ten ayrılması) oynamaya devam ediyor.
+_DEFAULT_NAMESPACE = os.environ.get("AGENT_MEMORY_STORAGE_PATH", "")
 
 # Faz 247 — services/confidence_calibration.py'den taşındı (Faz 268-sonrası):
 # kullanıcı bulgusu, gerçek veriyle doğrulandı — macro ajanı kripto'da %30.5,
@@ -76,7 +81,6 @@ def get_reliability_legacy_cutoff():
     kesim yok, tüm geçmiş sayılır."""
     try:
         from database.repositories.app_settings_repository import AppSettingsRepository
-        from database.session_factory import SessionFactory
 
         with SessionFactory.get_session() as session:
             raw = AppSettingsRepository(session).get("reliability_legacy_cutoff_at")
@@ -86,112 +90,71 @@ def get_reliability_legacy_cutoff():
         return None
 
 
+# AgentPerformanceRecord'un TÜM alanları (id dahil) — INSERT/SELECT'in
+# sütun listesini modelle senkron tutmak için tek yerde.
+_RECORD_COLUMNS = [
+    "id", "agent_domain", "timestamp", "decision_opened_at", "direction",
+    "confidence", "was_correct", "source", "decision_score", "r_multiple",
+    "pnl", "failure_type", "symbol", "market_regime", "timeframe",
+    "volatility", "session", "spread", "funding", "leverage",
+    "holding_time_minutes", "news_type", "reasoning", "error_analysis",
+]
+
+
 class AgentMemory:
 
-    def __init__(self, storage_path: str = _DEFAULT_STORAGE_PATH):
-        self.storage_path = Path(storage_path)
-        self.storage_path.mkdir(exist_ok=True)
+    def __init__(self, storage_path: str = _DEFAULT_NAMESPACE):
+        self.namespace = storage_path
 
-        self.memory_file = self.storage_path / "agent_memory.json"
-        self.lock_file = self.storage_path / "agent_memory.lock"
-
-        self._records: dict[str, list[AgentPerformanceRecord]] = {}
-
-        self._load()
-
-
-    def _load(self):
-
-        if not self.memory_file.exists():
-            return
-
-        raw = json.loads(self.memory_file.read_text())
-
-        for domain, records in raw.items():
-            self._records[domain] = [
-                AgentPerformanceRecord.model_validate(r)
-                for r in records
-            ]
-
-
-    def _load_from_raw(self, raw: dict):
-        self._records = {}
-        for domain, records in raw.items():
-            self._records[domain] = [
-                AgentPerformanceRecord.model_validate(r)
-                for r in records
-            ]
-
-    def _write_locked(self):
-        """Çağıranın zaten kilidi tuttuğu varsayılır — diske atomik yazar."""
-        payload = {
-            domain: [
-                r.model_dump(mode="json")
-                for r in records
-            ]
-            for domain, records in self._records.items()
-        }
-        fd, tmp_path = tempfile.mkstemp(
-            dir=self.storage_path, prefix=".agent_memory_", suffix=".tmp"
-        )
-        try:
-            with os.fdopen(fd, "w") as f:
-                json.dump(payload, f, indent=2, default=str)
-            os.replace(tmp_path, self.memory_file)
-        except BaseException:
-            os.unlink(tmp_path)
-            raise
-
-    def _save(self):
-        # Faz 246: kritik bulgu — bu proje bir süredir aralıklı
-        # "JSONDecodeError: Expecting value" flakiness'ı yaşıyordu
-        # (pyproject.toml'daki bilinen-flaky rerun listesinde). Kök neden:
-        # birden fazla celery worker/process aynı anda AgentMemory().record()
-        # çağırdığında, write_text() dosyayı YERİNDE (in-place) baştan
-        # yazıyordu — iki yazma iç içe geçerse dosya YARIM (bozuk JSON)
-        # kalabiliyordu. Artık: (1) tüm süreçlerin sırayla yazmasını
-        # zorlayan bir exclusive dosya kilidi (fcntl.flock), (2) önce ayrı
-        # bir geçici dosyaya yazıp SONRA os.replace() ile atomik olarak
-        # yerine koyma — bir okuyucu asla yarım yazılmış bir dosya görmez,
-        # ya tamamen eski ya tamamen yeni içeriği görür.
-        with open(self.lock_file, "w") as lockf:
-            fcntl.flock(lockf, fcntl.LOCK_EX)
-            try:
-                self._write_locked()
-            finally:
-                fcntl.flock(lockf, fcntl.LOCK_UN)
-
-
-    def record(
-        self,
-        record: AgentPerformanceRecord,
-    ):
-        # Faz 246 (tam doğruluk): sadece dosya bozulmasını önlemek yetmiyordu
-        # — canlıda GERÇEKTEN yaşandı: bir AgentMemory örneği (ör. saatlerce
-        # çalışan bir celery worker) başlangıçta yüklediği ESKİ kopyayı
-        # hafızasında tutuyor, her record() çağrısında o eski kopyayı
-        # (üzerine kendi yeni kaydını ekleyip) yazıp başka bir sürecin
-        # arada yaptığı gerçek değişiklikleri (ör. bu oturumdaki temizlik)
-        # sessizce siliyordu. Artık kilit altında DİSKTEKİ GÜNCEL hali
-        # yeniden okunuyor, yeni kayıt ONA ekleniyor, öyle yazılıyor —
-        # başka bir sürecin yazdığı hiçbir şey kaybolmuyor.
-        domain = record.agent_domain
-
-        with open(self.lock_file, "w") as lockf:
-            fcntl.flock(lockf, fcntl.LOCK_EX)
-            try:
-                if self.memory_file.exists():
-                    raw = json.loads(self.memory_file.read_text())
-                    self._load_from_raw(raw)
-                self._records.setdefault(domain, []).append(record)
-                self._write_locked()
-            finally:
-                fcntl.flock(lockf, fcntl.LOCK_UN)
-
+    def record(self, record: AgentPerformanceRecord):
+        payload = record.model_dump(mode="python")
+        payload["namespace"] = self.namespace
+        columns = ["namespace", *_RECORD_COLUMNS]
+        placeholders = ", ".join(f":{c}" for c in columns)
+        with SessionFactory.get_session() as session:
+            session.execute(
+                text(
+                    f"INSERT INTO agent_performance_records ({', '.join(columns)}) "
+                    f"VALUES ({placeholders})"
+                ),
+                payload,
+            )
 
     def domains(self) -> list[str]:
-        return list(self._records.keys())
+        with SessionFactory.get_session() as session:
+            rows = session.execute(
+                text(
+                    "SELECT DISTINCT agent_domain FROM agent_performance_records "
+                    "WHERE namespace = :namespace"
+                ),
+                {"namespace": self.namespace},
+            ).fetchall()
+        return [r[0] for r in rows]
 
+    def total_record_count(self) -> int:
+        """Bu namespace'teki TÜM kayıtların (yön/domain filtresiz) sayısı —
+        get_filtered_records/get_summary'nin SADECE LONG/SHORT yönlü
+        kayıtları saydığı filtrelemenin dışında, "hiç yeni satır eklendi
+        mi" gibi ham bir sayaç gereken testler için."""
+        with SessionFactory.get_session() as session:
+            count = session.execute(
+                text(
+                    "SELECT COUNT(*) FROM agent_performance_records WHERE namespace = :namespace"
+                ),
+                {"namespace": self.namespace},
+            ).scalar()
+        return int(count or 0)
+
+    def _query_domain_records(self, domain: str) -> list[AgentPerformanceRecord]:
+        with SessionFactory.get_session() as session:
+            rows = session.execute(
+                text(
+                    f"SELECT {', '.join(_RECORD_COLUMNS)} FROM agent_performance_records "
+                    "WHERE namespace = :namespace AND agent_domain = :domain"
+                ),
+                {"namespace": self.namespace, "domain": domain},
+            ).mappings().all()
+        return [AgentPerformanceRecord.model_validate(dict(r)) for r in rows]
 
     def get_filtered_records(
         self,
@@ -208,7 +171,7 @@ class AgentMemory:
         _domain_drift_detected). get_summary() kasıtlı olarak DEĞİŞTİRİLMEDİ
         — mevcut, çok test edilmiş davranışı bozma riski sıfır."""
         records = [
-            r for r in self._records.get(domain, [])
+            r for r in self._query_domain_records(domain)
             if (r.direction or "").upper() in ("LONG", "SHORT")
         ]
         records = sorted(records, key=_effective_decision_timestamp)
@@ -240,7 +203,7 @@ class AgentMemory:
         # kayıtlar sayılıyor — WAIT bir tahmin değil, doğru/yanlış
         # ölçülemez.
         records = [
-            r for r in self._records.get(domain, [])
+            r for r in self._query_domain_records(domain)
             if (r.direction or "").upper() in ("LONG", "SHORT")
         ]
 

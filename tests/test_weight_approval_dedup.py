@@ -195,7 +195,7 @@ def test_learning_loop_skips_opinions_with_no_real_agent_domain():
     from services.learning_loop import LearningLoop
 
     loop = LearningLoop()
-    total_before = sum(len(v) for v in loop.agent_memory._records.values())
+    total_before = loop.agent_memory.total_record_count()
 
     event = DecisionEvent(
         symbol="TESTUNKNOWN",
@@ -206,7 +206,7 @@ def test_learning_loop_skips_opinions_with_no_real_agent_domain():
     )
     loop._apply_feedback(event, was_correct=True, pnl=1.0)
 
-    total_after = sum(len(v) for v in loop.agent_memory._records.values())
+    total_after = loop.agent_memory.total_record_count()
     # Not: gerçek agent_memory_history/agent_memory.json dosyasında bu
     # düzeltmeden ÖNCEKİ çalıştırmalardan kalma "unknown" kayıtları hâlâ
     # olabilir (temizlenmedi, sadece YENİ kirlenme durduruldu) — bu yüzden

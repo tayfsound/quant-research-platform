@@ -266,8 +266,7 @@ def test_legacy_records_before_cutoff_do_not_count(tmp_path, monkeypatch):
         agent_domain="pattern", direction="LONG", confidence=0.9, was_correct=False,
         timestamp=datetime.now() - timedelta(days=2),
     )
-    memory._records.setdefault("pattern", []).append(old_record)
-    memory._save()
+    memory.record(old_record)
     # Faz 268-sonrası: 12'den 30'a çıkarıldı — Bayesian yumuşatma artık
     # küçük örneklemi nötre çekiyor (bkz. test_small_sample_high_accuracy_
     # is_smoothed_not_fully_trusted), bu test kesim mantığını (eski kayıt

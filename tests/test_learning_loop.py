@@ -75,11 +75,11 @@ def test_apply_feedback_scores_each_agent_by_own_direction_and_tags_source(tmp_p
     # macro yanlış, WAIT diyen sentiment hiç kaydedilmemeli.
     loop._apply_feedback(event, was_correct=True, pnl=50.0)
 
-    technical_records = loop.agent_memory._records.get("technical", [])
-    macro_records = loop.agent_memory._records.get("macro", [])
+    technical_records = loop.agent_memory.get_filtered_records("technical")
+    macro_records = loop.agent_memory.get_filtered_records("macro")
     assert len(technical_records) == 1
     assert technical_records[0].was_correct is True
     assert technical_records[0].source == "forward_estimate"
     assert len(macro_records) == 1
     assert macro_records[0].was_correct is False
-    assert "sentiment" not in loop.agent_memory._records or len(loop.agent_memory._records["sentiment"]) == 0
+    assert len(loop.agent_memory.get_filtered_records("sentiment")) == 0

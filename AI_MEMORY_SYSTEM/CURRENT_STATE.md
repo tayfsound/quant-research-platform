@@ -1,9 +1,22 @@
-# Mevcut Durum -- v1.57.0 (Faz 318: pump_fade rejim körlüğü kapatıldı — council kârlılık farkı + BTC rejimi kesişim gate'i)
+# Mevcut Durum -- v1.58.0 (Faz 319: AgentMemory JSON -> Postgres/TimescaleDB)
 
 **Tarih:** 2026-08-20
 **Branch:** main
-**Son commit (HEAD):** 6f2c7a5 (Faz 317) — Faz 318 henüz commit edilmedi (bu değişiklik: `services/pump_fade_strategy.py`, `tests/test_pump_fade_strategy.py`). Servis restart'ı bekleniyor (Faz 315 71d4bd5, Faz 316 21dca03 dahil).
-**Test:** `tests/test_pump_fade_strategy.py` — 27 test, tamamı temiz (yeni rejim-gate testleri `_FakeSession` ile tamamen DB'den izole, `quantdb_test`teki bilinen kirli 'ai' pozisyon birikimine karşı bağışık).
+**Son commit (HEAD):** 0c85049 (Faz 318) — Faz 319 henüz commit edilmedi (bu değişiklik: `services/agent_memory.py`, `services/confidence_calibration.py`, `database/migrations/versions/faz319_*.py`, `scripts/migrate_agent_memory_to_postgres.py`, ilgili testler). **ÖNEMLİ: servisler yeniden başlatılınca (celery worker dahil) eski agent_memory.py'yi belleğinde tutan hiçbir süreç kalmamalı** — aksi halde o süreç artık okunmayan agent_memory_history/agent_memory.json'a yazmaya devam edip yeni gerçek veriyi Postgres'in dışında bırakabilir.
+**Test:** AgentMemory'ye dokunan hedefli regresyon (170 test) temiz.
+
+## Faz 319 — AgentMemory: JSON dosyasından Postgres/TimescaleDB'ye taşındı (2026-08-20)
+
+Kullanıcı isteği: duraklatılmış "AgentMemory JSON -> Postgres" işini bitirip kapatalım. `services/agent_memory.py` tek dosyalı, fcntl kilitli bir JSON'du (54.402 gerçek kayıt, 10 domain) — `decisions`/`weight_approvals` ile AYNI TimescaleDB hypertable deseni (`faz161`) uygulandı: yeni `agent_performance_records` tablosu (`faz319` migration, hem quantdb hem quantdb_test'e uygulandı), `id+timestamp` bileşik birincil anahtar, `(namespace, agent_domain, timestamp)` indeksi.
+
+**`namespace` sütunu — kritik test-izolasyon detayı.** 38 test çağrı noktası `AgentMemory(storage_path=str(tmp_path/...))` ile GERÇEK izolasyon alıyordu (her test kendi boş JSON dizinini kullanır). Bunu Postgres'te birebir korumak için `storage_path` artık doğrudan `namespace` sütununa yazılıyor/filtreleniyor — hiçbir test çağrı noktası değişmedi. Gerçek/canlı kayıtlar `namespace=''` kullanıyor. `AgentMemory` sınıfının public API'si (`record`/`domains`/`get_filtered_records`/`get_summary`/`get_contextual_confidence`) BİREBİR korundu — 8 gerçek caller'ın (`source_reliability_agent.py`, `collective_intelligence_gatherer.py`, `confidence_calibration.py`, `direction_prediction_v2_gatherer.py`, `learning_loop.py`, `position_closer.py`, `expert_council.py`) hiçbiri değişmedi.
+
+**Regresyonda yakalanan gerçek bulgular:**
+1. `services/confidence_calibration.py`'de 2 fonksiyon `memory._records` özel alanına doğrudan erişiyordu (public API'yi atlayarak) — `get_filtered_records()`e geçirildi.
+2. 4 test dosyası da aynı özel alana erişiyordu — public API'ye geçirildi (`total_record_count()` yeni, minimal bir yardımcı metod olarak eklendi, ham/filtresiz toplam sayı gerektiren testler için).
+3. **Gerçek kirlilik bulgusu:** `tests/test_position_close_feeds_agent_learning.py`'deki 2 test bare `AgentMemory()` (varsayılan paylaşımlı test namespace'i) kullanıyordu — JSON'da bu, sıralı test çalıştırmasında "insertion order = benim son kaydım" tesadüfiyle çalışıyordu, ama Postgres implementasyonu (mevcut, değişmemiş `_effective_decision_timestamp` sıralamasıyla, Faz 268-sonrası doğru davranış) başka bir testin AYNI paylaşımlı namespace'e yazdığı, farklı zaman damgalı bir kaydı `[-1]` olarak döndürünce gerçek bir cross-test kirlilik AÇIĞA ÇIKTI (`assert 'test_regime_dedup_bearish_...' == 'bullish_high'`). `tmp_path` ile izole edilerek düzeltildi — production mantığı hiç değişmedi, sadece test izolasyon açığı kapatıldı.
+
+**Veri taşıma:** `scripts/migrate_agent_memory_to_postgres.py` (tek seferlik, idempotent — `ON CONFLICT (id,timestamp) DO NOTHING`) çalıştırıldı: **54.402 gerçek kayıt** (technical 9267, macro 8700, sentiment 5805, onchain 5385, pattern 6602, quant 5352, order_flow 6008, time 3517, epistemology 3516, relative_strength 250) `namespace=''` ile taşındı, doğrulandı (`AgentMemory().get_summary(domain)` gerçek sayılarla eşleşiyor — ör. macro %74.3 isabetli/4811 kayıt, technical %57.8/7280). Eski `agent_memory_history/agent_memory.json` DOSYASI SİLİNMEDİ (arşiv olarak duruyor, hiçbir kod artık okumuyor).
 
 ## Faz 318 — pump_fade'in yön körlüğü: council kârlılık farkı + BTC rejimi kesişim gate'i (2026-08-20)
 

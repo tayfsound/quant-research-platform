@@ -25,7 +25,7 @@ class _FixedPriceProvider:
         return [OHLCV(timestamp=now, open=self.price, high=self.price, low=self.price, close=self.price, volume=1.0)]
 
 
-def test_closing_a_real_position_records_each_real_agent_opinion_into_agent_memory():
+def test_closing_a_real_position_records_each_real_agent_opinion_into_agent_memory(tmp_path):
     symbol = f"LEARN{uuid4().hex[:8]}"
     now = datetime.now(UTC)
 
@@ -55,8 +55,8 @@ def test_closing_a_real_position_records_each_real_agent_opinion_into_agent_memo
     with SessionFactory.get_session() as session:
         DecisionPersistor(session).persist(event)
 
-    memory = AgentMemory()
-    before = len(memory._records.get("technical", []))
+    memory = AgentMemory(storage_path=str(tmp_path))
+    before = len(memory.get_filtered_records("technical"))
 
     closer = PositionCloser(_FixedPriceProvider(price=110.0), hold_seconds=600)
     closer.agent_memory = memory
@@ -65,15 +65,15 @@ def test_closing_a_real_position_records_each_real_agent_opinion_into_agent_memo
 
     assert any(c["decision_id"] == str(event.id) for c in closed)
 
-    reloaded = AgentMemory()
-    after = len(reloaded._records.get("technical", []))
+    reloaded = AgentMemory(storage_path=str(tmp_path))
+    after = len(reloaded.get_filtered_records("technical"))
     assert after == before + 1
     # Faz 211: doğruluk artık ajanın KENDİ yönüne göre — genel kârlılığa değil.
-    assert reloaded._records["technical"][-1].was_correct is True  # LONG dedi, işlem LONG ve kârlı -> doğru
-    assert reloaded._records["macro"][-1].was_correct is False  # SHORT dedi, işlem LONG ve kârlı -> yanlış
+    assert reloaded.get_filtered_records("technical")[-1].was_correct is True  # LONG dedi, işlem LONG ve kârlı -> doğru
+    assert reloaded.get_filtered_records("macro")[-1].was_correct is False  # SHORT dedi, işlem LONG ve kârlı -> yanlış
 
 
-def test_closing_a_real_position_records_the_real_market_regime():
+def test_closing_a_real_position_records_the_real_market_regime(tmp_path):
     """Faz 258 (mimari inceleme bulgusu, doğrulandı): market_regime hiç
     set edilmiyordu — AgentPerformanceSummary.by_regime, GERÇEK (canlı)
     kapanışlar için her zaman boş/"unknown" kalıyordu. market_snapshot
@@ -93,16 +93,16 @@ def test_closing_a_real_position_records_the_real_market_regime():
     with SessionFactory.get_session() as session:
         DecisionPersistor(session).persist(event)
 
-    memory = AgentMemory()
+    memory = AgentMemory(storage_path=str(tmp_path))
     closer = PositionCloser(_FixedPriceProvider(price=110.0), hold_seconds=600)
     closer.agent_memory = memory
     with SessionFactory.get_session() as session:
         closer.close_due_positions(DecisionPersistor(session))
 
-    reloaded = AgentMemory()
+    reloaded = AgentMemory(storage_path=str(tmp_path))
     # Faz 268s: market_regime artık trend + volatility_regime birleşimi —
     # "hangi ajan yüksek volatiliteli bullish'te iyi" sorusu cevaplanabilsin.
-    assert reloaded._records["technical"][-1].market_regime == "bullish_high"
+    assert reloaded.get_filtered_records("technical")[-1].market_regime == "bullish_high"
 
 
 def test_closing_a_real_position_also_proposes_regime_specific_weights():

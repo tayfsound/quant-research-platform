@@ -168,9 +168,7 @@ def compute_domain_calibration_curves(memory=None) -> dict[str, list[tuple[float
 
     for domain in memory.domains():
         buckets: dict[float, list[float]] = defaultdict(list)
-        for record in memory._records.get(domain, []):
-            if record.direction.upper() not in ("LONG", "SHORT"):
-                continue
+        for record in memory.get_filtered_records(domain):
             bucket = round(record.confidence, 1)
             buckets[bucket].append(1.0 if record.was_correct else 0.0)
 
@@ -247,9 +245,7 @@ def compute_asset_class_calibration_curves(memory=None) -> dict[str, list[tuple[
 
     for domain in memory.domains():
         buckets: dict[tuple[str, float], list[float]] = defaultdict(list)
-        for record in memory._records.get(domain, []):
-            if record.direction.upper() not in ("LONG", "SHORT"):
-                continue
+        for record in memory.get_filtered_records(domain):
             asset_class = _asset_class_of_symbol(record.symbol)
             bucket = round(record.confidence, 1)
             buckets[(asset_class, bucket)].append(1.0 if record.was_correct else 0.0)
