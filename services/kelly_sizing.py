@@ -163,6 +163,15 @@ def kelly_fraction(win_rate: float, avg_win: float, avg_loss: float) -> float:
     if avg_win <= 0 or avg_loss <= 0:
         return 0.0
     payoff_ratio = avg_win / avg_loss
+    # Faz 324 — property-based test bulgusu: avg_win pozitif ama float
+    # olarak avg_loss'a göre denormal derecede küçükse (ör. 5e-324),
+    # bölüm alt taşarak (underflow) tam 0.0'a yuvarlanabiliyordu —
+    # payoff_ratio>0 kontrolü olmadan aşağıdaki bölme ZeroDivisionError
+    # fırlatıyordu. Gerçek veride pratik olarak imkansız bir aralık ama
+    # "kazanç/kayıp verisi hesaplanamaz" durumuyla AYNI fail-closed 0.0
+    # burada da geçerli.
+    if payoff_ratio <= 0:
+        return 0.0
     loss_rate = 1.0 - win_rate
     f = win_rate - (loss_rate / payoff_ratio)
     return max(0.0, min(f, 1.0))

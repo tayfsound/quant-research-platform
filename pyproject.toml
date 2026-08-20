@@ -69,6 +69,11 @@ dev = [
     "ruff>=0.7.0",
     "mypy>=1.13.0",
     "pre-commit>=3.8.0",
+    # Faz 324 — kullanıcı isteği: "test stratejisi: contract/chaos/
+    # property-based testler." Güvenlik garantilerini (ör. SL/TP
+    # confluence'ın "asla riski artırma" invaryantı) sadece elle seçilmiş
+    # örneklerle değil, geniş rastgele girdi uzayında kanıtlamak için.
+    "hypothesis>=6.100.0",
 ]
 
 [tool.ruff]

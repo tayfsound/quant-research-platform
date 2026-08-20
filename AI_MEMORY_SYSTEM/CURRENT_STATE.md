@@ -1,11 +1,23 @@
-# Mevcut Durum -- v1.62.0 (Faz 323: "orta_vadeli" trade-type kaldırıldı + Strateji getirisi kartı düzeltildi)
+# Mevcut Durum -- v1.63.0 (Faz 324: property-based testler + gerçek bir Kelly bug'ı bulundu/düzeltildi)
 
 **Tarih:** 2026-08-20
 **Branch:** main
-**Son commit (HEAD):** eb1c1da (Faz 322) — Faz 323 henüz commit edilmedi (bu değişiklik: `api/rest/positions.py`, `database/repositories/decision_persistor.py`, `dashboard/src/views/{Dashboard.tsx,Transactions.tsx}`, ilgili testler).
-**Servis durumu:** Faz 318-322 için servisler bu oturumda YENİDEN BAŞLATILDI (yeni PID'ler: uvicorn 61137, celery beat 61143, worker -Q celery 61139, worker -Q slow 61141) — `/health` 200, hatasız. Faz 323 sadece dashboard/rapor katmanını değiştiriyor (RiskTargetStage/canlı karar mantığına dokunmadı) — bu iş bitince yeniden restart GEREKMEZ, sadece commit yeterli (API zaten her istekte `_classify_trade_type()`'ı çalıştırıyor).
-**Test:** trade-type sınıflandırmasına dokunan hedefli regresyon (211 test) temiz — 3 pre-existing/ilgisiz kirlilik (`test_calibration_api`, 2x `test_pairs_trader`, hepsi `git stash` A/B ile doğrulandı) hariç.
+**Son commit (HEAD):** 2784728 (Faz 323) — Faz 324 henüz commit edilmedi (bu değişiklik: `services/kelly_sizing.py`, `pyproject.toml` (+hypothesis), yeni `tests/property/` — 3 dosya, 17 test).
+**Servis durumu (2026-08-20):** uvicorn Faz 323 sonrası tekrar restart edildi (`--reload` OLMADAN çalıştığı için dosya değişiklikleri otomatik yüklenmiyor — bir daha "kod-only değişiklik restart gerektirmez" varsayımı yapılmayacak, HER backend .py değişikliği sonrası uvicorn/worker restart GEREKİR). Yeni PID: 68114. Faz 324 (kelly_sizing.py) için de aynı sebeple restart gerekecek — bu Faz commit edilince yapılacak.
+**Test:** yeni property-test'lere + ilgili mevcut testlere dokunan hedefli regresyon (95 test) temiz.
 **Altyapı notu (2026-08-20):** Docker Desktop bu oturumda bir kez çöktü (postgres/redis konteynerleri durdu) — `docker start` ile geri getirildi, veri kaybı yok.
+
+## Faz 324 — Test stratejisi: property-based testler (hypothesis) + gerçek bir Kelly bug'ı bulundu (2026-08-20)
+
+Kullanıcı isteği: "test stratejisi: contract/chaos/property-based testler." `hypothesis` dev bağımlılığı olarak eklendi. Bu oturum boyunca tekrarlanan "AI kendi risk tavanını genişletemez, sadece daraltabilir" ilkesinin sayısal temelini oluşturan 3 pure fonksiyon grubuna, şu ana kadar SADECE elle seçilmiş örneklerle test edilmiş invaryantları geniş/rastgele girdi uzayında (`tests/property/`, 17 test) sınayan testler eklendi:
+
+1. `analytics/tp_sl_confluence.py::snap_stop_to_confluence/snap_target_to_confluence` — "hangi zone seçilirse seçilsin sonuç asla ham ATR-tabanlı mesafeden daha UZAK olamaz" invaryantı.
+2. `simulator/margin.py::max_safe_leverage` — Faz 260'ın gerçek olayının (likidasyon stop'tan ÖNCE tetikleniyordu) kendisi: "max_safe_leverage'in önerdiği kaldıraçla likidasyon HER ZAMAN stop'tan uzakta kalır."
+3. `risk/predictive/cppi.py::cppi_exposure_multiplier` + `services/kelly_sizing.py::kelly_fraction` — çarpanların sınırların [MIN,1.0]/[0,1] dışına asla taşmadığı + CPPI'nin risk arttıkça monoton azaldığı.
+
+**Gerçek bulgu:** `kelly_fraction`'ın property testi, `avg_win` denormal derecede küçük bir float (ör. 5e-324) olduğunda `payoff_ratio`'nun float underflow ile tam 0.0'a yuvarlanıp `ZeroDivisionError` fırlattığını buldu — `avg_win <= 0` kontrolü bunu yakalamıyordu çünkü 5e-324 teknik olarak pozitif. Gerçek veride pratik olarak imkansız bir aralık ama gerçek bir crash riskiydi; `payoff_ratio <= 0` kontrolü eklenerek AYNI fail-closed 0.0'a düşürüldü. Property-based testin ilk uygulamasında hemen gerçek bir bug bulması, bu test stratejisinin somut kanıtı.
+
+**Kapsam dışı bırakılan (bilinçli):** "Contract" testleri (`tests/contract/test_llm_explainer.py`) ve "chaos" testleri (`tests/test_red_team.py`: flash_crash/whipsaw_chop/correlated_crash) zaten mevcut/kurulu desenler — bu oturumda genişletilmedi, mevcut kapsamları yeterli bulundu.
 
 ## Faz 323 — "orta_vadeli" trade-type kaldırıldı + "Strateji getirisi" kartı düzeltildi (2026-08-20)
 
