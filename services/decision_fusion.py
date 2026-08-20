@@ -5,6 +5,22 @@ from contracts.contexts.decision import ActionType
 from services.confidence_calibration import calibrate_confidence, get_calibration_curve_for_symbol
 from services.inner_critic import InnerCritic
 
+# Faz 328 — kullanıcı isteği: Opportunity Quality (Grup B, ölçüm-only)
+# modülü canlıya alındı — bu, kullanıcının bu oturumda onayladığı ilk
+# Grup B->karar-hattı wiring'i. Gerçek veriyle ölçüldü (services/
+# opportunity_quality_gatherer.py, 1410 gerçek kapanmış işlem, pump_fade
+# hariç): council'in 9 ajan oyu arasındaki anlaşma (Shannon entropi
+# tabanlı, analytics/opportunity_quality.py::compute_agent_agreement)
+# "low" (<0.34) kovasındayken kazanma oranı %64.0 (n=1033, sağlam),
+# "medium" (0.34-0.67) kovasındayken %93.0 (n=370, sağlam) — 29 puanlık
+# gerçek fark. "high" (>=0.67) kovası %100 ama n=7 — quant_agent'ın
+# "disagree" kovasıyla AYNI ilke: istatistiksel olarak yetersiz, ona
+# dokunulmuyor. SADECE "low" kovası, gerçek/sağlam kanıtlı (medium'a
+# göre) ölçülen orana (%64.0/%93.0 ≈ 0.6883) göre indiriliyor —
+# quant_agent'ın trend-uyum indirimiyle AYNI desen (sadece kötü kova
+# indirilir, iyi kova asla büyütülmez).
+_OPPORTUNITY_QUALITY_LOW_AGREEMENT_DISCOUNT = 0.6883
+
 
 class DecisionFusion:
     def __init__(self):
@@ -14,6 +30,7 @@ class DecisionFusion:
         self,
         ctx: CognitiveCycleContext,
         belief: Belief | None = None,
+        opinions: list | None = None,
     ) -> CognitiveCycleContext:
         raw_confidence = ctx.decision.confidence or (belief.strength if belief else 0.0)
         # Faz 248: kritik bulgu — gerçek veriyle ölçüldü, beyan edilen
@@ -30,6 +47,30 @@ class DecisionFusion:
         curve = get_calibration_curve_for_symbol(ctx.market.symbol)
         confidence = calibrate_confidence(raw_confidence, curve=curve)
 
+        # Faz 328 — bkz. _OPPORTUNITY_QUALITY_LOW_AGREEMENT_DISCOUNT
+        # üstündeki yorum. opinions verilmezse (ör. eski/izole testler)
+        # hiçbir şey değişmez — fail-closed.
+        if opinions:
+            from analytics.opportunity_quality import compute_agent_agreement
+
+            votes = {"LONG": 0, "SHORT": 0, "WAIT": 0}
+            for o in opinions:
+                direction = (getattr(o, "direction", "") or "").upper()
+                if direction in votes:
+                    votes[direction] += 1
+            agreement = compute_agent_agreement(votes)
+            if agreement < 0.34:
+                confidence *= _OPPORTUNITY_QUALITY_LOW_AGREEMENT_DISCOUNT
+                ctx.cognition.relevant_knowledge.append({
+                    "type": "opportunity_quality",
+                    "data": {
+                        "agent_agreement": round(agreement, 4),
+                        "bucket": "low",
+                        "reason": "Düşük ajan anlaşması — geçmiş veride bu kova düşük isabetle ilişkili "
+                                  "(n=1033, %64.0 kazanma vs medium kovada %93.0), confidence indirildi",
+                    },
+                })
+
         # Faz 268-sonrası — kritik bulgu (üçüncü taraf inceleme + kod
         # doğrulaması): InnerCritic instantiate ediliyordu ama .review()
         # hiç çağrılmıyordu — ürettiği risk_flags/objections tamamen ölü
@@ -43,6 +84,17 @@ class DecisionFusion:
                 "data": critique,
             })
         confidence *= critique["confidence_multiplier"]
+
+        # Kritik bulgu (Faz 328 sırasında bulundu): buraya kadar hesaplanan
+        # confidence (kalibrasyon + cap-tier eğrisi + opportunity quality
+        # indirimi + InnerCritic çarpanı) SADECE aşağıdaki yerel EV
+        # hesabında kullanılıyordu, ctx.decision.confidence'a hiç geri
+        # yazılmıyordu — persist edilen/downstream tüketen (Kelly boyutlama,
+        # dashboard, decisions.confidence sütunu) hep ham/kalibre-edilmemiş
+        # değeri görüyordu. Artık burada geri yazılıyor ki EV kapısından
+        # geçen (veya geçmeyen) gerçek karar, gösterilen/kaydedilen
+        # confidence ile tutarlı olsun.
+        ctx.decision.confidence = round(confidence, 4)
 
         win = ctx.decision.take_profit or 0.0
         loss = abs(ctx.decision.stop_loss or 0.0)

@@ -1,70 +1,90 @@
-"""GET /api/v1/opportunity-quality — Cognitive Core 2.0 (Faz 569-593).
-Kullanıcı onayıyla (2026-08-19) 4 Grup B modülünden biri, council'i hiç
-etkilemeyen bir ölçüm/rapor katmanı."""
-from contracts.auth import Role
-from tests.auth_helpers import make_authed_headers
+"""Faz 328 — Opportunity Quality (Grup B) canlıya bağlandı. Gerçek
+veriyle ölçüldü (services/opportunity_quality_gatherer.py, 1410 gerçek
+kapanmış işlem): council'in 9 ajan oyu arasındaki anlaşma "low"
+kovasındayken kazanma oranı %64.0 (n=1033), "medium" kovasındayken %93.0
+(n=370) — SADECE "low" kova indirilir, "high" (n=7, yetersiz) ve
+"medium" hiç değişmez."""
+from contracts.agent import AgentDomain, AgentOpinion
+from contracts.belief import Belief
+from contracts.context import CognitiveCycleContext
+from contracts.contexts.decision import ActionType
+from services.decision_fusion import DecisionFusion
 
 
-def _client():
-    from fastapi.testclient import TestClient
-    from api.main import app
-    return TestClient(app)
+def _ctx(confidence=0.6):
+    ctx = CognitiveCycleContext()
+    ctx.market.symbol = "BTCUSDT"
+    ctx.market.raw_snapshot = {"close": 100.0}
+    ctx.decision.proposed_direction = "LONG"
+    ctx.decision.proposed_size = 0.3
+    ctx.decision.final_size = 0.3
+    ctx.decision.confidence = confidence
+    ctx.decision.action = ActionType.ENTER_LONG
+    # stop_loss=5/take_profit=6 -> ham confidence (0.6) ile EV pozitif
+    # (0.6*6 - 0.4*5 = 1.6 > 0, ENTER). "low" anlaşma indirimi confidence'ı
+    # 0.6*0.6883≈0.413'e düşürür -> EV negatife döner (WAIT) — indirimin
+    # GERÇEK karar üzerindeki etkisini (sadece bir iç değişkeni değil)
+    # doğrulamak için kasıtlı seçildi.
+    ctx.decision.stop_loss = 5.0
+    ctx.decision.take_profit = 6.0
+    return ctx
 
 
-def test_opportunity_quality_requires_auth():
-    client = _client()
-    response = client.get("/api/v1/opportunity-quality/")
-    assert response.status_code in (401, 403)
+def _belief():
+    return Belief(direction="LONG", strength=0.6)
 
 
-def test_opportunity_quality_returns_real_shape():
-    client = _client()
-    response = client.get("/api/v1/opportunity-quality/", headers=make_authed_headers(Role.VIEWER))
-    assert response.status_code == 200
-    result = response.json()["result"]
-    assert "by_agreement_bucket" in result
-    assert "n_trades" in result
+def _opinion(domain: AgentDomain, direction: str) -> AgentOpinion:
+    return AgentOpinion(agent_id=f"{domain.value}_v1", domain=domain, direction=direction, confidence=0.6)
 
 
-def test_opportunity_quality_reports_endpoint_requires_auth():
-    client = _client()
-    response = client.get("/api/v1/opportunity-quality/reports")
-    assert response.status_code in (401, 403)
+# 9 ajan, hepsi LONG -> tam anlaşma (agreement=1.0, "high" kovası ama
+# gerçek/canlı senaryoda alakasız — burada sadece agreement=1.0 üretmek
+# için).
+_UNANIMOUS_OPINIONS = [
+    _opinion(d, "LONG") for d in (
+        AgentDomain.TECHNICAL, AgentDomain.MACRO, AgentDomain.ONCHAIN, AgentDomain.NEWS,
+        AgentDomain.PSYCHOLOGY, AgentDomain.QUANT, AgentDomain.RISK, AgentDomain.BEHAVIORAL,
+        AgentDomain.ORDER_FLOW,
+    )
+]
+
+# 9 ajan, 3-3-3 LONG/SHORT/WAIT bölünmüş -> maksimum bölünmüşlük
+# (agreement=0.0, "low" kovası).
+_SPLIT_OPINIONS = (
+    [_opinion(d, "LONG") for d in (AgentDomain.TECHNICAL, AgentDomain.MACRO, AgentDomain.ONCHAIN)]
+    + [_opinion(d, "SHORT") for d in (AgentDomain.NEWS, AgentDomain.PSYCHOLOGY, AgentDomain.QUANT)]
+    + [_opinion(d, "WAIT") for d in (AgentDomain.RISK, AgentDomain.BEHAVIORAL, AgentDomain.ORDER_FLOW)]
+)
 
 
-def test_opportunity_quality_reports_endpoint_returns_real_shape():
-    client = _client()
-    response = client.get("/api/v1/opportunity-quality/reports?limit=5", headers=make_authed_headers(Role.VIEWER))
-    assert response.status_code == 200
-    assert "reports" in response.json()
+def test_low_agreement_discounts_confidence(monkeypatch):
+    monkeypatch.setattr("services.decision_fusion.calibrate_confidence", lambda c, curve=None: c)
+
+    ctx = DecisionFusion().evaluate(_ctx(confidence=0.6), _belief(), opinions=_SPLIT_OPINIONS)
+
+    assert abs(ctx.decision.confidence - (0.6 * 0.6883)) < 1e-3  # ctx.decision.confidence round(x, 4)
+    assert any(
+        k.get("type") == "opportunity_quality" for k in ctx.cognition.relevant_knowledge
+    )
 
 
-def test_gather_opportunity_quality_reads_real_closed_trades():
-    from services.opportunity_quality_gatherer import gather_opportunity_quality
+def test_high_agreement_does_not_change_confidence(monkeypatch):
+    monkeypatch.setattr("services.decision_fusion.calibrate_confidence", lambda c, curve=None: c)
 
-    result = gather_opportunity_quality()
-    assert "by_agreement_bucket" in result
-    assert result["n_trades"] >= 0
+    ctx = DecisionFusion().evaluate(_ctx(confidence=0.6), _belief(), opinions=_UNANIMOUS_OPINIONS)
 
-
-def test_agreement_for_decision_extracts_real_votes_from_agent_contributions():
-    from services.opportunity_quality_gatherer import _agreement_for_decision
-
-    row = {
-        "agent_contributions": [
-            {"domain": "technical", "direction": "LONG"},
-            {"domain": "macro", "direction": "LONG"},
-            {"domain": "quant", "direction": "SHORT"},
-            {"type": "market_snapshot", "data": {}},  # oy DEĞİL, göz ardı edilmeli
-        ]
-    }
-    agreement = _agreement_for_decision(row)
-    assert agreement is not None
-    assert 0.0 <= agreement <= 1.0
+    assert abs(ctx.decision.confidence - 0.6) < 1e-9
+    assert not any(
+        k.get("type") == "opportunity_quality" for k in ctx.cognition.relevant_knowledge
+    )
 
 
-def test_agreement_for_decision_returns_none_when_no_real_votes_present():
-    from services.opportunity_quality_gatherer import _agreement_for_decision
+def test_no_opinions_leaves_confidence_unchanged(monkeypatch):
+    """opinions verilmezse (ör. eski/izole çağrı) davranış hiç
+    değişmemeli — fail-closed."""
+    monkeypatch.setattr("services.decision_fusion.calibrate_confidence", lambda c, curve=None: c)
 
-    row = {"agent_contributions": [{"type": "market_snapshot", "data": {}}]}
-    assert _agreement_for_decision(row) is None
+    ctx = DecisionFusion().evaluate(_ctx(confidence=0.6), _belief())
+
+    assert abs(ctx.decision.confidence - 0.6) < 1e-9

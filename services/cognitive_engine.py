@@ -84,7 +84,7 @@ class CognitiveEngine:
         ctx = self.predictive_risk_stage.execute(ctx)
         ctx = self.drawdown_sizing_stage.execute(ctx)
         ctx = self.risk_target_stage.execute(ctx)
-        ctx = self.decision_fusion.execute(ctx, belief)
+        ctx = self.decision_fusion.execute(ctx, belief, opinions)
         ctx = self.risk_gate_stage.execute(ctx)
 
         ctx.__dict__["_last_belief"] = belief

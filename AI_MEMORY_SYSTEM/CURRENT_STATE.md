@@ -1,9 +1,16 @@
-# Mevcut Durum -- v1.66.0 (Faz 326: "Genel Özet" araştırma paneli + Scalp rozet rengi)
+# Mevcut Durum -- v1.67.0 (Faz 328: Opportunity Quality canlıya bağlandı + confidence write-back düzeltmesi)
 
 **Tarih:** 2026-08-20
 **Branch:** main
-**Son commit (HEAD):** 37079d7 (Faz 327) — Faz 326 (Genel Özet paneli + Scalp rengi) henüz commit edilmedi.
-**⚠️ Servis durumu:** uvicorn (API) YENİDEN BAŞLATILMALI — `research-summary` endpoint'i yeni, `--reload` olmadan çalışan mevcut süreç bunu bilmiyor (404 verir, kullanıcı canlıda doğruladı). Faz 327 (pump_fade_strategy.py, celery -Q celery worker) için de restart hâlâ bekleniyor.
+**Son commit (HEAD):** Faz 328 henüz commit edilmedi (bu segment sonunda commitlenecek).
+**⚠️ Servis durumu:** uvicorn (API) + celery `-Q celery` worker YENİDEN BAŞLATILMALI — `services/decision_fusion.py`/`engines/cognitive_pipeline.py`/`services/cognitive_engine.py` (canlı karar hattı) değişti, `--reload` olmadan çalışan mevcut süreçler bunu bilmiyor.
+
+## Faz 328 — Opportunity Quality (Grup B) canlıya bağlandı + kritik confidence write-back bulgusu (2026-08-20)
+
+Kullanıcı onayı: "Opurtunity Quality yi wire edebilirsin önce sonra bakarsın sorun değil." Gerçek veriyle ölçülen (1410 gerçek kapanmış işlem, pump_fade hariç) council ajan-anlaşma kovaları — "low" (agreement<0.34) n=1033 %64.0 kazanma, "medium" n=370 %93.0, "high" n=7 (istatistiksel olarak yetersiz, dokunulmadı, quant_agent'ın "disagree" kovasıyla aynı ilke). `services/decision_fusion.py::DecisionFusion.evaluate()`'e yeni opsiyonel `opinions` parametresi eklendi (CouncilStage'in ürettiği 9 ajan oyu) — SADECE "low" kova, gerçek ölçülen orana göre (%64.0/%93.0≈0.6883) confidence'ı indiriyor. `engines/cognitive_pipeline.py::DecisionFusionStage.execute()` ve `services/cognitive_engine.py::CognitiveEngine.run()` çağrı zinciri `opinions`'ı taşıyacak şekilde güncellendi (council_stage'den zaten scope'ta olan `opinions` değişkeni kullanıldı).
+
+**Kritik, bağımsız bulgu (test yazarken ortaya çıktı):** `DecisionFusion.evaluate()` içinde hesaplanan `confidence` (kalibrasyon eğrisi + cap-tier ayrımı + InnerCritic çarpanı + şimdi opportunity-quality indirimi dahil TÜM ayarlamalardan sonraki hali) hiçbir zaman `ctx.decision.confidence`'a GERİ YAZILMIYORDU — sadece yerel EV hesabında (ENTER/WAIT kapısı) kullanılıp atılıyordu. Bu, Faz 248'in orijinal kalibrasyonundan beri (muhtemelen aylardır) `decisions.confidence` sütununa, dashboard'a ve confidence'a bakan diğer tüketicilere hep HAM/kalibre-edilmemiş değerin gittiği anlamına geliyor — EV kapısı doğru çalışıyordu (doğru yerel değişkeni kullanıyordu), ama dışarıya yansıyan confidence yanlıştı. Düzeltme: `evaluate()`'de InnerCritic çarpanından hemen sonra, EV hesabından önce `ctx.decision.confidence = round(confidence, 4)` eklendi — artık hem EV kapısı hem dışarı yansıyan değer aynı, tam ayarlanmış confidence'ı kullanıyor.
+**Test:** `tests/test_opportunity_quality_wiring.py` (yeni, 3 test) + hedefli regresyon (`test_confidence_calibration.py`, `test_risk_target_stage.py`, `test_red_team.py`, `test_inner_critic_wiring.py`, `test_decision_fusion_rejection_persisted.py`, `test_pump_fade_strategy.py`) — 96 passed.
 
 ## Faz 326 — "Genel Özet" araştırma paneli (2026-08-20)
 

@@ -789,8 +789,8 @@ class DecisionFusionStage:
     def __init__(self):
         self.fusion = DecisionFusion()
 
-    def execute(self, ctx: CognitiveCycleContext, belief: Belief) -> CognitiveCycleContext:
-        return self.fusion.evaluate(ctx, belief)
+    def execute(self, ctx: CognitiveCycleContext, belief: Belief, opinions: list | None = None) -> CognitiveCycleContext:
+        return self.fusion.evaluate(ctx, belief, opinions)
 
 
 class BinderStage:
