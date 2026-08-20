@@ -49,6 +49,38 @@ def test_open_position_count_and_capital_used_pct_reflect_real_open_positions():
         _cleanup_symbol(symbol)
 
 
+def test_capital_used_pct_divides_leveraged_notional_by_leverage():
+    """Faz 330 — kritik bulgu: quantity zaten kaldıraçla çarpılmış (bkz.
+    decision_recorder.py), entry_price*quantity bu yüzden NOTIONAL'dır,
+    gerçek bağlı sermaye değil. Canlıda 99 açık pump_fade pozisyonu
+    capital_used_pct'i %915-980'e taşımıştı (gerçek marjin bazlı ~%443'tü)
+    — bu, GuardrailStage'in MAX_CAPITAL_PCT kapısının ana council döngüsünü
+    tamamen kilitlemesine yol açtı. Burada: leverage=5, entry=100, qty=10
+    (notional=1000) -> gerçek marjin=200 olmalı, 1000 DEĞİL."""
+    symbol = f"RISKSTATE{uuid4().hex[:8]}"
+    try:
+        with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+            with SessionFactory.get_session() as session:
+                AppSettingsRepository(session).set("starting_capital", "10000", updated_by="test")
+
+            with SessionFactory.get_session() as session:
+                repo = DecisionPersistor(session)
+                before_state = load_position_risk_state()
+                repo.persist(DecisionEvent(
+                    id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+                    final_size=1.0, status="open", entry_price=100.0, quantity=10.0, leverage=5.0,
+                ))
+
+            after_state = load_position_risk_state()
+
+            delta_pct = after_state["capital_used_pct"] - before_state["capital_used_pct"]
+            # Gerçek marjin (200) / starting_capital (10000) = %2 artış bekleniyor.
+            # Kaldıraçsız (buggy) hesap notional (1000) kullanırsa %10 artış olurdu.
+            assert abs(delta_pct - 0.02) < 1e-6
+    finally:
+        _cleanup_symbol(symbol)
+
+
 def test_load_position_risk_state_counts_all_open_positions_not_just_the_default_1000_cap(monkeypatch):
     """KRİTİK regresyon kilidi — gerçek olay (2026-08-19, canlıda
     yakalandı): sistemde GERÇEKTEN 2631 açık pozisyon varken, burası

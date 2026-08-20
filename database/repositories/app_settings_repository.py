@@ -333,6 +333,23 @@ DEFAULTS: dict[str, str] = {
     # Kasanın (starting_capital) yüzde kaçı marjin olarak kullanılacak —
     # kullanıcı isteği: "kasanın %5'i kadar."
     "pump_fade_capital_pct": "0.05",
+    # Faz 330 — kritik bulgu, kullanıcı isteği: "Pump Fade için kasanın ne
+    # kadarını kullanabileceğini limitleyecek bir şey olsun." pump_fade_
+    # capital_pct SADECE tek bir YENİ işlemin boyutunu belirliyordu —
+    # kaç pozisyon zaten açık olduğuna hiç bakmıyordu. Gerçek veride
+    # yakalandı: 99 eşzamanlı açık pump_fade pozisyonu, toplam GERÇEK
+    # marjin $2.21M (kasanın ~%443'ü) — bu da ana council döngüsünün
+    # GuardrailStage'inin (MAX_CAPITAL_PCT, global %100 tavan) HER şeyi
+    # (kripto majors + hisse/emtia dahil) reddetmesine yol açtı, pump_fade
+    # ise bu global kapıdan hiç geçmediği için (kendi izole boyutlandırması)
+    # tek çalışan strateji olarak kaldı. Artık her yeni pump_fade işlemi
+    # açılmadan ÖNCE, o an açık TÜM pump_fade pozisyonlarının toplam
+    # marjini + bu yeni işlemin marjini bu tavanı aşıyorsa işlem hiç
+    # açılmıyor (bkz. DecisionPersistor.total_open_margin_for_experiment).
+    # %20 varsayılanı: pump_fade_capital_pct (%5) ile aynı anda ~4 tam
+    # boyutlu pozisyona izin verir, ana council döngüsüne (kalan %80)
+    # yeterli sermaye payı bırakır.
+    "pump_fade_max_total_capital_pct": "0.20",
     # Kullanıcı isteği: "5x pozisyona girecek." Gerçek uygulanan kaldıraç
     # bunun ÜSTÜNE ÇIKMAZ ama simulator/margin.py::max_safe_leverage
     # güvenlik kilidiyle (pump_fade_stop_distance_pct'e göre) daha DÜŞÜK

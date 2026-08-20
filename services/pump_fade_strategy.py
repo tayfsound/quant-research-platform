@@ -326,6 +326,7 @@ class PumpFadeStrategy:
                 return {"skipped": "pump_fade_disabled"}
 
             capital_pct = float(settings_repo.get("pump_fade_capital_pct"))
+            max_total_capital_pct = float(settings_repo.get("pump_fade_max_total_capital_pct"))
             target_leverage = float(settings_repo.get("pump_fade_leverage"))
             min_gain_pct = float(settings_repo.get("pump_fade_min_gain_pct"))
             lookback_hours = int(settings_repo.get("pump_fade_lookback_hours"))
@@ -357,6 +358,7 @@ class PumpFadeStrategy:
             result = self._try_open(
                 candidate, capital_pct, target_leverage, stop_distance_pct, take_profit_pct,
                 starting_capital, lookback_hours, density_size_multiplier, regime_size_multiplier,
+                max_total_capital_pct,
             )
             if result is not None:
                 opened.append(result)
@@ -379,6 +381,7 @@ class PumpFadeStrategy:
         lookback_hours: int,
         density_size_multiplier: float = 1.0,
         regime_size_multiplier: float = 1.0,
+        max_total_capital_pct: float = 1.0,
     ) -> dict | None:
         symbol = candidate["symbol"]
         entry_price = candidate["current_price"]
@@ -386,6 +389,25 @@ class PumpFadeStrategy:
         with SessionFactory.get_session() as session:
             persistor = DecisionPersistor(session)
             if persistor.has_open_position_for_experiment(symbol, EXPERIMENT_BUCKET):
+                return None
+
+            # Faz 330 — kritik bulgu: bkz. app_settings_repository.py::
+            # DEFAULTS["pump_fade_max_total_capital_pct"] üstündeki not.
+            # Her açık pump_fade pozisyonunun toplam GERÇEK marjini + bu
+            # yeni işlemin marjini kasanın bu yüzdesini aşarsa işlem hiç
+            # açılmaz — "sinyal limitleri gevşetemez, sadece küçültebilir"
+            # ilkesiyle aynı desen, artık kümülatif seviyede de uygulanıyor.
+            # Faz 295: aynı anda çok sayıda sembol pompalanıyorsa (yoğunluk
+            # kendi geçmişinin üst %10'unda) margin bu çarpanla otomatik
+            # küçülüyor — bkz. _compute_density_size_multiplier.
+            # Faz 318: council'in KENDİ pozisyonları güçlü LONG'a yatkınken
+            # (kârlılık farkıyla) VE BTC bull_trend rejimindeyken margin AYRICA
+            # küçülüyor — bkz. _compute_regime_size_multiplier. İki çarpan da
+            # bağımsız, ikisi de sadece küçültür, çarpımsal olarak birleşir.
+            margin = starting_capital * capital_pct * density_size_multiplier * regime_size_multiplier
+
+            already_committed = persistor.total_open_margin_for_experiment(EXPERIMENT_BUCKET)
+            if already_committed + margin > starting_capital * max_total_capital_pct:
                 return None
 
             # Faz 268-sonrası — kullanıcının onayladığı güvenlik kilidi:
@@ -398,15 +420,6 @@ class PumpFadeStrategy:
             leverage = target_leverage
             if safe_leverage is not None:
                 leverage = max(1.0, min(target_leverage, safe_leverage))
-
-            # Faz 295: aynı anda çok sayıda sembol pompalanıyorsa (yoğunluk
-            # kendi geçmişinin üst %10'unda) margin bu çarpanla otomatik
-            # küçülüyor — bkz. _compute_density_size_multiplier.
-            # Faz 318: council'in KENDİ pozisyonları güçlü LONG'a yatkınken
-            # (kârlılık farkıyla) VE BTC bull_trend rejimindeyken margin AYRICA
-            # küçülüyor — bkz. _compute_regime_size_multiplier. İki çarpan da
-            # bağımsız, ikisi de sadece küçültür, çarpımsal olarak birleşir.
-            margin = starting_capital * capital_pct * density_size_multiplier * regime_size_multiplier
 
             # Kullanıcı bulgusu — gerçek olay: PORTALUSDT'de $25.000 marjin
             # × 4,35x kaldıraç = $108.695 notional açıldı, ama RiskEngine'in

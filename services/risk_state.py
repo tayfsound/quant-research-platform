@@ -194,8 +194,20 @@ def load_position_risk_state(
                     seconds_since_last_trade = (now - last_opened_at).total_seconds()
 
     open_count = len(open_positions)
+    # Faz 330 — kritik bulgu: quantity zaten kaldıraçla çarpılmış (bkz.
+    # decision_recorder.py: "quantity = quantity * leverage"), yani
+    # entry_price*quantity NOTIONAL'dır, gerçek bağlı SERMAYE değil. Bu
+    # kontrol GuardrailStage'in MAX_CAPITAL_PCT tavanının (%100) tek girdisi
+    # — leverage'ı hesaba katmadan notional toplamak, kaldıraçlı her
+    # pozisyonu gerçek marjininin kat kat üstünde saymak demekti (canlıda
+    # yakalandı: %915-980 okunuyordu, gerçek marjin bazlı hesap ~%443'tü —
+    # ikisi de pump_fade'in kümülatif tavansız büyümesinden kaynaklanıyordu,
+    # bkz. pump_fade_strategy.py::_try_open'daki Faz 330 notu, ama bu
+    # hesaplama hatası sorunu olduğundan daha da büyük gösteriyordu).
+    # leverage None/0 ise (spot, kaldıraçsız) notional=marjin varsayılır.
     capital_committed = sum(
-        (p.get("entry_price") or 0.0) * (p.get("quantity") or 0.0) for p in open_positions
+        (p.get("entry_price") or 0.0) * (p.get("quantity") or 0.0) / (p.get("leverage") or 1.0)
+        for p in open_positions
     )
     capital_used_pct = (capital_committed / starting_capital) if starting_capital > 0 else 0.0
 

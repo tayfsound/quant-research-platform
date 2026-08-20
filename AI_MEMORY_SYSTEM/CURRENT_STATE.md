@@ -1,9 +1,25 @@
-# Mevcut Durum -- v1.67.0 (Faz 328: Opportunity Quality canlıya bağlandı + confidence write-back düzeltmesi)
+# Mevcut Durum -- v1.69.0 (Faz 330: pump_fade kümülatif sermaye tavanı + capital_used_pct marjin düzeltmesi)
 
 **Tarih:** 2026-08-20
 **Branch:** main
-**Son commit (HEAD):** Faz 328 henüz commit edilmedi (bu segment sonunda commitlenecek).
-**⚠️ Servis durumu:** uvicorn (API) + celery `-Q celery` worker YENİDEN BAŞLATILMALI — `services/decision_fusion.py`/`engines/cognitive_pipeline.py`/`services/cognitive_engine.py` (canlı karar hattı) değişti, `--reload` olmadan çalışan mevcut süreçler bunu bilmiyor.
+**Son commit (HEAD):** Faz 330 henüz commit edilmedi (bu segment sonunda commitlenecek).
+**⚠️ Servis durumu:** uvicorn (API) + celery `-Q celery` worker YENİDEN BAŞLATILMALI — `services/pump_fade_strategy.py`/`services/risk_state.py`/`services/decision_fusion.py`/`engines/cognitive_pipeline.py` (canlı karar hattı) değişti.
+
+## Faz 330 — "Sistem sadece kripto alıyor" araştırması -> pump_fade'in kümülatif sermaye tavanı yokmuş, ana council döngüsü tamamen kilitlenmiş (2026-08-20)
+
+Kullanıcı isteği (daha önceki bir turdan bilerek ertelenmişti): "Sistemin aldığı işlemler hep kripto işlemleri diğer varlıklarla işlem yapmayı durdurmuş gibi görünüyor bunun nedenini araştıralım." Gerçek DB sorgularıyla araştırıldı, gözlem doğruydu ama sebep "kripto vs diğer" değildi:
+
+**Kök neden**: `GuardrailStage`'in `MAX_CAPITAL_PCT` kapısı (%100 tavan) `capital_used_pct`'i **%915-980** okuyordu, bu yüzden ana council döngüsünün önerdiği HER şeyi (BTCUSDT dahil — kripto majors + hisse/emtia, varlık sınıfı fark etmeksizin) daha council çalışmadan reddediyordu. `pump_fade_strategy.py` ise bu global kapıdan hiç geçmiyor (kendi izole sermaye mantığı) — tek çalışan strateji o kaldığı ve sadece geniş bir kripto USDT-perpetual evrenini taradığı için "sistem sadece kripto alıyor" görüntüsü oluştu. Kanıt: son 2 saatte açılan pozisyonların 32'si pump_fade, 6'sı ana döngü.
+
+**İki ayrı, gerçek bug bulundu ve düzeltildi:**
+
+1. **`services/risk_state.py::load_position_risk_state`** — `capital_committed = Σ(entry_price×quantity)` idi, ama `quantity` zaten `decision_recorder.py`'de kaldıraçla çarpılmış — yani bu NOTIONAL'dı, gerçek marjin değil. Artık `/leverage` ile bölünüyor (leverage None/0 ise kaldıraçsız varsayılır). Düzeltilmiş rakam bile ~%443 çıktı — sorunun asıl kaynağı #2.
+
+2. **`services/pump_fade_strategy.py::_try_open`** — hiçbir kümülatif kontrol yoktu, her yeni işlem SADECE kendi boyutuna (`pump_fade_capital_pct`, %5) bakıyordu, o an kaç pozisyon zaten açık olduğuna hiç bakmıyordu. Gerçek veride: 99 açık pump_fade pozisyonu, toplam gerçek marjin $2.21M (~%443 sermaye, 99×%5≈%495 ile örtüşüyor). Yeni `DecisionPersistor.total_open_margin_for_experiment(bucket)` (SQL SUM, notional/leverage) + yeni ayar **`pump_fade_max_total_capital_pct`** (varsayılan %20, kullanıcı isteğiyle Settings sayfasına da eklendi) — her yeni işlem açılmadan önce (zaten açık toplam marjin + bu işlemin marjini) bu tavanı aşıyorsa işlem hiç açılmıyor. "Sinyal limitleri gevşetemez, sadece küçültebilir" ilkesiyle aynı desen, artık kümülatif seviyede de uygulanıyor.
+
+**Test**: `tests/test_pump_fade_strategy.py` (+4 yeni test: kümülatif tavan reddi, tavan içindeyken serbest açılış, `total_open_margin_for_experiment` leverage-bölme doğruluğu, mevcut 24 test hâlâ geçiyor — `_set_pump_fade_settings` yardımcı fonksiyonuna paylaşılan-test-DB-kirlenmesi için bol bir varsayılan tavan eklendi, `test_pairs_trader.py`'deki `max_capital_pct="1000000"` deseniyle aynı), `tests/test_risk_state.py` (+1 yeni test: leverage-bölünmüş marjin doğruluğu). Toplam hedefli regresyon: 148 test temiz.
+
+**Ayrıca bu turda (aynı segment, önceki maddeler):** Faz 329 — Kimi'nin bulduğu `stop_loss`/`take_profit` alan adlandırma tuzağı düzeltildi: `contracts/contexts/decision.py`'deki `Decision.stop_loss`/`take_profit` (aslında entry_price'a göre MESAFE/magnitüd, mutlak fiyat değil) `stop_loss_distance`/`take_profit_distance` olarak yeniden adlandırıldı — canlı bir bug değildi (tüm mevcut kullanımlar zaten doğru yorumluyordu), sadece isim netleştirildi, 7 üretim dosyası + ilgili testler güncellendi, 114 test temiz (2 önceden var olan, alakasız `test_pairs_trader.py` flakiness'i hariç). Binance Futures Testnet API anahtarları alındı ve doğrulandı ($5000 sanal bakiye, `HTTP 200`), `.env`'e `BINANCE_FUTURES_TESTNET_API_KEY/SECRET` olarak kaydedildi (Execution Layer Faz 1'in adaptör/servis/test kodu zaten önceki bir Faz'da — commit `71d4bd5` — tamamlanmış ve commitlenmiş bulundu, sadece anahtar eksikti).
 
 ## Faz 328 — Opportunity Quality (Grup B) canlıya bağlandı + kritik confidence write-back bulgusu (2026-08-20)
 

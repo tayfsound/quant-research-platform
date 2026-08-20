@@ -620,7 +620,7 @@ export default function Settings() {
             ))}
           </div>
 
-          <p className="text-xs text-ink-soft mb-2">Sermaye payı (0-1 arası, ör. 0.05 = kasanın %5'i)</p>
+          <p className="text-xs text-ink-soft mb-2">Sermaye payı (0-1 arası, ör. 0.05 = kasanın %5'i — TEK bir yeni işlemin boyutu)</p>
           <div className="flex gap-2 mb-4">
             <Input
               decimal
@@ -632,6 +632,24 @@ export default function Settings() {
               onClick={() => save("pump_fade_capital_pct", draft.pump_fade_capital_pct)}
             >
               {saved === "pump_fade_capital_pct" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+
+          <p className="text-xs text-ink-soft mb-2">
+            Toplam sermaye tavanı (0-1 arası, ör. 0.20 = kasanın %20'si — TÜM açık pump_fade pozisyonlarının
+            toplam gerçek marjini bunu aşarsa yeni işlem açılmaz)
+          </p>
+          <div className="flex gap-2 mb-4">
+            <Input
+              decimal
+              value={draft.pump_fade_max_total_capital_pct ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, pump_fade_max_total_capital_pct: v }))}
+            />
+            <Button
+              disabled={saving === "pump_fade_max_total_capital_pct"}
+              onClick={() => save("pump_fade_max_total_capital_pct", draft.pump_fade_max_total_capital_pct)}
+            >
+              {saved === "pump_fade_max_total_capital_pct" ? "Kaydedildi ✓" : "Kaydet"}
             </Button>
           </div>
 

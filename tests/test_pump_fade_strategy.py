@@ -92,6 +92,14 @@ def _set_pump_fade_settings(**overrides) -> None:
         "pump_fade_lookback_hours": "48",
         "pump_fade_stop_distance_pct": "0.15",
         "starting_capital": "1000",
+        # Faz 330 — bu testlerin çoğu kümülatif sermaye tavanını değil
+        # başka davranışları doğruluyor; paylaşılan test DB'sinde başka
+        # testlerden kalan açık pump_fade_v1 pozisyonları (gerçek dolar
+        # tutarlarıyla) varsa küçük starting_capital=1000'e karşı bu tavanı
+        # yanlışlıkla tetikleyebilirdi (AYNI max_capital_pct="1000000"
+        # deseni, test_pairs_trader.py'de de kullanılıyor) — kümülatif
+        # tavanı özel olarak test eden testler kendi değerini verir.
+        "pump_fade_max_total_capital_pct": "1000000",
     }
     defaults.update(overrides)
     with SessionFactory.get_session() as session:
@@ -388,6 +396,97 @@ def test_list_closed_trades_exclude_experiment_bucket_filters_out_that_bucket_on
         assert filtered_ids == {str(ai_event.id)}
     finally:
         _cleanup_symbol(symbol)
+
+
+def test_run_cycle_refuses_new_position_when_cumulative_margin_would_exceed_cap(monkeypatch):
+    """Faz 330 — kritik bulgu: canlıda 99 açık pump_fade pozisyonu, toplam
+    gerçek marjin kasanın ~%443'ü olmuştu, çünkü her yeni işlem sadece
+    kendi boyutuna bakıyordu (pump_fade_capital_pct), zaten açık olan
+    pozisyonların toplamına hiç bakmıyordu. Burada: starting_capital=1000,
+    pump_fade_max_total_capital_pct=0.10 (tavan=$100) iken zaten $80
+    marjinlik açık bir pozisyon varsa, yeni %5'lik ($50) bir işlem
+    (80+50=130 > 100) reddedilmeli."""
+    existing_symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    new_symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    try:
+        from contracts.decision_event import DecisionEvent
+
+        with SessionFactory.get_session() as session:
+            DecisionPersistor(session).persist(DecisionEvent(
+                id=uuid4(), symbol=existing_symbol, proposed_direction="SHORT",
+                final_action="SHORT", final_size=1.0, status="open",
+                entry_price=100.0, quantity=0.8, leverage=1.0,
+                experiment_bucket=EXPERIMENT_BUCKET,
+            ))
+
+        _set_pump_fade_settings(
+            pump_fade_enabled="true",
+            pump_fade_max_total_capital_pct="0.10",
+        )
+        monkeypatch.setattr(
+            "services.pump_fade_strategy.fetch_usdt_perpetual_symbols", lambda: [new_symbol]
+        )
+        provider = _FakeProvider({new_symbol: _pump_then_settled_bars(10.0, 22.0)})
+
+        result = PumpFadeStrategy(data_provider=provider).run_cycle()
+
+        assert result["candidates_found"] == 1
+        assert len(result["opened"]) == 0
+    finally:
+        _cleanup_symbol(existing_symbol)
+        _cleanup_symbol(new_symbol)
+
+
+def test_run_cycle_opens_position_when_within_cumulative_cap(monkeypatch):
+    """Aynı senaryo ama tavan bol ($1000000) — yeni işlem serbestçe
+    açılabilmeli, kümülatif kontrol yanlışlıkla normal işlemleri
+    engellememeli."""
+    symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    try:
+        _set_pump_fade_settings(
+            pump_fade_enabled="true",
+            pump_fade_max_total_capital_pct="1000000",
+        )
+        monkeypatch.setattr(
+            "services.pump_fade_strategy.fetch_usdt_perpetual_symbols", lambda: [symbol]
+        )
+        provider = _FakeProvider({symbol: _pump_then_settled_bars(10.0, 22.0)})
+
+        result = PumpFadeStrategy(data_provider=provider).run_cycle()
+
+        assert len(result["opened"]) == 1
+    finally:
+        _cleanup_symbol(symbol)
+
+
+def test_total_open_margin_for_experiment_divides_notional_by_leverage():
+    from contracts.decision_event import DecisionEvent
+
+    symbol_a = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    symbol_b = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    try:
+        with SessionFactory.get_session() as session:
+            persistor = DecisionPersistor(session)
+            baseline = persistor.total_open_margin_for_experiment(EXPERIMENT_BUCKET)
+            # notional=100*10=1000, leverage=5 -> marjin=200
+            persistor.persist(DecisionEvent(
+                id=uuid4(), symbol=symbol_a, proposed_direction="SHORT",
+                final_action="SHORT", final_size=1.0, status="open",
+                entry_price=100.0, quantity=10.0, leverage=5.0,
+                experiment_bucket=EXPERIMENT_BUCKET,
+            ))
+            # leverage yok (None) -> notional=marjin olarak sayılır: 50*2=100
+            persistor.persist(DecisionEvent(
+                id=uuid4(), symbol=symbol_b, proposed_direction="SHORT",
+                final_action="SHORT", final_size=1.0, status="open",
+                entry_price=50.0, quantity=2.0,
+                experiment_bucket=EXPERIMENT_BUCKET,
+            ))
+            total = persistor.total_open_margin_for_experiment(EXPERIMENT_BUCKET)
+        assert abs((total - baseline) - 300.0) < 1e-6
+    finally:
+        _cleanup_symbol(symbol_a)
+        _cleanup_symbol(symbol_b)
 
 
 def test_has_open_position_for_experiment_reflects_real_open_positions():

@@ -342,6 +342,36 @@ class DecisionPersistor:
         ).first()
         return row is not None
 
+    def total_open_margin_for_experiment(self, experiment_bucket: str) -> float:
+        """Faz 330 — kritik bulgu: pump_fade_strategy.py her yeni işlemi,
+        o an o deneyde kaç pozisyon zaten açık olduğuna hiç bakmadan
+        bağımsız olarak sermayenin bir yüzdesiyle (pump_fade_capital_pct)
+        boyutlandırıyordu — kümülatif maruziyet hiç kontrol edilmiyordu.
+        Gerçek veride yakalandı: 99 açık pump_fade pozisyonu, toplam GERÇEK
+        marjin (notional/leverage) $2.21M — sermayenin ~%443'ü. entry_price*
+        quantity NOTIONAL'dır (quantity zaten kaldıraçla çarpılmış,
+        decision_recorder.py'deki AYNI desen) — marjine çevirmek için
+        leverage'a bölünüyor (leverage NULL/0 ise, kaldıraçsız kabul edilip
+        notional=marjin varsayılıyor, asla sıfıra bölme hatası değil)."""
+        total = self.session.execute(
+            text(
+                "SELECT COALESCE(SUM(entry_price * quantity / NULLIF(leverage, 0)), 0) "
+                "AS total_margin FROM decisions "
+                "WHERE status = 'open' AND experiment_bucket = :experiment_bucket "
+                "AND leverage IS NOT NULL AND leverage > 0"
+            ),
+            {"experiment_bucket": experiment_bucket},
+        ).scalar()
+        total_no_leverage = self.session.execute(
+            text(
+                "SELECT COALESCE(SUM(entry_price * quantity), 0) AS total_margin "
+                "FROM decisions WHERE status = 'open' AND experiment_bucket = :experiment_bucket "
+                "AND (leverage IS NULL OR leverage <= 0)"
+            ),
+            {"experiment_bucket": experiment_bucket},
+        ).scalar()
+        return float(total or 0.0) + float(total_no_leverage or 0.0)
+
     def count_open_by_symbol_direction(self, symbol: str) -> dict[str, int]:
         """Faz 268-sonrası — bkz. contracts/contexts/risk.py::
         same_direction_open_counts. Bu SEMBOL için, yöne göre gruplanmış

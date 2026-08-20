@@ -190,6 +190,13 @@ def _validate(key: str, value: str) -> None:
                 raise ValueError
         except ValueError:
             raise HTTPException(400, "pump_fade_capital_pct must be a number in (0, 1]")
+    elif key == "pump_fade_max_total_capital_pct":
+        try:
+            v = float(value)
+            if not (0 < v <= 1):
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "pump_fade_max_total_capital_pct must be a number in (0, 1]")
     elif key == "pump_fade_leverage":
         try:
             v = float(value)
