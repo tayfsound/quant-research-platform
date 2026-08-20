@@ -1,9 +1,9 @@
-# Mevcut Durum -- v1.64.0 (Faz 325: kripto büyük-cap/küçük-cap confidence kalibrasyon ayrımı)
+# Mevcut Durum -- v1.65.0 (Faz 327: pump_fade rejim gate'i kademeli 2. seviye)
 
 **Tarih:** 2026-08-20
 **Branch:** main
-**Son commit (HEAD):** ca2c653 (Faz 324) — Faz 325 henüz commit edilmedi (bu değişiklik: `services/agent_memory.py`, `services/confidence_calibration.py`, `services/decision_fusion.py`, ilgili testler).
-**⚠️ Servis durumu:** Faz 325, `DecisionFusion.evaluate()`'i (CANLI karar hattının bir parçası) değiştiriyor — `--reload` olmadan çalışan uvicorn/celery worker'lar dosya değişikliğini otomatik almıyor (bu dersi bugün ikinci kez öğrendik). Bu Faz commit edilince worker'lar (en azından `-Q celery`, trading cycle'ı çalıştıran) YENİDEN BAŞLATILMALI.
+**Son commit (HEAD):** e63dba8 (Faz 325) — Faz 326 (research_summary_gatherer, henüz API/frontend yok) ve Faz 327 (pump_fade gate) henüz commit edilmedi.
+**⚠️ Servis durumu:** Faz 327 pump_fade_strategy.py'yi (celery -Q celery worker'da çalışan) değiştiriyor — commit sonrası o worker restart edilmeli.
 **Test:** yeni kalibrasyon testlerine + DecisionFusion/RedTeam/InnerCritic'e dokunan hedefli regresyon (82 test) temiz.
 **Altyapı notu (2026-08-20):** Docker Desktop bu oturumda bir kez çöktü (postgres/redis konteynerleri durdu) — `docker start` ile geri getirildi, veri kaybı yok.
 

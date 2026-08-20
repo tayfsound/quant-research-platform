@@ -634,15 +634,42 @@ def test_regime_multiplier_is_1_when_no_council_win_rate_gap():
 
 
 def test_regime_multiplier_is_1_when_council_bullish_but_btc_not_bull_trend():
+    """Faz 327 — BTC bull_trend değilken VE kârlılık farkı orta düzeydeyse
+    (eşiği geçer ama "aşırı ezici" 2. kademe eşiğinin altında kalır)
+    çarpan hâlâ 1.0 kalmalı — sadece BTC gerçekten bull_trend'deyken ya
+    da fark aşırı ezikciyken küçültme devreye girer."""
     from services.pump_fade_strategy import _compute_regime_size_multiplier
 
+    # LONG %100 kârda (5/5), SHORT %50 kârda (5/10) -> gap=0.5, eşiği
+    # (0.30) geçer ama 2. kademe eşiğinin (0.60) altında kalır.
     rows, bars = _council_rows(
-        long_specs=[(100.0, 110.0)] * 5,  # hepsi kârda
-        short_specs=[(100.0, 110.0)] * 5,  # hepsi zararda (fiyat SHORT'un aleyhine yükseldi)
+        long_specs=[(100.0, 110.0)] * 5,
+        short_specs=[(100.0, 110.0)] * 5 + [(100.0, 90.0)] * 5,
     )
     bars["BTCUSDT"] = _flat_daily_bars()  # bull_trend DEĞİL
     multiplier = _compute_regime_size_multiplier(_FakeSession(rows), _FakeProvider(bars))
     assert multiplier == 1.0
+
+
+def test_regime_multiplier_applies_partial_floor_when_btc_transition_but_gap_extreme():
+    """Faz 327 — kullanıcı bulgusu (canlı, tekrarlayan): BTC 'transition'
+    rejimindeyken (kesin bull_trend değil) bile council farkı AŞIRI
+    ezikciyse (>= 0.60 — mevcut 0.30 eşiğinin 2 katı) daha hafif bir
+    küçültme (0.5) uygulanmalı — BTC gerçekten bull_trend'deyken
+    kullanılan en sert taban (0.15) sadece o durumda kalır."""
+    from services.pump_fade_strategy import (
+        _REGIME_GATE_PARTIAL_FLOOR_MULTIPLIER,
+        _compute_regime_size_multiplier,
+    )
+
+    # LONG %100 kârda, SHORT %0 kârda -> gap=1.0, 2. kademe eşiğini (0.60) aşar.
+    rows, bars = _council_rows(
+        long_specs=[(100.0, 110.0)] * 5,
+        short_specs=[(100.0, 110.0)] * 5,
+    )
+    bars["BTCUSDT"] = _flat_daily_bars()  # bull_trend DEĞİL (transition/flat)
+    multiplier = _compute_regime_size_multiplier(_FakeSession(rows), _FakeProvider(bars))
+    assert multiplier == _REGIME_GATE_PARTIAL_FLOOR_MULTIPLIER
 
 
 def test_regime_multiplier_shrinks_to_floor_when_both_signals_align():

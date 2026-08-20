@@ -209,6 +209,21 @@ _REGIME_GATE_LONG_WIN_RATE_MIN = 0.5
 _REGIME_GATE_FLOOR_MULTIPLIER = 0.15
 _REGIME_GATE_BTC_DAILY_BARS = 250
 
+# Faz 327 — kullanıcı bulgusu (2026-08-20, canlı, tekrarlayan): BTC
+# "transition" rejimindeyken (kesin bull_trend değil) gate hiç
+# tetiklenmiyordu, council farkı ne kadar ezici olursa olsun (gerçek
+# olay: %79.6 LONG'a karşı %0 SHORT, gap %79.6 — eşiğin (%30) neredeyse
+# 3 katı — yine de 5 pump_fade SHORT tek cycle'da tam boyutta açıldı,
+# $274K toplam notional). "Önce izleyelim" kararının ardından AYNI
+# şikayet tekrar edince müdahale kararı verildi. Kademeli 2. seviye:
+# BTC transition'dayken bile council farkı BU eşiği (mevcut %30
+# eşiğinin 2 katı — az sayıda gerçek "aşırı ezici" durumu yakalasın,
+# sıradan bir LONG yatkınlığını değil) aşıyorsa DAHA HAFİF bir küçültme
+# uygulanır — BTC gerçekten bull_trend'deyken kullanılan en sert taban
+# (0.15) SADECE o durumda kalır, orantılı bir tepki.
+_REGIME_GATE_STRONG_BIAS_GAP_MIN = 0.60
+_REGIME_GATE_PARTIAL_FLOOR_MULTIPLIER = 0.5
+
 
 def _compute_regime_size_multiplier(session, provider: OHLCVProvider) -> float:
     """Faz 318 — kullanıcı bulgusu (2026-08-20, canlı): pump_fade HER ZAMAN
@@ -278,9 +293,10 @@ def _compute_regime_size_multiplier(session, provider: OHLCVProvider) -> float:
 
     long_win_rate = long_win / long_total
     short_win_rate = short_win / short_total
+    win_rate_gap = long_win_rate - short_win_rate
     council_bull_bias = (
         long_win_rate >= _REGIME_GATE_LONG_WIN_RATE_MIN
-        and (long_win_rate - short_win_rate) >= _REGIME_GATE_WIN_RATE_GAP_MIN
+        and win_rate_gap >= _REGIME_GATE_WIN_RATE_GAP_MIN
     )
     if not council_bull_bias:
         return 1.0
@@ -290,10 +306,12 @@ def _compute_regime_size_multiplier(session, provider: OHLCVProvider) -> float:
         btc_regime = compute_quant_signals(btc_daily).get("long_term_trend_regime")
     except Exception:
         btc_regime = None
-    if btc_regime != "bull_trend":
-        return 1.0
 
-    return _REGIME_GATE_FLOOR_MULTIPLIER
+    if btc_regime == "bull_trend":
+        return _REGIME_GATE_FLOOR_MULTIPLIER
+    if win_rate_gap >= _REGIME_GATE_STRONG_BIAS_GAP_MIN:
+        return _REGIME_GATE_PARTIAL_FLOOR_MULTIPLIER
+    return 1.0
 
 
 class PumpFadeStrategy:
