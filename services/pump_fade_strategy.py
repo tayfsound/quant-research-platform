@@ -203,6 +203,99 @@ def _compute_density_size_multiplier(session, candidates_found: int) -> float:
     return max(_DENSITY_FLOOR_MULTIPLIER, min(1.0, multiplier))
 
 
+_REGIME_GATE_MIN_SYMBOLS_PER_SIDE = 5
+_REGIME_GATE_WIN_RATE_GAP_MIN = 0.30
+_REGIME_GATE_LONG_WIN_RATE_MIN = 0.5
+_REGIME_GATE_FLOOR_MULTIPLIER = 0.15
+_REGIME_GATE_BTC_DAILY_BARS = 250
+
+
+def _compute_regime_size_multiplier(session, provider: OHLCVProvider) -> float:
+    """Faz 318 — kullanıcı bulgusu (2026-08-20, canlı): pump_fade HER ZAMAN
+    SHORT açar, council/AI zincirinden bilinçli izole (bkz. modül
+    docstring'i) — bu YÖN körlüğü demek, piyasanın genel yönüyle ilgili
+    SIFIR kanıt kullanmıyor. Canlıda ölçüldü: aynı anda AI'nın kendi
+    LONG pozisyonlarının %83'ü kârdaydı (ort. +%3.33) ama SHORT'larının
+    %0'ı kârdaydı (ort. -%9.72) — ve pump_fade'in son ~48 saatte açtığı
+    79 SHORT'un %85'i zarardaydı (ort. -%3.22). Kullanıcı isteği: "en
+    azından elindeki pozisyonları check edemez mi... longlar mı karlı
+    gidiyor shortlar mı" + "diğer sinyallerden filtre" — İKİ bağımsız
+    kanıt kesişimi (kullanıcı onayı) istendi:
+
+    (1) Council'in KENDİ açık pozisyonlarının GERÇEK şu anki kâr/zarar
+        durumu — LONG'ların kârlılık oranı SHORT'lardan anlamlı ölçüde
+        (>= 0.30) yüksek VE LONG'lar genel olarak kârdaysa (>= 0.5) —
+        ham pozisyon SAYISI değil (bu neredeyse her zaman LONG'a yatkın
+        çıkıyor, ayırt edici değil — geriye dönük kontrol edildi: 109
+        kapanmış pump_fade işleminin TAMAMI zaten council'in "sayıca
+        LONG ağırlıklı" olduğu dönemlerde açılmış, sıfır varyans).
+        Kârlılık FARKI ise zamanla gerçekten değişen, canlı bir sinyal.
+    (2) BTC'nin gerçek 200-EMA uzun-vade rejimi (long_term_trend_regime)
+        bull_trend ise.
+
+    Her iki kanıt da AYNI ANDA doğrulanmazsa çarpan 1.0 — mevcut
+    davranış hiç değişmez (fail-closed, az örneklemden veya tek
+    sinyalden kalıcı bir karar üretilmez). İkisi de doğrulanırsa margin
+    SABİT bir tabana (0.15) küçültülür — SADECE küçültür, pump_fade'i
+    hiçbir zaman tamamen KAPATMAZ (kullanıcı kararı: mekanik stratejinin
+    kendi kendini tam devre dışı bırakması riskli, insan onayı olmadan).
+    Yeterli veri yoksa (az sembol, BTC rejimi hesaplanamıyor) çarpan
+    1.0 — _compute_density_size_multiplier ile AYNI fail-closed ilke."""
+    from sqlalchemy import text
+
+    from market_data.features.signal_engine import compute_quant_signals
+
+    rows = session.execute(
+        text(
+            """
+            SELECT symbol, direction, AVG(entry_price) AS avg_entry
+            FROM decisions
+            WHERE status = 'open' AND experiment_bucket IS NULL AND direction IN ('LONG', 'SHORT')
+            GROUP BY symbol, direction
+            """
+        )
+    ).fetchall()
+
+    long_win = long_total = short_win = short_total = 0
+    for symbol, direction, avg_entry in rows:
+        try:
+            bars = provider.get_ohlcv(symbol, "1h", limit=2)
+            current = bars[-1].close
+        except Exception:
+            continue
+        if not bars or current <= 0 or avg_entry is None or avg_entry <= 0:
+            continue
+        profitable = (current > avg_entry) if direction == "LONG" else (current < avg_entry)
+        if direction == "LONG":
+            long_total += 1
+            long_win += int(profitable)
+        else:
+            short_total += 1
+            short_win += int(profitable)
+
+    if long_total < _REGIME_GATE_MIN_SYMBOLS_PER_SIDE or short_total < _REGIME_GATE_MIN_SYMBOLS_PER_SIDE:
+        return 1.0
+
+    long_win_rate = long_win / long_total
+    short_win_rate = short_win / short_total
+    council_bull_bias = (
+        long_win_rate >= _REGIME_GATE_LONG_WIN_RATE_MIN
+        and (long_win_rate - short_win_rate) >= _REGIME_GATE_WIN_RATE_GAP_MIN
+    )
+    if not council_bull_bias:
+        return 1.0
+
+    try:
+        btc_daily = provider.get_ohlcv("BTCUSDT", "1d", limit=_REGIME_GATE_BTC_DAILY_BARS)
+        btc_regime = compute_quant_signals(btc_daily).get("long_term_trend_regime")
+    except Exception:
+        btc_regime = None
+    if btc_regime != "bull_trend":
+        return 1.0
+
+    return _REGIME_GATE_FLOOR_MULTIPLIER
+
+
 class PumpFadeStrategy:
     def __init__(self, data_provider: OHLCVProvider | None = None):
         self.data_provider = data_provider or get_ohlcv_provider()
@@ -239,12 +332,13 @@ class PumpFadeStrategy:
 
         with SessionFactory.get_session() as session:
             density_size_multiplier = _compute_density_size_multiplier(session, len(candidates))
+            regime_size_multiplier = _compute_regime_size_multiplier(session, self.data_provider)
 
         opened = []
         for candidate in candidates:
             result = self._try_open(
                 candidate, capital_pct, target_leverage, stop_distance_pct, take_profit_pct,
-                starting_capital, lookback_hours, density_size_multiplier,
+                starting_capital, lookback_hours, density_size_multiplier, regime_size_multiplier,
             )
             if result is not None:
                 opened.append(result)
@@ -252,6 +346,7 @@ class PumpFadeStrategy:
         return {
             "candidates_found": len(candidates),
             "density_size_multiplier": density_size_multiplier,
+            "regime_size_multiplier": regime_size_multiplier,
             "opened": opened,
         }
 
@@ -265,6 +360,7 @@ class PumpFadeStrategy:
         starting_capital: float,
         lookback_hours: int,
         density_size_multiplier: float = 1.0,
+        regime_size_multiplier: float = 1.0,
     ) -> dict | None:
         symbol = candidate["symbol"]
         entry_price = candidate["current_price"]
@@ -288,7 +384,11 @@ class PumpFadeStrategy:
             # Faz 295: aynı anda çok sayıda sembol pompalanıyorsa (yoğunluk
             # kendi geçmişinin üst %10'unda) margin bu çarpanla otomatik
             # küçülüyor — bkz. _compute_density_size_multiplier.
-            margin = starting_capital * capital_pct * density_size_multiplier
+            # Faz 318: council'in KENDİ pozisyonları güçlü LONG'a yatkınken
+            # (kârlılık farkıyla) VE BTC bull_trend rejimindeyken margin AYRICA
+            # küçülüyor — bkz. _compute_regime_size_multiplier. İki çarpan da
+            # bağımsız, ikisi de sadece küçültür, çarpımsal olarak birleşir.
+            margin = starting_capital * capital_pct * density_size_multiplier * regime_size_multiplier
 
             # Kullanıcı bulgusu — gerçek olay: PORTALUSDT'de $25.000 marjin
             # × 4,35x kaldıraç = $108.695 notional açıldı, ama RiskEngine'in
@@ -342,6 +442,7 @@ class PumpFadeStrategy:
                         "pullback_from_peak_pct": candidate["pullback_from_peak_pct"],
                         "momentum_pct": candidate["momentum_pct"],
                         "density_size_multiplier": density_size_multiplier,
+                        "regime_size_multiplier": regime_size_multiplier,
                         "stop_distance_pct": stop_distance_pct,
                         "target_leverage": target_leverage,
                         "applied_leverage": leverage,

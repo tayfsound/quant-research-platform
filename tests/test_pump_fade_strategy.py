@@ -550,3 +550,136 @@ def test_run_cycle_scales_margin_down_during_extreme_density(monkeypatch):
         _cleanup_symbol(symbol)
         _cleanup_density_events()
         _set_pump_fade_settings(pump_fade_enabled="false")
+
+
+# Faz 318 — _compute_regime_size_multiplier testleri. Kullanıcı bulgusu
+# (2026-08-20, canlı): pump_fade HER ZAMAN SHORT açıyor, council'in kendi
+# LONG/SHORT pozisyonlarının GERÇEK kârlılık farkı VE BTC'nin uzun-vade
+# rejimi AYNI ANDA güçlü bull işaret ederse margin küçültülür (asla kapatılmaz).
+#
+# _FakeSession (gerçek DB'ye HİÇ dokunmuyor) kasıtlı: quantdb_test'te
+# deneme paylaşımlı 'decisions' tablosu diğer test dosyalarının
+# temizlemediği yüzlerce açık 'ai' pozisyonuyla kirli (canlı doğrulandı:
+# 323 açık LONG, 2 açık SHORT, experiment_bucket IS NULL) — gerçek
+# session ile yazılan bir test bu ambient veriyle karışıp yanlış/flaky
+# sonuç verebilirdi (project_shared_test_state_bloat ile aynı sınıf risk).
+class _FakeResult:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def fetchall(self):
+        return self._rows
+
+
+class _FakeSession:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def execute(self, *args, **kwargs):
+        return _FakeResult(self._rows)
+
+
+def _council_rows(long_specs: list[tuple[float, float]], short_specs: list[tuple[float, float]]) -> tuple[list[tuple], dict]:
+    """long_specs/short_specs: [(entry_price, current_price), ...]. Döner:
+    (SQL sorgusunun döneceği (symbol, direction, avg_entry) satırları,
+    _FakeProvider'a verilecek bars_by_symbol)."""
+    rows = []
+    bars_by_symbol = {}
+    for i, (entry, current) in enumerate(long_specs):
+        symbol = f"REGL{i}USDT"
+        rows.append((symbol, "LONG", entry))
+        bars_by_symbol[symbol] = [_bar(current, current), _bar(current, current)]
+    for i, (entry, current) in enumerate(short_specs):
+        symbol = f"REGS{i}USDT"
+        rows.append((symbol, "SHORT", entry))
+        bars_by_symbol[symbol] = [_bar(current, current), _bar(current, current)]
+    return rows, bars_by_symbol
+
+
+def _bull_daily_bars(n: int = 250) -> list[OHLCV]:
+    """Uzun vadeli, istikrarlı yükseliş — long_term_trend_regime='bull_trend'
+    üretecek şekilde (fiyat > 200-EMA VE EMA eğimi pozitif)."""
+    bars = []
+    price = 100.0
+    for _ in range(n):
+        price *= 1.01
+        bars.append(_bar(price * 0.99, price))
+    return bars
+
+
+def _flat_daily_bars(n: int = 250) -> list[OHLCV]:
+    return [_bar(100.0, 100.0) for _ in range(n)]
+
+
+def test_regime_multiplier_is_1_when_symbol_sample_too_small():
+    from services.pump_fade_strategy import _compute_regime_size_multiplier
+
+    rows, bars = _council_rows(long_specs=[(100.0, 110.0)] * 2, short_specs=[(100.0, 110.0)] * 1)
+    bars["BTCUSDT"] = _bull_daily_bars()
+    multiplier = _compute_regime_size_multiplier(_FakeSession(rows), _FakeProvider(bars))
+    assert multiplier == 1.0
+
+
+def test_regime_multiplier_is_1_when_no_council_win_rate_gap():
+    from services.pump_fade_strategy import _compute_regime_size_multiplier
+
+    # LONG ve SHORT'lar EŞİT ölçüde kârda -> kârlılık farkı yok.
+    rows, bars = _council_rows(
+        long_specs=[(100.0, 110.0)] * 5,
+        short_specs=[(100.0, 90.0)] * 5,
+    )
+    bars["BTCUSDT"] = _bull_daily_bars()
+    multiplier = _compute_regime_size_multiplier(_FakeSession(rows), _FakeProvider(bars))
+    assert multiplier == 1.0
+
+
+def test_regime_multiplier_is_1_when_council_bullish_but_btc_not_bull_trend():
+    from services.pump_fade_strategy import _compute_regime_size_multiplier
+
+    rows, bars = _council_rows(
+        long_specs=[(100.0, 110.0)] * 5,  # hepsi kârda
+        short_specs=[(100.0, 110.0)] * 5,  # hepsi zararda (fiyat SHORT'un aleyhine yükseldi)
+    )
+    bars["BTCUSDT"] = _flat_daily_bars()  # bull_trend DEĞİL
+    multiplier = _compute_regime_size_multiplier(_FakeSession(rows), _FakeProvider(bars))
+    assert multiplier == 1.0
+
+
+def test_regime_multiplier_shrinks_to_floor_when_both_signals_align():
+    from services.pump_fade_strategy import _REGIME_GATE_FLOOR_MULTIPLIER, _compute_regime_size_multiplier
+
+    rows, bars = _council_rows(
+        long_specs=[(100.0, 110.0)] * 5,  # hepsi kârda
+        short_specs=[(100.0, 110.0)] * 5,  # hepsi zararda
+    )
+    bars["BTCUSDT"] = _bull_daily_bars()
+    multiplier = _compute_regime_size_multiplier(_FakeSession(rows), _FakeProvider(bars))
+    assert multiplier == _REGIME_GATE_FLOOR_MULTIPLIER
+
+
+def test_regime_multiplier_query_scopes_to_ai_positions_only():
+    """SQL sorgusu 'experiment_bucket IS NULL' filtresi taşımalı — pump_fade'in
+    kendi SHORT'ları asla council sinyaline karışmamalı (aksi halde strateji
+    kendi kendini besler). Sorgunun kendisi services/pump_fade_strategy.py'de
+    sabit metin olarak tanımlı; burada gerçek DB'ye dokunmadan sorgu metninin
+    filtreyi içerdiğini doğruluyoruz."""
+    import inspect
+
+    from services.pump_fade_strategy import _compute_regime_size_multiplier
+
+    source = inspect.getsource(_compute_regime_size_multiplier)
+    assert "experiment_bucket IS NULL" in source
+
+
+def test_run_cycle_reports_regime_size_multiplier(monkeypatch):
+    symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    try:
+        _set_pump_fade_settings(pump_fade_enabled="true")
+        monkeypatch.setattr("services.pump_fade_strategy.fetch_usdt_perpetual_symbols", lambda: [symbol])
+        provider = _FakeProvider({symbol: _pump_then_settled_bars(10.0, 22.0), "BTCUSDT": _flat_daily_bars()})
+        result = PumpFadeStrategy(data_provider=provider).run_cycle()
+        assert "regime_size_multiplier" in result
+        assert result["regime_size_multiplier"] == 1.0
+    finally:
+        _cleanup_symbol(symbol)
+        _set_pump_fade_settings(pump_fade_enabled="false")

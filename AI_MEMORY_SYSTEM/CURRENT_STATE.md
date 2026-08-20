@@ -1,9 +1,21 @@
-# Mevcut Durum -- v1.55.0 (Faz 316: HTF Confluence + Benched Ajan Gölge Pozisyon + küçük temizlikler)
+# Mevcut Durum -- v1.57.0 (Faz 318: pump_fade rejim körlüğü kapatıldı — council kârlılık farkı + BTC rejimi kesişim gate'i)
 
 **Tarih:** 2026-08-20
 **Branch:** main
-**Son commit (HEAD):** 21dca03 (Faz 316: HTF confluence + benched ajan itirazı gölge pozisyon + küçük temizlikler) — henüz push edilmedi, servis restart'ı bekleniyor (Faz 315 71d4bd5 dahil).
-**Test:** tam suite (1548 passed, 1 skipped, 1 xpassed, 8 failed). Başarısızlıkların TAMAMI Faz 316 ile ilgisiz: `test_calibration_api`/`test_council_orchestrator` x3/`test_red_team` x2/`test_performance_api` — `project_shared_test_state_bloat` hafıza notunda zaten belgelenen, paylaşılan `quantdb_test`teki birikmiş geçmiş veriden kaynaklanan bilinen flake'ler (izole çalıştırıldığında da aynı şekilde başarısız); `test_llm_reasoner_timeout` — gerçek dış LLM ağ isteği zaman aşımı (izole doğrulandı, koddan bağımsız).
+**Son commit (HEAD):** 6f2c7a5 (Faz 317) — Faz 318 henüz commit edilmedi (bu değişiklik: `services/pump_fade_strategy.py`, `tests/test_pump_fade_strategy.py`). Servis restart'ı bekleniyor (Faz 315 71d4bd5, Faz 316 21dca03 dahil).
+**Test:** `tests/test_pump_fade_strategy.py` — 27 test, tamamı temiz (yeni rejim-gate testleri `_FakeSession` ile tamamen DB'den izole, `quantdb_test`teki bilinen kirli 'ai' pozisyon birikimine karşı bağışık).
+
+## Faz 318 — pump_fade'in yön körlüğü: council kârlılık farkı + BTC rejimi kesişim gate'i (2026-08-20)
+
+Kullanıcı canlı bulgusu: "Piyasa yukarı yönlü çok ciddi sinyaller veriyorken pump_fade hâlâ SHORT açmaya devam ediyor, elindeki pozisyonlardan bile anlaması lazım kumar oynadığını." Doğrulandı — canlı sorgu: AI council'in açık LONG'larının **%83'ü kârda** (ort. +%3.33), SHORT'larının **%0'ı kârda** (ort. -%9.72); pump_fade'in son ~48 saatte açtığı 79 SHORT'un **%85'i zararda** (ort. -%3.22, en kötüsü PUMPUSDT -%20.3). Kök neden: `services/pump_fade_strategy.py` bilinçli olarak council/regime zincirinden tamamen izole (Faz 268-sonrası tasarım) — piyasanın genel yönüyle ilgili SIFIR kanıt kullanmıyordu.
+
+Kullanıcı onaylı tasarım (AskUserQuestion): **iki bağımsız sinyalin kesişimi**, SADECE margin küçültme (asla tam kapatma). `_compute_regime_size_multiplier` (density multiplier ile AYNI "sadece küçült" ilkesi, Faz 295):
+1. Council'in KENDİ açık pozisyonlarının (experiment_bucket IS NULL) GERÇEK şu anki kârlılık farkı — LONG win-rate >= 0.5 VE (LONG win-rate - SHORT win-rate) >= 0.30. Ham pozisyon SAYISI kasıtlı olarak kullanılmadı: geriye dönük kontrolde 109 kapanmış pump_fade işleminin TAMAMI zaten council'in sayıca LONG ağırlıklı olduğu dönemlerde açılmış (sıfır varyans, ayırt edici değil) — kârlılık farkı gerçekten zamanla değişen bir sinyal.
+2. BTC'nin gerçek 200-EMA rejimi (`market_data/features/signal_engine.py::compute_quant_signals`) `bull_trend` ise.
+
+İkisi de doğrulanmazsa çarpan 1.0 (fail-closed, mevcut davranış değişmez). İkisi de doğrulanırsa margin sabit tabana (**0.15**) küçültülür, `density_size_multiplier` ile çarpımsal birleşir. Min örneklem: her yön için >= 5 sembol (az örneklemden karar üretilmez). `run_cycle()` sonucuna `regime_size_multiplier` eklendi, kararın `agent_opinions.data`sına da yazılıyor (izlenebilirlik).
+
+**Test tasarımı notu:** `quantdb_test` canlı doğrulandı — 323 açık 'ai' LONG, 2 açık 'ai' SHORT birikmiş (başka test dosyalarının temizlemediği, `project_shared_test_state_bloat` ile aynı sınıf kirlilik). Gerçek DB ile yazılan bir test bu ambient veriyle karışıp flaky olurdu — bunun yerine `_FakeSession`/`_FakeProvider` ile SQL sorgusunu ve fiyat çekimini tamamen taklit eden, DB'ye hiç dokunmayan testler yazıldı.
 
 ## Faz 316 — Çok-zamanlı dilim (HTF) confluence + benched ajan itirazı gölge pozisyon + küçük temizlikler (2026-08-20)
 
