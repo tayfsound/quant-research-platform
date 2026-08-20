@@ -46,6 +46,14 @@ _MAE_MFE_TIMEFRAME_SECONDS = {
 _MAE_MFE_BAR_TIMEFRAME = "1m"
 _MAE_MFE_MAX_BARS = 1000  # Binance'in gerçek tek-istek tavanı
 
+# Faz 313 — "breakeven_stop" etiketi SADECE gerçekleşen kayıp, orijinal
+# (ratchet öncesi) stop mesafesinin bu oranından KÜÇÜKSE kullanılır —
+# yani ratchet mekanizması kaybı GERÇEKTEN en az yarı yarıya azaltmışsa.
+# 0.5 icat edilmiş değil: "mekanizma anlamlı ölçüde işe yaradı mı"
+# sorusuna en doğal, orta noktalı cevap — daha gevşek bir eşik (ör. 0.9)
+# neredeyse tam-mesafe kayıpları bile "başabaş" gösterebilirdi.
+_BREAKEVEN_LOSS_REDUCTION_THRESHOLD = 0.5
+
 
 class PositionCloser:
     def __init__(
@@ -703,10 +711,26 @@ class PositionCloser:
             # eksi gösterirken. Artık NİHAİ (ücret+funding sonrası GERÇEK)
             # pnl birincil sinyal — "trailing_stop_profit" SADECE pnl
             # gerçekten pozitifken kullanılıyor, hiçbir zaman gösterilen
-            # pnl işaretiyle çelişmiyor. Stop'un entry'ye doğru/ötesine
-            # taşınmış olması (mekanizma) SADECE pnl<=0 kaldığında "gerçek
-            # tam-mesafe zarar" ile "sadece maliyetlerin yediği neredeyse-
-            # başabaş çıkış"ı ayırt etmek için ikincil sinyal olarak kalıyor.
+            # pnl işaretiyle çelişmiyor.
+            #
+            # Faz 313 — kullanıcı bulgusu (2026-08-20, gerçek KAIAUSDT/
+            # PENDLEUSDT/HUMAUSDT/NOMUSDT/RPLUSDT örnekleri): "başabaş
+            # çekilmiş görünen pozisyonlar zararla kapanmış." Kök neden:
+            # stop_moved_toward_or_past_entry SADECE mekanizmanın (stop'un
+            # KONUMU) çalıştığını doğruluyordu, gerçekleşen kaybın
+            # ORİJİNAL (ratchet öncesi) stop mesafesine göre GERÇEKTEN
+            # küçültülüp küçültülmediğini hiç kontrol etmiyordu — periyodik
+            # kontrol döngüsü sırasında fiyat, ratchet edilmiş (girişe
+            # yakın) stopu büyük bir kaymayla (slippage/gap) aşıp gerçek,
+            # büyük bir kayıp üretebiliyordu (KAIAUSDT: fiyat-kaynaklı kayıp
+            # -$1103.31, ücret+funding sadece -$55.50). Artık GERÇEK kayıp,
+            # decisions.original_stop_loss_price'ta (pozisyon açılışında
+            # bir kez yazılan, ratchet'in ASLA değiştirmediği ham değer)
+            # saklı orijinal risk mesafesinin belirgin bir kısmından
+            # (yarısından) küçükse "breakeven_stop" — mekanizma gerçekten
+            # işe yaramış demektir. Orijinal değer yoksa (migration öncesi
+            # açılmış eski bir pozisyon) fail-closed: doğrulanamıyor,
+            # dürüstçe "stop_loss" kalır.
             if exit_reason == "stop_loss":
                 stop_price = pos["stop_loss_price"]
                 stop_moved_toward_or_past_entry = (
@@ -716,7 +740,14 @@ class PositionCloser:
                 if pnl > 0:
                     exit_reason = "trailing_stop_profit"
                 elif stop_moved_toward_or_past_entry:
-                    exit_reason = "breakeven_stop"
+                    original_stop_price = pos.get("original_stop_loss_price")
+                    if original_stop_price is not None:
+                        original_risk_amount = abs(entry_price - original_stop_price) * quantity
+                        if (
+                            original_risk_amount > 0
+                            and abs(pnl) < original_risk_amount * _BREAKEVEN_LOSS_REDUCTION_THRESHOLD
+                        ):
+                            exit_reason = "breakeven_stop"
 
             # Faz 268-sonrası: SADECE burada (pozisyon fiilen kapanırken,
             # her check cycle'ında değil) gerçek MAE/MFE hesaplanıyor —

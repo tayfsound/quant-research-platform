@@ -392,6 +392,109 @@ def test_breakeven_stop_ratchets_stop_to_entry_after_1r_profit_and_prevents_full
             AppSettingsRepository(session).set("trailing_stop_distance_pct", "0.05", updated_by="test")
 
 
+def test_breakeven_stop_does_not_hide_a_large_slippage_driven_loss():
+    """Faz 313 — kullanıcı bulgusu (2026-08-20, gerçek KAIAUSDT/PENDLEUSDT
+    örnekleri): "başabaş çekilmiş görünen pozisyonlar zararla kapanmış."
+    Ratchet mekanizması çalışıp stop'u girişe çekmiş olsa BİLE, fiyat
+    (periyodik kontrol döngüsünde bir kayma/gap yüzünden) o stopu ÇOK
+    aşarak gerçek, büyük bir kayıp üretebilir. Bu kayıp orijinal (ratchet
+    öncesi) risk mesafesinin YARISINDAN fazlaysa (burada: %60 > %50
+    eşiği) "breakeven_stop" DEĞİL, dürüstçe "stop_loss" kalmalı —
+    mekanizma teknik olarak tetiklendi ama kaybı ANLAMLI ÖLÇÜDE
+    küçültmedi."""
+    from contracts.decision_event import DecisionEvent
+    from database.repositories.app_settings_repository import AppSettingsRepository
+
+    symbol = f"POSBESLIP{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    entry, old_stop, target = 100.0, 90.0, 140.0  # risk = 10 (1R)
+
+    with SessionFactory.get_session() as session:
+        event = DecisionEvent(
+            id=uuid4(), timestamp=now, symbol=symbol,
+            proposed_direction="LONG", final_action="LONG", final_size=1.0, confidence=0.7,
+            status="open", entry_price=entry, quantity=1.0, opened_at=now,
+            stop_loss_price=old_stop, take_profit_price=target,
+        )
+        DecisionPersistor(session).persist(event)
+        AppSettingsRepository(session).set("trailing_stop_distance_pct", "0", updated_by="test")
+
+    try:
+        # 1. adım: fiyat tam 1R kadar lehte (110) — stop girişe (100) çekiliyor.
+        closer_step1 = PositionCloser(_FixedPriceProvider(entry + (entry - old_stop)))
+        with SessionFactory.get_session() as session:
+            closer_step1.close_due_positions(DecisionPersistor(session))
+        with SessionFactory.get_session() as session:
+            row = DecisionPersistor(session).get_by_id(str(event.id))
+        assert row["stop_loss_price"] == entry  # ratchet gerçekten çalıştı
+        assert row["original_stop_loss_price"] == old_stop  # orijinal KORUNDU
+
+        # 2. adım: fiyat girişte (100) ratchet edilmiş stopu tetikledikten
+        # SONRA, bir sonraki kontrol döngüsüne kadar büyük bir kaymayla
+        # 94'e düşüyor — kayıp (-6.0, orijinal 10'luk riskin %60'ı) artık
+        # "başabaş" sayılamayacak kadar büyük.
+        closer_step2 = PositionCloser(_FixedPriceProvider(94.0))
+        with SessionFactory.get_session() as session:
+            closed_step2 = closer_step2.close_due_positions(DecisionPersistor(session))
+
+        closed_ids = {c["decision_id"]: c for c in closed_step2}
+        assert str(event.id) in closed_ids
+        assert closed_ids[str(event.id)]["exit_reason"] == "stop_loss"
+
+        with SessionFactory.get_session() as session:
+            row = DecisionPersistor(session).get_by_id(str(event.id))
+        assert row["pnl"] < -5.0  # gerçekten büyük bir kayıp, "başabaş" değil
+    finally:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("trailing_stop_distance_pct", "0.05", updated_by="test")
+
+
+def test_breakeven_stop_falls_back_to_stop_loss_when_original_stop_is_unknown():
+    """Faz 313 — original_stop_loss_price NULL ise (migration öncesi
+    açılmış eski bir pozisyon) fail-closed: azaltımın gerçekten olup
+    olmadığı doğrulanamıyor, dürüstçe "stop_loss" kalır — icat edilmiş
+    bir "başabaş" asla üretilmez."""
+    from contracts.decision_event import DecisionEvent
+    from database.repositories.app_settings_repository import AppSettingsRepository
+
+    symbol = f"POSBENULL{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    entry, old_stop, target = 100.0, 90.0, 140.0
+
+    with SessionFactory.get_session() as session:
+        event = DecisionEvent(
+            id=uuid4(), timestamp=now, symbol=symbol,
+            proposed_direction="LONG", final_action="LONG", final_size=1.0, confidence=0.7,
+            status="open", entry_price=entry, quantity=1.0, opened_at=now,
+            stop_loss_price=old_stop, take_profit_price=target,
+        )
+        DecisionPersistor(session).persist(event)
+        AppSettingsRepository(session).set("trailing_stop_distance_pct", "0", updated_by="test")
+        # Migration-öncesi eski bir satırı simüle ediyoruz.
+        from sqlalchemy import text
+        session.execute(
+            text("UPDATE decisions SET original_stop_loss_price = NULL WHERE id = :id"),
+            {"id": str(event.id)},
+        )
+        session.commit()
+
+    try:
+        closer_step1 = PositionCloser(_FixedPriceProvider(entry + (entry - old_stop)))
+        with SessionFactory.get_session() as session:
+            closer_step1.close_due_positions(DecisionPersistor(session))
+
+        closer_step2 = PositionCloser(_FixedPriceProvider(99.0))
+        with SessionFactory.get_session() as session:
+            closed_step2 = closer_step2.close_due_positions(DecisionPersistor(session))
+
+        closed_ids = {c["decision_id"]: c for c in closed_step2}
+        assert str(event.id) in closed_ids
+        assert closed_ids[str(event.id)]["exit_reason"] == "stop_loss"
+    finally:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("trailing_stop_distance_pct", "0.05", updated_by="test")
+
+
 def test_breakeven_stop_never_loosens_and_is_symmetric_for_short():
     """Aynı mekanizmanın SHORT yönde de çalıştığını ve stopun asla ilk
     seviyesinden daha gevşek bir yöne çekilmediğini (sadece sıkılaştığını)
