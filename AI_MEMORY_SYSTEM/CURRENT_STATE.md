@@ -1,10 +1,27 @@
-# Mevcut Durum -- v1.82.0 (Faz 343: GPT raporunun kalan maddeleri incelendi)
+# Mevcut Durum -- v1.83.0 (Faz 344: Cross-Asset Arbitrage Engine v1)
 
 **Tarih:** 2026-08-21
 **Branch:** main
-**Son commit (HEAD):** Faz 343 (`e34c02a`).
-**⚠️ Servis durumu:** temiz, restart gerekmedi (Faz 343 sadece dokümantasyon).
+**Son commit (HEAD):** Faz 344 (`0c00dd3`).
+**⚠️ Servis durumu:** uvicorn + celery worker_default + celery beat YENİDEN BAŞLATILDI (yeni strateji + 2 yeni beat schedule girdisi) — temiz.
 **⚠️ Bilinen sorun (kullanıcı bulgusu, henüz araştırılmadı):** "Sistem genel olarak hantal/yavaş çalışıyor" — acil değil, sırada (backlog sonlarında).
+**⚠️ `basis_arbitrage_enabled=false` (varsayılan)** — Faz 344 henüz hiçbir gerçek pozisyon açmıyor, kullanıcı Settings'ten açıkça açmadan devreye girmez.
+
+## Faz 344 — Cross-Asset Arbitrage Engine v1: spot-perpetual basis arbitrajı (2026-08-21)
+
+Kullanıcı onayı: ikinci dalga ajan/motor planının ilk maddesi. Klasik, piyasa-nötr cash-and-carry: perpetual futures spot'a göre PRİMLİ işlem görürken (pozitif basis) VE funding rate pozitifken SHORT perpetual + LONG spot açılır. `market_data/basis/binance_futures_provider.py` — Binance'in genel, key'siz `/fapi/v1/premiumIndex` uç noktasından gerçek mark/index price + funding rate (gerçek 875 perpetual sembolde ölçüldü: |basis| medyanı %0.058, p90 %0.267 — eşikler buna göre kalibre edildi). `services/basis_arbitrage_strategy.py` — pump_fade/pairs_trader ile AYNI desen (council'den izole, kendi `basis_arb_v1` experiment_bucket'ı).
+
+**Kritik tasarım kararı:** iki bacak AYNI varlıkta (pairs_trader'ın FARKLI varlıklarının aksine) — biri bağımsız ATR stop/hedefle kapanırsa kalan bacak çıplak yönlü bir pozisyon olur. Bacaklar standart `PositionCloser` taramasından GEÇMİYOR (stop/target hiç set edilmiyor) — ayrı bir Celery task (`close_due_basis_arbitrage_pairs_task`, dakikada bir) sadece maksimum tutma süresi (varsayılan 72s) dolunca ikisini BİRLİKTE kapatıyor.
+
+**Geliştirme sırasında bulunan/düzeltilen 2 gerçek mimari hata:**
+1. RiskEngine'in aynı-sembol cooldown'u (`min_seconds_between_trades`, varsayılan 60sn) iki bacağı arka arkaya açmayı GERÇEKTEN engelliyordu (test değil, canlıda da olurdu) — risk durumu artık her iki bacak için de BİR KEZ, hiçbir bacak açılmadan ÖNCEki durumu yansıtacak şekilde okunuyor.
+2. `DecisionRecorder.record()`'a `experiment_bucket` hiç geçilmiyordu — pozisyonlar deneysel etiketsiz kalıyordu.
+
+Transactions'a "Basis Arb" rozeti + filtre eklendi (pump_fade'in "Transactions'ta göremiyorum" sorununu tekrarlamamak için).
+
+**Test:** `tests/test_basis_arbitrage_strategy.py` (11 yeni, YALNIZ bir bacağın asla tek başına kapatılmaması güvenlik testi dahil), geniş regresyon (pairs_trader/pump_fade/settings_api/celery_tasks/position_closer, 145+ test) temiz.
+
+**Sıradaki (kullanıcı sırası):** MempoolAgent ya da BehavioralAgent (veri kaynağı kısıtları nedeniyle henüz kapsam netleşmedi, bkz. proje hafızası).
 
 ## Faz 343 — Harici GPT mimari eleştirisinin kalan maddeleri incelendi (2026-08-21)
 
