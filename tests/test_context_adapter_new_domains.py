@@ -35,18 +35,6 @@ def test_to_quant_reads_raw_snapshot():
     assert result.hurst_exponent == 0.3
 
 
-def test_to_quant_defaults_regime_changepoint_to_false():
-    ctx = CognitiveCycleContext()
-    result = ContextAdapter().to_quant(ctx)
-    assert result.regime_changepoint_detected is False
-
-
-def test_to_quant_reads_regime_changepoint_from_raw_snapshot():
-    ctx = CognitiveCycleContext(market={"raw_snapshot": {"regime_changepoint_detected": True}})
-    result = ContextAdapter().to_quant(ctx)
-    assert result.regime_changepoint_detected is True
-
-
 def test_to_order_flow_defaults_when_no_db_row_and_no_override():
     ctx = CognitiveCycleContext(market={"symbol": "NEVERINGESTEDXYZ"})
     result = ContextAdapter().to_order_flow(ctx)

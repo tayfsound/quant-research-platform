@@ -1,9 +1,19 @@
-# Mevcut Durum -- v1.77.0 (Faz 338: Strateji × Rejim Uyumu (MetaStrategyAgent v1) + Faz 336/337)
+# Mevcut Durum -- v1.78.0 (Faz 339: QuantAgent'tan long_term_trend_regime tamamen kaldırıldı)
 
 **Tarih:** 2026-08-21
 **Branch:** main
-**Son commit (HEAD):** Faz 337 (`86699c2`) — Faz 338 bu segment sonunda commitlenecek.
-**⚠️ Servis durumu:** uvicorn + celery `-Q celery` worker YENİDEN BAŞLATILMALI — `api/main.py` yeni router aldı, `services/research_summary_gatherer.py` yeni modül aldı (canlı karar hattı değişmedi, sadece ölçüm/API yüzeyi). `scripts/service_watchdog.sh` çalışıyorsa en geç 60sn içinde yakalar, manuel restart yine de önerilir.
+**Son commit (HEAD):** Faz 338 (`b90adc3`) — Faz 339 bu segment sonunda commitlenecek.
+**⚠️ Servis durumu:** uvicorn + celery `-Q celery` worker YENİDEN BAŞLATILMALI — `agents/quant_agent.py`/`contracts/quant.py`/`services/context_adapter.py` (canlı karar hattı) değişti.
+
+## Faz 339 — QuantAgent'tan long_term_trend_regime TAMAMEN kaldırıldı (2026-08-21)
+
+Kullanıcı bulgusu: "quant ajanın son 20 tahmininde isabet %0-5, CI %0-16." Faz 317'nin confidence-indirim bandaid'i (agree durumunda ×0.6) yetersiz kaldığı doğrulandı. Kök nedene inildi: son 3000 kapanmış kararda quant'ın 489 LONG/SHORT oyu TEK kanıt kaynağına göre ayrıştırıldı — `long_term_trend_regime` (yavaş/gecikmeli 200-EMA) TEK BAŞINA ateşlendiğinde (oyların %65'i, n=319): **%15.7 isabet** (yazı-turadan kötü). Gerçek Hurst/z-score/otokorelasyon sinyali ateşlendiğinde (n=17, oyların sadece %3.5'i): **%76.5 isabet** (küçük örneklem ama %50 şansla açıklanamayacak kadar iyi, ~p<0.03).
+
+Kullanıcı: "sistemde tutmanın anlamı yok, ya geliştirelim işe yarasın ya da atalım." Üç seçenek sunuldu (kötü bileşeni kes/çekirdeği koru, ajanı tamamen kaldır, dokunma-gözle) — kullanıcı "kötü bileşeni kes" seçti. `long_term_trend_regime` ve `regime_changepoint_detected` — hem `agents/quant_agent.py::analyze()`'den (long_term_trend_regime skorlama bloğu + changepoint indirimi + Faz 317 trend-uyum confidence indirimi, `_TREND_AGREEMENT_CONFIDENCE_DISCOUNT` dahil), hem `contracts/quant.py::QuantContext`'ten, hem `services/context_adapter.py::to_quant()`'tan TAMAMEN silindi (QuantContext'in tek kullanıcısı quant_agent olduğu doğrulandı — başka hiçbir yerde referans yok). Ajan artık SADECE kendi gerçek istatistiksel çekirdeğine (Hurst rejimi + z-score mean-reversion + otokorelasyon momentum) dayanıyor — çok daha seyrek ama gerçek kenarlı oy veriyor, çoğu zaman WAIT.
+
+Not: `long_term_trend_regime` HAM özniteliği (`market_data/features/signal_engine.py::compute_quant_signals()`) sistemden silinmedi — pump_fade'in rejim gate'i ve feature registry hâlâ kullanıyor, sadece QuantAgent'ın ondan beslenmesi kesildi.
+
+**Test:** `tests/test_quant_agent.py` yeniden yazıldı (9 test, kaldırılan mantığa bağlı 8 test silindi/birleştirildi), `tests/test_context_adapter_new_domains.py`'den 2 ilgisiz kalan test silindi. Geniş council regresyonu (175 test) — 3 bilinen pre-existing flaky (`test_council_orchestrator.py`, `git stash` ile doğrulandı, değişiklikten bağımsız) hariç temiz.
 
 ## Faz 338 — Strateji × Rejim Uyumu / MetaStrategyAgent v1 (2026-08-21)
 
