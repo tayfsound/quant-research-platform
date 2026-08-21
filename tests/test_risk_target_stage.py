@@ -519,3 +519,47 @@ def test_decision_fusion_still_forces_wait_without_risk_target_stage():
 
     assert ctx.decision.action.value == "WAIT"
     assert ctx.decision.final_size == 0.0
+
+
+def test_risk_target_stage_shrinks_final_size_via_meta_label_model_when_available(monkeypatch):
+    """Faz 348 — kullanıcı onayı: Meta-Label Model gerçek OOS kanıtını
+    geçince bağlandı, SADECE pozisyon boyutu çarpanı. Düşük P(TP)
+    tahmini final_size'ı küçültmeli, yönü hiç etkilememeli."""
+    monkeypatch.setattr("services.meta_label_model.predict_tp_probability", lambda features: 0.25)
+
+    ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
+    ctx.decision.final_size = 0.3
+    result = RiskTargetStage().execute(ctx)
+
+    # meta_label_size_multiplier(0.25) == 0.5
+    assert abs(result.decision.final_size - 0.15) < 1e-9
+    assert result.decision.action == ActionType.ENTER_LONG
+    meta_label_entries = [k for k in result.cognition.relevant_knowledge if k.get("type") == "meta_label_sizing"]
+    assert len(meta_label_entries) == 1
+    assert meta_label_entries[0]["data"]["tp_probability"] == 0.25
+
+
+def test_risk_target_stage_does_not_shrink_when_no_meta_label_model_trained(monkeypatch):
+    """Fail-closed: henüz eğitilmiş/kaydedilmiş bir model yoksa
+    predict_tp_probability None döner — final_size hiç değişmemeli,
+    mevcut davranış (Faz 348 öncesi) birebir korunmalı."""
+    monkeypatch.setattr("services.meta_label_model.predict_tp_probability", lambda features: None)
+
+    ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
+    ctx.decision.final_size = 0.3
+    result = RiskTargetStage().execute(ctx)
+
+    assert abs(result.decision.final_size - 0.3) < 1e-9
+    assert not any(k.get("type") == "meta_label_sizing" for k in result.cognition.relevant_knowledge)
+
+
+def test_risk_target_stage_does_not_grow_final_size_via_meta_label_model(monkeypatch):
+    """'Sadece küçült, asla büyütme' ilkesi: yüksek P(TP) final_size'ı
+    HİÇ artırmamalı (çarpan hep <=1.0)."""
+    monkeypatch.setattr("services.meta_label_model.predict_tp_probability", lambda features: 0.95)
+
+    ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
+    ctx.decision.final_size = 0.3
+    result = RiskTargetStage().execute(ctx)
+
+    assert abs(result.decision.final_size - 0.3) < 1e-9

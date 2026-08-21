@@ -12,14 +12,14 @@ yetersiz veride fail-closed None) — aynı kullanıcı tarafından zaten
 onaylanmış, üretimde çalışan bir desen tekrarlanıyor, icat edilmiş yeni
 bir yaklaşım değil.
 
-KRİTİK — "yeni karmaşıklık kendi edge'ini kanıtlamalı" ilkesi: bu model
-HİÇBİR canlı karara BAĞLANMIYOR. train_meta_label_model() gerçek OOS
-(train/test) doğrulama metriklerini (test_accuracy, test_auc,
-baseline_correctness_rate) döndürür — sadece bunlar gerçekten taban
-oranını yeniyorsa (ve kullanıcı ayrıca onaylarsa) DecisionFusion'a
-bağlanması bir sonraki, ayrı bir adımdır (bkz. Adaptive Barrier Engine
-ile AYNI, zaten kurulmuş emsal — orası da OOS'u geçti ama backtest/canlı
-uçurumu netleşmeden bilerek bağlanmadı)."""
+"Yeni karmaşıklık kendi edge'ini kanıtlamalı" ilkesi: bu model uzun süre
+(Faz 268-sonrası'ndan Faz 348'e kadar) HİÇBİR canlı karara bağlı değildi.
+Faz 348'de (1752 kapanmış işlemle) gerçek OOS metrikleri (test_accuracy
+%84.5, taban oranı %61.2, test_auc 0.92, n=877) ölçülüp kullanıcıya
+gösterildi — taban oranını AÇIKÇA yendiği için, kullanıcı onayıyla
+RiskTargetStage'e bağlandı, ama SADECE pozisyon boyutu çarpanı olarak
+(bkz. meta_label_size_multiplier) — yön kararını hiç etkilemiyor, Kelly
+boyutlandırmayla AYNI "sadece küçült" ilkesi."""
 from sqlalchemy import text
 
 from contracts.agent_confidence_model import AgentConfidenceModel
@@ -164,14 +164,38 @@ def train_meta_label_model(
     )
 
 
+# Faz 348 — kullanıcı onayı: model gerçek OOS kanıtını (test_accuracy
+# %84.5 vs taban %61.2, AUC 0.92, n=877 — bu modülün üstündeki not
+# zaten "taban oranını gerçekten yenerse" bağlanabileceğini
+# öngörmüştü) geçince canlıya bağlandı — SADECE pozisyon boyutu çarpanı
+# olarak (services/kelly_sizing.py::kelly_size_multiplier ile AYNI
+# "sadece küçült, asla büyütme" ilkesi). Yön kararı HİÇ etkilenmiyor.
+# 0.5 (yazı-tura) nötr nokta — model P(TP)>=0.5 derse hiç küçültme yok;
+# altındaysa orantılı küçülüyor, MIN_MULTIPLIER'da taban buluyor (asla
+# sıfıra inmiyor — model yanılabilir, pozisyonu TAMAMEN iptal etmek
+# ayrı, daha agresif bir karar olurdu, kullanıcı bunu v1'de istemedi).
+META_LABEL_NEUTRAL_PROBABILITY = 0.5
+META_LABEL_MIN_MULTIPLIER = 0.2
+
+
+def meta_label_size_multiplier(tp_probability: float) -> float:
+    """[MIN_MULTIPLIER, 1.0] aralığında, SADECE küçültücü bir çarpan.
+    tp_probability >= 0.5 ise 1.0 (dokunma) — 0.5'in altında P(TP) ile
+    orantılı küçülür, tabanı asla altına inmez."""
+    if tp_probability >= META_LABEL_NEUTRAL_PROBABILITY:
+        return 1.0
+    scaled = tp_probability / META_LABEL_NEUTRAL_PROBABILITY
+    return max(META_LABEL_MIN_MULTIPLIER, round(scaled, 4))
+
+
 def predict_tp_probability(
     features: dict,
     repository: ConfidenceModelRepository | None = None,
 ) -> float | None:
     """P(TP before SL) tahmini — henüz eğitilmiş/kaydedilmiş bir model
     yoksa None (fail-closed, asla uydurulmuş bir olasılık döndürülmez).
-    Kasıtlı olarak hiçbir canlı karar yolundan ÇAĞRILMIYOR — sadece
-    araştırma/doğrulama amaçlı."""
+    Faz 348'den beri RiskTargetStage tarafından (SADECE pozisyon boyutu
+    çarpanı için) çağrılıyor — bkz. meta_label_size_multiplier."""
     import numpy as np
 
     repo = repository or ConfidenceModelRepository()

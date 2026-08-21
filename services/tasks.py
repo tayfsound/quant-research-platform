@@ -282,6 +282,33 @@ def retrain_agent_confidence_models_task() -> dict:
     return results
 
 
+@celery_app.task(name="retrain_meta_label_model_task")
+def retrain_meta_label_model_task() -> dict:
+    """Faz 348 — kullanıcı onayı: Meta-Label Model (P(TP before SL))
+    gerçek OOS kanıtını (test_accuracy %84.5 vs taban %61.2, AUC 0.92)
+    geçince RiskTargetStage'e (SADECE pozisyon boyutu çarpanı olarak)
+    bağlandı. retrain_agent_confidence_models_task ile AYNI desen —
+    kayan pencereyle (son 1000 kapanmış işlem) düzenli yeniden
+    eğitiliyor, piyasa değiştikçe donuk kalmasın diye. Yetersiz veri/
+    tek sınıflı etiket varsa (bkz. train_meta_label_model) hiçbir şey
+    değiştirmez, eski model (varsa) geçerliliğini korur."""
+    from services.agent_confidence_model import ConfidenceModelRepository
+    from services.meta_label_model import META_LABEL_DOMAIN, train_meta_label_model
+
+    model = train_meta_label_model()
+    if model is None:
+        return {"skipped": "insufficient_samples"}
+
+    ConfidenceModelRepository().save(model)
+    return {
+        "domain": META_LABEL_DOMAIN,
+        "sample_count": model.sample_count,
+        "test_accuracy": model.test_accuracy,
+        "test_auc": model.test_auc,
+        "baseline_correctness_rate": model.baseline_correctness_rate,
+    }
+
+
 @celery_app.task(name="refresh_barrier_table_task")
 def refresh_barrier_table_task() -> dict:
     """Faz 268-sonrası — kullanıcı isteği: Adaptive Barrier Engine'i

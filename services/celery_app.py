@@ -185,6 +185,11 @@ celery_app.conf.beat_schedule = {
         "task": "retrain_agent_confidence_models_task",
         "schedule": 86400.0,
     },
+    # Faz 348 — retrain-agent-confidence-models-daily ile AYNI ritim.
+    "retrain-meta-label-model-daily": {
+        "task": "retrain_meta_label_model_task",
+        "schedule": 86400.0,
+    },
     # Faz 268-sonrası: Adaptive Barrier tablosu — retrain-agent-
     # confidence-models-daily ile AYNI ritim (günlük, ucuz bir SQL
     # sorgusu + lojistik olmayan bir ızgara taraması). Yetersiz veri

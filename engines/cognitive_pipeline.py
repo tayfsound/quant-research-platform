@@ -724,6 +724,31 @@ class RiskTargetStage:
 
         ctx.decision.stop_loss_distance = current_price * stop_pct
         ctx.decision.take_profit_distance = current_price * target_pct
+
+        # Faz 348 — kullanıcı onayı: Meta-Label Model (services/meta_
+        # label_model.py) gerçek OOS kanıtını (test_accuracy %84.5 vs
+        # taban %61.2, AUC 0.92, n=877) geçince bağlandı — SADECE
+        # pozisyon boyutu çarpanı, yön kararı hiç etkilenmiyor. Henüz
+        # eğitilmiş bir model yoksa (fail-closed None) hiçbir şey
+        # değişmez, mevcut davranış aynen korunur.
+        try:
+            from services.meta_label_model import meta_label_size_multiplier, predict_tp_probability
+
+            features = dict(ctx.market.features or {})
+            features["confidence"] = ctx.decision.confidence or 0.0
+            features["planned_rr_ratio"] = (target_pct / stop_pct) if stop_pct > 0 else 0.0
+            tp_probability = predict_tp_probability(features)
+            if tp_probability is not None and ctx.decision.final_size > 0:
+                multiplier = meta_label_size_multiplier(tp_probability)
+                if multiplier < 1.0:
+                    ctx.decision.final_size = round(ctx.decision.final_size * multiplier, 8)
+                ctx.cognition.relevant_knowledge.append({
+                    "type": "meta_label_sizing",
+                    "data": {"tp_probability": tp_probability, "size_multiplier": multiplier},
+                })
+        except Exception as exc:
+            structlog.get_logger().warning("meta_label_sizing_failed", error=str(exc))
+
         return ctx
 
     def _try_adaptive_barrier(self, ctx: CognitiveCycleContext) -> tuple[float, float] | None:

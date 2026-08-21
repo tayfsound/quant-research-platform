@@ -1,9 +1,10 @@
 """Faz 268-sonrası — kullanıcı isteği: gerçek meta-labeling, P(TP before
 SL). services/agent_confidence_model.py ile AYNI mimari (lojistik
 regresyon, gerçek train/test split) — burada TEK fark, "hangi ajan doğru
-çıktı" değil "TP mi SL mi önce geldi" öğreniliyor. Kasıtlı olarak
-HİÇBİR canlı karara bağlanmıyor — sadece gerçek OOS doğrulama metrikleri
-üretiyor."""
+çıktı" değil "TP mi SL mi önce geldi" öğreniliyor. Faz 348'de gerçek OOS
+kanıtı (test_accuracy %84.5 vs taban %61.2) geçilince RiskTargetStage'e
+SADECE pozisyon boyutu çarpanı olarak bağlandı — bkz. aşağıdaki
+meta_label_size_multiplier testleri."""
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -14,9 +15,28 @@ from database.session_factory import SessionFactory
 from services.agent_confidence_model import ConfidenceModelRepository
 from services.meta_label_model import (
     META_LABEL_DOMAIN,
+    META_LABEL_MIN_MULTIPLIER,
+    META_LABEL_NEUTRAL_PROBABILITY,
+    meta_label_size_multiplier,
     predict_tp_probability,
     train_meta_label_model,
 )
+
+
+def test_meta_label_size_multiplier_no_shrink_at_or_above_neutral():
+    assert meta_label_size_multiplier(META_LABEL_NEUTRAL_PROBABILITY) == 1.0
+    assert meta_label_size_multiplier(0.9) == 1.0
+    assert meta_label_size_multiplier(1.0) == 1.0
+
+
+def test_meta_label_size_multiplier_shrinks_proportionally_below_neutral():
+    assert meta_label_size_multiplier(0.25) == 0.5
+    assert meta_label_size_multiplier(0.4) == 0.8
+
+
+def test_meta_label_size_multiplier_never_below_floor():
+    assert meta_label_size_multiplier(0.0) == META_LABEL_MIN_MULTIPLIER
+    assert meta_label_size_multiplier(0.01) == META_LABEL_MIN_MULTIPLIER
 
 
 def test_no_saved_model_returns_none_probability(tmp_path):
