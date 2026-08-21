@@ -1,9 +1,22 @@
-# Mevcut Durum -- v1.86.0 (Faz 348: Meta-Label Model canlı karara bağlandı)
+# Mevcut Durum -- v1.87.0 (Faz 349: Binance Algo Order API migrasyonu düzeltildi)
 
 **Tarih:** 2026-08-21
 **Branch:** main
-**Son commit (HEAD):** Faz 348 (`5343aff`).
-**⚠️ Servis durumu:** uvicorn + celery worker_default + celery beat YENİDEN BAŞLATILDI (RiskTargetStage canlı karar hattı değişti) — temiz.
+**Son commit (HEAD):** Faz 349 (`187758e`).
+**⚠️ Servis durumu:** uvicorn + celery worker_default + celery beat YENİDEN BAŞLATILDI — temiz.
+**⚠️ `execution_mode` hâlâ global "simulated"** — Faz 349 sadece testnet kodunun GERÇEKTEN çalıştığını kanıtladı, hiçbir canlı davranışı değiştirmedi. Bir sembolü testnet'e almak ayrı, açık bir kullanıcı kararı.
+
+## Faz 349 — Binance Algo Order API migrasyonu: GERÇEK testnet doğrulamasında bulundu (2026-08-21)
+
+Kullanıcı onayıyla yapılan gerçek uçtan uca testnet doğrulamasında (bilinçli, kontrollü, minimum boyutlu — BTCUSDT, ~$70 notional) kritik bir bug bulundu: giriş MARKET emri başarıyla doldu ama koruma emirleri (STOP_MARKET/TAKE_PROFIT_MARKET) Binance'den **-4120 "Order type not supported for this endpoint"** hatası aldı. Sistemin kendi güvenlik mekanizması (çıplak pozisyon asla ilkesi) bunu yakalayıp pozisyonu otomatik acil kapattı — DOĞRU çalıştı, ama asıl hedef (başarılı uçtan uca açılış) başarısız oldu.
+
+**Kök neden (WebSearch ile doğrulandı):** Binance 2025-12-09'da koşullu emirleri (STOP_MARKET/TAKE_PROFIT_MARKET dahil) eski `POST /fapi/v1/order`'dan YENİ bir Algo Order servisine taşıdı — kırıcı bir API değişikliği, freqtrade/nautilus_trader gibi başka bot projelerinde de AYNI hatayla doğrulandı. Bu kod Faz 315'te (bu değişiklikten ÖNCE) yazılmıştı — mock'lu testler eski API sözleşmesini varsaydığı için hiç yakalamadı. **Bu, gerçek uçtan uca doğrulamanın NEDEN gerekli olduğunun kanıtı.**
+
+`exchange_gateway/binance/futures_execution_adapter.py` düzeltildi: STOP_MARKET/TAKE_PROFIT_MARKET artık `POST /fapi/v1/algoOrder`'a yönleniyor (`triggerPrice`/`clientAlgoId`/`algoType=CONDITIONAL` — Binance'in Algo API'sinin KENDİ parametre isimleri), `get_order_status`/`cancel_order` önce normal endpoint'i dener sonra sessizce algo'ya düşer, `_parse_algo_order_status` gerçek dolumu (`actualQty>0`) mevcut sistemin beklediği "FILLED" statüsüne çeviriyor.
+
+**Düzeltmeden SONRA gerçek doğrulama:** BTCUSDT'de gerçek LONG pozisyon açıldı, GERÇEK STOP_MARKET+TAKE_PROFIT_MARKET koruma emirleri yerleşti (borsadan bağımsız sorgularla doğrulandı), sonra temiz kapatıldı — testnet hesabında hiçbir kalıntı yok.
+
+**Test:** 1 test yeni şemaya güncellendi, 3 yeni test eklendi. İlgili execution suite'i (47 test) temiz.
 **⚠️ `basis_arbitrage_enabled=false` (varsayılan)** — Faz 344 henüz hiçbir gerçek pozisyon açmıyor, kullanıcı Settings'ten açıkça açmadan devreye girmez.
 **⚠️ OPERASYONEL DERS (2026-08-21):** Faz 344'ün hata ayıklaması sırasında pytest DIŞINDA çalıştırılan ham `.venv/bin/python -c` debug scriptleri `conftest.py`'nin `quantdb_test` yönlendirmesini atlayıp GERÇEK `quantdb`'e 5 sahte pozisyon yazdı — kullanıcı Transactions'ta fark edip sordu, kaynağı bulunup onayla silindi. Kalıcı kural [[feedback_debug_scripts_must_target_test_db]] hafızasına eklendi.
 
