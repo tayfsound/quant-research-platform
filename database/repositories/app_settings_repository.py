@@ -330,25 +330,56 @@ DEFAULTS: dict[str, str] = {
     # ve üstü kazanç gösteren USDT perpetual'ları SHORT'lar. Varsayılan
     # KAPALI — kullanıcının kendi sözüyle "test için", opt-in.
     "pump_fade_enabled": "false",
-    # Kasanın (starting_capital) yüzde kaçı marjin olarak kullanılacak —
-    # kullanıcı isteği: "kasanın %5'i kadar."
-    "pump_fade_capital_pct": "0.05",
+    # Faz 332 — KÖK NEDEN düzeltmesi, kullanıcı isteği ("sağlam çözüm
+    # bulmamız lazım öyle basit çözümlerle geçiştiremeyiz"): gerçek olay
+    # — 82 açık pump_fade pozisyonu, toplam GERÇEKLEŞMEMİŞ zarar
+    # -$453.648 (kasanın neredeyse tamamı). Kök neden, eski
+    # "pump_fade_capital_pct" (kasanın sabit %5'i, stop mesafesinden
+    # BAĞIMSIZ) formülüydü — pump_fade_stop_distance_pct=%30 (sabit,
+    # geniş) ile birleşince tek bir pozisyon stop'a takılırsa ~$16.500
+    # kayıp riski taşıyordu. Artık RİSK-BAZLI boyutlandırma: margin,
+    # "bu pozisyon stop'a takılırsa TAM OLARAK bu kadar $ kaybedilsin"
+    # eşitliğinden GERİYE doğru hesaplanıyor —
+    # margin = pump_fade_max_loss_per_trade_usd / (stop_distance_pct × kaldıraç).
+    # Stop mesafesi ne kadar genişse (ya da kaldıraç ne kadar yüksekse),
+    # margin o kadar KÜÇÜLÜYOR — AI council'in Kelly-bazlı boyutlandırma
+    # felsefesiyle AYNI ilke (sabit $ risk bütçesi, sabit % sermaye değil).
+    # $500 varsayılanı: AI council'in kendi pozisyonlarının ($20-50)
+    # ~10-25 katı — pump_fade daha geniş bir evreni (yüzlerce altcoin)
+    # tarayan mekanik bir strateji olduğu için biraz daha büyük bir
+    # bütçe savunulabilir, ama eski $16.500 riskiyle KIYASLANAMAYACAK
+    # kadar küçük.
+    "pump_fade_max_loss_per_trade_usd": "500",
+    # Faz 332 — aynı gerçek olay: kaç pozisyon zaten açık olduğuna hiç
+    # bakılmıyordu (Faz 330'un kümülatif MARJİN tavanı bunu KISMEN
+    # çözdü ama 82-99 pozisyonun AYNI ANDA, çoğunlukla AYNI yönde
+    # (SHORT) ve yüksek korelasyonlu (hepsi "pump" etiketli altcoin)
+    # açık olması ayrı bir risk boyutu — tek bir piyasa rejimi (genel
+    # yükseliş) TÜM pozisyonları aynı anda vurabiliyor, bu bir
+    # çeşitlendirme başarısızlığı, marjin miktarından bağımsız).
+    "pump_fade_max_open_positions": "20",
+    # Faz 332 — zarar-bazlı devre kesici: mevcut kümülatif MARJİN tavanı
+    # (aşağıda) sadece "ne kadar sermaye BAĞLANABİLİR"i sınırlıyordu, "ne
+    # kadar KAYBEDİLEBİLİR"i sınırlamıyordu — 82 pozisyon sermaye tavanına
+    # göre "sığıyor" olsa bile hepsi birden zarara dönebiliyordu. Artık
+    # pump_fade'in TOPLAM gerçekleşmiş zararı (services/pump_fade_
+    # strategy.py::_circuit_breaker_tripped) bu eşiği (kasanın %'si değil, doğrudan $ — büyük/küçük
+    # kasalarda orantısız büyümesin diye sabit tutuluyor, kullanıcı
+    # isteğiyle ayarlanabilir) aşarsa pump_fade_enabled OTOMATİK false
+    # olur, EventLogRepository'ye KRİTİK olay yazılır — "AI kendi risk
+    # tavanını genişletemez, sadece daraltabilir" ilkesiyle aynı desen,
+    # burada "kendi kendini durdurabilir" olarak uygulanıyor.
+    "pump_fade_max_loss_circuit_breaker_usd": "10000",
     # Faz 330 — kritik bulgu, kullanıcı isteği: "Pump Fade için kasanın ne
-    # kadarını kullanabileceğini limitleyecek bir şey olsun." pump_fade_
-    # capital_pct SADECE tek bir YENİ işlemin boyutunu belirliyordu —
-    # kaç pozisyon zaten açık olduğuna hiç bakmıyordu. Gerçek veride
-    # yakalandı: 99 eşzamanlı açık pump_fade pozisyonu, toplam GERÇEK
-    # marjin $2.21M (kasanın ~%443'ü) — bu da ana council döngüsünün
-    # GuardrailStage'inin (MAX_CAPITAL_PCT, global %100 tavan) HER şeyi
-    # (kripto majors + hisse/emtia dahil) reddetmesine yol açtı, pump_fade
-    # ise bu global kapıdan hiç geçmediği için (kendi izole boyutlandırması)
-    # tek çalışan strateji olarak kaldı. Artık her yeni pump_fade işlemi
-    # açılmadan ÖNCE, o an açık TÜM pump_fade pozisyonlarının toplam
-    # marjini + bu yeni işlemin marjini bu tavanı aşıyorsa işlem hiç
-    # açılmıyor (bkz. DecisionPersistor.total_open_margin_for_experiment).
-    # %20 varsayılanı: pump_fade_capital_pct (%5) ile aynı anda ~4 tam
-    # boyutlu pozisyona izin verir, ana council döngüsüne (kalan %80)
-    # yeterli sermaye payı bırakır.
+    # kadarını kullanabileceğini limitleyecek bir şey olsun." Artık her
+    # yeni pump_fade işlemi açılmadan ÖNCE, o an açık TÜM pump_fade
+    # pozisyonlarının toplam marjini + bu yeni işlemin marjini bu tavanı
+    # aşıyorsa işlem hiç açılmıyor (bkz. DecisionPersistor.total_open_
+    # margin_for_experiment). Faz 332'nin risk-bazlı boyutlandırmasıyla
+    # (margin artık ~$750 mertebesinde, eskiden $25.000) bu tavan artık
+    # çok daha fazla eşzamanlı pozisyona izin veriyor — asıl işi artık
+    # yukarıdaki max_open_positions ve max_loss_circuit_breaker_usd
+    # yapıyor, bu sadece ek bir güvenlik katmanı.
     "pump_fade_max_total_capital_pct": "0.20",
     # Kullanıcı isteği: "5x pozisyona girecek." Gerçek uygulanan kaldıraç
     # bunun ÜSTÜNE ÇIKMAZ ama simulator/margin.py::max_safe_leverage

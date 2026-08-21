@@ -1,9 +1,34 @@
-# Mevcut Durum -- v1.70.0 (Faz 331: Agent Combination Reliability + Causal Inference FDR düzeltmesi)
+# Mevcut Durum -- v1.71.0 (Faz 332: pump_fade — risk-bazlı boyutlandırma + pozisyon-sayı tavanı + zarar devre kesici + rejim gate'i güçlendirildi)
 
 **Tarih:** 2026-08-21
 **Branch:** main
-**Son commit (HEAD):** Faz 330 (`50cc640`) — Faz 331 bu segment sonunda commitlenecek.
-**⚠️ Servis durumu:** uvicorn + celery `-Q celery` worker'lar Faz 329/330 için zaten yeniden başlatıldı (sağlıklı). Faz 331 (yeni router/API, `api/main.py` değişti) için BİR RESTART DAHA gerekiyor.
+**Son commit (HEAD):** Faz 331 (`7598792`) — Faz 332 bu segment sonunda commitlenecek.
+**⚠️ Servis durumu:** uvicorn + celery `-Q celery` worker YENİDEN BAŞLATILMALI — `services/pump_fade_strategy.py` (canlı karar hattı) değişti.
+
+## Faz 332 — pump_fade KÖK NEDEN düzeltmesi: risk-bazlı boyutlandırma + pozisyon-sayı tavanı + zarar devre kesici + rejim gate'i güçlendirildi (2026-08-21)
+
+**Gerçek olay (kritik, kullanıcı canlıda yakaladı):** kasa %17 ROI'den ~%2'ye düştü. Kök neden bulundu: **82 açık pump_fade pozisyonu, toplam GERÇEKLEŞMEMİŞ zarar -$453.648** (anlık piyasa fiyatlarıyla ölçüldü, $500K başlangıç sermayesinin neredeyse tamamı). Kazanma oranı aslında iyiydi (%75.6, n=156) — sorun isabet değil, boyutlandırmaydı: eski formül (`margin = starting_capital × pump_fade_capital_pct(0.05)`, stop mesafesinden BAĞIMSIZ sabit $25.000) `pump_fade_stop_distance_pct=%30` (sabit, geniş) ile birleşince tek pozisyonda ~$16.500 kayıp riski taşıyordu. Kullanıcı: "sağlam çözüm bulmamız lazım öyle basit çözümlerle geçiştiremeyiz."
+
+Harici bir AI incelemesi (GPT) danışıldı, sıralama üzerinde tartışıldı — kullanıcı onayıyla nihai sıra: (3) pozisyon-sayı tavanı, (1) risk-bazlı boyutlandırma, (2) zarar-bazlı devre kesici, + rejim gate'i sıkılaştırma. Korelasyon-kümesi (BTC-beta/L1/memecoin ayrımı) fikri BİLİNÇLİ OLARAK reddedildi — pump_fade zaten SADECE SHORT açıyor (tüm pozisyonları zaten %100 yön-korelasyonlu), zarar devre kesici bu riski yeterince basit şekilde yakalıyor.
+
+**1) Risk-bazlı boyutlandırma (`pump_fade_max_loss_per_trade_usd`, varsayılan $500).** Eski `pump_fade_capital_pct` TAMAMEN kaldırıldı. Margin artık "stop'a takılırsa TAM OLARAK bu kadar $ kaybedilsin" eşitliğinden GERİYE hesaplanıyor: `margin = max_loss_per_trade_usd / (stop_distance_pct × kaldıraç)` — AI council'in Kelly-bazlı sabit-$-risk felsefesiyle AYNI ilke, GPT'nin önerdiği formülle matematiksel olarak birebir aynı. Eski $25.000'lık margin'i ~$750'ye indiriyor (stop=%30, kaldıraç~2.2x'te).
+
+**2) Pozisyon-sayı tavanı (`pump_fade_max_open_positions`, varsayılan 20).** Kümülatif MARJİN tavanı (Faz 330) tek başına yetersizdi — risk-bazlı boyutlandırma sonrası tek pozisyon marjini küçüldüğü için tavana ÇOK DAHA FAZLA pozisyon sığar hale geldi (82-99 pozisyon aynı anda, çoğunlukla AYNI yönde). Yeni `DecisionPersistor.count_open_positions_for_experiment()`.
+
+**3) Zarar-bazlı devre kesici (`pump_fade_max_loss_circuit_breaker_usd`, varsayılan $10.000).** Mevcut kümülatif marjin tavanı sadece "ne kadar sermaye BAĞLANABİLİR"i sınırlıyordu, "ne kadar KAYBEDİLEBİLİR"i sınırlamıyordu. `run_cycle()` her tetiklenişte önce `DecisionPersistor.total_pnl_for_experiment()` (SADECE gerçekleşmiş/kapanmış pnl) kontrol ediyor — eşiği aşarsa `pump_fade_enabled` OTOMATİK `false` olur, `EventLogRepository`'ye KRİTİK olay yazılır. Matematik güzel örtüşüyor: 20 pozisyon × $500 = $10.000 — en kötü eşzamanlı senaryoda bile devre kesici hemen tetiklenir, toplam olası zarar artık ~$10-20K'da (eskiden sınırsız, ~$453K'ya kadar) tavanlanıyor.
+
+**4) Rejim gate'i güçlendirildi (`_compute_regime_size_multiplier`).** Gerçek veriyle ölçüldü: son 48 saatte gate'in kapsadığı 43 açılıştan 22'si (%51) hâlâ 1.0x (indirimsiz) çıkmıştı — BTC açıkça yükseliş trendindeyken bile. İki bağımsız kök neden bulundu ve düzeltildi: (a) BTC'nin bull_trend rejimi eskiden council_bull_bias (AI'nın kendi açık pozisyonlarının O ANKİ, gürültülü kâr/zarar anlık görüntüsü) True dönmeden hiç kontrol edilmiyordu — artık BTC bull_trend TAMAMEN BAĞIMSIZ, kendi başına yeterli bir sinyal (PARTIAL_FLOOR); council bias da doğrularsa en sıkı tabana (FLOOR) düşülüyor. (b) CANLI durumda yakalandı: BTC 5 günde ~%20 sıçramıştı ($64.532→$77.410) ama 200-EMA hâlâ "transition" diyordu (yapısal gecikme) VE açık AI SHORT sayısı (2) min. örneklem eşiğinin (5) altındaydı — LONG'ların %94.7'si (n=38) kârdayken bile çarpan 1.0 kalıyordu. Yeni `_REGIME_GATE_LONG_ONLY_STRONG_SIGNAL_MIN=0.90`: SHORT örneklemi yetersizken LONG tarafı TEK BAŞINA yeterince büyük VE ezici bir örneklemse (SHORT örneklemi YETERLİYSE bu dal bilerek devre dışı, gerçek gap'in kendisi daha güvenilir) bağımsız bir bull sinyali sayılıyor. Canlı doğrulama: düzeltme öncesi 1.0, sonrası 0.5 (PARTIAL_FLOOR).
+
+**Ayrıca bu turda:** `pump_fade_enabled=false` yapıldı (kullanıcı onayıyla, mevcut 82 pozisyona DOKUNULMADI — kullanıcı kararı: "kendi stop'larına bırakalım"), ResearchSummary.tsx'in kompakt özetleyicisi düzeltildi (primitif dizi/dict alanları artık içerik gösteriyor, sadece sayı değil — Self-Model'in "degraded" nedeni artık görünür).
+
+**Test:** `tests/test_pump_fade_strategy.py` — 40 test (11 yeni: pozisyon-sayı tavanı ×2, devre kesici ×2, repository metodları ×2, rejim gate ×3, mevcut testlerin yeni formüle göre düzeltilmesi). Toplam hedefli regresyon 74 test, hepsi temiz.
+
+**Ayrı, henüz araştırılmamış bulgular (todo'ya eklendi, unutulmasın):**
+- Sistem genelinde son 7 günde "stop_loss" ile kapanan 810 işlemden 216'sı (%27) gerçek stop seviyesini aşarak (en kötü %12) kapanmış — muhtemelen bayat/gecikmeli fiyat verisi, kök neden henüz bulunmadı.
+- AI council'in KENDİ (pump_fade dışı) SHORT kararları %21.7 isabetli (LONG %96.4) — pump_fade'den bağımsız, ayrı bir mimari sorun.
+- Kullanıcının istediği on-chain metrikler entegre edilmemiş, hatta todo listesinden silinmiş görünüyor — henüz araştırılmadı.
+- 8 yeni ajan/motor fikri (Volatility/Credit/Execution/Mempool grounded; Quantum/Adversarial/SupplyChain/Federated pratik değil ya da erken) — kullanıcı sıcak bakıyor ama BİLİNÇLİ OLARAK ertelendi: önce bugün pump_fade'e kurulan governance modelinin (eligibility gate + risk-bazlı sizing + circuit breaker) haftalarca canlıda kanıtlanması gerekiyor.
+- Uçtan uca gerçek testnet doğrulaması (Execution Layer) hâlâ yapılmadı — anahtarlar çalışıyor, tek sembolde gerçek emir denenmedi.
 
 ## Faz 331 — Agent Combination Reliability (yeni Grup B modülü) + Causal Inference'a FDR düzeltmesi (2026-08-21)
 

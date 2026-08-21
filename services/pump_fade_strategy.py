@@ -224,6 +224,20 @@ _REGIME_GATE_BTC_DAILY_BARS = 250
 _REGIME_GATE_STRONG_BIAS_GAP_MIN = 0.60
 _REGIME_GATE_PARTIAL_FLOOR_MULTIPLIER = 0.5
 
+# Faz 332 — kritik bulgu, gerçek CANLI durumda yakalandı: BTC 5 günde
+# ~%20 sıçramıştı (64.532 -> 77.410) ama 200-EMA bazlı long_term_trend_
+# regime hâlâ "transition" diyordu (uzun-vade ortalamanın hızlı harekete
+# doğal gecikmesi) VE aynı anda açık AI SHORT pozisyon sayısı (2) min.
+# örneklem eşiğinin (5) altındaydı — council_bull_bias hesaplanamadı.
+# Sonuç: LONG'ların %94.7'si (n=38, GÜÇLÜ bir örneklem) kârdayken bile
+# çarpan 1.0 kalıyordu. LONG tarafı TEK BAŞINA yeterince büyük VE
+# yeterince ezici bir örneklemse (SHORT tarafının örneklem yetersizliği
+# yüzünden "gap" hiç hesaplanamasa bile), bu da bağımsız bir bull
+# sinyali sayılır — 0.90 eşiği kasıtlı olarak _REGIME_GATE_LONG_WIN_
+# RATE_MIN'den (0.5) çok daha sıkı: SADECE gerçekten ezici bir LONG
+# baskınlığında tetiklenir.
+_REGIME_GATE_LONG_ONLY_STRONG_SIGNAL_MIN = 0.90
+
 
 def _compute_regime_size_multiplier(session, provider: OHLCVProvider) -> float:
     """Faz 318 — kullanıcı bulgusu (2026-08-20, canlı): pump_fade HER ZAMAN
@@ -288,18 +302,44 @@ def _compute_regime_size_multiplier(session, provider: OHLCVProvider) -> float:
             short_total += 1
             short_win += int(profitable)
 
-    if long_total < _REGIME_GATE_MIN_SYMBOLS_PER_SIDE or short_total < _REGIME_GATE_MIN_SYMBOLS_PER_SIDE:
-        return 1.0
+    # Faz 332 — kritik bulgu, gerçek veriyle ölçüldü: son 48 saatte rejim
+    # gate'inin kapsadığı 43 açılıştan 22'si (%51) hâlâ 1.0x (indirimsiz)
+    # çıkmıştı — piyasa BTC bazında açıkça yükseliş trendindeyken bile.
+    # Kök neden: BTC rejimi SADECE council_bull_bias (AI'nın kendi AÇIK
+    # pozisyonlarının O ANKİ, gürültülü kâr/zarar anlık görüntüsü — az
+    # sayıda pozisyon varken tek bir pozisyonun kapanması/dalgalanması
+    # eşiği geçip geçmemeyi değiştirebilir) True dönerse hiç kontrol
+    # ediliyordu. BTC'nin 200-EMA uzun-vade rejimi çok daha İSTİKRARLI,
+    # yapısal bir sinyal — artık council'den TAMAMEN BAĞIMSIZ olarak
+    # kendi başına yeterli (PARTIAL_FLOOR), council bias'ı da doğrularsa
+    # (iki bağımsız kanıt kesişimi, Faz 318'in orijinal tasarımı) en sıkı
+    # tabana (FLOOR) düşülüyor. "Sadece küçültür" ilkesi korunuyor —
+    # hiçbir kombinasyon çarpanı 1.0'ın üstüne çıkarmıyor.
+    council_bull_bias = False
+    win_rate_gap = 0.0
+    if long_total >= _REGIME_GATE_MIN_SYMBOLS_PER_SIDE and short_total >= _REGIME_GATE_MIN_SYMBOLS_PER_SIDE:
+        long_win_rate = long_win / long_total
+        short_win_rate = short_win / short_total
+        win_rate_gap = long_win_rate - short_win_rate
+        council_bull_bias = (
+            long_win_rate >= _REGIME_GATE_LONG_WIN_RATE_MIN
+            and win_rate_gap >= _REGIME_GATE_WIN_RATE_GAP_MIN
+        )
 
-    long_win_rate = long_win / long_total
-    short_win_rate = short_win / short_total
-    win_rate_gap = long_win_rate - short_win_rate
-    council_bull_bias = (
-        long_win_rate >= _REGIME_GATE_LONG_WIN_RATE_MIN
-        and win_rate_gap >= _REGIME_GATE_WIN_RATE_GAP_MIN
+    # Faz 332 — SHORT tarafında yeterli örneklem YOKSA (ör. şu an açık
+    # sadece 1-2 AI SHORT pozisyonu varsa, gap hiç hesaplanamıyorsa),
+    # LONG tarafı TEK BAŞINA yeterince büyük VE ezici bir örneklemse
+    # (bkz. sabitin üstündeki not) bu da bağımsız bir bull sinyali
+    # sayılır. SHORT örneklemi YETERLİYSE (gap zaten hesaplanabiliyorsa)
+    # bu dal bilerek devre dışı — o durumda gerçek gap'in kendisi
+    # (council_bull_bias) zaten daha güvenilir bir sinyal, LONG'un tek
+    # başına iyi görünmesi (SHORT da eşit derecede iyiyken bile) yanlış
+    # pozitif üretebilir.
+    long_only_strong_bull_signal = (
+        short_total < _REGIME_GATE_MIN_SYMBOLS_PER_SIDE
+        and long_total >= _REGIME_GATE_MIN_SYMBOLS_PER_SIDE
+        and (long_win / long_total) >= _REGIME_GATE_LONG_ONLY_STRONG_SIGNAL_MIN
     )
-    if not council_bull_bias:
-        return 1.0
 
     try:
         btc_daily = provider.get_ohlcv("BTCUSDT", "1d", limit=_REGIME_GATE_BTC_DAILY_BARS)
@@ -307,9 +347,13 @@ def _compute_regime_size_multiplier(session, provider: OHLCVProvider) -> float:
     except Exception:
         btc_regime = None
 
-    if btc_regime == "bull_trend":
+    if btc_regime == "bull_trend" and council_bull_bias:
         return _REGIME_GATE_FLOOR_MULTIPLIER
-    if win_rate_gap >= _REGIME_GATE_STRONG_BIAS_GAP_MIN:
+    if btc_regime == "bull_trend":
+        return _REGIME_GATE_PARTIAL_FLOOR_MULTIPLIER
+    if council_bull_bias and win_rate_gap >= _REGIME_GATE_STRONG_BIAS_GAP_MIN:
+        return _REGIME_GATE_PARTIAL_FLOOR_MULTIPLIER
+    if long_only_strong_bull_signal:
         return _REGIME_GATE_PARTIAL_FLOOR_MULTIPLIER
     return 1.0
 
@@ -325,7 +369,24 @@ class PumpFadeStrategy:
             if not enabled:
                 return {"skipped": "pump_fade_disabled"}
 
-            capital_pct = float(settings_repo.get("pump_fade_capital_pct"))
+            max_loss_circuit_breaker_usd = float(settings_repo.get("pump_fade_max_loss_circuit_breaker_usd"))
+            realized_pnl = DecisionPersistor(session).total_pnl_for_experiment(EXPERIMENT_BUCKET)
+            if realized_pnl <= -max_loss_circuit_breaker_usd:
+                settings_repo.set("pump_fade_enabled", "false", updated_by="pump_fade_circuit_breaker")
+                from database.repositories.event_log_repository import EventLogRepository
+                EventLogRepository(session).record(
+                    event_type="pump_fade_circuit_breaker_tripped",
+                    entity_type="strategy",
+                    payload={
+                        "realized_pnl": realized_pnl,
+                        "threshold_usd": max_loss_circuit_breaker_usd,
+                        "reason": "pump_fade toplam gerçekleşmiş zararı eşiği aştı, pump_fade_enabled otomatik false yapıldı",
+                    },
+                )
+                return {"skipped": "circuit_breaker_tripped", "realized_pnl": realized_pnl}
+
+            max_loss_per_trade_usd = float(settings_repo.get("pump_fade_max_loss_per_trade_usd"))
+            max_open_positions = int(settings_repo.get("pump_fade_max_open_positions"))
             max_total_capital_pct = float(settings_repo.get("pump_fade_max_total_capital_pct"))
             target_leverage = float(settings_repo.get("pump_fade_leverage"))
             min_gain_pct = float(settings_repo.get("pump_fade_min_gain_pct"))
@@ -356,9 +417,9 @@ class PumpFadeStrategy:
         opened = []
         for candidate in candidates:
             result = self._try_open(
-                candidate, capital_pct, target_leverage, stop_distance_pct, take_profit_pct,
+                candidate, max_loss_per_trade_usd, target_leverage, stop_distance_pct, take_profit_pct,
                 starting_capital, lookback_hours, density_size_multiplier, regime_size_multiplier,
-                max_total_capital_pct,
+                max_total_capital_pct, max_open_positions,
             )
             if result is not None:
                 opened.append(result)
@@ -373,7 +434,7 @@ class PumpFadeStrategy:
     def _try_open(
         self,
         candidate: dict,
-        capital_pct: float,
+        max_loss_per_trade_usd: float,
         target_leverage: float,
         stop_distance_pct: float,
         take_profit_pct: float,
@@ -382,6 +443,7 @@ class PumpFadeStrategy:
         density_size_multiplier: float = 1.0,
         regime_size_multiplier: float = 1.0,
         max_total_capital_pct: float = 1.0,
+        max_open_positions: int = 20,
     ) -> dict | None:
         symbol = candidate["symbol"]
         entry_price = candidate["current_price"]
@@ -391,23 +453,14 @@ class PumpFadeStrategy:
             if persistor.has_open_position_for_experiment(symbol, EXPERIMENT_BUCKET):
                 return None
 
-            # Faz 330 — kritik bulgu: bkz. app_settings_repository.py::
-            # DEFAULTS["pump_fade_max_total_capital_pct"] üstündeki not.
-            # Her açık pump_fade pozisyonunun toplam GERÇEK marjini + bu
-            # yeni işlemin marjini kasanın bu yüzdesini aşarsa işlem hiç
-            # açılmaz — "sinyal limitleri gevşetemez, sadece küçültebilir"
-            # ilkesiyle aynı desen, artık kümülatif seviyede de uygulanıyor.
-            # Faz 295: aynı anda çok sayıda sembol pompalanıyorsa (yoğunluk
-            # kendi geçmişinin üst %10'unda) margin bu çarpanla otomatik
-            # küçülüyor — bkz. _compute_density_size_multiplier.
-            # Faz 318: council'in KENDİ pozisyonları güçlü LONG'a yatkınken
-            # (kârlılık farkıyla) VE BTC bull_trend rejimindeyken margin AYRICA
-            # küçülüyor — bkz. _compute_regime_size_multiplier. İki çarpan da
-            # bağımsız, ikisi de sadece küçültür, çarpımsal olarak birleşir.
-            margin = starting_capital * capital_pct * density_size_multiplier * regime_size_multiplier
-
-            already_committed = persistor.total_open_margin_for_experiment(EXPERIMENT_BUCKET)
-            if already_committed + margin > starting_capital * max_total_capital_pct:
+            # Faz 332 — kritik bulgu: gerçek olayda 82-99 pozisyon aynı
+            # anda, çoğunlukla AYNI yönde (SHORT) ve yüksek korelasyonlu
+            # açık kalmıştı — kümülatif MARJİN tavanı (aşağıda) tek
+            # başına bunu engellemiyordu (risk-bazlı boyutlandırma
+            # sonrası tek pozisyon marjini çok küçüldüğü için tavan çok
+            # daha fazla pozisyona "izin verir" hale geldi). Ayrı bir
+            # SAYI tavanı çeşitlendirme başarısızlığını doğrudan sınırlıyor.
+            if persistor.count_open_positions_for_experiment(EXPERIMENT_BUCKET) >= max_open_positions:
                 return None
 
             # Faz 268-sonrası — kullanıcının onayladığı güvenlik kilidi:
@@ -420,6 +473,26 @@ class PumpFadeStrategy:
             leverage = target_leverage
             if safe_leverage is not None:
                 leverage = max(1.0, min(target_leverage, safe_leverage))
+
+            # Faz 332 — KÖK NEDEN düzeltmesi (bkz. app_settings_repository.py::
+            # DEFAULTS["pump_fade_max_loss_per_trade_usd"] üstündeki not):
+            # gerçek olay — 82 açık pozisyon, -$453.648 gerçekleşmemiş
+            # zarar, eski formül (kasanın sabit %5'i, stop mesafesinden
+            # BAĞIMSIZ) tek pozisyonda ~$16.500 kayıp riski taşıyordu.
+            # Artık margin, "stop'a takılırsa TAM OLARAK max_loss_per_
+            # trade_usd kadar kaybedilsin" eşitliğinden GERİYE hesaplanıyor
+            # — stop mesafesi/kaldıraç ne kadar büyükse margin o kadar
+            # KÜÇÜLÜYOR (AI council'in Kelly-bazlı sabit-$-risk felsefesiyle
+            # AYNI ilke). Faz 295/318 çarpanları (yoğunluk/rejim) hâlâ
+            # ÜSTÜNE binip SADECE küçültüyor, hiçbir şey büyütmüyor.
+            risk_denominator = stop_distance_pct * leverage
+            if risk_denominator <= 0:
+                return None
+            margin = (max_loss_per_trade_usd / risk_denominator) * density_size_multiplier * regime_size_multiplier
+
+            already_committed = persistor.total_open_margin_for_experiment(EXPERIMENT_BUCKET)
+            if already_committed + margin > starting_capital * max_total_capital_pct:
+                return None
 
             # Kullanıcı bulgusu — gerçek olay: PORTALUSDT'de $25.000 marjin
             # × 4,35x kaldıraç = $108.695 notional açıldı, ama RiskEngine'in

@@ -372,6 +372,42 @@ class DecisionPersistor:
         ).scalar()
         return float(total or 0.0) + float(total_no_leverage or 0.0)
 
+    def count_open_positions_for_experiment(self, experiment_bucket: str) -> int:
+        """Faz 332 — kritik bulgu: kümülatif MARJİN tavanı (Faz 330) tek
+        başına yeterli değildi — 82-99 pozisyonun aynı anda, çoğunlukla
+        AYNI yönde (SHORT) ve yüksek korelasyonlu (hepsi 'pump' etiketli
+        altcoin) açık olması, tek bir piyasa rejiminin (genel yükseliş)
+        TÜM pozisyonları aynı anda vurmasına yol açtı — bu bir
+        çeşitlendirme başarısızlığı, marjin miktarından bağımsız bir
+        risk boyutu. Ayrı bir tavan (pump_fade_max_open_positions) bu
+        sayıyı da sınırlıyor."""
+        count = self.session.execute(
+            text(
+                "SELECT count(*) FROM decisions "
+                "WHERE status = 'open' AND experiment_bucket = :experiment_bucket"
+            ),
+            {"experiment_bucket": experiment_bucket},
+        ).scalar()
+        return int(count or 0)
+
+    def total_pnl_for_experiment(self, experiment_bucket: str) -> float:
+        """Faz 332 — pump_fade'in zarar-bazlı devre kesicisi için: SADECE
+        gerçekleşmiş (kapanmış, excluded_from_stats hariç) kâr/zarar.
+        Gerçekleşmemiş (açık pozisyonların anlık mark-to-market) zarar
+        BİLEREK buraya dahil değil — canlı fiyat sorgusu gerektirir,
+        pahalı/yavaş olur ve run_cycle'ın her tetiklenişinde (dakikada
+        bir) çalıştırmak gerçekçi değil; gerçekleşmiş zarar zaten
+        kalıcı/geri dönüşsüz bir sinyal, devre kesici için yeterli."""
+        total = self.session.execute(
+            text(
+                "SELECT COALESCE(SUM(pnl), 0) FROM decisions "
+                "WHERE status = 'closed' AND excluded_from_stats = false "
+                "AND experiment_bucket = :experiment_bucket"
+            ),
+            {"experiment_bucket": experiment_bucket},
+        ).scalar()
+        return float(total or 0.0)
+
     def count_open_by_symbol_direction(self, symbol: str) -> dict[str, int]:
         """Faz 268-sonrası — bkz. contracts/contexts/risk.py::
         same_direction_open_counts. Bu SEMBOL için, yöne göre gruplanmış

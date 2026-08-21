@@ -620,24 +620,63 @@ export default function Settings() {
             ))}
           </div>
 
-          <p className="text-xs text-ink-soft mb-2">Sermaye payı (0-1 arası, ör. 0.05 = kasanın %5'i — TEK bir yeni işlemin boyutu)</p>
+          <p className="text-xs text-ink-soft mb-2">
+            Maks. kayıp / işlem ($, ör. 500 — margin bu değerden GERİYE hesaplanır: stop'a takılırsa TAM
+            OLARAK bu kadar $ kaybedilecek şekilde. Stop mesafesi/kaldıraç ne kadar genişse margin o kadar küçülür.)
+          </p>
           <div className="flex gap-2 mb-4">
             <Input
               decimal
-              value={draft.pump_fade_capital_pct ?? ""}
-              onChange={(v) => setDraft((d) => ({ ...d, pump_fade_capital_pct: v }))}
+              value={draft.pump_fade_max_loss_per_trade_usd ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, pump_fade_max_loss_per_trade_usd: v }))}
             />
             <Button
-              disabled={saving === "pump_fade_capital_pct"}
-              onClick={() => save("pump_fade_capital_pct", draft.pump_fade_capital_pct)}
+              disabled={saving === "pump_fade_max_loss_per_trade_usd"}
+              onClick={() => save("pump_fade_max_loss_per_trade_usd", draft.pump_fade_max_loss_per_trade_usd)}
             >
-              {saved === "pump_fade_capital_pct" ? "Kaydedildi ✓" : "Kaydet"}
+              {saved === "pump_fade_max_loss_per_trade_usd" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+
+          <p className="text-xs text-ink-soft mb-2">
+            Maks. eşzamanlı açık pozisyon (ör. 20 — çeşitlendirme tavanı, marjin tavanından bağımsız)
+          </p>
+          <div className="flex gap-2 mb-4">
+            <Input
+              decimal
+              value={draft.pump_fade_max_open_positions ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, pump_fade_max_open_positions: v }))}
+            />
+            <Button
+              disabled={saving === "pump_fade_max_open_positions"}
+              onClick={() => save("pump_fade_max_open_positions", draft.pump_fade_max_open_positions)}
+            >
+              {saved === "pump_fade_max_open_positions" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+
+          <p className="text-xs text-ink-soft mb-2">
+            Zarar-bazlı devre kesici ($, ör. 10000 — pump_fade'in TOPLAM gerçekleşmiş zararı bunu aşarsa
+            pump_fade_enabled otomatik kapatılır)
+          </p>
+          <div className="flex gap-2 mb-4">
+            <Input
+              decimal
+              value={draft.pump_fade_max_loss_circuit_breaker_usd ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, pump_fade_max_loss_circuit_breaker_usd: v }))}
+            />
+            <Button
+              disabled={saving === "pump_fade_max_loss_circuit_breaker_usd"}
+              onClick={() => save("pump_fade_max_loss_circuit_breaker_usd", draft.pump_fade_max_loss_circuit_breaker_usd)}
+            >
+              {saved === "pump_fade_max_loss_circuit_breaker_usd" ? "Kaydedildi ✓" : "Kaydet"}
             </Button>
           </div>
 
           <p className="text-xs text-ink-soft mb-2">
             Toplam sermaye tavanı (0-1 arası, ör. 0.20 = kasanın %20'si — TÜM açık pump_fade pozisyonlarının
-            toplam gerçek marjini bunu aşarsa yeni işlem açılmaz)
+            toplam gerçek marjini bunu aşarsa yeni işlem açılmaz; risk-bazlı boyutlandırmadan sonra ek bir
+            güvenlik katmanı, asıl işi artık yukarıdaki iki ayar yapıyor)
           </p>
           <div className="flex gap-2 mb-4">
             <Input

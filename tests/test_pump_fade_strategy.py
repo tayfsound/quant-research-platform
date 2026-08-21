@@ -86,7 +86,15 @@ def _cleanup_density_events() -> None:
 def _set_pump_fade_settings(**overrides) -> None:
     defaults = {
         "pump_fade_enabled": "false",
-        "pump_fade_capital_pct": "0.05",
+        # Faz 332 — eski pump_fade_capital_pct (kasanın sabit %5'i, stop
+        # mesafesinden bağımsız) risk-bazlı boyutlandırmayla değiştirildi:
+        # margin artık max_loss_per_trade_usd/(stop_distance_pct×leverage)
+        # ile hesaplanıyor. stop_distance_pct=0.15, leverage 4.348'e
+        # (max_safe_leverage) kırpıldığında margin≈$76.7 — eski $50
+        # varsayılanıyla aynı büyüklük mertebesinde, testlerin çoğu
+        # tam bir dolar tutarına değil davranışa bakıyor.
+        "pump_fade_max_loss_per_trade_usd": "50",
+        "pump_fade_max_open_positions": "1000",
         "pump_fade_leverage": "5",
         "pump_fade_min_gain_pct": "1.0",
         "pump_fade_lookback_hours": "48",
@@ -226,14 +234,25 @@ def test_run_cycle_clamps_leverage_when_notional_would_exceed_max_position_size(
     """Kullanıcı bulgusu — gerçek olay: PORTALUSDT'de $25.000 marjin ×
     4,35x kaldıraç = $108.695 notional açıldı, ama RiskEngine'in gerçek
     max_position_size tavanı $100.000'di; bu strateji izole olduğu için
-    hiç kontrol edilmemişti. margin=$50, hedef kaldıraç güvenlik kilidiyle
-    ~4.35x'e kırpılır (varsayılan %15 stop mesafesi) -> kırpılmamış
-    notional ~$217.4. max_position_size=$100 verilince kaldıraç 100/50=2.0'a
-    kırpılmalı."""
+    hiç kontrol edilmemişti. Faz 332: margin artık risk-bazlı — max_loss_
+    per_trade_usd=$50, stop=%15, güvenlik-kilidi kaldıracı ~4.348x ->
+    margin=50/(0.15*4.348)≈$76.67, kırpılmamış notional=margin*4.348≈$333.3.
+    max_position_size=margin*1.5≈$115 verilince (margin'in üstünde ama
+    kırpılmamış notional'ın altında) kaldıraç 115/76.67=1.5'e kırpılmalı —
+    ne 1x tabanına düşecek kadar düşük (bir sonraki test o senaryoyu
+    kapsıyor) ne de hedefe (4.348x) ulaşacak kadar yüksek bir tavan."""
+    from simulator.margin import max_safe_leverage
+
     symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
     try:
         _set_pump_fade_settings(pump_fade_enabled="true")
-        _seed_max_position_size(100.0)
+        stop_distance_pct = 0.15
+        target_leverage = 5.0
+        safe_leverage = max_safe_leverage(stop_distance_pct)
+        clamped_leverage = min(target_leverage, safe_leverage)
+        margin = 50.0 / (stop_distance_pct * clamped_leverage)
+        max_position_size = margin * 1.5  # margin ile margin*leverage arasında -> gercek kirpma
+        _seed_max_position_size(max_position_size)
         monkeypatch.setattr(
             "services.pump_fade_strategy.fetch_usdt_perpetual_symbols", lambda: [symbol]
         )
@@ -243,13 +262,13 @@ def test_run_cycle_clamps_leverage_when_notional_would_exceed_max_position_size(
 
         assert len(result["opened"]) == 1
         opened = result["opened"][0]
-        assert opened["leverage"] == pytest.approx(2.0)
+        assert opened["leverage"] == pytest.approx(1.5, rel=1e-3)
 
         with SessionFactory.get_session() as session:
             rows = DecisionPersistor(session).list_open_positions(limit=50)
         row = next(r for r in rows if r["symbol"] == symbol)
         notional = row["quantity"] * row["entry_price"]
-        assert notional == pytest.approx(100.0, rel=1e-3)
+        assert notional == pytest.approx(max_position_size, rel=1e-3)
     finally:
         _cleanup_symbol(symbol)
         _cleanup_max_position_size()
@@ -260,10 +279,17 @@ def test_run_cycle_does_not_open_position_when_margin_alone_exceeds_max_position
     """Margin (1x kaldıraçta bile) tavanı aşıyorsa pozisyon HİÇ açılmamalı
     — "sinyal limitleri gevşetemez, sadece küçültebilir/reddedebilir"
     ilkesi, kırpmanın bir noktadan sonra anlamsız kaldığı durum."""
+    from simulator.margin import max_safe_leverage
+
     symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
     try:
         _set_pump_fade_settings(pump_fade_enabled="true")
-        _seed_max_position_size(25.0)  # margin=$50 > $25 tavanı, 1x'te bile sığmaz
+        stop_distance_pct = 0.15
+        target_leverage = 5.0
+        safe_leverage = max_safe_leverage(stop_distance_pct)
+        clamped_leverage = min(target_leverage, safe_leverage)
+        margin = 50.0 / (stop_distance_pct * clamped_leverage)
+        _seed_max_position_size(margin * 0.5)  # tavan margin'in altında, 1x'te bile sığmaz
         monkeypatch.setattr(
             "services.pump_fade_strategy.fetch_usdt_perpetual_symbols", lambda: [symbol]
         )
@@ -489,6 +515,175 @@ def test_total_open_margin_for_experiment_divides_notional_by_leverage():
         _cleanup_symbol(symbol_b)
 
 
+def test_count_open_positions_for_experiment_counts_only_that_bucket():
+    from contracts.decision_event import DecisionEvent
+
+    symbol_a = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    symbol_b = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    try:
+        with SessionFactory.get_session() as session:
+            persistor = DecisionPersistor(session)
+            baseline = persistor.count_open_positions_for_experiment(EXPERIMENT_BUCKET)
+            persistor.persist(DecisionEvent(
+                id=uuid4(), symbol=symbol_a, proposed_direction="SHORT",
+                final_action="SHORT", final_size=1.0, status="open",
+                entry_price=100.0, quantity=1.0, experiment_bucket=EXPERIMENT_BUCKET,
+            ))
+            persistor.persist(DecisionEvent(
+                id=uuid4(), symbol=symbol_b, proposed_direction="SHORT",
+                final_action="SHORT", final_size=1.0, status="open",
+                entry_price=100.0, quantity=1.0, experiment_bucket="some_other_experiment",
+            ))
+            count = persistor.count_open_positions_for_experiment(EXPERIMENT_BUCKET)
+        assert count == baseline + 1
+    finally:
+        _cleanup_symbol(symbol_a)
+        _cleanup_symbol(symbol_b)
+
+
+def test_total_pnl_for_experiment_sums_only_closed_realized_pnl():
+    from contracts.decision_event import DecisionEvent
+
+    symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    try:
+        with SessionFactory.get_session() as session:
+            persistor = DecisionPersistor(session)
+            baseline = persistor.total_pnl_for_experiment(EXPERIMENT_BUCKET)
+            event = DecisionEvent(
+                id=uuid4(), symbol=symbol, proposed_direction="SHORT", final_action="SHORT",
+                final_size=1.0, status="open", entry_price=100.0, quantity=1.0,
+                experiment_bucket=EXPERIMENT_BUCKET,
+            )
+            persistor.persist(event)
+            # Kapanmamış pozisyon toplamı etkilememeli (SADECE gerçekleşmiş pnl).
+            assert persistor.total_pnl_for_experiment(EXPERIMENT_BUCKET) == pytest.approx(baseline)
+            persistor.close_position(decision_id=str(event.id), exit_price=80.0, pnl=-123.45, closed_at=datetime.now(UTC))
+            total = persistor.total_pnl_for_experiment(EXPERIMENT_BUCKET)
+        assert total == pytest.approx(baseline - 123.45)
+    finally:
+        _cleanup_symbol(symbol)
+
+
+def test_try_open_refuses_new_position_when_open_count_at_cap(monkeypatch):
+    """Faz 332 — kritik bulgu: gerçek olayda 82-99 pozisyon aynı anda,
+    çoğunlukla AYNI yönde (SHORT), yüksek korelasyonlu açık kalmıştı —
+    kümülatif MARJİN tavanı tek başına bunu önlemedi (risk-bazlı
+    boyutlandırma sonrası tek pozisyon marjini küçüldüğü için tavana çok
+    daha fazla pozisyon sığıyor). Ayrı bir SAYI tavanı bunu doğrudan
+    sınırlıyor."""
+    from contracts.decision_event import DecisionEvent
+
+    existing_symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    new_symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    try:
+        with SessionFactory.get_session() as session:
+            DecisionPersistor(session).persist(DecisionEvent(
+                id=uuid4(), symbol=existing_symbol, proposed_direction="SHORT",
+                final_action="SHORT", final_size=1.0, status="open",
+                entry_price=100.0, quantity=0.01, leverage=1.0,
+                experiment_bucket=EXPERIMENT_BUCKET,
+            ))
+
+        _set_pump_fade_settings(pump_fade_enabled="true", pump_fade_max_open_positions="1")
+        monkeypatch.setattr(
+            "services.pump_fade_strategy.fetch_usdt_perpetual_symbols", lambda: [new_symbol]
+        )
+        provider = _FakeProvider({new_symbol: _pump_then_settled_bars(10.0, 22.0)})
+
+        result = PumpFadeStrategy(data_provider=provider).run_cycle()
+
+        assert result["candidates_found"] == 1
+        assert len(result["opened"]) == 0
+    finally:
+        _cleanup_symbol(existing_symbol)
+        _cleanup_symbol(new_symbol)
+
+
+def test_try_open_opens_when_below_open_count_cap(monkeypatch):
+    symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    try:
+        _set_pump_fade_settings(pump_fade_enabled="true", pump_fade_max_open_positions="1000000")
+        monkeypatch.setattr(
+            "services.pump_fade_strategy.fetch_usdt_perpetual_symbols", lambda: [symbol]
+        )
+        provider = _FakeProvider({symbol: _pump_then_settled_bars(10.0, 22.0)})
+
+        result = PumpFadeStrategy(data_provider=provider).run_cycle()
+
+        assert len(result["opened"]) == 1
+    finally:
+        _cleanup_symbol(symbol)
+
+
+def test_run_cycle_trips_circuit_breaker_and_disables_pump_fade(monkeypatch):
+    """Faz 332 — kritik bulgu: kümülatif MARJİN tavanı sadece "ne kadar
+    sermaye BAĞLANABİLİR"i sınırlıyordu, "ne kadar KAYBEDİLEBİLİR"i
+    sınırlamıyordu (gerçek olay: 82 pozisyon sermaye tavanına "sığıyor"
+    olsa bile hepsi birden zarara dönebiliyordu). Toplam gerçekleşmiş
+    zarar eşiği aşarsa pump_fade_enabled OTOMATİK false olmalı, yeni
+    işlem hiç denenmemeli."""
+    from contracts.decision_event import DecisionEvent
+
+    symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    loss_symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    try:
+        with SessionFactory.get_session() as session:
+            persistor = DecisionPersistor(session)
+            event = DecisionEvent(
+                id=uuid4(), symbol=loss_symbol, proposed_direction="SHORT", final_action="SHORT",
+                final_size=1.0, status="open", entry_price=100.0, quantity=1.0,
+                experiment_bucket=EXPERIMENT_BUCKET,
+            )
+            persistor.persist(event)
+            persistor.close_position(decision_id=str(event.id), exit_price=200.0, pnl=-200.0, closed_at=datetime.now(UTC))
+            baseline_after_loss = persistor.total_pnl_for_experiment(EXPERIMENT_BUCKET)
+
+        _set_pump_fade_settings(
+            pump_fade_enabled="true",
+            pump_fade_max_loss_circuit_breaker_usd="1",
+        )
+        monkeypatch.setattr(
+            "services.pump_fade_strategy.fetch_usdt_perpetual_symbols", lambda: [symbol]
+        )
+        provider = _FakeProvider({symbol: _pump_then_settled_bars(10.0, 22.0)})
+
+        assert baseline_after_loss <= -1  # eşiği (1$) gercekten asiyor mu, on-kosul
+
+        result = PumpFadeStrategy(data_provider=provider).run_cycle()
+
+        assert result["skipped"] == "circuit_breaker_tripped"
+        with SessionFactory.get_session() as session:
+            enabled = AppSettingsRepository(session).get("pump_fade_enabled")
+        assert enabled == "false"
+        with SessionFactory.get_session() as session:
+            rows = DecisionPersistor(session).list_open_positions(limit=50)
+        assert not any(r["symbol"] == symbol for r in rows)
+    finally:
+        _cleanup_symbol(symbol)
+        _cleanup_symbol(loss_symbol)
+        _set_pump_fade_settings(pump_fade_enabled="false")
+
+
+def test_run_cycle_does_not_trip_circuit_breaker_when_loss_below_threshold(monkeypatch):
+    symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    try:
+        _set_pump_fade_settings(
+            pump_fade_enabled="true",
+            pump_fade_max_loss_circuit_breaker_usd="1000000",
+        )
+        monkeypatch.setattr(
+            "services.pump_fade_strategy.fetch_usdt_perpetual_symbols", lambda: [symbol]
+        )
+        provider = _FakeProvider({symbol: _pump_then_settled_bars(10.0, 22.0)})
+
+        result = PumpFadeStrategy(data_provider=provider).run_cycle()
+
+        assert "skipped" not in result
+        assert len(result["opened"]) == 1
+    finally:
+        _cleanup_symbol(symbol)
+
+
 def test_has_open_position_for_experiment_reflects_real_open_positions():
     from contracts.decision_event import DecisionEvent
 
@@ -599,13 +794,19 @@ def test_try_open_applies_density_multiplier_to_margin(monkeypatch):
             "pullback_from_peak_pct": 0.0, "momentum_pct": 0.0,
         }
 
-        full = strategy._try_open(candidate, 0.05, 5.0, 0.15, 0.25, 1000.0, 48, density_size_multiplier=1.0)
+        full = strategy._try_open(
+            candidate, 50.0, 5.0, 0.15, 0.25, 1000.0, 48,
+            density_size_multiplier=1.0, max_open_positions=100000,
+        )
         with SessionFactory.get_session() as session:
             row_full = DecisionPersistor(session).list_open_positions(limit=50)
         notional_full = next(r for r in row_full if r["symbol"] == symbol)["quantity"] * full["entry_price"]
         _cleanup_symbol(symbol)
 
-        half = strategy._try_open(candidate, 0.05, 5.0, 0.15, 0.25, 1000.0, 48, density_size_multiplier=0.5)
+        half = strategy._try_open(
+            candidate, 50.0, 5.0, 0.15, 0.25, 1000.0, 48,
+            density_size_multiplier=0.5, max_open_positions=100000,
+        )
         with SessionFactory.get_session() as session:
             row_half = DecisionPersistor(session).list_open_positions(limit=50)
         notional_half = next(r for r in row_half if r["symbol"] == symbol)["quantity"] * half["entry_price"]
@@ -711,15 +912,21 @@ def _flat_daily_bars(n: int = 250) -> list[OHLCV]:
 
 
 def test_regime_multiplier_is_1_when_symbol_sample_too_small():
+    """Faz 332 — BTC bars kasıtlı olarak FLAT (bull_trend DEĞİL): bu test
+    sadece 'council örneklemi yetersiz' davranışını izole ediyor. BTC
+    gerçekten bull_trend'deyken artık council örneklemi yetersiz olsa
+    bile PARTIAL_FLOOR tetiklenir (BTC rejimi artık council'den bağımsız,
+    kendi başına yeterli bir sinyal) — bu, ayrı bir test (aşağıda)."""
     from services.pump_fade_strategy import _compute_regime_size_multiplier
 
     rows, bars = _council_rows(long_specs=[(100.0, 110.0)] * 2, short_specs=[(100.0, 110.0)] * 1)
-    bars["BTCUSDT"] = _bull_daily_bars()
+    bars["BTCUSDT"] = _flat_daily_bars()
     multiplier = _compute_regime_size_multiplier(_FakeSession(rows), _FakeProvider(bars))
     assert multiplier == 1.0
 
 
 def test_regime_multiplier_is_1_when_no_council_win_rate_gap():
+    """Faz 332 — BTC bars kasıtlı FLAT, bkz. yukarıdaki test notu."""
     from services.pump_fade_strategy import _compute_regime_size_multiplier
 
     # LONG ve SHORT'lar EŞİT ölçüde kârda -> kârlılık farkı yok.
@@ -727,9 +934,26 @@ def test_regime_multiplier_is_1_when_no_council_win_rate_gap():
         long_specs=[(100.0, 110.0)] * 5,
         short_specs=[(100.0, 90.0)] * 5,
     )
-    bars["BTCUSDT"] = _bull_daily_bars()
+    bars["BTCUSDT"] = _flat_daily_bars()
     multiplier = _compute_regime_size_multiplier(_FakeSession(rows), _FakeProvider(bars))
     assert multiplier == 1.0
+
+
+def test_regime_multiplier_applies_partial_floor_from_btc_alone_even_with_insufficient_council_sample():
+    """Faz 332 — kritik bulgu, gerçek veriyle ölçüldü: son 48 saatte
+    rejim gate'inin kapsadığı açılışların %51'i hâlâ indirimsiz (1.0x)
+    çıkmıştı çünkü BTC bull_trend'de olsa bile council'in KENDİ o anki
+    (gürültülü, az örneklemli) kâr/zarar sinyali eşiği geçmezse hiç
+    kontrol edilmiyordu. Artık BTC'nin 200-EMA uzun-vade rejimi TAMAMEN
+    BAĞIMSIZ, kendi başına yeterli bir sinyal — council örneklemi
+    yetersiz (< 5 sembol/taraf) olsa bile BTC bull_trend'deyse PARTIAL_
+    FLOOR uygulanır."""
+    from services.pump_fade_strategy import _REGIME_GATE_PARTIAL_FLOOR_MULTIPLIER, _compute_regime_size_multiplier
+
+    rows, bars = _council_rows(long_specs=[(100.0, 110.0)] * 2, short_specs=[(100.0, 110.0)] * 1)
+    bars["BTCUSDT"] = _bull_daily_bars()
+    multiplier = _compute_regime_size_multiplier(_FakeSession(rows), _FakeProvider(bars))
+    assert multiplier == _REGIME_GATE_PARTIAL_FLOOR_MULTIPLIER
 
 
 def test_regime_multiplier_is_1_when_council_bullish_but_btc_not_bull_trend():
@@ -769,6 +993,39 @@ def test_regime_multiplier_applies_partial_floor_when_btc_transition_but_gap_ext
     bars["BTCUSDT"] = _flat_daily_bars()  # bull_trend DEĞİL (transition/flat)
     multiplier = _compute_regime_size_multiplier(_FakeSession(rows), _FakeProvider(bars))
     assert multiplier == _REGIME_GATE_PARTIAL_FLOOR_MULTIPLIER
+
+
+def test_regime_multiplier_applies_partial_floor_from_long_only_strong_signal():
+    """Faz 332 — kritik bulgu, CANLI durumda yakalandı: BTC hızlı bir
+    sıçrama yapmış (%20/5 gün) ama 200-EMA hâlâ 'transition' diyor VE
+    açık AI SHORT sayısı (2) min. örneklem eşiğinin (5) altında —
+    council_bull_bias hiç hesaplanamıyor. LONG tarafı TEK BAŞINA
+    yeterince büyük (n=38) ve ezici (%94.7) bir örneklemse bu da
+    bağımsız bir sinyal sayılmalı."""
+    from services.pump_fade_strategy import _REGIME_GATE_PARTIAL_FLOOR_MULTIPLIER, _compute_regime_size_multiplier
+
+    # 38 LONG'un 36'sı kârda (%94.7), sadece 2 SHORT (min. 5'in altında).
+    rows, bars = _council_rows(
+        long_specs=[(100.0, 110.0)] * 36 + [(100.0, 90.0)] * 2,
+        short_specs=[(100.0, 90.0)] * 2,
+    )
+    bars["BTCUSDT"] = _flat_daily_bars()  # bull_trend DEĞİL (transition)
+    multiplier = _compute_regime_size_multiplier(_FakeSession(rows), _FakeProvider(bars))
+    assert multiplier == _REGIME_GATE_PARTIAL_FLOOR_MULTIPLIER
+
+
+def test_regime_multiplier_stays_1_when_long_only_signal_below_strong_threshold():
+    """Yeterince büyük örneklem ama sadece %80 kârda (ezici eşiğin,
+    %90'ın, altında) -> tetiklenmemeli."""
+    from services.pump_fade_strategy import _compute_regime_size_multiplier
+
+    rows, bars = _council_rows(
+        long_specs=[(100.0, 110.0)] * 8 + [(100.0, 90.0)] * 2,  # %80 kârda
+        short_specs=[(100.0, 90.0)] * 2,
+    )
+    bars["BTCUSDT"] = _flat_daily_bars()
+    multiplier = _compute_regime_size_multiplier(_FakeSession(rows), _FakeProvider(bars))
+    assert multiplier == 1.0
 
 
 def test_regime_multiplier_shrinks_to_floor_when_both_signals_align():

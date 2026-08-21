@@ -183,13 +183,24 @@ def _validate(key: str, value: str) -> None:
     elif key == "pump_fade_enabled":
         if value not in ("true", "false"):
             raise HTTPException(400, "pump_fade_enabled must be 'true' or 'false'")
-    elif key == "pump_fade_capital_pct":
+    elif key == "pump_fade_max_loss_per_trade_usd":
         try:
-            v = float(value)
-            if not (0 < v <= 1):
+            if float(value) <= 0:
                 raise ValueError
         except ValueError:
-            raise HTTPException(400, "pump_fade_capital_pct must be a number in (0, 1]")
+            raise HTTPException(400, "pump_fade_max_loss_per_trade_usd must be a positive number")
+    elif key == "pump_fade_max_open_positions":
+        try:
+            if int(value) < 1:
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "pump_fade_max_open_positions must be a positive integer")
+    elif key == "pump_fade_max_loss_circuit_breaker_usd":
+        try:
+            if float(value) <= 0:
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "pump_fade_max_loss_circuit_breaker_usd must be a positive number")
     elif key == "pump_fade_max_total_capital_pct":
         try:
             v = float(value)

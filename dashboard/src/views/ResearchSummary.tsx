@@ -36,7 +36,19 @@ function summarizeResult(result: unknown): string[] {
     } else if (typeof value === "string" || typeof value === "boolean") {
       lines.push(`${key}: ${String(value)}`);
     } else if (Array.isArray(value)) {
-      lines.push(`${key}: ${value.length} öğe`);
+      // Kullanıcı bulgusu (GPT raporu üzerinden): self_model'in
+      // reliability_flags gibi PRİMİTİF (string/number) dizileri sadece
+      // "1 öğe" olarak gösteriliyordu — "degraded" durumunun ASIL nedeni
+      // (ör. "9_features_drifted") tamamen gizleniyordu. Primitif
+      // dizilerde artık içerik gösteriliyor (uzunsa kırpılıyor), sadece
+      // karmaşık/dict elemanlı dizilerde eski "N öğe" sayımına dönülüyor.
+      const isPrimitiveArray = value.every((v) => typeof v === "string" || typeof v === "number");
+      if (isPrimitiveArray && value.length > 0) {
+        const joined = value.slice(0, 5).join(", ");
+        lines.push(`${key}: ${joined}${value.length > 5 ? ` (+${value.length - 5} daha)` : ""}`);
+      } else {
+        lines.push(`${key}: ${value.length} öğe`);
+      }
     } else if (isPlainObject(value)) {
       const subEntries = Object.entries(value);
       const bucketLines = subEntries
@@ -54,7 +66,20 @@ function summarizeResult(result: unknown): string[] {
       if (bucketLines.length > 0) {
         lines.push(`${key}: ${bucketLines.join(", ")}`);
       } else {
-        lines.push(`${key}: ${subEntries.length} alt-öğe`);
+        // Kullanıcı bulgusu (GPT raporu): self_model'in "inputs" alanı
+        // (ece/recent_dsr/kill_switch_active/...) hiçbir sample_size/
+        // win_rate alt-alanı taşımadığı için sessizce "5 alt-öğe"ye
+        // düşüyordu — gerçek ECE/DSR değerleri hiç görünmüyordu.
+        // Primitif alt-değerler artık key=value olarak gösteriliyor.
+        const primitiveLines = subEntries
+          .filter(([, v]) => v === null || typeof v === "string" || typeof v === "number" || typeof v === "boolean")
+          .slice(0, 5)
+          .map(([subKey, v]) => `${subKey}=${v === null ? "—" : typeof v === "number" && !Number.isInteger(v) ? v.toFixed(4) : String(v)}`);
+        if (primitiveLines.length > 0) {
+          lines.push(`${key}: ${primitiveLines.join(", ")}`);
+        } else {
+          lines.push(`${key}: ${subEntries.length} alt-öğe`);
+        }
       }
     }
   }
