@@ -25,6 +25,18 @@ MAINNET_BASE_URL = "https://fapi.binance.com"
 _RECV_WINDOW_MS = 5000
 _ORDER_TIMEOUT_SECONDS = 10.0
 
+# Faz 349 — kritik, GERÇEK testnet doğrulamasıyla (canlı uçtan uca
+# testte, mock'lu testlerin ASLA yakalayamayacağı bir gerçek Binance
+# API çağrısıyla) bulundu: Binance 2025-12-09'da koşullu emirleri
+# (STOP_MARKET/TAKE_PROFIT_MARKET dahil) eski POST /fapi/v1/order'dan
+# YENİ bir Algo Order servisine (POST/GET/DELETE /fapi/v1/algoOrder)
+# taşıdı — kırıcı bir API değişikliği (freqtrade/nautilus_trader gibi
+# başka bot projelerinde de aynı -4120 "STOP_ORDER_SWITCH_ALGO" hatasıyla
+# doğrulandı). Bu kod Faz 315'te (bu değişiklikten ÖNCE) yazılmıştı —
+# mock'lu testler eski API sözleşmesini varsaydığı için hiç yakalamadı.
+_CONDITIONAL_ORDER_TYPES = {"STOP_MARKET", "TAKE_PROFIT_MARKET"}
+_ORDER_NOT_FOUND_CODES = {-2013, -2011}
+
 
 def _sign(params: dict[str, Any], secret: str) -> str:
     """Binance'in dokümante ettiği HMAC-SHA256 imzalama — kanonik query
@@ -103,14 +115,31 @@ class BinanceFuturesExecutionAdapter:
             side=OrderSide(data["side"]),
         )
 
-    def place_order(self, req: PlaceOrderRequest) -> OrderStatus:
-        """MARKET/STOP_MARKET/TAKE_PROFIT_MARKET — üçü de bu tek uç
-        noktadan (POST /fapi/v1/order) gönderiliyor, tip parametresi
-        borsanın hangi davranışı uygulayacağını belirliyor. Ağ hatası/
-        zaman aşımı burada YUTULMUYOR — çağıran (ExecutionService)
-        belirsiz bir gönderimi asla "başarılı" saymamalı, get_order_status
-        ile GERÇEKTEN sorgulamalı (fail-closed, hiçbir tahmini dolum
-        asla uydurulmaz)."""
+    @staticmethod
+    def _parse_algo_order_status(data: dict[str, Any]) -> OrderStatus:
+        """Faz 349 — Algo Order yanıtı normal emirden FARKLI alanlar
+        kullanıyor (algoId/algoStatus/clientAlgoId, ve GERÇEK dolum
+        actualQty/actualPrice'ta — algoStatus'un kendisi "NEW"/
+        "TRIGGERED" gibi ara durumlar taşıyabiliyor). Geri kalan
+        sistemin (position_closer.py'nin "FILLED" mi diye baktığı yer
+        dahil) hiç değişmeden çalışmaya devam etmesi için, GERÇEKTEN
+        dolmuş (actualQty>0) bir algo emri burada "FILLED"a çevriliyor
+        — adaptör, borsa API'sindeki bu farkı DIŞARI SIZDIRMIYOR."""
+        actual_qty_raw = data.get("actualQty")
+        actual_qty = float(actual_qty_raw) if actual_qty_raw not in (None, "", "0") else 0.0
+        actual_price_raw = data.get("actualPrice")
+        actual_price = float(actual_price_raw) if actual_price_raw not in (None, "", "0") else None
+        status = "FILLED" if actual_qty > 0 else str(data.get("algoStatus", "NEW"))
+        return OrderStatus(
+            exchange_order_id=str(data["algoId"]),
+            client_order_id=data.get("clientAlgoId", ""),
+            status=status,
+            executed_qty=actual_qty,
+            avg_price=actual_price,
+            side=OrderSide(data["side"]),
+        )
+
+    def _place_regular_order(self, req: PlaceOrderRequest) -> OrderStatus:
         params: dict[str, Any] = {
             "symbol": req.symbol,
             "side": req.side.value,
@@ -129,34 +158,90 @@ class BinanceFuturesExecutionAdapter:
         resp.raise_for_status()
         return self._parse_order_status(resp.json())
 
+    def _place_algo_order(self, req: PlaceOrderRequest) -> OrderStatus:
+        """Faz 349 — STOP_MARKET/TAKE_PROFIT_MARKET artık BURADAN
+        gönderiliyor (bkz. dosya üstündeki not). stopPrice yerine
+        triggerPrice, newClientOrderId yerine clientAlgoId — Binance'in
+        Algo Order API'sinin KENDİ, farklı parametre isimleri."""
+        params: dict[str, Any] = {
+            "algoType": "CONDITIONAL",
+            "symbol": req.symbol,
+            "side": req.side.value,
+            "type": req.order_type.value,
+            "quantity": req.quantity,
+            "clientAlgoId": req.client_order_id,
+        }
+        if req.stop_price is not None:
+            params["triggerPrice"] = req.stop_price
+        if req.reduce_only:
+            params["reduceOnly"] = "true"
+
+        resp = self._client.post("/fapi/v1/algoOrder", params=self._signed_params(params))
+        if resp.status_code >= 400:
+            self._handle_error_response(resp)
+        resp.raise_for_status()
+        return self._parse_algo_order_status(resp.json())
+
+    def place_order(self, req: PlaceOrderRequest) -> OrderStatus:
+        """MARKET → POST /fapi/v1/order (değişmedi). STOP_MARKET/
+        TAKE_PROFIT_MARKET → POST /fapi/v1/algoOrder (Faz 349, bkz.
+        dosya üstündeki not). Ağ hatası/zaman aşımı burada YUTULMUYOR —
+        çağıran (ExecutionService) belirsiz bir gönderimi asla
+        "başarılı" saymamalı, get_order_status ile GERÇEKTEN
+        sorgulamalı (fail-closed, hiçbir tahmini dolum asla uydurulmaz)."""
+        if req.order_type.value in _CONDITIONAL_ORDER_TYPES:
+            return self._place_algo_order(req)
+        return self._place_regular_order(req)
+
     def get_order_status(self, symbol: str, order_id: str) -> OrderStatus | None:
         """Borsanın kendi atadığı orderId ile sorgular (client_order_id
         DEĞİL) — decisions tablosunda kalıcı olarak saklanan (exchange_
         order_id/exchange_stop_order_id/exchange_tp_order_id) alanla
-        BİREBİR aynı kimlik, ekstra bir eşleme tablosu gerekmiyor. Borsa
-        bu orderId'yi tanımıyorsa (ör. çok eski/temizlenmiş) None döner —
-        icat edilmiş bir durum asla üretilmez."""
+        BİREBİR aynı kimlik, ekstra bir eşleme tablosu gerekmiyor.
+
+        Faz 349 — çağıran BU kimliğin normal bir emre mi (giriş, MARKET)
+        yoksa bir algo emrine mi (stop/hedef) ait olduğunu bilmiyor —
+        adaptör ikisini de dener: önce normal (daha sık/gecikmeye
+        duyarlı giriş-dolum kontrolü ÇOĞUNLUKLA bu), "yok" derse algo'yu
+        dener. İkisi de bulamazsa None — icat edilmiş bir durum asla
+        üretilmez."""
         params = {"symbol": symbol, "orderId": order_id}
         resp = self._client.get("/fapi/v1/order", params=self._signed_params(params))
-        if resp.status_code == 400:
-            body = resp.json()
-            if body.get("code") == -2013:  # "Order does not exist"
-                return None
+        if resp.status_code == 400 and resp.json().get("code") in _ORDER_NOT_FOUND_CODES:
+            return self._get_algo_order_status(order_id)
         if resp.status_code >= 400:
             self._handle_error_response(resp)
         resp.raise_for_status()
         return self._parse_order_status(resp.json())
 
+    def _get_algo_order_status(self, order_id: str) -> OrderStatus | None:
+        resp = self._client.get("/fapi/v1/algoOrder", params=self._signed_params({"algoId": order_id}))
+        if resp.status_code == 400 and resp.json().get("code") in _ORDER_NOT_FOUND_CODES:
+            return None
+        if resp.status_code >= 400:
+            self._handle_error_response(resp)
+        resp.raise_for_status()
+        return self._parse_algo_order_status(resp.json())
+
     def cancel_order(self, symbol: str, order_id: str) -> None:
+        """Faz 349 — AYNI "önce normal, sonra algo dene" deseni (bkz.
+        get_order_status). Emir (hangi tür olursa olsun) zaten yoksa
+        (dolmuş/iptal edilmiş/hiç var olmamış) "iptal et" isteğinin
+        amacı zaten karşılanmış sayılır, çağıranı bir hata ile
+        durdurmaya gerek yok."""
         params = {"symbol": symbol, "orderId": order_id}
         resp = self._client.delete("/fapi/v1/order", params=self._signed_params(params))
-        if resp.status_code == 400:
-            body = resp.json()
-            if body.get("code") == -2011:
-                # Emir zaten yok (dolmuş/iptal edilmiş/hiç var olmamış) —
-                # "iptal et" isteğinin amacı zaten karşılanmış sayılır,
-                # çağıranı bir hata ile durdurmaya gerek yok.
-                return
+        if resp.status_code == 400 and resp.json().get("code") in _ORDER_NOT_FOUND_CODES:
+            self._cancel_algo_order(order_id)
+            return
+        if resp.status_code >= 400:
+            self._handle_error_response(resp)
+        resp.raise_for_status()
+
+    def _cancel_algo_order(self, order_id: str) -> None:
+        resp = self._client.delete("/fapi/v1/algoOrder", params=self._signed_params({"algoId": order_id}))
+        if resp.status_code == 400 and resp.json().get("code") in _ORDER_NOT_FOUND_CODES:
+            return
         if resp.status_code >= 400:
             self._handle_error_response(resp)
         resp.raise_for_status()

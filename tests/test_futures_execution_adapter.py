@@ -55,14 +55,21 @@ def test_place_order_sends_signed_market_order_and_parses_fill():
     assert status.avg_price == 27000.5
 
 
-def test_place_order_includes_stop_price_and_reduce_only_for_protective_orders():
+def test_place_order_routes_protective_orders_to_the_algo_endpoint():
+    """Faz 349 — GERÇEK canlı testnet doğrulamasında (mock'ların ASLA
+    yakalayamayacağı bir gerçek Binance API hatasıyla, -4120
+    STOP_ORDER_SWITCH_ALGO) bulundu: Binance 2025-12-09'da STOP_MARKET/
+    TAKE_PROFIT_MARKET'i eski POST /fapi/v1/order'dan YENİ POST
+    /fapi/v1/algoOrder'a taşıdı — triggerPrice (stopPrice DEĞİL),
+    clientAlgoId (newClientOrderId DEĞİL), algoType=CONDITIONAL."""
     captured = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
         captured["query"] = parse_qs(urlparse(str(request.url)).query)
         return httpx.Response(200, json={
-            "orderId": 556, "clientOrderId": "qrps123", "status": "NEW",
-            "executedQty": "0", "avgPrice": None, "side": "SELL",
+            "algoId": 556, "clientAlgoId": "qrps123", "algoStatus": "NEW",
+            "actualQty": "0", "actualPrice": None, "side": "SELL",
         })
 
     adapter = _adapter_with_transport(handler)
@@ -70,10 +77,80 @@ def test_place_order_includes_stop_price_and_reduce_only_for_protective_orders()
         symbol="BTCUSDT", side=OrderSide.SELL, order_type=OrderType.STOP_MARKET,
         quantity=0.5, client_order_id="qrps123", stop_price=26000.0, reduce_only=True,
     )
+    status = adapter.place_order(req)
+
+    assert captured["path"] == "/fapi/v1/algoOrder"
+    assert captured["query"]["algoType"] == ["CONDITIONAL"]
+    assert captured["query"]["triggerPrice"] == ["26000.0"]
+    assert captured["query"]["clientAlgoId"] == ["qrps123"]
+    assert captured["query"]["reduceOnly"] == ["true"]
+    assert "stopPrice" not in captured["query"]
+    assert "newClientOrderId" not in captured["query"]
+    assert status.exchange_order_id == "556"
+    assert status.status == "NEW"  # henüz tetiklenmemiş, actualQty=0
+
+
+def test_place_order_market_still_uses_the_regular_endpoint():
+    """Faz 349 sonrası regresyon kilidi: SADECE STOP_MARKET/TAKE_PROFIT_
+    MARKET algo'ya taşındı — MARKET girişi eski davranışında kalmalı."""
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        return httpx.Response(200, json={
+            "orderId": 555, "clientOrderId": "qrpe123", "status": "FILLED",
+            "executedQty": "0.5", "avgPrice": "27000.5", "side": "BUY",
+        })
+
+    adapter = _adapter_with_transport(handler)
+    req = PlaceOrderRequest(
+        symbol="BTCUSDT", side=OrderSide.BUY, order_type=OrderType.MARKET,
+        quantity=0.5, client_order_id="qrpe123",
+    )
     adapter.place_order(req)
 
-    assert captured["query"]["stopPrice"] == ["26000.0"]
-    assert captured["query"]["reduceOnly"] == ["true"]
+    assert captured["path"] == "/fapi/v1/order"
+
+
+def test_get_order_status_falls_back_to_algo_endpoint_when_not_a_regular_order():
+    """Faz 349 — çağıran (position_closer.py) bir stop/hedef emrinin
+    orderId'sini sorgularken artık normal endpoint'te bulunamayacak
+    (algo emri) — adaptör önce normal'i dener, -2013/-2011 alınca
+    SESSİZCE algo'yu dener. actualQty>0 (borsa GERÇEKTEN tetikleyip
+    doldurduğunu bildiriyor) -> position_closer.py'nin beklediği
+    "FILLED" statüsüne çevrilmeli, algoStatus'un ham değeri (ör.
+    "TRIGGERED") DEĞİL — adaptör bu API farkını dışarı sızdırmamalı."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/fapi/v1/order":
+            return httpx.Response(400, json={"code": -2013, "msg": "Order does not exist"})
+        assert request.url.path == "/fapi/v1/algoOrder"
+        return httpx.Response(200, json={
+            "algoId": 556, "clientAlgoId": "qrps123", "algoStatus": "TRIGGERED",
+            "actualQty": "0.5", "actualPrice": "25800.0", "side": "SELL",
+        })
+
+    adapter = _adapter_with_transport(handler)
+    status = adapter.get_order_status("BTCUSDT", "556")
+
+    assert status.status == "FILLED"
+    assert status.executed_qty == 0.5
+    assert status.avg_price == 25800.0
+
+
+def test_cancel_order_falls_back_to_algo_endpoint_when_not_a_regular_order():
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        if request.url.path == "/fapi/v1/order":
+            return httpx.Response(400, json={"code": -2011, "msg": "Unknown order sent"})
+        assert request.url.path == "/fapi/v1/algoOrder"
+        return httpx.Response(200, json={"algoId": 556, "algoStatus": "CANCELED"})
+
+    adapter = _adapter_with_transport(handler)
+    adapter.cancel_order("BTCUSDT", "556")  # raise etmemeli
+
+    assert calls == ["/fapi/v1/order", "/fapi/v1/algoOrder"]
 
 
 def test_place_order_raises_duplicate_error_on_dash_2011():
