@@ -1,11 +1,20 @@
-# Mevcut Durum -- v1.83.0 (Faz 344: Cross-Asset Arbitrage Engine v1)
+# Mevcut Durum -- v1.84.0 (Faz 345: strategy_regime_compatibility trade_type kırılımı)
 
 **Tarih:** 2026-08-21
 **Branch:** main
-**Son commit (HEAD):** Faz 344 (`0c00dd3`).
-**⚠️ Servis durumu:** uvicorn + celery worker_default + celery beat YENİDEN BAŞLATILDI (yeni strateji + 2 yeni beat schedule girdisi) — temiz.
+**Son commit (HEAD):** Faz 345 (`5f90960`).
+**⚠️ Servis durumu:** uvicorn yeniden başlatıldı (ölçüm-only gatherer, canlı karar hattı etkilenmedi) — temiz.
 **⚠️ Bilinen sorun (kullanıcı bulgusu, henüz araştırılmadı):** "Sistem genel olarak hantal/yavaş çalışıyor" — acil değil, sırada (backlog sonlarında).
 **⚠️ `basis_arbitrage_enabled=false` (varsayılan)** — Faz 344 henüz hiçbir gerçek pozisyon açmıyor, kullanıcı Settings'ten açıkça açmadan devreye girmez.
+**⚠️ OPERASYONEL DERS (2026-08-21):** Faz 344'ün hata ayıklaması sırasında pytest DIŞINDA çalıştırılan ham `.venv/bin/python -c` debug scriptleri `conftest.py`'nin `quantdb_test` yönlendirmesini atlayıp GERÇEK `quantdb`'e 5 sahte pozisyon yazdı — kullanıcı Transactions'ta fark edip sordu, kaynağı bulunup onayla silindi. Kalıcı kural [[feedback_debug_scripts_must_target_test_db]] hafızasına eklendi — bundan sonra yan etkili (persist/close_position/record) herhangi bir ham script çalıştırılmadan önce ya test DB env değişkenleri elle set edilmeli ya da pytest üzerinden çalıştırılmalı.
+
+## Faz 345 — strategy_regime_compatibility'ye trade_type (scalp/swing) kırılımı (2026-08-21)
+
+Kullanıcı vizyonu ("Scalp %99 başarılı bu koşullarda, örüntüyü tanıyabilirse büyük olay") için gerçekçi, kanıtlanabilir ilk adım — "joint örüntü tanıma" hedefinin küçültülmüş, istatistiksel olarak savunulabilir hali. Tam 9-ajan kombinasyon uzayı (2⁹=512 hücre) ~1600 işlemle aşırı uydurmaya açık (`agent_combination_reliability.py` bu yüzden bilerek ikiliyle sınırlı) — bunun yerine council etiketine trade_type (scalp/swing, `positions.py::_classify_trade_type` ile AYNI %4.5 eşik) eklenip uzay ~50-60 hücreye indirildi.
+
+**Canlı doğrulama çarpıcı:** SHORT/bearish_low'un (Faz 342'de WAIT'e zorlanan kombinasyon) içinde bile scalp (%66.7, n=21) ile swing (%5.2, n=403) arasında devasa fark var — swing SHORT asıl sorunun ana kaynağı. LONG/bearish_low/scalp ise %100 (n=299). `basis_arb_v1` artık kendi ayrı temel etiketini alıyor (önceden yanlışlıkla "ai_council"a düşüyordu). Hâlâ ölçüm-only, hiçbir gate'e bağlı değil.
+
+**Test:** 7 yeni test (13 toplam, gerçek entegrasyon dahil).
 
 ## Faz 344 — Cross-Asset Arbitrage Engine v1: spot-perpetual basis arbitrajı (2026-08-21)
 
