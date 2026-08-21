@@ -70,6 +70,7 @@ class CouncilStage:
             AgentDomain.EPISTEMOLOGY: self.adapter.to_epistemology(ctx),
             AgentDomain.RELATIVE_STRENGTH: self.adapter.to_relative_strength(ctx),
             AgentDomain.CREDIT: self.adapter.to_credit(ctx),
+            AgentDomain.VOLATILITY: self.adapter.to_volatility(ctx),
         }
 
         # Kullanıcı bulgusu — bkz. contracts/contexts/market.py::

@@ -5,6 +5,7 @@ from contracts.context import CognitiveCycleContext
 from contracts.credit import CreditContext
 from contracts.epistemology import EpistemologyContext
 from contracts.macro import MacroContext
+from contracts.volatility import VolatilityContext
 from contracts.onchain import OnChainContext
 from contracts.order_flow import OrderFlowContext
 from contracts.pattern import PatternContext
@@ -60,6 +61,16 @@ class ContextAdapter:
         return CreditContext(
             yield_curve_signal=self._get(ctx, "yield_curve_signal", fetch_yield_curve_signal() or ""),
             credit_spread_trend=self._get(ctx, "credit_spread_trend", fetch_credit_spread_trend() or ""),
+        )
+
+    def to_volatility(self, ctx: CognitiveCycleContext) -> VolatilityContext:
+        # Faz 336: gerçek Deribit DVOL verisi — CreditAgent'ın FRED
+        # entegrasyonuyla AYNI fail-closed desen.
+        from market_data.volatility.deribit_provider import fetch_dvol_level, fetch_dvol_trend
+
+        return VolatilityContext(
+            dvol_level=self._get(ctx, "dvol_level", fetch_dvol_level()),
+            dvol_trend=self._get(ctx, "dvol_trend", fetch_dvol_trend() or ""),
         )
 
     def _real_onchain_metrics(self, symbol: str) -> dict:

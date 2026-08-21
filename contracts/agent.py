@@ -27,6 +27,7 @@ class AgentDomain(StrEnum):
     PATTERN = "pattern"
     RELATIVE_STRENGTH = "relative_strength"
     CREDIT = "credit"
+    VOLATILITY = "volatility"
 
 # Faz 229: kritik bulgu — 9 oy-veren ajanın gerçek listesi (bkz. "Agent
 # kalitesi turu 2", CURRENT_STATE.md). AgentDomain enum'daki diğer roller
@@ -62,7 +63,7 @@ VOTING_AGENT_DOMAINS = frozenset({
     AgentDomain.TECHNICAL, AgentDomain.MACRO, AgentDomain.ONCHAIN,
     AgentDomain.PATTERN, AgentDomain.QUANT,
     AgentDomain.ORDER_FLOW, AgentDomain.TIME, AgentDomain.EPISTEMOLOGY,
-    AgentDomain.RELATIVE_STRENGTH, AgentDomain.CREDIT,
+    AgentDomain.RELATIVE_STRENGTH, AgentDomain.CREDIT, AgentDomain.VOLATILITY,
 })
 
 class AgentOpinion(BaseModel):

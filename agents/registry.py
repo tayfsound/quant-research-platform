@@ -2,6 +2,7 @@
 from agents.credit_agent import CreditAgent
 from agents.epistemology_agent import EpistemologyAgent
 from agents.macro_agent import MacroAgent
+from agents.volatility_agent import VolatilityAgent
 from agents.onchain_agent import OnChainAgent
 from agents.order_flow_agent import OrderFlowAgent
 from agents.pattern_agent import PatternAgent
@@ -30,10 +31,10 @@ class AgentRegistry:
 
     @classmethod
     def create_default(cls) -> "AgentRegistry":
-        """On uzman ajanla (4 orijinal + 5 sonraki turda eklenen: Pattern,
+        """On bir uzman ajanla (4 orijinal + 5 sonraki turda eklenen: Pattern,
         Quant, Order Flow, Time, Epistemology + Faz 242-243'te eklenen
-        Relative Strength + Faz 333'te eklenen Credit) hazır bir registry
-        oluşturur,
+        Relative Strength + Faz 333'te eklenen Credit + Faz 336'da eklenen
+        Volatility) hazır bir registry oluşturur,
         sonra agents/plugins/'daki güvenilir (hash'i TRUSTED_PLUGIN_HASHES'te
         olan) eklentileri keşfeder. TRUSTED_PLUGIN_HASHES varsayılan olarak
         boş — hiçbir plugin, bir insan onun hash'ini gözden geçirip
@@ -59,6 +60,7 @@ class AgentRegistry:
         registry.register(AgentDomain.EPISTEMOLOGY, EpistemologyAgent())
         registry.register(AgentDomain.RELATIVE_STRENGTH, RelativeStrengthAgent())
         registry.register(AgentDomain.CREDIT, CreditAgent())
+        registry.register(AgentDomain.VOLATILITY, VolatilityAgent())
 
         from agents.plugin_loader import discover_plugins
         discover_plugins(registry)
