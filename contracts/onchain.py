@@ -34,6 +34,17 @@ class OnChainContext(BaseModel):
     # gerekir. Şimdilik bilinçli bir kapsam sınırı, kod hatası değil.
     network_activity_trend: str = "stable"
     hash_rate_trend: str = "stable"
+    # Faz 335 — kullanıcı bulgusu: NUPL/SOPR fetch fonksiyonları Faz
+    # 316-sonrası'nda yazılıp test edilmişti ama hiçbir ajana hiç
+    # bağlanmamıştı ("hazırlandı, kullanılmadı" — kullanıcının kendi
+    # sözleriyle "istediğim metrikler entegre edilmemiş"). MVRV Z-Score
+    # ile AYNI desen: ikisi de bitcoin-data.com'dan, TÜM kripto
+    # sembollerine "genel piyasa koşulu" olarak uygulanan cyclical
+    # valuation göstergeleri (chain-özel teknik sağlık metrikleri
+    # değil — network_activity_trend/hash_rate_trend'in aksine is_btc
+    # ile sınırlanmıyor).
+    nupl: float | None = None
+    sopr: float | None = None
     # Faz 248: kritik bulgu — network_activity_trend/hash_rate_trend SADECE
     # Bitcoin zincirinden geliyor (yukarıdaki not, Faz 224 review bulgusu C)
     # ama agents/onchain_agent.py bunları TÜM sembollere (ETHUSDT, SOLUSDT

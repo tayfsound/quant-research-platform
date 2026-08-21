@@ -79,7 +79,9 @@ class ContextAdapter:
             fetch_hash_rate_trend,
             fetch_mvrv_zscore,
             fetch_network_activity_trend,
+            fetch_nupl,
             fetch_solana_tps,
+            fetch_sopr,
             fetch_usdt_total_supply,
         )
 
@@ -121,6 +123,17 @@ class ContextAdapter:
         if mvrv is not None:
             result["mvrv_zscore"] = mvrv
 
+        # Faz 335 — kullanıcı bulgusu: NUPL/SOPR yazılmış ama hiç
+        # bağlanmamıştı. mvrv_zscore ile AYNI desen (genel piyasa koşulu,
+        # tüm kripto sembollerine uygulanıyor).
+        nupl = fetch_nupl()
+        if nupl is not None:
+            result["nupl"] = nupl
+
+        sopr = fetch_sopr()
+        if sopr is not None:
+            result["sopr"] = sopr
+
         return result
 
     def to_onchain(self, ctx: CognitiveCycleContext) -> OnChainContext:
@@ -150,6 +163,8 @@ class ContextAdapter:
             mvrv_zscore=self._get(ctx, "mvrv_zscore", real_metrics.get("mvrv_zscore", 0.0)),
             eth_gas_price_gwei=real_metrics.get("eth_gas_price_gwei"),
             solana_tps=real_metrics.get("solana_tps"),
+            nupl=real_metrics.get("nupl"),
+            sopr=real_metrics.get("sopr"),
             network_activity_trend=self._get(
                 ctx, "network_activity_trend", real_metrics.get("network_activity_trend", "stable")
             ),

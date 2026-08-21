@@ -1,9 +1,19 @@
-# Mevcut Durum -- v1.72.0 (Faz 333: 10. oy-veren ajan — Credit)
+# Mevcut Durum -- v1.74.0 (Faz 335: NUPL/SOPR OnChainAgent'a bağlandı + Faz 334 watchdog)
 
 **Tarih:** 2026-08-21
 **Branch:** main
-**Son commit (HEAD):** Faz 332 (`6afc894`) — Faz 333 bu segment sonunda commitlenecek.
-**⚠️ Servis durumu:** uvicorn + celery `-Q celery` worker YENİDEN BAŞLATILMALI — `engines/cognitive_pipeline.py`/`agents/registry.py` (canlı karar hattı) değişti.
+**Son commit (HEAD):** Faz 334 (`b08de9c`) — Faz 335 bu segment sonunda commitlenecek.
+**⚠️ Servis durumu:** uvicorn + celery `-Q celery` worker YENİDEN BAŞLATILMALI — `agents/onchain_agent.py`/`services/context_adapter.py` (canlı karar hattı) değişti. NOT: `scripts/service_watchdog.sh` artık çalışıyor (PID izlenmeli değil, arka planda kendi kendine restart yapıyor) — manuel restart hâlâ hemen etkiyi görmek için önerilir ama artık "unutulursa" watchdog en geç 60sn içinde yakalar.
+
+## Faz 335 — NUPL/SOPR OnChainAgent'a bağlandı (2026-08-21)
+
+Kullanıcı bulgusu: "İstediğim [on-chain] metrikler sisteme entegre edilmemiş hatta todo listesinden silinmiş." Doğrulandı: `fetch_nupl`/`fetch_sopr`/`fetch_realized_price`/`fetch_mayer_multiple`/`fetch_total2_total3_market_cap_usd`/`fetch_stablecoin_dominance_vs_eth_pct` (Faz 316-sonrası'nda yazılıp bitcoin-data.com'a karşı test edilmişti) `market_data/onchain/onchain_provider.py`'de duruyordu ama HİÇBİRİ `contracts/onchain.py::OnChainContext`'e, `agents/onchain_agent.py`'ye ya da `services/context_adapter.py`'ye hiç bağlanmamıştı — sadece kendi test dosyalarından çağrılıyorlardı, karar hattına sıfır katkıları vardı.
+
+Bu turda NUPL (Net Unrealized Profit/Loss, >0.75 "euphoria"/tarihsel tepe, <0 "capitulation"/tarihsel dip) ve SOPR (Spent Output Profit Ratio, <0.98 zararla satış/kapitülasyon, >1.05 kârla satış/sağlıklı yükseliş) MVRV Z-Score ile AYNI desende (bitcoin-data.com, genel piyasa koşulu, TÜM kripto sembollerine uygulanıyor — network_activity_trend/hash_rate_trend'in aksine BTC'ye özel değil) `OnChainAgent`'a bağlandı. `fetch_realized_price`/`fetch_mayer_multiple` BİLİNÇLİ OLARAK bağlanmadı — mevcut MVRV Z-Score/`long_term_trend_regime` (200-EMA) ile kavramsal olarak örtüşüyorlar, ekstra sinyal değeri şüpheli; `fetch_total2_total3`/`fetch_stablecoin_dominance_vs_eth` de kapsam dışı bırakıldı (henüz net bir kullanım senaryosu yok).
+
+**Test:** `tests/test_onchain_agent.py` (+6 yeni test: NUPL/SOPR uç değerleri, nötr bölge katkı vermiyor, None fail-closed), broader onchain regresyonu (74 test) temiz. Canlı doğrulama bitcoin-data.com'un saatlik ücretsiz kota limitine (429) takıldı ama bu, fail-closed mekanizmanın (veri yoksa hiçbir katkı üretilmiyor, uydurma sinyal yok) doğru çalıştığını GERÇEK bir ağ hatasıyla kanıtladı — fetch fonksiyonlarının kendisi zaten önceden gerçek veriyle doğrulanmıştı.
+
+**Ayrıca bu segmentte (Faz 334, önceden commitlendi):** `scripts/service_watchdog.sh` — stop_loss aşma bug'ının (%27 işlem gerçek stop seviyesini aşarak kapanıyordu) kök nedeni bulundu: kod hatası değil, bu ortamda uvicorn/celery'yi hiçbir process supervisor izlemiyordu (ZROUSDT örneği: fiyat stop'u geçtikten 30 SAAT sonra kapandı). Watchdog 60sn'de bir sağlık kontrolü yapıp düşerse otomatik restart ediyor — gerçek production'daki K8s liveness probe'un (Faz 180) yerel karşılığı.
 
 ## Faz 333 — Credit Agent: 10. oy-veren ajan eklendi (2026-08-21)
 

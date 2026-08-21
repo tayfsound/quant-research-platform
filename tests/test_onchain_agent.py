@@ -39,6 +39,55 @@ def test_mvrv_extremes():
     assert opinion_low.direction == "LONG"
     assert opinion_high.direction == "SHORT"
 
+
+def test_nupl_extremes():
+    """Faz 335 — kullanıcı bulgusu: NUPL fetch fonksiyonu Faz 316-sonrası'nda
+    yazılıp test edilmişti ama hiçbir ajana bağlanmamıştı."""
+    agent = OnChainAgent()
+    ctx_euphoria = OnChainContext(nupl=0.85)
+    ctx_capitulation = OnChainContext(nupl=-0.1)
+
+    opinion_euphoria = agent.analyze(ctx_euphoria)
+    opinion_capitulation = agent.analyze(ctx_capitulation)
+
+    assert opinion_euphoria.direction == "SHORT"
+    assert opinion_capitulation.direction == "LONG"
+
+
+def test_nupl_neutral_zone_does_not_contribute():
+    agent = OnChainAgent()
+    opinion = agent.analyze(OnChainContext(nupl=0.4))
+    assert "nupl" not in opinion.feature_contributions
+
+
+def test_sopr_extremes():
+    """SOPR<0.98 (zararla satış, kapitülasyon) SHORT'a, >1.05 (kârla
+    satış, sağlıklı devam) LONG'a katkı vermeli."""
+    agent = OnChainAgent()
+    ctx_capitulation = OnChainContext(sopr=0.95)
+    ctx_healthy_uptrend = OnChainContext(sopr=1.08)
+
+    opinion_capitulation = agent.analyze(ctx_capitulation)
+    opinion_healthy = agent.analyze(ctx_healthy_uptrend)
+
+    assert opinion_capitulation.direction == "SHORT"
+    assert opinion_healthy.direction == "LONG"
+
+
+def test_sopr_reset_zone_does_not_contribute():
+    agent = OnChainAgent()
+    opinion = agent.analyze(OnChainContext(sopr=1.0))
+    assert "sopr" not in opinion.feature_contributions
+
+
+def test_nupl_and_sopr_none_are_fail_closed():
+    """Veri yoksa (fetch başarısız, None) hiçbir katkı üretilmemeli —
+    icat edilmiş bir sinyal değil."""
+    agent = OnChainAgent()
+    opinion = agent.analyze(OnChainContext(nupl=None, sopr=None))
+    assert "nupl" not in opinion.feature_contributions
+    assert "sopr" not in opinion.feature_contributions
+
 def test_conflicting_whale_signal_waits():
     agent = OnChainAgent()
     ctx = OnChainContext(

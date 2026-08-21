@@ -98,6 +98,39 @@ class OnChainAgent:
             contributions["mvrv_zscore"] = 2.0
             evidence.append(f"MVRV Z-Score aşırı düşük ({context.mvrv_zscore}) — piyasa aşırı ucuz")
 
+        # Faz 335 — kullanıcı bulgusu: NUPL/SOPR fetch fonksiyonları
+        # Faz 316-sonrası'nda yazılıp test edilmişti ama hiçbir ajana
+        # bağlanmamıştı. MVRV Z-Score ile AYNI desen (genel piyasa
+        # döngüsü göstergeleri, tüm kripto sembollerine uygulanıyor —
+        # network_activity_trend/hash_rate_trend'in aksine BTC'ye
+        # özel değiller).
+        #
+        # NUPL (Net Unrealized Profit/Loss): >0.75 "euphoria" (tarihsel
+        # tepe bölgeleri, klasik on-chain rejim sınıflandırması), <0
+        # "capitulation" (tarihsel dip bölgeleri).
+        if context.nupl is not None:
+            if context.nupl > 0.75:
+                contributions["nupl"] = -1.5
+                evidence.append(f"NUPL aşırı yüksek ({context.nupl:.2f}) — 'euphoria' bölgesi, tarihsel tepe riski")
+            elif context.nupl < 0.0:
+                contributions["nupl"] = 1.5
+                evidence.append(f"NUPL negatif ({context.nupl:.2f}) — 'capitulation' bölgesi, tarihsel dip riski")
+
+        # SOPR (Spent Output Profit Ratio): >1 ortalama kârla satış
+        # (sağlıklı yükseliş devamı), <1 ortalama zararla satış
+        # (kapitülasyon baskısı). ~1.0 civarı ("SOPR reset") kasıtlı
+        # olarak puanlanmıyor — literatürde net/tutarlı bir yön
+        # taşımıyor (hem destek hem direnç olarak yorumlanabiliyor),
+        # sadece uç değerler (MVRV/NUPL ile AYNI "sadece aşırılık"
+        # disiplini) puanlanıyor.
+        if context.sopr is not None:
+            if context.sopr < 0.98:
+                contributions["sopr"] = -1.0
+                evidence.append(f"SOPR düşük ({context.sopr:.3f}) — ortalama zararla satış, kapitülasyon baskısı")
+            elif context.sopr > 1.05:
+                contributions["sopr"] = 1.0
+                evidence.append(f"SOPR yüksek ({context.sopr:.3f}) — ortalama kârla satış, sağlıklı yükseliş devamı")
+
         score = sum(contributions.values())
 
         # Faz 247: kritik bulgu — exchange_inflow/outflow, whale_accumulation/
