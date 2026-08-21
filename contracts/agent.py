@@ -26,6 +26,7 @@ class AgentDomain(StrEnum):
     TIME = "time"
     PATTERN = "pattern"
     RELATIVE_STRENGTH = "relative_strength"
+    CREDIT = "credit"
 
 # Faz 229: kritik bulgu — 9 oy-veren ajanın gerçek listesi (bkz. "Agent
 # kalitesi turu 2", CURRENT_STATE.md). AgentDomain enum'daki diğer roller
@@ -47,11 +48,21 @@ class AgentDomain(StrEnum):
 # — kararlara hiç katkısı yoktu. AgentDomain.SENTIMENT enum üyesinin
 # kendisi KASITLI OLARAK silinmedi — eski decisions.agent_contributions
 # kayıtları hâlâ bu domain'i referans veriyor.
+
+# Faz 333 — 10. oy-veren ajan: Credit (bkz. agents/credit_agent.py).
+# Kullanıcı isteği, harici bir AI incelemesinin önerdiği "tek tek,
+# aynı disiplinle" aktifleştirme sırasının ilki. Yield curve/kredi
+# spread'i onlarca yıllık, köklü, iyi belgelenmiş makro göstergeler —
+# MacroAgent'ın net_liquidity_trend'i (Faz 267) gibi, henüz bu
+# sistemde gerçek kapanmış işlemlerle doğrulanmamış ama SourceReliability
+# Agent'ın otomatik-bench mekanizması (kötü performans gösteren ajanların
+# effective_influence'ını otomatik sıfırlayan, zaten var olan sistem)
+# zayıf çıkarsa doğal olarak süzecek.
 VOTING_AGENT_DOMAINS = frozenset({
     AgentDomain.TECHNICAL, AgentDomain.MACRO, AgentDomain.ONCHAIN,
     AgentDomain.PATTERN, AgentDomain.QUANT,
     AgentDomain.ORDER_FLOW, AgentDomain.TIME, AgentDomain.EPISTEMOLOGY,
-    AgentDomain.RELATIVE_STRENGTH,
+    AgentDomain.RELATIVE_STRENGTH, AgentDomain.CREDIT,
 })
 
 class AgentOpinion(BaseModel):

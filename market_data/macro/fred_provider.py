@@ -144,3 +144,38 @@ def fetch_net_liquidity_trend() -> str | None:
     if pct_change < -0.01:
         return "contracting"
     return "stable"
+
+
+# Faz 333 — CreditAgent, kullanıcı isteği (harici bir AI incelemesinin
+# önerdiği, kullanıcının onayladığı ilk yeni ajan): "credit leads equity"
+# — tahvil piyasası, hisse/kripto gibi risk varlıklarından ÖNCE sinyal
+# verir. İki GERÇEK, resmi, kesin tanımlı FRED serisi (MacroAgent'ın
+# kullandığı AYNI desen — icat edilmiş bir "görüş" değil, dümdüz sayı
+# farkı):
+# - T10Y2Y: 10 yıllık - 2 yıllık Hazine tahvili getiri farkı ("yield
+#   curve"). Negatif (tersine dönmüş eğri) tarihsel olarak güçlü bir
+#   resesyon uyarı sinyali — gecikmeli ama son 50+ yılda hiç yanlış
+#   pozitif vermemiş, en köklü makro göstergelerden biri.
+# - BAMLH0A0HYM2 (ICE BofA ABD Yüksek Getirili Endeks OAS): yüksek
+#   getirili tahvil spread'i. Genişliyorsa piyasa kredi riskini daha
+#   pahalı fiyatlıyor demek — risk-off, kripto gibi risk varlıkları için
+#   tarihsel olarak olumsuz. Daralıyorsa risk-on.
+def fetch_yield_curve_signal() -> str | None:
+    values = _fetch_series("T10Y2Y", limit=2)
+    if not values:
+        return None
+    if values[0] < 0:
+        return "inverted"
+    return "normal"
+
+
+def fetch_credit_spread_trend() -> str | None:
+    values = _fetch_series("BAMLH0A0HYM2", limit=4)
+    if not values or len(values) < 2:
+        return None
+    point_change = values[0] - values[-1]  # yüzde puan (ör. %2.75 -> 2.75)
+    if point_change > 0.2:
+        return "widening"
+    if point_change < -0.2:
+        return "narrowing"
+    return "stable"

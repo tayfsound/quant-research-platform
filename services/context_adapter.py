@@ -2,6 +2,7 @@
 from datetime import UTC, datetime
 
 from contracts.context import CognitiveCycleContext
+from contracts.credit import CreditContext
 from contracts.epistemology import EpistemologyContext
 from contracts.macro import MacroContext
 from contracts.onchain import OnChainContext
@@ -46,6 +47,19 @@ class ContextAdapter:
             # (diğer 4 alandan kasıtlı olarak farklı: onlar zaten var olan,
             # köklü sinyaller, bu yeni ve henüz doğrulanmamış).
             net_liquidity_trend=self._get(ctx, "net_liquidity_trend", fetch_net_liquidity_trend() or ""),
+        )
+
+    def to_credit(self, ctx: CognitiveCycleContext) -> CreditContext:
+        # Faz 333: gerçek FRED verisi (T10Y2Y/BAMLH0A0HYM2) — MacroAgent'ın
+        # net_liquidity_trend'iyle AYNI fail-closed desen: ağ hatası/key
+        # yoksa provider None döner, dürüstçe boş string'e (agent'ın
+        # atladığı "veri yok" durumu) düşülüyor — icat edilmiş bir varsayılan
+        # değil.
+        from market_data.macro.fred_provider import fetch_credit_spread_trend, fetch_yield_curve_signal
+
+        return CreditContext(
+            yield_curve_signal=self._get(ctx, "yield_curve_signal", fetch_yield_curve_signal() or ""),
+            credit_spread_trend=self._get(ctx, "credit_spread_trend", fetch_credit_spread_trend() or ""),
         )
 
     def _real_onchain_metrics(self, symbol: str) -> dict:

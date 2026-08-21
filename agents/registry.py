@@ -1,4 +1,5 @@
 """Agent Registry — tüm uzman ajanları merkezi olarak yönetir."""
+from agents.credit_agent import CreditAgent
 from agents.epistemology_agent import EpistemologyAgent
 from agents.macro_agent import MacroAgent
 from agents.onchain_agent import OnChainAgent
@@ -29,9 +30,10 @@ class AgentRegistry:
 
     @classmethod
     def create_default(cls) -> "AgentRegistry":
-        """Dokuz uzman ajanla (4 orijinal + 5 sonraki turda eklenen: Pattern,
+        """On uzman ajanla (4 orijinal + 5 sonraki turda eklenen: Pattern,
         Quant, Order Flow, Time, Epistemology + Faz 242-243'te eklenen
-        Relative Strength) hazır bir registry oluşturur,
+        Relative Strength + Faz 333'te eklenen Credit) hazır bir registry
+        oluşturur,
         sonra agents/plugins/'daki güvenilir (hash'i TRUSTED_PLUGIN_HASHES'te
         olan) eklentileri keşfeder. TRUSTED_PLUGIN_HASHES varsayılan olarak
         boş — hiçbir plugin, bir insan onun hash'ini gözden geçirip
@@ -56,6 +58,7 @@ class AgentRegistry:
         registry.register(AgentDomain.TIME, TimeAgent())
         registry.register(AgentDomain.EPISTEMOLOGY, EpistemologyAgent())
         registry.register(AgentDomain.RELATIVE_STRENGTH, RelativeStrengthAgent())
+        registry.register(AgentDomain.CREDIT, CreditAgent())
 
         from agents.plugin_loader import discover_plugins
         discover_plugins(registry)

@@ -69,6 +69,7 @@ class CouncilStage:
             AgentDomain.TIME: self.adapter.to_time(ctx),
             AgentDomain.EPISTEMOLOGY: self.adapter.to_epistemology(ctx),
             AgentDomain.RELATIVE_STRENGTH: self.adapter.to_relative_strength(ctx),
+            AgentDomain.CREDIT: self.adapter.to_credit(ctx),
         }
 
         # Kullanıcı bulgusu — bkz. contracts/contexts/market.py::

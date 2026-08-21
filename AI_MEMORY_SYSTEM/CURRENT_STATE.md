@@ -1,9 +1,21 @@
-# Mevcut Durum -- v1.71.0 (Faz 332: pump_fade — risk-bazlı boyutlandırma + pozisyon-sayı tavanı + zarar devre kesici + rejim gate'i güçlendirildi)
+# Mevcut Durum -- v1.72.0 (Faz 333: 10. oy-veren ajan — Credit)
 
 **Tarih:** 2026-08-21
 **Branch:** main
-**Son commit (HEAD):** Faz 331 (`7598792`) — Faz 332 bu segment sonunda commitlenecek.
-**⚠️ Servis durumu:** uvicorn + celery `-Q celery` worker YENİDEN BAŞLATILMALI — `services/pump_fade_strategy.py` (canlı karar hattı) değişti.
+**Son commit (HEAD):** Faz 332 (`6afc894`) — Faz 333 bu segment sonunda commitlenecek.
+**⚠️ Servis durumu:** uvicorn + celery `-Q celery` worker YENİDEN BAŞLATILMALI — `engines/cognitive_pipeline.py`/`agents/registry.py` (canlı karar hattı) değişti.
+
+## Faz 333 — Credit Agent: 10. oy-veren ajan eklendi (2026-08-21)
+
+Kullanıcı isteği: harici bir AI incelemesinin önerdiği yeni ajan/motor listesinden (Volatility/Credit/SupplyChain/Mempool/Behavioral/Execution/Quantum/Adversarial vb.) gerçekçi/ucuz olanlar ("Mempool, Execution, Volatility, Credit bunları mutlaka ekleyelim, birer birer aktifleştiririz") onaylandı — Quantum/Adversarial/SupplyChain/Federated Learning pratik değil ya da erken bulunup bilinçli olarak ertelendi (bkz. `project_open_items_2026_08_21.md` hafıza kaydı). "Credit leads equity" ilkesiyle sıralamada ilk: en ucuz/hazır (FRED zaten entegre, Faz 197).
+
+İki gerçek, resmi, kesin tanımlı FRED serisi (MacroAgent'ın `net_liquidity_trend`'iyle AYNI desen): `T10Y2Y` (10Y-2Y Hazine getiri farkı, "yield curve" — negatifse tersine dönmüş, tarihsel en köklü resesyon uyarı sinyallerinden biri) ve `BAMLH0A0HYM2` (ICE BofA ABD Yüksek Getirili Endeks OAS — genişliyorsa kredi koşulları sıkılaşıyor/risk-off, daralıyorsa risk-on). `market_data/macro/fred_provider.py::fetch_yield_curve_signal/fetch_credit_spread_trend`, `contracts/credit.py::CreditContext`, `agents/credit_agent.py::CreditAgent` (yield curve asimetrik puanlanıyor — SADECE inversiyon cezalandırılıyor, "normal" durum ödüllendirilmiyor; credit spread simetrik — MacroAgent'ın liquidity_condition'ıyla aynı), `services/context_adapter.py::to_credit()`, `AgentDomain.CREDIT` + `VOTING_AGENT_DOMAINS`'e eklendi, `agents/registry.py`/`engines/cognitive_pipeline.py`'ye wire edildi.
+
+Yeni bir sinyal, henüz bu sistemde gerçek kapanmış işlemlerle doğrulanmadı — ama SourceReliabilityAgent'ın zaten var olan otomatik-bench mekanizması (kötü performans gösteren domain'lerin effective_influence'ını otomatik sıfırlayan sistem, eski SENTIMENT ajanını böyle elemişti) zayıf çıkarsa doğal olarak süzecek.
+
+**Test:** `tests/test_credit_agent.py` (6 yeni), `tests/test_nine_agent_council.py` + council/context-adapter regresyonu (68 test, 3 bilinen pre-existing flaky hariç) temiz.
+
+**Sıradaki (kullanıcı sıralaması):** stop_loss aşma bug'ı → on-chain metrikler → VolatilityAgent → MempoolAgent → ExecutionAgent → uçtan uca testnet doğrulaması (en sona).
 
 ## Faz 332 — pump_fade KÖK NEDEN düzeltmesi: risk-bazlı boyutlandırma + pozisyon-sayı tavanı + zarar devre kesici + rejim gate'i güçlendirildi (2026-08-21)
 
