@@ -3,7 +3,21 @@ kaynak — Faz 299. analytics/tp_sl_confluence.py saf (pure) kalıyor,
 gerçek veriye dokunan kod burada. Mevcut ATR-tabanlı (engines/
 cognitive_pipeline.py::RiskTargetStage'in statik fallback formülüyle
 BİREBİR AYNI) stop/target'ın gerçek bir yapısal confluence bölgesine
-yakın olup olmadığını ölçer — RiskTargetStage'in kendisini DEĞİŞTİRMEZ."""
+yakın olup olmadığını ölçer — RiskTargetStage'in kendisini DEĞİŞTİRMEZ.
+
+Faz 343 — harici bir AI incelemesinin bulgusu (kullanıcı doğrulattı):
+güncel (yükseliş piyasası) canlı ölçümde pct_long_target_near_confluence
+hep %0 çıkıyor, "bug olabilir" şüphesi uyandırdı. Gerçek 14 günlük bir
+BTCUSDT düşüş penceresiyle (22 Ocak - 5 Şubat 2026, gerçek -%29.8
+hareket) DOĞRULANDI: bug DEĞİL, rejim artefaktı — confluence seviyeleri
+(S/R, volume profile, pivot, Donchian/Keltner/Bollinger, Fibonacci)
+GEÇMİŞ fiyat verisinden hesaplanıyor; sürdürülebilir bir yükselişte çoğu
+seviye doğal olarak fiyatın ALTINDA kümelenir (henüz üstte oluşmuş bir
+geçmiş yok), düşüşte ise TERSİNE döner (volume profile POC/VA gibi
+seviyeler fiyatın ÜSTÜNDE kalır — o düşüş penceresinde 7/10 tekil
+seviye fiyatın üstündeydi, mevcut yükseliş ölçümünün tam tersi). Yön
+kodlaması/sign hatası değil — mevcut piyasa koşuluna bağlı, beklenen
+bir davranış."""
 from analytics.tp_sl_confluence import compute_confluence_zones, compute_price_levels, find_nearby_confluence_zone
 from market_data.features.signal_engine import compute_daily_atr_pct
 from market_data.ingestion.data_provider import RoutingProvider
