@@ -309,6 +309,32 @@ class MetaStage:
         if sideways_market:
             meta["decision"] = "WAIT"
 
+        # Faz 342 — kullanıcı isteği: "short pozisyonlar neden karlı
+        # değil?" Gerçek 1577 kapanmış kararla ölçüldü: council'in kendi
+        # SHORT kararları genel olarak %21.6 isabetli (LONG %96.4) —
+        # ama bu SADECE bir rejimden kaynaklanıyor. market_regime =
+        # trend_volatility (bkz. position_closer.py::_extract_market_
+        # regime, AYNI ctx.market.features) kırılımında: SHORT/bearish/
+        # low n=424, isabet SADECE %8.3 (toplam -$604) — LONG/bearish/low
+        # n=398, isabet %95.2 (+$141). "bearish_low" (EMA20<EMA50 + düşük
+        # gerçekleşen volatilite) fiilen bir DÜŞÜŞ DEVAMI değil, klasik
+        # bir taban/konsolidasyon kurulumu — SHORT açmak dönüşe karşı
+        # bahis oluyor. Bu, pump_fade'in Faz 327/332/341'de zaten
+        # düzelttiği "bearish ≠ SHORT-favorable" hatasının council
+        # seviyesindeki karşılığı. "Sadece sıkılaştır" ilkesiyle: SADECE
+        # bu spesifik (yön=SHORT + trend=bearish + volatilite=low)
+        # kombinasyonunda WAIT'e zorlanıyor — LONG'a, diğer rejimlere ya
+        # da diğer volatilite seviyelerindeki bearish SHORT'lara (n=47
+        # normal %46.8, n=11 high %90.9 — ikisi de bearish_low'dan çok
+        # daha iyi) hiç dokunulmuyor.
+        trend = features.get("trend")
+        volatility_regime = features.get("volatility_regime")
+        short_in_bearish_low = (
+            belief.direction == "SHORT" and trend == "bearish" and volatility_regime == "low"
+        )
+        if short_in_bearish_low:
+            meta["decision"] = "WAIT"
+
         # Faz 297 — dış rapor önerisi (kullanıcı doğrulattı): "yüksek
         # entropy/düşük konsensüste action eşiğinin otomatik yükselmesi."
         # belief.entropy (services/belief_engine.py::synthesize'ın 3 yönlü
