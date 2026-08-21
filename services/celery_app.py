@@ -252,6 +252,22 @@ celery_app.conf.beat_schedule = {
         "task": "run_pump_fade_cycle_task",
         "schedule": 1800.0,
     },
+    # Faz 344 — Cross-Asset Arbitrage Engine v1. run_pump_fade_cycle_task
+    # ile AYNI cadence (300+ perpetual sembol tarıyor, sık çalıştırmaya
+    # gerek yok — basis/funding yavaş değişen bir sinyal). basis_
+    # arbitrage_enabled=false (varsayılan) iken anında çıkar, yük yok.
+    "run-basis-arbitrage-cycle-every-30m": {
+        "task": "run_basis_arbitrage_cycle_task",
+        "schedule": 1800.0,
+    },
+    # Bacaklar ayrı bir stop/hedef taramasından geçmediği için (bkz.
+    # basis_arbitrage_strategy.py), maksimum tutma süresi dolan çiftleri
+    # BİRLİKTE kapatmak için ayrı, hafif bir görev — close_due_positions_
+    # task ile AYNI cadence.
+    "close-due-basis-arbitrage-pairs-every-minute": {
+        "task": "close_due_basis_arbitrage_pairs_task",
+        "schedule": 60.0,
+    },
     # Faz 268-sonrası — kullanıcı isteği: "Feature IC'yi karar hattına
     # bağlama." propose-agent-tuning-weekly ile AYNI ritim — feature IC'nin
     # zamanla anlamlı şekilde değişmesi günler değil haftalar sürer,

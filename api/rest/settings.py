@@ -253,6 +253,38 @@ def _validate(key: str, value: str) -> None:
                 raise ValueError
         except ValueError:
             raise HTTPException(400, "pairs_trading_leg_capital_usd must be a positive number")
+    elif key == "basis_arbitrage_enabled":
+        if value not in ("true", "false"):
+            raise HTTPException(400, "basis_arbitrage_enabled must be 'true' or 'false'")
+    elif key == "basis_arbitrage_min_basis_pct":
+        try:
+            if float(value) <= 0:
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "basis_arbitrage_min_basis_pct must be a positive number")
+    elif key == "basis_arbitrage_min_funding_rate":
+        try:
+            float(value)
+        except ValueError:
+            raise HTTPException(400, "basis_arbitrage_min_funding_rate must be a number")
+    elif key == "basis_arbitrage_leg_capital_usd":
+        try:
+            if float(value) <= 0:
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "basis_arbitrage_leg_capital_usd must be a positive number")
+    elif key == "basis_arbitrage_max_open_pairs":
+        try:
+            if int(value) < 1:
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "basis_arbitrage_max_open_pairs must be a positive integer")
+    elif key == "basis_arbitrage_max_hold_hours":
+        try:
+            if float(value) <= 0:
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "basis_arbitrage_max_hold_hours must be a positive number")
     elif key == "max_open_positions_per_symbol_direction":
         # Faz 268-sonrası: gerçek olaydan (54 XAUTUSDT SHORT aynı anda
         # açık bulundu) eklenen kontrol — kullanıcı Settings sayfasından

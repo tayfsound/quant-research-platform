@@ -773,6 +773,110 @@ export default function Settings() {
           </div>
         </Card>
 
+        <Card>
+          <h3 className="text-sm font-semibold text-ink mb-1">Cross-Asset Arbitrage (basis, test)</h3>
+          <p className="text-xs text-ink-soft mb-3">
+            AI'ın karar/confidence sisteminden tamamen yalıtık, piyasa-nötr mekanik bir strateji. Perpetual
+            spot'a göre en az %{(Number(draft.basis_arbitrage_min_basis_pct ?? "0.002") * 100).toFixed(2)} primli
+            işlem görürken VE funding en az %{(Number(draft.basis_arbitrage_min_funding_rate ?? "0.0003") * 100).toFixed(3)} iken
+            spot LONG + perpetual SHORT açar (funding tahsilatı + basis yakınsaması). Bacaklar ayrı ayrı değil,
+            en fazla {draft.basis_arbitrage_max_hold_hours ?? "72"} saat sonra BİRLİKTE kapanır. Kapalıyken hiçbir etkisi yok.
+          </p>
+          <div className="flex gap-2 mb-4">
+            {[
+              { key: "true", label: "Açık" },
+              { key: "false", label: "Kapalı" },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => save("basis_arbitrage_enabled", key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  (settings.basis_arbitrage_enabled ?? "false") === key
+                    ? "bg-accent text-white border-accent"
+                    : "bg-canvas-soft text-ink-soft border-line hover:bg-surface-soft"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <p className="text-xs text-ink-soft mb-2">Minimum basis (1.0 = %100, ör. 0.002 = %0.2)</p>
+          <div className="flex gap-2 mb-4">
+            <Input
+              decimal
+              value={draft.basis_arbitrage_min_basis_pct ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, basis_arbitrage_min_basis_pct: v }))}
+            />
+            <Button
+              disabled={saving === "basis_arbitrage_min_basis_pct"}
+              onClick={() => save("basis_arbitrage_min_basis_pct", draft.basis_arbitrage_min_basis_pct)}
+            >
+              {saved === "basis_arbitrage_min_basis_pct" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+
+          <p className="text-xs text-ink-soft mb-2">Minimum funding rate (1.0 = %100, ör. 0.0003 = %0.03)</p>
+          <div className="flex gap-2 mb-4">
+            <Input
+              decimal
+              value={draft.basis_arbitrage_min_funding_rate ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, basis_arbitrage_min_funding_rate: v }))}
+            />
+            <Button
+              disabled={saving === "basis_arbitrage_min_funding_rate"}
+              onClick={() => save("basis_arbitrage_min_funding_rate", draft.basis_arbitrage_min_funding_rate)}
+            >
+              {saved === "basis_arbitrage_min_funding_rate" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+
+          <p className="text-xs text-ink-soft mb-2">Bacak başına sermaye ($)</p>
+          <div className="flex gap-2 mb-4">
+            <Input
+              decimal
+              value={draft.basis_arbitrage_leg_capital_usd ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, basis_arbitrage_leg_capital_usd: v }))}
+            />
+            <Button
+              disabled={saving === "basis_arbitrage_leg_capital_usd"}
+              onClick={() => save("basis_arbitrage_leg_capital_usd", draft.basis_arbitrage_leg_capital_usd)}
+            >
+              {saved === "basis_arbitrage_leg_capital_usd" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+
+          <p className="text-xs text-ink-soft mb-2">Maks. eşzamanlı açık çift (spot+perp bir çift sayılır)</p>
+          <div className="flex gap-2 mb-4">
+            <Input
+              decimal
+              value={draft.basis_arbitrage_max_open_pairs ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, basis_arbitrage_max_open_pairs: v }))}
+            />
+            <Button
+              disabled={saving === "basis_arbitrage_max_open_pairs"}
+              onClick={() => save("basis_arbitrage_max_open_pairs", draft.basis_arbitrage_max_open_pairs)}
+            >
+              {saved === "basis_arbitrage_max_open_pairs" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+
+          <p className="text-xs text-ink-soft mb-2">Maks. tutma süresi (saat) — bu süre dolunca çift BİRLİKTE kapanır</p>
+          <div className="flex gap-2">
+            <Input
+              decimal
+              value={draft.basis_arbitrage_max_hold_hours ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, basis_arbitrage_max_hold_hours: v }))}
+            />
+            <Button
+              disabled={saving === "basis_arbitrage_max_hold_hours"}
+              onClick={() => save("basis_arbitrage_max_hold_hours", draft.basis_arbitrage_max_hold_hours)}
+            >
+              {saved === "basis_arbitrage_max_hold_hours" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+        </Card>
+
         {/* Faz 282 — kullanıcı kararı (2026-08-19): pairs trading (hedge)
             stratejisi kalıcı olarak durduruldu (pairs_trading_enabled=false,
             backend'de hâlâ duruyor ama hiç yeni pozisyon açmıyor) — kullanıcı

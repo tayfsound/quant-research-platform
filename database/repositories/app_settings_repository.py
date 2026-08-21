@@ -486,6 +486,37 @@ DEFAULTS: dict[str, str] = {
     # pozisyonlar normal stop/hedefe göre kapanana kadar izlenmeye devam
     # eder (zorla kapatılmıyor), ama yeni bacak hiç açılmıyor.
     "pairs_trading_enabled": "false",
+    # Faz 344 — Cross-Asset Arbitrage Engine v1 (kullanıcı onayı, ikinci
+    # dalga ajan/motor planının parçası). Spot-perpetual basis arbitrajı
+    # (cash-and-carry): perpetual spot'a göre PRİMLİ işlem görürken VE
+    # funding pozitifken SHORT perpetual + LONG spot açılır (piyasa-nötr,
+    # kâr kaynağı funding tahsilatı + basis yakınsaması). pump_fade_
+    # strategy.py/pairs_trader.py ile AYNI desen — council'den tamamen
+    # izole, kendi deneysel etiketi (basis_arb_v1) ve ayrı risk/sermaye
+    # muhasebesiyle. Varsayılan kapalı.
+    "basis_arbitrage_enabled": "false",
+    # Gerçek Binance premiumIndex verisiyle ölçüldü (875 perpetual
+    # sembol): |basis| medyanı %0.058, p90 %0.267 — %0.2 eşiği gerçek
+    # bir mispricing'i gürültüden ayırt eden, p85-90 civarında kalibre
+    # edilmiş bir eşik.
+    "basis_arbitrage_min_basis_pct": "0.002",
+    # BTCUSDT'nin gözlenen normal funding'i %0.01 (8 saatlik) — bu eşik
+    # "normal"in üstünde, gerçekten yükselmiş bir funding gerektiriyor.
+    "basis_arbitrage_min_funding_rate": "0.0003",
+    "basis_arbitrage_leg_capital_usd": "100",
+    # pump_fade_max_open_positions ile AYNI çeşitlendirme mantığı — yeni,
+    # henüz kanıtlanmamış bir strateji için bilerek küçük tutuldu.
+    "basis_arbitrage_max_open_pairs": "5",
+    # Faz 344 — kritik tasarım kararı: bu strateji İKİ bacağı da AYNI
+    # varlıkta tutuyor (spot LONG + perpetual SHORT, pairs_trader'ın
+    # FARKLI varlıklarının aksine) — bacaklardan biri bağımsız bir ATR
+    # stop/hedefe göre kapanırsa, kalan bacak "piyasa-nötr" değil ÇIPLAK
+    # yönlü bir pozisyon haline gelir (asıl amacın tam tersi). Bu yüzden
+    # bacaklar AYRI AYRI değil, ikisi BİRLİKTE (bkz. close_due_basis_
+    # arb_pairs) sadece maksimum tutma süresi dolunca kapatılıyor —
+    # gerçek bir basis-yakınsama-farkında erken çıkış ayrı, daha büyük
+    # bir iş (pairs_trader'ın kendi, zaten kabul edilmiş sınırlaması).
+    "basis_arbitrage_max_hold_hours": "72",
     # Faz 282 — kritik bulgu (2026-08-19, kullanıcı: "her işlem kapandığında
     # değişiklik yapıyor sanırım... büyük örneklemlere göre hareket etmesi
     # lazım, her işlem kapandığında bunu yapamaz matematiksel olarak zırva").

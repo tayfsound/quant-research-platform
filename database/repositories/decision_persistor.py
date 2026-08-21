@@ -302,6 +302,7 @@ class DecisionPersistor:
                         direction,
                         CASE
                             WHEN experiment_bucket = 'pump_fade_v1' THEN 'pump_fade'
+                            WHEN experiment_bucket = 'basis_arb_v1' THEN 'basis_arb'
                             WHEN EXISTS (
                                 SELECT 1 FROM jsonb_array_elements(COALESCE(agent_contributions, '[]'::jsonb)) elem
                                 WHERE elem->>'type' = 'market_snapshot'
@@ -389,6 +390,22 @@ class DecisionPersistor:
             {"experiment_bucket": experiment_bucket},
         ).scalar()
         return int(count or 0)
+
+    def list_open_positions_for_experiment(self, experiment_bucket: str) -> list[dict]:
+        """Faz 344 — Cross-Asset Arbitrage Engine'in çift-bacaklı (aynı
+        sembol, LONG spot + SHORT perpetual) pozisyonlarını BİRLİKTE
+        kapatabilmesi için: bu experiment_bucket'taki TÜM açık pozisyonlar
+        (limit'siz — pairs_trader/pump_fade'in list_open_positions(limit=
+        None) ile AYNI ilke, hiçbir bacak sessizce gözden kaçmasın)."""
+        rows = self.session.execute(
+            text(
+                "SELECT * FROM decisions "
+                "WHERE status = 'open' AND experiment_bucket = :experiment_bucket "
+                "ORDER BY opened_at ASC"
+            ),
+            {"experiment_bucket": experiment_bucket},
+        ).mappings().all()
+        return [dict(r) for r in rows]
 
     def total_pnl_for_experiment(self, experiment_bucket: str) -> float:
         """Faz 332 — pump_fade'in zarar-bazlı devre kesicisi için: SADECE

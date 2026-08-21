@@ -617,6 +617,41 @@ def run_pump_fade_cycle_task() -> dict:
         return PumpFadeStrategy().run_cycle()
 
 
+@celery_app.task(name="run_basis_arbitrage_cycle_task")
+def run_basis_arbitrage_cycle_task() -> dict:
+    """Faz 344 — Cross-Asset Arbitrage Engine v1 (spot-perpetual basis
+    arbitrajı). run_pump_fade_cycle_task ile AYNI desen: council'den
+    tamamen izole, TÜM USDT perpetual'ları (300+) tarıyor — kendi
+    _CycleLock'u, run_trading_cycle_task'ın kuyruğuna asla girmiyor."""
+    from services.basis_arbitrage_strategy import BasisArbitrageStrategy
+
+    if _real_market_data_source_or_none() is None:
+        return {"skipped": "non_binance_market_data_source"}
+
+    with _CycleLock("lock:run_basis_arbitrage_cycle_task", ttl_seconds=1500) as acquired:
+        if not acquired:
+            return {"skipped": "previous_cycle_still_running"}
+        return BasisArbitrageStrategy().run_cycle()
+
+
+@celery_app.task(name="close_due_basis_arbitrage_pairs_task")
+def close_due_basis_arbitrage_pairs_task() -> dict:
+    """Faz 344 — bkz. services/basis_arbitrage_strategy.py::close_due_
+    pairs'in üstündeki tasarım notu: bacaklar AYRI bir stop/hedef
+    taramasından GEÇMİYOR (kasıtlı), bu ayrı, hafif görev periyodik
+    olarak maksimum tutma süresi dolan çiftleri BİRLİKTE kapatıyor."""
+    from services.basis_arbitrage_strategy import BasisArbitrageStrategy
+
+    if _real_market_data_source_or_none() is None:
+        return {"skipped": "non_binance_market_data_source"}
+
+    with _CycleLock("lock:close_due_basis_arbitrage_pairs_task", ttl_seconds=600) as acquired:
+        if not acquired:
+            return {"skipped": "previous_run_still_in_progress"}
+        closed = BasisArbitrageStrategy().close_due_pairs()
+    return {"closed_pairs": closed}
+
+
 @celery_app.task(name="run_pairs_trading_task")
 def run_pairs_trading_task() -> dict:
     """Faz 200: pairs trading / istatistiksel arbitraj — gerçek Engle-

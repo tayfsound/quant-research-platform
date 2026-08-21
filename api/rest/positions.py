@@ -83,6 +83,12 @@ def _classify_trade_type(row: dict) -> str | None:
     # korumalı.
     if row.get("experiment_bucket") == "pump_fade_v1":
         return "pump_fade"
+    # Faz 344 — Cross-Asset Arbitrage Engine, pump_fade ile AYNI desen:
+    # kendi experiment_bucket'ı, diğer dallardan ÖNCE kontrol ediliyor ki
+    # stop mesafesi sezgiselliğine (bu strateji zaten hiç stop set
+    # etmiyor) sessizce düşüp kimliğini kaybetmesin.
+    if row.get("experiment_bucket") == "basis_arb_v1":
+        return "basis_arb"
     if _extract_pairs_trade(row):
         return "hedge"
     entry_price = row.get("entry_price")

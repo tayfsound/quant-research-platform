@@ -104,6 +104,13 @@ function tradeTypeBadge(
   if (p.trade_type === "pump_fade") {
     return { label: "Pump-Fade", tone: "warn" };
   }
+  // Faz 344 — Cross-Asset Arbitrage Engine, pump_fade ile AYNI desen:
+  // diğer (stop mesafesi tabanlı) sınıflandırmalardan ÖNCE kontrol
+  // edilmeli — bu strateji hiç stop set etmiyor, aksi halde "kimliksiz"
+  // görünürdü.
+  if (p.trade_type === "basis_arb") {
+    return { label: "Basis Arb", tone: "info" };
+  }
   if (p.pairs_trade) {
     return { label: "hedge", tone: "warn", title: `Pairs trade: ${p.pairs_trade}` };
   }
@@ -561,13 +568,14 @@ function sinceCutoffMs(minutes: number): number {
 // zaten hem açık hem kapalı pozisyonlar için AYNI sınıflandırmayı
 // üretiyor — filtre seçenekleri onunla BİREBİR aynı, ayrı bir taksonomi
 // icat edilmedi.
-type TypeFilter = "all" | "pump_fade" | "hedge" | "scalp" | "swing";
+type TypeFilter = "all" | "pump_fade" | "basis_arb" | "hedge" | "scalp" | "swing";
 type DirectionFilter = "all" | "LONG" | "SHORT";
 type OutcomeFilter = "all" | "profit" | "loss";
 
 const TYPE_FILTER_OPTIONS: { value: TypeFilter; label: string }[] = [
   { value: "all", label: "Tüm türler" },
   { value: "pump_fade", label: "Pump-Fade" },
+  { value: "basis_arb", label: "Basis Arb" },
   { value: "hedge", label: "Hedge" },
   { value: "scalp", label: "Scalp" },
   { value: "swing", label: "Swing" },
@@ -577,6 +585,7 @@ function matchesTypeFilter(p: Position, filter: TypeFilter): boolean {
   if (filter === "all") return true;
   const badge = tradeTypeBadge(p);
   const badgeKey = badge?.label === "Pump-Fade" ? "pump_fade"
+    : badge?.label === "Basis Arb" ? "basis_arb"
     : badge?.label === "hedge" ? "hedge"
     : badge?.label === "scalp" ? "scalp"
     : badge?.label === "swing" ? "swing"
