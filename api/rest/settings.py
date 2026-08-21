@@ -221,6 +221,12 @@ def _validate(key: str, value: str) -> None:
                 raise ValueError
         except ValueError:
             raise HTTPException(400, "pump_fade_min_gain_pct must be a positive number (1.0 = %100)")
+    elif key == "pump_fade_reentry_min_gain_pct":
+        try:
+            if float(value) <= 0:
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "pump_fade_reentry_min_gain_pct must be a positive number (1.0 = %100)")
     elif key == "pump_fade_lookback_hours":
         try:
             if int(value) < 1:

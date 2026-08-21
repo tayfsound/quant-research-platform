@@ -399,6 +399,7 @@ class PumpFadeStrategy:
             max_pullback_from_peak_pct = float(settings_repo.get("pump_fade_max_pullback_from_peak_pct"))
             momentum_confirmation_hours = int(settings_repo.get("pump_fade_momentum_confirmation_hours"))
             momentum_tolerance_pct = float(settings_repo.get("pump_fade_momentum_tolerance_pct"))
+            reentry_min_gain_pct = float(settings_repo.get("pump_fade_reentry_min_gain_pct"))
 
         symbols = fetch_usdt_perpetual_symbols()
         if not symbols:
@@ -409,6 +410,23 @@ class PumpFadeStrategy:
             peak_window_hours, max_pullback_from_peak_pct,
             momentum_confirmation_hours, momentum_tolerance_pct,
         )
+
+        # Faz 341 — kullanıcı bulgusu: bir sembolde stop olduktan SONRA
+        # pump devam ettiği için normal min_gain_pct (%15) hâlâ geçiliyor,
+        # sistem hemen aynı sembolde tekrar SHORT açıp tekrar stop
+        # oluyordu. Son kapanan pump_fade işlemi stop_loss ile bitmiş bir
+        # sembol için, bu döngüde gain_pct daha sıkı reentry_min_gain_pct
+        # (%50) eşiğini de geçmeli — geçmezse aday tamamen elenir.
+        if candidates:
+            with SessionFactory.get_session() as session:
+                recently_stopped_symbols = DecisionPersistor(session).symbols_with_last_exit_reason_stop_loss(
+                    [c["symbol"] for c in candidates], EXPERIMENT_BUCKET,
+                )
+            if recently_stopped_symbols:
+                candidates = [
+                    c for c in candidates
+                    if c["symbol"] not in recently_stopped_symbols or c["gain_pct"] >= reentry_min_gain_pct
+                ]
 
         with SessionFactory.get_session() as session:
             density_size_multiplier = _compute_density_size_multiplier(session, len(candidates))

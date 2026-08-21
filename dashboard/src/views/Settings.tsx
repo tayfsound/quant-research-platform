@@ -722,6 +722,24 @@ export default function Settings() {
             </Button>
           </div>
 
+          <p className="text-xs text-ink-soft mb-2">
+            Stop-sonrası tekrar giriş eşiği (1.0 = %100) — bir sembolde son pump_fade işlemi stop olduysa,
+            o sembolde tekrar giriş için normal eşik yerine bu daha sıkı eşik kullanılır.
+          </p>
+          <div className="flex gap-2 mb-4">
+            <Input
+              decimal
+              value={draft.pump_fade_reentry_min_gain_pct ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, pump_fade_reentry_min_gain_pct: v }))}
+            />
+            <Button
+              disabled={saving === "pump_fade_reentry_min_gain_pct"}
+              onClick={() => save("pump_fade_reentry_min_gain_pct", draft.pump_fade_reentry_min_gain_pct)}
+            >
+              {saved === "pump_fade_reentry_min_gain_pct" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+
           <p className="text-xs text-ink-soft mb-2">Tarama penceresi (saat)</p>
           <div className="flex gap-2 mb-4">
             <Input

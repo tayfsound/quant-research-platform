@@ -407,6 +407,126 @@ def test_run_cycle_does_not_open_a_second_position_for_a_symbol_already_open(mon
         _set_pump_fade_settings(pump_fade_enabled="false")
 
 
+def test_symbols_with_last_exit_reason_stop_loss_only_flags_most_recent_close():
+    """Faz 341 — DISTINCT ON semantiği: bir sembolün EN SON kapanışı
+    stop_loss değilse (ör. daha sonra take_profit ile kapanmış), o sembol
+    artık işaretlenmemeli — sadece EN GÜNCEL sonuç önemli."""
+    from contracts.decision_event import DecisionEvent
+
+    stopped_symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    recovered_symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    other_symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    try:
+        with SessionFactory.get_session() as session:
+            persistor = DecisionPersistor(session)
+
+            def _open_and_close(symbol: str, exit_reason: str, closed_at) -> None:
+                event = DecisionEvent(
+                    id=uuid4(), symbol=symbol, proposed_direction="SHORT", final_action="SHORT",
+                    final_size=1.0, status="open", entry_price=100.0, quantity=1.0,
+                    experiment_bucket=EXPERIMENT_BUCKET,
+                )
+                persistor.persist(event)
+                persistor.close_position(
+                    decision_id=str(event.id), exit_price=90.0, pnl=10.0, closed_at=closed_at,
+                    outcome={"exit_reason": exit_reason},
+                )
+
+            _open_and_close(stopped_symbol, "stop_loss", datetime(2026, 1, 1, tzinfo=UTC))
+            _open_and_close(recovered_symbol, "stop_loss", datetime(2026, 1, 1, tzinfo=UTC))
+            _open_and_close(recovered_symbol, "take_profit", datetime(2026, 1, 2, tzinfo=UTC))
+            _open_and_close(other_symbol, "take_profit", datetime(2026, 1, 1, tzinfo=UTC))
+
+            flagged = persistor.symbols_with_last_exit_reason_stop_loss(
+                [stopped_symbol, recovered_symbol, other_symbol], EXPERIMENT_BUCKET,
+            )
+        assert flagged == {stopped_symbol}
+    finally:
+        _cleanup_symbol(stopped_symbol)
+        _cleanup_symbol(recovered_symbol)
+        _cleanup_symbol(other_symbol)
+
+
+def test_run_cycle_blocks_reentry_on_recently_stopped_symbol_below_stricter_threshold(monkeypatch):
+    """Faz 341 — kullanıcı bulgusu: bir sembolde pump_fade stop olduktan
+    SONRA pump devam ettiği için normal min_gain_pct hâlâ geçiliyor,
+    sistem hemen aynı sembolde tekrar SHORT açıp tekrar stop oluyordu.
+    Son kapanan işlemi stop_loss olan bir sembolde, gain_pct normal eşiği
+    geçse bile daha sıkı reentry eşiğinin ALTINDAYSA giriş olmamalı."""
+    from contracts.decision_event import DecisionEvent
+
+    symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    try:
+        with SessionFactory.get_session() as session:
+            persistor = DecisionPersistor(session)
+            event = DecisionEvent(
+                id=uuid4(), symbol=symbol, proposed_direction="SHORT", final_action="SHORT",
+                final_size=1.0, status="open", entry_price=100.0, quantity=1.0,
+                experiment_bucket=EXPERIMENT_BUCKET,
+            )
+            persistor.persist(event)
+            persistor.close_position(
+                decision_id=str(event.id), exit_price=130.0, pnl=-30.0, closed_at=datetime.now(UTC),
+                outcome={"exit_reason": "stop_loss"},
+            )
+
+        _set_pump_fade_settings(
+            pump_fade_enabled="true", pump_fade_min_gain_pct="0.15", pump_fade_reentry_min_gain_pct="0.50",
+        )
+        monkeypatch.setattr(
+            "services.pump_fade_strategy.fetch_usdt_perpetual_symbols", lambda: [symbol]
+        )
+        # gain_pct = (12-10)/10 = 0.20 -> normal eşiği (0.15) geçiyor ama
+        # reentry eşiğinin (0.50) altında.
+        provider = _FakeProvider({symbol: _pump_then_settled_bars(10.0, 12.0)})
+
+        result = PumpFadeStrategy(data_provider=provider).run_cycle()
+
+        assert result["candidates_found"] == 0
+        assert len(result["opened"]) == 0
+    finally:
+        _cleanup_symbol(symbol)
+        _set_pump_fade_settings(pump_fade_enabled="false")
+
+
+def test_run_cycle_allows_reentry_on_recently_stopped_symbol_above_stricter_threshold(monkeypatch):
+    """Faz 341 — AYNI senaryo ama gain_pct reentry eşiğini de geçiyor
+    (fiyat gerçekten %50+ yükselmiş) — artık giriş engellenmemeli."""
+    from contracts.decision_event import DecisionEvent
+
+    symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    try:
+        with SessionFactory.get_session() as session:
+            persistor = DecisionPersistor(session)
+            event = DecisionEvent(
+                id=uuid4(), symbol=symbol, proposed_direction="SHORT", final_action="SHORT",
+                final_size=1.0, status="open", entry_price=100.0, quantity=1.0,
+                experiment_bucket=EXPERIMENT_BUCKET,
+            )
+            persistor.persist(event)
+            persistor.close_position(
+                decision_id=str(event.id), exit_price=130.0, pnl=-30.0, closed_at=datetime.now(UTC),
+                outcome={"exit_reason": "stop_loss"},
+            )
+
+        _set_pump_fade_settings(
+            pump_fade_enabled="true", pump_fade_min_gain_pct="0.15", pump_fade_reentry_min_gain_pct="0.50",
+        )
+        monkeypatch.setattr(
+            "services.pump_fade_strategy.fetch_usdt_perpetual_symbols", lambda: [symbol]
+        )
+        # gain_pct = (16-10)/10 = 0.60 -> hem normal hem reentry eşiğini geçiyor.
+        provider = _FakeProvider({symbol: _pump_then_settled_bars(10.0, 16.0)})
+
+        result = PumpFadeStrategy(data_provider=provider).run_cycle()
+
+        assert result["candidates_found"] == 1
+        assert len(result["opened"]) == 1
+    finally:
+        _cleanup_symbol(symbol)
+        _set_pump_fade_settings(pump_fade_enabled="false")
+
+
 def test_run_cycle_does_not_raise_target_leverage_when_safety_lock_would_allow_more(monkeypatch):
     """AI'daki AYNI ilke: configured/hedef kaldıraç sadece bir TAVAN,
     güvenlik kilidi daha yüksek bir kaldıraca asla izin vermek için

@@ -279,18 +279,25 @@ def test_pump_fade_settings_accept_valid_and_reject_invalid_values():
             assert bad_enabled.status_code == 400
 
             ok_pct = client.post(
-                "/api/v1/settings/pump_fade_capital_pct",
+                "/api/v1/settings/pump_fade_max_total_capital_pct",
                 params={"value": "0.1"},
                 headers=make_authed_headers(Role.ADMIN),
             )
             assert ok_pct.status_code == 200
 
             bad_pct = client.post(
-                "/api/v1/settings/pump_fade_capital_pct",
+                "/api/v1/settings/pump_fade_max_total_capital_pct",
                 params={"value": "1.5"},
                 headers=make_authed_headers(Role.ADMIN),
             )
             assert bad_pct.status_code == 400
+
+            bad_reentry_gain = client.post(
+                "/api/v1/settings/pump_fade_reentry_min_gain_pct",
+                params={"value": "0"},
+                headers=make_authed_headers(Role.ADMIN),
+            )
+            assert bad_reentry_gain.status_code == 400
 
             ok_leverage = client.post(
                 "/api/v1/settings/pump_fade_leverage",
@@ -329,7 +336,7 @@ def test_pump_fade_settings_accept_valid_and_reject_invalid_values():
         finally:
             with SessionFactory.get_session() as session:
                 repo = AppSettingsRepository(session)
-                for key in ("pump_fade_enabled", "pump_fade_capital_pct", "pump_fade_leverage"):
+                for key in ("pump_fade_enabled", "pump_fade_max_total_capital_pct", "pump_fade_leverage"):
                     repo.set(key, DEFAULTS[key], updated_by="test")
 
 

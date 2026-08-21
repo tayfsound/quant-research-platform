@@ -408,6 +408,29 @@ class DecisionPersistor:
         ).scalar()
         return float(total or 0.0)
 
+    def symbols_with_last_exit_reason_stop_loss(self, symbols: list[str], experiment_bucket: str) -> set[str]:
+        """Faz 341 — pump_fade'in stop-sonrası tekrar-giriş sıkılaştırması
+        için: verilen sembollerden, o experiment_bucket'taki EN SON kapanan
+        işlemi stop_loss ile bitenlerin kümesi. exit_reason gerçek bir sütun
+        DEĞİL, outcome jsonb'sinin bir alanı (closed_trades_summary() ile
+        AYNI okuma deseni). DISTINCT ON (Postgres) — her sembol için sadece
+        en yeni closed_at'li satır, tek sorgu."""
+        if not symbols:
+            return set()
+        rows = self.session.execute(
+            text(
+                "SELECT symbol, exit_reason FROM ("
+                "  SELECT DISTINCT ON (symbol) symbol, outcome ->> 'exit_reason' AS exit_reason "
+                "  FROM decisions "
+                "  WHERE status = 'closed' AND experiment_bucket = :experiment_bucket "
+                "  AND symbol = ANY(:symbols) "
+                "  ORDER BY symbol, closed_at DESC"
+                ") last_per_symbol WHERE exit_reason = 'stop_loss'"
+            ),
+            {"experiment_bucket": experiment_bucket, "symbols": symbols},
+        ).fetchall()
+        return {r.symbol for r in rows}
+
     def count_open_by_symbol_direction(self, symbol: str) -> dict[str, int]:
         """Faz 268-sonrası — bkz. contracts/contexts/risk.py::
         same_direction_open_counts. Bu SEMBOL için, yöne göre gruplanmış

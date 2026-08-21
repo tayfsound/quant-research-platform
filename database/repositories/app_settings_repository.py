@@ -429,6 +429,19 @@ DEFAULTS: dict[str, str] = {
     # bir tolerans (gürültü barlarının yanlışlıkla bloklamaması için).
     "pump_fade_momentum_confirmation_hours": "6",
     "pump_fade_momentum_tolerance_pct": "0.01",
+    # Faz 341 — kullanıcı bulgusu (gerçek olay, tekrarlayan): bir sembolde
+    # pump_fade stop olduktan SONRA pump devam ettiği için gain_pct hâlâ
+    # (hatta daha fazla) min_gain_pct'i (%15) geçiyor kalıyordu — sistem
+    # bir SONRAKİ döngüde AYNI sembolde tekrar SHORT açıp tekrar stop
+    # oluyordu (aynı yükselen trende karşı ardışık kayıp). Kullanıcı:
+    # "stop olduktan sonra tekrar girecekse fiyat %20 değil %50 yükselirse
+    # tekrar girsin." find_pump_candidates'in genel min_gain_pct'i
+    # DEĞİŞMEDİ (o TÜM ilk-girişler için kalibre, bkz. üstteki not) —
+    # bu SADECE bir sembolün son kapanan pump_fade işlemi stop_loss ile
+    # bittiyse, o sembol için EK/daha sıkı bir eşik (run_cycle'da
+    # candidates zaten hesaplanmış gain_pct'e göre süzülüyor, ikinci bir
+    # ağ isteği yok). "Sadece sıkılaştır" ilkesiyle tutarlı.
+    "pump_fade_reentry_min_gain_pct": "0.50",
     # Faz 268-sonrası — kritik tasarım kararı: kullanıcı çıkışı ("%100
     # kâr ettiğinde") onayladı ama KORUYUCU stop-loss mesafesini
     # belirtmedi (sadece "max_safe_leverage ile aynı güvenlik kilidi
