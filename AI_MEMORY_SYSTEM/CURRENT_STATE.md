@@ -1,10 +1,24 @@
-# Mevcut Durum -- v1.80.0 (Faz 341: pump_fade stop-sonrası tekrar giriş sıkılaştırması)
+# Mevcut Durum -- v1.81.0 (Faz 342: council SHORT/bearish_low WAIT gate'i)
 
 **Tarih:** 2026-08-21
 **Branch:** main
-**Son commit (HEAD):** Faz 341 (`2a42b96`).
-**⚠️ Servis durumu:** uvicorn + celery worker_default YENİDEN BAŞLATILDI (pump_fade canlı karar hattı değişti) — temiz.
+**Son commit (HEAD):** Faz 342 devam (`b7c5178`).
+**⚠️ Servis durumu:** uvicorn + celery worker_default YENİDEN BAŞLATILDI (MetaStage/cognitive_pipeline.py canlı karar hattı değişti) — temiz.
 **⚠️ Bilinen sorun (kullanıcı bulgusu, henüz araştırılmadı):** "Sistem genel olarak hantal/yavaş çalışıyor" — acil değil, sırada.
+
+## Faz 342 — Council'in SHORT/bearish_low kombinasyonu WAIT'e zorlanıyor (2026-08-21)
+
+Kullanıcı isteği: "short pozisyonlar neden karlı değil?" Harici bir AI incelemesinin (rakamları gerçek sistemden birebir doğrulandı) `bearish_low` bulgusunu council'in kendi SHORT/LONG kararlarına yön kırılımıyla test ettim. Gerçek 1577 kapanmış kararla ölçüldü: council'in SHORT kararları genel %21.6 isabetli (LONG %96.4) — ama TEK bir rejimden kaynaklanıyor. `market_regime` kırılımı: SHORT/bearish/low n=424, isabet SADECE %8.3 (toplam -$604); LONG/bearish/low n=398, isabet %95.2 (+$141). Diğer bearish alt-rejimlerinde SHORT çok daha iyi (normal %46.8 n=47, high %90.9 n=11).
+
+Kök neden: `market_regime` = TechnicalContext'in HIZLI EMA20/EMA50 kesişimine (`trend`) + gerçekleşen volatiliteye dayanıyor — QuantAgent'ın (Faz 339'da düzeltilen) yavaş 200-EMA'sından FARKLI bir sinyal. "bearish_low" (EMA20<EMA50 + düşük volatilite) fiilen bir düşüş devamı değil, klasik bir taban/konsolidasyon kurulumu — SHORT açmak dönüşe karşı bahis oluyor. pump_fade'in Faz 327/332/341'de zaten düzelttiği "bearish ≠ SHORT-favorable" hatasının council seviyesindeki karşılığı.
+
+`engines/cognitive_pipeline.py::MetaStage` — sideways_market gate'inin hemen ardına, AYNI desende yeni bir gate: SADECE `belief.direction=="SHORT" and trend=="bearish" and volatility_regime=="low"` iken `meta["decision"]="WAIT"`. LONG'a, diğer rejimlere dokunulmuyor — "sadece sıkılaştır" ilkesi.
+
+Bu arada Transactions'ın karda/zararda kartına (Faz 340) kullanıcı isteğiyle renk ayrımı eklendi (karda=yeşil, zararda=kırmızı, tek renk yerine).
+
+**Test:** `tests/test_meta_stage_bearish_low_short_gate.py` (5 yeni), geniş MetaStage/council regresyonu (29 test) temiz. `test_pairs_trader.py`'nin 2 bilinen pre-existing flaky testi (`git stash` ile doğrulandı, değişiklikten bağımsız) hariç geniş entegrasyon paketi (26 test) temiz.
+
+**Sıradaki (kullanıcı sırası):** Faz 338'in strategy_regime_compatibility'sine YÖN (LONG/SHORT) kırılımı eklemek — GPT'nin en önemli iddiasının genel, tüm stratejiler için ölçüm hali.
 
 ## Faz 341 — pump_fade stop-sonrası tekrar giriş sıkılaştırması (2026-08-21)
 
