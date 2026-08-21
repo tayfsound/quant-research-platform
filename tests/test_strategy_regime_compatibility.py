@@ -57,21 +57,45 @@ def test_multiple_strategies_are_kept_independent():
 
 
 def test_strategy_label_includes_direction_for_ai_council():
-    assert _strategy_label("some_other_bucket", "LONG") == "ai_council_LONG"
-    assert _strategy_label(None, "SHORT") == "ai_council_SHORT"
+    assert _strategy_label("some_other_bucket", "LONG", None, None) == "ai_council_LONG"
+    assert _strategy_label(None, "SHORT", None, None) == "ai_council_SHORT"
 
 
 def test_strategy_label_includes_direction_for_pump_fade():
     from services.pump_fade_strategy import EXPERIMENT_BUCKET
 
-    assert _strategy_label(EXPERIMENT_BUCKET, "SHORT") == "pump_fade_SHORT"
+    assert _strategy_label(EXPERIMENT_BUCKET, "SHORT", None, None) == "pump_fade_SHORT"
+
+
+def test_strategy_label_includes_direction_for_basis_arb():
+    from services.basis_arbitrage_strategy import EXPERIMENT_BUCKET
+
+    assert _strategy_label(EXPERIMENT_BUCKET, "SHORT", None, None) == "basis_arb_SHORT"
 
 
 def test_strategy_label_falls_back_without_direction():
     """Yön yoksa/bilinmiyorsa (fail-closed) eski, kaba etikete düşer —
     icat edilmiş bir yön eklenmez."""
-    assert _strategy_label("some_other_bucket", None) == "ai_council"
-    assert _strategy_label("some_other_bucket", "") == "ai_council"
+    assert _strategy_label("some_other_bucket", None, None, None) == "ai_council"
+    assert _strategy_label("some_other_bucket", "", None, None) == "ai_council"
+
+
+def test_strategy_label_adds_trade_type_for_ai_council_only():
+    """Faz 345 — trade_type SADECE ai_council için ekleniyor; scalp
+    eşiği (%4.5) altındaki stop mesafesi scalp, üstündeki swing."""
+    assert _strategy_label("x", "LONG", 100.0, 98.0) == "ai_council_LONG_scalp"  # %2
+    assert _strategy_label("x", "LONG", 100.0, 90.0) == "ai_council_LONG_swing"  # %10
+    assert _strategy_label("x", "LONG", None, None) == "ai_council_LONG"  # veri yok -> eklenmez
+
+
+def test_strategy_label_does_not_add_trade_type_for_pump_fade_or_basis_arb():
+    """pump_fade/basis_arb kendi sabit stop-geometrisiyle mekanik —
+    trade_type ayrımı bilgi katmıyor, bilerek eklenmiyor."""
+    from services.basis_arbitrage_strategy import EXPERIMENT_BUCKET as BASIS_ARB_BUCKET
+    from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_BUCKET
+
+    assert _strategy_label(PUMP_FADE_BUCKET, "SHORT", 100.0, 130.0) == "pump_fade_SHORT"
+    assert _strategy_label(BASIS_ARB_BUCKET, "SHORT", 100.0, 130.0) == "basis_arb_SHORT"
 
 
 def test_gather_strategy_regime_compatibility_splits_ai_council_by_direction():
@@ -111,6 +135,50 @@ def test_gather_strategy_regime_compatibility_splits_ai_council_by_direction():
         by_strategy = result["by_strategy"]
         assert "ai_council_LONG" in by_strategy
         assert "ai_council_SHORT" in by_strategy
+    finally:
+        from sqlalchemy import text as _text
+
+        with SessionFactory.get_session() as session:
+            session.execute(_text("DELETE FROM decisions WHERE symbol = :s"), {"s": symbol})
+            session.commit()
+
+
+def test_gather_strategy_regime_compatibility_splits_ai_council_by_trade_type():
+    """Faz 345 — kullanıcı vizyonu ("scalp %99 başarılı bu koşullarda")
+    gerçek entegrasyonu: AYNI rejimde/yönde scalp ve swing kapanışları
+    ai_council_LONG_scalp/ai_council_LONG_swing olarak AYRI raporlanmalı."""
+    from database.repositories.decision_persistor import DecisionPersistor
+    from database.session_factory import SessionFactory
+
+    from services.strategy_regime_compatibility_gatherer import gather_strategy_regime_compatibility
+
+    symbol = f"SRCTT{uuid4().hex[:8]}USDT"
+    try:
+        with SessionFactory.get_session() as session:
+            persistor = DecisionPersistor(session)
+
+            def _open_and_close(stop_loss_price: float, win: bool) -> None:
+                from contracts.decision_event import DecisionEvent
+
+                event = DecisionEvent(
+                    id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+                    final_size=1.0, status="open", entry_price=100.0, quantity=1.0,
+                    stop_loss_price=stop_loss_price,
+                )
+                persistor.persist(event)
+                persistor.close_position(
+                    decision_id=str(event.id), exit_price=100.0,
+                    pnl=(10.0 if win else -10.0), closed_at=datetime.now(UTC),
+                    market_regime="bullish_low",
+                )
+
+            _open_and_close(98.0, True)  # %2 -> scalp
+            _open_and_close(90.0, False)  # %10 -> swing
+
+        result = gather_strategy_regime_compatibility()
+        by_strategy = result["by_strategy"]
+        assert "ai_council_LONG_scalp" in by_strategy
+        assert "ai_council_LONG_swing" in by_strategy
     finally:
         from sqlalchemy import text as _text
 
