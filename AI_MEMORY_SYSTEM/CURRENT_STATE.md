@@ -1,10 +1,18 @@
-# Mevcut Durum -- v1.79.0 (Faz 340: Transactions karda/zararda kartı + Faz 339 QuantAgent düzeltmesi)
+# Mevcut Durum -- v1.80.0 (Faz 341: pump_fade stop-sonrası tekrar giriş sıkılaştırması)
 
 **Tarih:** 2026-08-21
 **Branch:** main
-**Son commit (HEAD):** Faz 340 (`c6873f1`).
-**⚠️ Servis durumu:** uvicorn + celery worker_default + celery beat YENİDEN BAŞLATILDI (Faz 339: karar hattı; Faz 340: yeni periyodik task + beat schedule girişi) — temiz.
+**Son commit (HEAD):** Faz 341 (`2a42b96`).
+**⚠️ Servis durumu:** uvicorn + celery worker_default YENİDEN BAŞLATILDI (pump_fade canlı karar hattı değişti) — temiz.
 **⚠️ Bilinen sorun (kullanıcı bulgusu, henüz araştırılmadı):** "Sistem genel olarak hantal/yavaş çalışıyor" — acil değil, sırada.
+
+## Faz 341 — pump_fade stop-sonrası tekrar giriş sıkılaştırması (2026-08-21)
+
+Kullanıcı bulgusu: bir sembolde pump_fade stop olduktan SONRA pump devam ettiği için normal `pump_fade_min_gain_pct` (%15) hâlâ geçiliyordu — sistem bir sonraki döngüde AYNI sembolde tekrar SHORT açıp tekrar stop oluyordu. Kullanıcı isteği: "stop olduktan sonra tekrar girecekse fiyat %20 değil %50 yükselirse tekrar girsin."
+
+Yeni `pump_fade_reentry_min_gain_pct` ayarı (varsayılan 0.50). `DecisionPersistor.symbols_with_last_exit_reason_stop_loss()` (DISTINCT ON, her sembolün EN SON kapanışı) `run_cycle()`'da adayları filtreliyor: bir sembolün son kapanan pump_fade işlemi stop_loss ise, o döngüde `gain_pct` normal eşiği geçse bile daha sıkı reentry eşiğini de geçmeli, geçmezse aday elenir. `find_pump_candidates`'in genel `min_gain_pct`'i değişmedi (tüm ilk-girişler için kalibre kalıyor) — bu sadece tekrar-giriş için ek bir kapı. Settings.tsx'e karşılık gelen ayar kartı eklendi.
+
+**Test:** `tests/test_pump_fade_strategy.py`'ye 3 yeni test (persistor metodunun DISTINCT ON semantiği + run_cycle'ın hem engelleme hem izin verme dalları) — 44 pump_fade testi temiz. Bu arada `tests/test_app_settings_api.py`'de Faz 332'de kaldırılan `pump_fade_capital_pct`'ye referans veren, hep `KeyError` ile başarısız olan bir kalıntı da düzeltildi (`pump_fade_max_total_capital_pct` ile değiştirildi, ayrıca yeni ayarın validasyonu da eklendi).
 
 ## Faz 340 — Transactions: açık pozisyon karda/zararda yüzde kartı (2026-08-21)
 
