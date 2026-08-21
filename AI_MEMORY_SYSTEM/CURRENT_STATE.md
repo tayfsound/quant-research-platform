@@ -1,10 +1,23 @@
-# Mevcut Durum -- v1.81.0 (Faz 342: council SHORT/bearish_low WAIT gate'i)
+# Mevcut Durum -- v1.82.0 (Faz 343: GPT raporunun kalan maddeleri incelendi)
 
 **Tarih:** 2026-08-21
 **Branch:** main
-**Son commit (HEAD):** Faz 342 devam (`b7c5178`).
-**⚠️ Servis durumu:** uvicorn + celery worker_default YENİDEN BAŞLATILDI (MetaStage/cognitive_pipeline.py canlı karar hattı değişti) — temiz.
-**⚠️ Bilinen sorun (kullanıcı bulgusu, henüz araştırılmadı):** "Sistem genel olarak hantal/yavaş çalışıyor" — acil değil, sırada.
+**Son commit (HEAD):** Faz 343 (`e34c02a`).
+**⚠️ Servis durumu:** temiz, restart gerekmedi (Faz 343 sadece dokümantasyon).
+**⚠️ Bilinen sorun (kullanıcı bulgusu, henüz araştırılmadı):** "Sistem genel olarak hantal/yavaş çalışıyor" — acil değil, sırada (backlog sonlarında).
+
+## Faz 343 — Harici GPT mimari eleştirisinin kalan maddeleri incelendi (2026-08-21)
+
+Faz 342'de council'in SHORT/bearish_low sorununu çözdükten sonra, GPT raporunun kalan 4 maddesi gerçek veriyle tek tek test edildi:
+
+1. **TP/SL Confluence "LONG target=%0"**: BUG DEĞİL. Gerçek 14 günlük BTCUSDT düşüş penceresi (22 Oca-5 Şub 2026, -%29.8) simüle edildi — o dönemde confluence dağılımı tersine dönüyor (çoğu seviye fiyatın üstünde, mevcut yükseliş ölçümünün tam tersi). Rejim artefaktı, `services/tp_sl_confluence_gatherer.py`'ye bulgu notu eklendi.
+2. **Macro "dominance"**: tersi doğru çıktı. SHORT/bearish_low'daki 424 işlemin TAMAMINDA (%100) Macro LONG oy vermiş (isabet %91.6) — Technical (%99.5 SHORT) + Pattern (%64 SHORT) + Quant (Faz 339 öncesi) Macro'nun doğru sesini ezmiş. Faz 342'nin gate'i bunu zaten düzeltiyor.
+3. **Technical'ın "içsel tutarsız" IC'leri**: regime confound (Simpson paradoksu). `bollinger_confirm` mimari olarak SADECE `trend=="bearish"` iken ateşleniyor — kötü IC'si (-0.54) SADECE bearish_low'dan geliyor, dışarıda anlamsız (p=0.35). En zararlı hali Faz 342'yle zaten nötrlenmiş — RSI/OBV/trend regime'ler arası tutarlı, büyük bir "Technical'ı böl" refactor'u ŞU AN gerekmiyor.
+4. **N tutarsızlığı**: bug değil, kasıtlı farklı popülasyonlar — her modül zaten kendi N'ini raporluyor.
+
+Sonuç: dördü de ya bug-değil-artefakt ya da zaten Faz 342 ile çözülmüş çıktı — sadece #1'in bulgu notu kod değişikliği gerektirdi. Market World Model'in yeniden çerçevelenmesi (kozmetik) düşük öncelikte backlog'da kaldı.
+
+**Sıradaki (kullanıcı sırası):** İkinci dalga ajanlar (MempoolAgent, BehavioralAgent, Cross-Asset Arbitrage).
 
 ## Faz 342 — Council'in SHORT/bearish_low kombinasyonu WAIT'e zorlanıyor (2026-08-21)
 
