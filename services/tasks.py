@@ -674,6 +674,55 @@ def close_due_positions_task() -> dict:
     return {"closed_count": len(closed), "closed": closed}
 
 
+@celery_app.task(name="refresh_open_position_pnl_summary_task")
+def refresh_open_position_pnl_summary_task() -> dict:
+    """Faz 339 — kullanıcı isteği: Transactions'ta "açık pozisyonların
+    yüzde kaçı karda yüzde kaçı zararda" göstersin. Gerçek ölçüm: TÜM açık
+    pozisyonlar (747 satır, 134 benzersiz sembol) üzerinden bunu hesaplamak
+    ~15-20 saniye sürüyor (paralel fiyat çekme dahil) — API isteği anında
+    yapılırsa Faz 268w'nin düzelttiği "Transactions çok yavaş açılıyor"
+    sorununu geri getirir. Bunun yerine burada dakikada bir arka planda
+    hesaplanıp app_settings'e yazılıyor, API sadece okuyor (anlık).
+    Komisyon/finansman maliyeti kasıtlı olarak DAHİL EDİLMİYOR (gross_
+    unrealized_pnl) — bu kart kesin kuruşluk değil, kaba bir gösterge,
+    tam maliyetli hesap (estimate_net_pnl_if_closed_now) yüzlerce
+    pozisyon için çok daha pahalı."""
+    from database.repositories.app_settings_repository import AppSettingsRepository
+    from database.repositories.decision_persistor import DecisionPersistor
+    from database.session_factory import SessionFactory
+    from services.position_closer import fetch_current_prices_by_symbol, gross_unrealized_pnl
+
+    if _real_market_data_source_or_none() is None:
+        return {"skipped": "non_binance_market_data_source"}
+
+    with _CycleLock("lock:refresh_open_position_pnl_summary_task", ttl_seconds=120) as acquired:
+        if not acquired:
+            return {"skipped": "previous_run_still_in_progress"}
+
+        with SessionFactory.get_session() as session:
+            all_rows = DecisionPersistor(session).list_open_positions(limit=None)
+
+        prices = fetch_current_prices_by_symbol({r["symbol"] for r in all_rows})
+
+        profit_count = 0
+        loss_count = 0
+        for r in all_rows:
+            pnl = gross_unrealized_pnl(r, prices.get(r["symbol"]))
+            if pnl is None:
+                continue
+            if pnl > 0:
+                profit_count += 1
+            elif pnl < 0:
+                loss_count += 1
+
+        with SessionFactory.get_session() as session:
+            settings_repo = AppSettingsRepository(session)
+            settings_repo.set("open_positions_profit_count", str(profit_count), updated_by="refresh_open_position_pnl_summary_task")
+            settings_repo.set("open_positions_loss_count", str(loss_count), updated_by="refresh_open_position_pnl_summary_task")
+
+    return {"profit_count": profit_count, "loss_count": loss_count}
+
+
 @celery_app.task(name="close_due_shadow_positions_task")
 def close_due_shadow_positions_task() -> dict:
     """Shadow Mode (Faz 268-sonrası) — close_due_positions_task ile AYNI

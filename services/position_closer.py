@@ -891,3 +891,54 @@ class PositionCloser:
                 self.weight_optimizer.propose_weights(evaluation_window=100, regime=regime)
 
         return closed
+
+
+def fetch_current_prices_by_symbol(symbols: set[str]) -> dict[str, float]:
+    """Faz 268p/268w: her benzersiz sembol için TEK bir fiyat çekiyor
+    (100'lerce pozisyon aynı ~10-15 watchlist sembolünü paylaşıyor) —
+    pozisyon başına değil, sembol başına bir istek. GERÇEKTEN paralel
+    (ThreadPoolExecutor) — toplam süre en yavaş TEK isteğe yakın kalır.
+    Faz 339 — api/rest/positions.py'den buraya taşındı (services katmanı
+    hem API hem Celery task'larından kullanabilsin diye, bkz.
+    refresh_open_position_pnl_summary_task)."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from market_data.ingestion.data_provider import RoutingProvider
+
+    provider = RoutingProvider()
+
+    def _fetch_one(symbol: str) -> tuple[str, float | None]:
+        try:
+            data = provider.get_ohlcv(symbol, "1m", limit=1)
+            return symbol, (data[-1].close if data else None)
+        except Exception:
+            return symbol, None
+
+    if not symbols:
+        return {}
+
+    prices: dict[str, float] = {}
+    with ThreadPoolExecutor(max_workers=min(len(symbols), 16)) as pool:
+        for symbol, price in pool.map(_fetch_one, symbols):
+            if price is not None:
+                prices[symbol] = price
+    return prices
+
+
+def gross_unrealized_pnl(pos: dict, current_price: float | None) -> float | None:
+    """Komisyon/finansman maliyeti HARİÇ, sadece fiyat farkına dayalı kaba
+    kâr/zarar — dashboard'daki diğer basit kâr/zarar filtreleriyle (ör.
+    Transactions.tsx'in kapanmış işlem filtresi) AYNI basitlik seviyesinde.
+    Kesin net rakam için PositionCloser.estimate_net_pnl_if_closed_now()
+    kullanılmalı (komisyon + finansman dahil, ama yüzlerce pozisyon için
+    çok daha pahalı — bkz. Faz 339)."""
+    entry_price = pos.get("entry_price")
+    quantity = pos.get("quantity") or 0.0
+    direction = (pos.get("direction") or "").upper()
+    if entry_price is None or quantity <= 0 or current_price is None:
+        return None
+    if direction == "LONG":
+        return (current_price - entry_price) * quantity
+    if direction == "SHORT":
+        return (entry_price - current_price) * quantity
+    return None

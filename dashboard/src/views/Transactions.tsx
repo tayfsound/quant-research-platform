@@ -616,7 +616,7 @@ function FilterSelect<T extends string>({
 
 export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (symbol: string) => void } = {}) {
   const [open, setOpen] = useState<Position[]>([]);
-  const [openSummary, setOpenSummary] = useState<{ open_count: number; committed_notional: number } | null>(null);
+  const [openSummary, setOpenSummary] = useState<{ open_count: number; committed_notional: number; profit_count: number; loss_count: number } | null>(null);
   const [trades, setTrades] = useState<Position[]>([]);
   const [summary, setSummary] = useState<{ count: number; win_rate: number; total_pnl: number; tp_count: number; sl_count: number; manual_count: number } | null>(null);
   const [sinceMinutes, setSinceMinutes] = useState<number | null>(null);
@@ -754,6 +754,14 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
         <StatCard label="Açık pozisyon" value={openSummary?.open_count ?? open.length} />
+        {openSummary && openSummary.profit_count + openSummary.loss_count > 0 && (
+          <StatCard
+            label="Açık pozisyon: karda / zararda"
+            value={`%${(100 * openSummary.profit_count / (openSummary.profit_count + openSummary.loss_count)).toFixed(0)} / %${(100 * openSummary.loss_count / (openSummary.profit_count + openSummary.loss_count)).toFixed(0)}`}
+            sub={`${openSummary.profit_count} karda, ${openSummary.loss_count} zararda (tüm açık pozisyonlar, sadece bu sayfa değil)`}
+            tone={openSummary.profit_count >= openSummary.loss_count ? "rise" : "fall"}
+          />
+        )}
         <StatCard label="Kapanmış işlem" value={summary?.count ?? 0} sub={summary ? `%${(summary.win_rate * 100).toFixed(0)} kazanma oranı` : undefined} />
         <StatCard label="TP ile kapanan" value={summary?.tp_count ?? 0} tone="rise" />
         <StatCard label="SL ile kapanan" value={summary?.sl_count ?? 0} tone="fall" />

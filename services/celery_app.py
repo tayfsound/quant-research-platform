@@ -106,6 +106,14 @@ celery_app.conf.beat_schedule = {
         "task": "close_due_positions_task",
         "schedule": 60.0,
     },
+    # Faz 339 — kullanıcı isteği: Transactions'ta "açık pozisyonların
+    # yüzde kaçı karda/zararda" kartı. close_due_positions_task ile AYNI
+    # cadence, ama AYRI/bağımsız bir kilit — bu görev sadece ölçüm/kayıt,
+    # pozisyon açma/kapama gibi güvenlik-kritik bir işi paylaşmıyor.
+    "refresh-open-position-pnl-summary-every-minute": {
+        "task": "refresh_open_position_pnl_summary_task",
+        "schedule": 60.0,
+    },
     # Shadow Mode (Faz 268-sonrası) — gerçek pozisyonlarla AYNI cadence,
     # ayrı bir tablo (shadow_positions) üzerinde çalışır.
     "close-due-shadow-positions-every-minute": {

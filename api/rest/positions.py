@@ -12,7 +12,7 @@ from database.repositories.decision_persistor import DecisionPersistor
 from database.session_factory import SessionFactory
 from market_data.ingestion.data_provider import RoutingProvider
 from services.auth_service import AuthContext, get_current_user, require_role
-from services.position_closer import PositionCloser
+from services.position_closer import PositionCloser, fetch_current_prices_by_symbol
 
 router = APIRouter(tags=["positions"])
 
@@ -147,26 +147,7 @@ def _fetch_current_prices(symbols: set[str]) -> dict[str, float]:
     toplam süre en yavaş TEK isteğe iniyor (~15 kat değil, ~1 kat gecikme).
     Bir sembol çekilemezse (fail-closed) sadece o sembol sözlükte hiç yer
     almaz, diğerleri etkilenmez."""
-    from concurrent.futures import ThreadPoolExecutor
-
-    provider = RoutingProvider()
-
-    def _fetch_one(symbol: str) -> tuple[str, float | None]:
-        try:
-            data = provider.get_ohlcv(symbol, "1m", limit=1)
-            return symbol, (data[-1].close if data else None)
-        except Exception:
-            return symbol, None
-
-    if not symbols:
-        return {}
-
-    prices: dict[str, float] = {}
-    with ThreadPoolExecutor(max_workers=min(len(symbols), 16)) as pool:
-        for symbol, price in pool.map(_fetch_one, symbols):
-            if price is not None:
-                prices[symbol] = price
-    return prices
+    return fetch_current_prices_by_symbol(symbols)
 
 
 @router.get("/positions")
@@ -177,9 +158,21 @@ def list_open_positions(
         persistor = DecisionPersistor(session)
         rows = persistor.list_open_positions(limit=limit, offset=offset)
         summary = persistor.open_positions_summary()
+        # Kullanıcı isteği: "açık pozisyonların yüzde kaçı karda yüzde kaçı
+        # zararda." TÜM açık pozisyonlar üzerinden olmalı (sadece bu sayfa
+        # değil) — ama gerçek ölçüm: 747 pozisyon/134 sembolde tam bir
+        # tarama ~30 saniye sürüyor (fiyat çekme + finansman maliyeti).
+        # İstek anında hesaplamak Faz 268w'nin düzelttiği "Transactions
+        # çok yavaş açılıyor" sorununu geri getirirdi — bunun yerine
+        # refresh_open_position_pnl_summary_task dakikada bir arka planda
+        # hesaplayıp app_settings'e yazıyor, burası sadece okuyor (anlık).
+        settings_repo = AppSettingsRepository(session)
+        summary["profit_count"] = int(settings_repo.get("open_positions_profit_count") or 0)
+        summary["loss_count"] = int(settings_repo.get("open_positions_loss_count") or 0)
 
     prices = _fetch_current_prices({r["symbol"] for r in rows})
     closer = PositionCloser(RoutingProvider())
+
     positions = []
     for r in rows:
         price = prices.get(r["symbol"])
