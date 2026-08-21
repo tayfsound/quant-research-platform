@@ -1,12 +1,22 @@
-# Mevcut Durum -- v1.84.0 (Faz 345: strategy_regime_compatibility trade_type kırılımı)
+# Mevcut Durum -- v1.85.0 (Faz 346: Autonomous Strategy Synthesizer v1)
 
 **Tarih:** 2026-08-21
 **Branch:** main
-**Son commit (HEAD):** Faz 345 (`5f90960`).
-**⚠️ Servis durumu:** uvicorn yeniden başlatıldı (ölçüm-only gatherer, canlı karar hattı etkilenmedi) — temiz.
+**Son commit (HEAD):** Faz 346 (`92185c1`).
+**⚠️ Servis durumu:** uvicorn yeniden başlatıldı (ölçüm-only gatherer/router, canlı karar hattı etkilenmedi) — temiz.
 **⚠️ Bilinen sorun (kullanıcı bulgusu, henüz araştırılmadı):** "Sistem genel olarak hantal/yavaş çalışıyor" — acil değil, sırada (backlog sonlarında).
 **⚠️ `basis_arbitrage_enabled=false` (varsayılan)** — Faz 344 henüz hiçbir gerçek pozisyon açmıyor, kullanıcı Settings'ten açıkça açmadan devreye girmez.
-**⚠️ OPERASYONEL DERS (2026-08-21):** Faz 344'ün hata ayıklaması sırasında pytest DIŞINDA çalıştırılan ham `.venv/bin/python -c` debug scriptleri `conftest.py`'nin `quantdb_test` yönlendirmesini atlayıp GERÇEK `quantdb`'e 5 sahte pozisyon yazdı — kullanıcı Transactions'ta fark edip sordu, kaynağı bulunup onayla silindi. Kalıcı kural [[feedback_debug_scripts_must_target_test_db]] hafızasına eklendi — bundan sonra yan etkili (persist/close_position/record) herhangi bir ham script çalıştırılmadan önce ya test DB env değişkenleri elle set edilmeli ya da pytest üzerinden çalıştırılmalı.
+**⚠️ OPERASYONEL DERS (2026-08-21):** Faz 344'ün hata ayıklaması sırasında pytest DIŞINDA çalıştırılan ham `.venv/bin/python -c` debug scriptleri `conftest.py`'nin `quantdb_test` yönlendirmesini atlayıp GERÇEK `quantdb`'e 5 sahte pozisyon yazdı — kullanıcı Transactions'ta fark edip sordu, kaynağı bulunup onayla silindi. Kalıcı kural [[feedback_debug_scripts_must_target_test_db]] hafızasına eklendi.
+
+## Faz 346 — Autonomous Strategy Synthesizer v1: Regime Gate Discovery (2026-08-21)
+
+Kullanıcı vizyonu ("belirli koşullar birlikteyken hafızaya bakıp tanısın") — netleştirme sorusuyla v1 kapsamı onaylandı: bugün elle yapılan sürecin (SHORT/bearish_low bulgusu, Faz 342) OTOMASYONU, yeni açık-uçlu strateji mantığı icat eden bir sistem DEĞİL. CMA-ES ajan ayarının (`meta_optimizer/agent_tuner.py`, Faz 239-241) "ölç → OOS kanıtla → insan onayı" zincirinin genellenmiş hali.
+
+`analytics/strategy_hypothesis_scanner.py::scan_for_gate_candidates()` — strategy×regime uzayını tarar, bir hücrenin win_rate'i AYNI stratejinin GERİ KALANINDAN (hücre HARİÇ — kontaminasyon önlenir, gerçek bulgu: bir hücre kendi stratejisinin ÇOĞUNLUĞU olduğunda kirletilmiş delta_vs_overall gerçek etkiyi gizliyordu, düzeltildi) istatistiksel olarak anlamlı kötüyse aday işaretler; onlarca hücre aynı anda test edildiği için Benjamini-Hochberg FDR düzeltmesi (`causal_inference.py`, Faz 331) uygulanıyor. `validate_candidate_out_of_sample()` — aday, zaman sırasına göre ikiye bölünüp (embargo boşluklu) hiç görülmemiş geç yarıda da aynı yönde kötü çıkıyor mu test ediyor.
+
+Kasıtlı olarak SADECE ölçüm/aday üretimi — hiçbir aday otomatik bir gate'e bağlanmıyor. Gerçek doğrulama: SHORT/bearish_low/swing (Faz 342'nin zaten kapattığı kombinasyon) tek aday olarak bulundu (n=403, delta=-%32.5, p≈0) — ama zaman-bölünmüş OOS testinde henüz tekrarlanmadı (bearish_low'un yakın zamana yoğunlaşması nedeniyle) — sistem abartmadan dürüstçe bunu da raporluyor.
+
+**Test:** 8 yeni test (gerçek enjekte edilmiş etki tespiti, FDR gürültü filtreleme, OOS tekrarlanma/tekrarlanmama, kontaminasyon önleme dahil).
 
 ## Faz 345 — strategy_regime_compatibility'ye trade_type (scalp/swing) kırılımı (2026-08-21)
 
