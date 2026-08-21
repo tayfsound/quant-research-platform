@@ -22,6 +22,7 @@ import OpportunityQuality from './views/OpportunityQuality';
 import AgentAblation from './views/AgentAblation';
 import TpSlConfluence from './views/TpSlConfluence';
 import AgentCombinationReliability from './views/AgentCombinationReliability';
+import StrategyRegimeCompatibility from './views/StrategyRegimeCompatibility';
 import ResearchSummary from './views/ResearchSummary';
 import Sidebar from './components/Sidebar';
 import { clearToken, hasToken } from './api/auth';
@@ -85,6 +86,7 @@ function App() {
           {view === 'agent-ablation' && <AgentAblation />}
           {view === 'tp-sl-confluence' && <TpSlConfluence />}
           {view === 'agent-combination-reliability' && <AgentCombinationReliability />}
+          {view === 'strategy-regime-compatibility' && <StrategyRegimeCompatibility />}
           {view === 'research-summary' && <ResearchSummary onNavigate={setView} />}
         </div>
       </main>

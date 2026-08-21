@@ -1,9 +1,33 @@
-# Mevcut Durum -- v1.74.0 (Faz 335: NUPL/SOPR OnChainAgent'a bağlandı + Faz 334 watchdog)
+# Mevcut Durum -- v1.77.0 (Faz 338: Strateji × Rejim Uyumu (MetaStrategyAgent v1) + Faz 336/337)
 
 **Tarih:** 2026-08-21
 **Branch:** main
-**Son commit (HEAD):** Faz 334 (`b08de9c`) — Faz 335 bu segment sonunda commitlenecek.
-**⚠️ Servis durumu:** uvicorn + celery `-Q celery` worker YENİDEN BAŞLATILMALI — `agents/onchain_agent.py`/`services/context_adapter.py` (canlı karar hattı) değişti. NOT: `scripts/service_watchdog.sh` artık çalışıyor (PID izlenmeli değil, arka planda kendi kendine restart yapıyor) — manuel restart hâlâ hemen etkiyi görmek için önerilir ama artık "unutulursa" watchdog en geç 60sn içinde yakalar.
+**Son commit (HEAD):** Faz 337 (`86699c2`) — Faz 338 bu segment sonunda commitlenecek.
+**⚠️ Servis durumu:** uvicorn + celery `-Q celery` worker YENİDEN BAŞLATILMALI — `api/main.py` yeni router aldı, `services/research_summary_gatherer.py` yeni modül aldı (canlı karar hattı değişmedi, sadece ölçüm/API yüzeyi). `scripts/service_watchdog.sh` çalışıyorsa en geç 60sn içinde yakalar, manuel restart yine de önerilir.
+
+## Faz 338 — Strateji × Rejim Uyumu / MetaStrategyAgent v1 (2026-08-21)
+
+Kullanıcı sorusu: "Sistem hangi senaryoda hangi strateji başarılı diye ölçüyor mu acaba? Şu an uyguladığı scalp stratejisi long'da çok başarılı ama piyasa bearish olduğu zaman çok başarısız olacak belki." Yanıt: HAYIR, ölçmüyordu — `decisions.market_regime` (Faz 244-246'dan beri kapanışta yazılıyor) hiçbir yerde okunup toplu raporlanmıyordu. pump_fade'in bugünkü felaketiyle (bullish rejimde SHORT-only strateji hâlâ tam boyutta işlem açıyordu) TAM olarak aynı desenin genel, tüm stratejiler için tekrarlanabilir hali — harici bir AI incelemesinin de bağımsız önerdiği modül.
+
+`analytics/strategy_regime_compatibility.py::compute_strategy_regime_compatibility()` — GERÇEK kapanmış kararları `strategy × market_regime`'e göre gruplayıp her kovanın win_rate'ini, %95 güven aralığını ve stratejinin KENDİ genel win_rate'ine göre farkını (`delta_vs_overall`) hesaplıyor; `min_group_size=15` altındaki kovalar fail-closed dışlanıyor. `services/strategy_regime_compatibility_gatherer.py` gerçek `decisions` tablosundan (son 5000, `status='closed' AND market_regime IS NOT NULL`) besliyor; `experiment_bucket`'a göre `"pump_fade"` / `"ai_council"` etiketliyor (v1'de kasıtlı kaba ayrım). `api/rest/strategy_regime_compatibility.py` tek canlı `GET /` endpoint'i (Self-Model'in en basit deseniyle aynı — haftalık snapshot/repository/migration KATMANI bilinçli olarak v1 kapsamı dışında bırakıldı, sadece ölçüm).
+
+Kasıtlı olarak SADECE ölçüm/rapor — v1'de hiçbir gate'e otomatik bağlı değil, hiçbir stratejiyi ALLOW/REDUCE/BLOCK etmiyor ("yeni meta-model = ölçüm-only, hemen güvenli; karara bağlamak = ayrı OOS kanıtı + onay gerektirir" ilkesi). Dashboard'a "Strateji × Rejim Uyumu" sayfası + Sidebar girişi + "Genel Özet" panelindeki 12. modül olarak eklendi.
+
+**Test:** `tests/test_strategy_regime_compatibility.py` (5 yeni, pure-function), `api/main.py` route kaydı `TestClient` ile doğrulandı (401 dönüyor, 404 değil), dashboard `tsc --noEmit` temiz.
+
+## Faz 337 — Execution Impact Estimator: pump_fade'e ölçüm-only bağlandı (2026-08-21)
+
+Harici bir AI incelemesinin önerisi: gerçek emirler gönderilmeden önce bile, mevcut `order_book_snapshots` (Faz 186, sadece top-of-book) verisiyle beklenen piyasa etkisini/kayma maliyetini TAHMİN edip kayda geçirmek — henüz hiçbir boyutlandırma kararını otomatik küçültmüyor (o, ayrı bir onay gerektirir; execution_mode="testnet" plan Faz 1'in kapsamı).
+
+`services/execution_impact_estimator.py::estimate_execution_cost_pct()` — Kyle (1985)/Almgren-Chriss (2000) kare-kök piyasa etkisi yaklaşımı: `impact_pct = half_spread_pct × sqrt(notional/available_liquidity)`; order book yoksa `None` döner (fail-closed, uydurma değer yok). `pump_fade_strategy.py::_try_open` her pozisyon açılışında bu tahmini hesaplayıp `agent_opinions`'a `execution_cost_estimate` girdisi olarak LOG-ONLY ekliyor.
+
+**Test:** `tests/test_execution_impact_estimator.py` (7 yeni, pure-function), `test_pump_fade_strategy.py`'ye 1 yeni entegrasyon testi (gerçek `order_book_snapshots` satırı seed edilip opinion'ın göründüğü doğrulanıyor) — pump_fade toplam 41 test.
+
+## Faz 336 — Volatility Agent: 11. oy-veren ajan eklendi (2026-08-21)
+
+Kullanıcının onayladığı ikinci dalga ajan listesinden (Mempool, Execution, Volatility, Credit) sıradaki. Deribit'in genel/anahtarsız API'sinden gerçek DVOL (kripto VIX) verisi: `market_data/volatility/deribit_provider.py::fetch_dvol_level/fetch_dvol_trend` (15dk cache; 24 saatte >%15 yükseliş "spiking", >%15 düşüş "falling", aksi "stable"). `agents/volatility_agent.py::VolatilityAgent` — asimetrik: spiking → SHORT -1.0 (volatilite patlaması genelde risk-off/tepe sinyali), falling → LONG +0.5 (daha zayıf, "sakinleşme" tek başına güçlü bir yön sinyali değil), stable → katkı yok. `AgentDomain.VOLATILITY` + `VOTING_AGENT_DOMAINS`'e eklendi, council artık 11 ajanlı.
+
+**Test:** `tests/test_volatility_agent.py` (7 yeni).
 
 ## Faz 335 — NUPL/SOPR OnChainAgent'a bağlandı (2026-08-21)
 
