@@ -530,7 +530,49 @@ class PumpFadeStrategy:
             margin_profit_pct = take_profit_pct * leverage
             liquidation_price = compute_liquidation_price(entry_price, "SHORT", leverage)
 
+            # Faz 337 — kullanıcı onayı: ExecutionAgent v1 kapsamı SADECE
+            # ölçüm/kayıt — margin/quantity/leverage'a HİÇ dokunmuyor,
+            # sadece SHORT (yani ask tarafında değil bid tarafında satım)
+            # için tahmini yürütme maliyetini agent_opinions'a kaydediyor.
+            # Bugünkü krizle DOĞRUDAN ilgili: pump_fade adayları tanım
+            # gereği (kısa sürede aşırı hareket etmiş, genelde düşük
+            # likiditeli) altcoin'ler — gerçek maliyetin ne kadar büyük
+            # olduğunu birkaç hafta ÖLÇMEDEN otomatik bir boyut-küçültme
+            # gate'i eklenmiyor (bkz. execution_impact_estimator.py'nin
+            # kapsam notu).
+            execution_cost_estimate = None
+            try:
+                from database.repositories.market_data_repository import MarketDataRepository
+                from contracts.market_data import DataSource
+                from services.execution_impact_estimator import estimate_execution_cost_pct
+
+                order_book = MarketDataRepository(session).get_latest_order_book_snapshot(
+                    DataSource.BINANCE, symbol
+                )
+                execution_cost_estimate = estimate_execution_cost_pct(order_book, margin * leverage, "SHORT")
+            except Exception:
+                execution_cost_estimate = None
+
             now = datetime.now(UTC)
+            opinions = [{
+                "type": "pump_fade_rule",
+                "data": {
+                    "gain_pct_lookback": candidate["gain_pct"],
+                    "lookback_hours": lookback_hours,
+                    "pullback_from_peak_pct": candidate["pullback_from_peak_pct"],
+                    "momentum_pct": candidate["momentum_pct"],
+                    "density_size_multiplier": density_size_multiplier,
+                    "regime_size_multiplier": regime_size_multiplier,
+                    "stop_distance_pct": stop_distance_pct,
+                    "target_leverage": target_leverage,
+                    "applied_leverage": leverage,
+                    "take_profit_pct": take_profit_pct,
+                    "margin_profit_pct": margin_profit_pct,
+                },
+            }]
+            if execution_cost_estimate is not None:
+                opinions.append({"type": "execution_cost_estimate", "data": execution_cost_estimate})
+
             event = DecisionEvent(
                 timestamp=now,
                 symbol=symbol,
@@ -538,22 +580,7 @@ class PumpFadeStrategy:
                 final_action="SHORT",
                 final_size=final_size,
                 confidence=0.0,
-                agent_opinions=[{
-                    "type": "pump_fade_rule",
-                    "data": {
-                        "gain_pct_lookback": candidate["gain_pct"],
-                        "lookback_hours": lookback_hours,
-                        "pullback_from_peak_pct": candidate["pullback_from_peak_pct"],
-                        "momentum_pct": candidate["momentum_pct"],
-                        "density_size_multiplier": density_size_multiplier,
-                        "regime_size_multiplier": regime_size_multiplier,
-                        "stop_distance_pct": stop_distance_pct,
-                        "target_leverage": target_leverage,
-                        "applied_leverage": leverage,
-                        "take_profit_pct": take_profit_pct,
-                        "margin_profit_pct": margin_profit_pct,
-                    },
-                }],
+                agent_opinions=opinions,
                 status="open",
                 entry_price=entry_price,
                 quantity=quantity,

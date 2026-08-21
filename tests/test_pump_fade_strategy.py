@@ -193,6 +193,47 @@ def test_run_cycle_skipped_when_disabled():
     assert result == {"skipped": "pump_fade_disabled"}
 
 
+def test_run_cycle_records_execution_cost_estimate_when_order_book_available(monkeypatch):
+    """Faz 337 — kullanıcı onayı: ExecutionAgent v1 SADECE ölçüm/kayıt,
+    margin/quantity'ye hiç dokunmuyor. Gerçek bir order_book_snapshots
+    satırı varsa agent_opinions'a bir 'execution_cost_estimate' kaydı
+    eklenmeli."""
+    from contracts.market_data import DataSource
+    from database.repositories.market_data_repository import MarketDataRepository
+
+    symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    try:
+        with SessionFactory.get_session() as session:
+            MarketDataRepository(session).save_order_book_snapshot(
+                exchange=DataSource.BINANCE, symbol=symbol, time=datetime.now(UTC),
+                best_bid=21.9, best_ask=22.0, bid_volume=500.0, ask_volume=500.0,
+                imbalance=0.0, spread_bps=45.0,
+            )
+            session.commit()
+
+        _set_pump_fade_settings(pump_fade_enabled="true")
+        monkeypatch.setattr(
+            "services.pump_fade_strategy.fetch_usdt_perpetual_symbols", lambda: [symbol]
+        )
+        provider = _FakeProvider({symbol: _pump_then_settled_bars(10.0, 22.0)})
+
+        result = PumpFadeStrategy(data_provider=provider).run_cycle()
+        assert len(result["opened"]) == 1
+
+        with SessionFactory.get_session() as session:
+            rows = DecisionPersistor(session).list_open_positions(limit=50)
+        row = next(r for r in rows if r["symbol"] == symbol)
+        estimates = [c for c in row["agent_contributions"] if c.get("type") == "execution_cost_estimate"]
+        assert len(estimates) == 1
+        assert estimates[0]["data"]["total_cost_pct"] > 0
+    finally:
+        _cleanup_symbol(symbol)
+        with SessionFactory.get_session() as session:
+            session.execute(text("DELETE FROM order_book_snapshots WHERE symbol = :symbol"), {"symbol": symbol})
+            session.commit()
+        _set_pump_fade_settings(pump_fade_enabled="false")
+
+
 def test_run_cycle_opens_short_position_with_leverage_clamped_by_safety_lock(monkeypatch):
     """Varsayılan pump_fade_stop_distance_pct=0.15 ile max_safe_leverage
     hedef 5x'i ~4.35x'e kırpmalı — kullanıcının onayladığı güvenlik kilidi
