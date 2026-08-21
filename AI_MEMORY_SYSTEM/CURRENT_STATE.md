@@ -1,9 +1,18 @@
-# Mevcut Durum -- v1.78.0 (Faz 339: QuantAgent'tan long_term_trend_regime tamamen kaldırıldı)
+# Mevcut Durum -- v1.79.0 (Faz 340: Transactions karda/zararda kartı + Faz 339 QuantAgent düzeltmesi)
 
 **Tarih:** 2026-08-21
 **Branch:** main
-**Son commit (HEAD):** Faz 338 (`b90adc3`) — Faz 339 bu segment sonunda commitlenecek.
-**⚠️ Servis durumu:** uvicorn + celery `-Q celery` worker YENİDEN BAŞLATILMALI — `agents/quant_agent.py`/`contracts/quant.py`/`services/context_adapter.py` (canlı karar hattı) değişti.
+**Son commit (HEAD):** Faz 340 (`c6873f1`).
+**⚠️ Servis durumu:** uvicorn + celery worker_default + celery beat YENİDEN BAŞLATILDI (Faz 339: karar hattı; Faz 340: yeni periyodik task + beat schedule girişi) — temiz.
+**⚠️ Bilinen sorun (kullanıcı bulgusu, henüz araştırılmadı):** "Sistem genel olarak hantal/yavaş çalışıyor" — acil değil, sırada.
+
+## Faz 340 — Transactions: açık pozisyon karda/zararda yüzde kartı (2026-08-21)
+
+Kullanıcı isteği: açık pozisyonların yüzde kaçının karda yüzde kaçının zararda olduğunu gösteren bir kart. TÜM açık pozisyonlar üzerinden olmalı (sadece görüntülenen sayfa değil) — ama gerçek ölçüm: 747 açık pozisyon/134 benzersiz sembolde tam bir tarama ~15-30 saniye sürüyor (paralel fiyat çekme + varsa finansman maliyeti). İstek anında hesaplamak Faz 268w'nin düzelttiği "Transactions çok yavaş açılıyor" sorununu geri getirirdi.
+
+Çözüm: yeni `refresh_open_position_pnl_summary_task` (dakikada bir, `close_due_positions_task` ile AYNI cadence ama AYRI kilit) arka planda hesaplayıp `app_settings`'e yazıyor (`open_positions_profit_count`/`open_positions_loss_count`); API sadece okuyor (~0.02s, DB round-trip dışında maliyet yok). Komisyon/finansman maliyeti kasıtlı DIŞARIDA (`gross_unrealized_pnl` — sadece fiyat farkı) — dashboard'daki diğer kaba kâr/zarar filtreleriyle aynı basitlik seviyesinde, kesin kuruşluk bir rakam değil. `fetch_current_prices_by_symbol`/`gross_unrealized_pnl` paylaşılan kullanım için `api/rest/positions.py`'den `services/position_closer.py`'ye taşındı.
+
+**Test:** İlgili 9 test dosyası (position_closer/positions/celery_tasks) çalıştırıldı — 1 bilinen flaky test (`test_position_close_feeds_agent_learning.py`, `git stash` ile doğrulandı, paylaşılan test-DB durumu kaynaklı, koddan bağımsız) hariç temiz. Manuel: task gerçek 747 pozisyon/134 sembolde çalıştırılıp (508 karda, 238 zararda) sonuç `app_settings`'te doğrulandı, API okuma 0.025s ölçüldü.
 
 ## Faz 339 — QuantAgent'tan long_term_trend_regime TAMAMEN kaldırıldı (2026-08-21)
 
