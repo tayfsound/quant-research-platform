@@ -757,9 +757,18 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
         {openSummary && openSummary.profit_count + openSummary.loss_count > 0 && (
           <StatCard
             label="Açık pozisyon: karda / zararda"
-            value={`%${(100 * openSummary.profit_count / (openSummary.profit_count + openSummary.loss_count)).toFixed(0)} / %${(100 * openSummary.loss_count / (openSummary.profit_count + openSummary.loss_count)).toFixed(0)}`}
+            value={
+              <>
+                <span className="text-rise">
+                  %{(100 * openSummary.profit_count / (openSummary.profit_count + openSummary.loss_count)).toFixed(0)}
+                </span>
+                {" / "}
+                <span className="text-fall">
+                  %{(100 * openSummary.loss_count / (openSummary.profit_count + openSummary.loss_count)).toFixed(0)}
+                </span>
+              </>
+            }
             sub={`${openSummary.profit_count} karda, ${openSummary.loss_count} zararda (tüm açık pozisyonlar, sadece bu sayfa değil)`}
-            tone={openSummary.profit_count >= openSummary.loss_count ? "rise" : "fall"}
           />
         )}
         <StatCard label="Kapanmış işlem" value={summary?.count ?? 0} sub={summary ? `%${(summary.win_rate * 100).toFixed(0)} kazanma oranı` : undefined} />
