@@ -139,6 +139,10 @@ def _serialize(row: dict, current_price: float | None = None, net_unrealized_pnl
     }
 
 
+_DISPLAY_PRICE_CACHE: dict[str, tuple[float, float]] = {}
+_DISPLAY_PRICE_CACHE_TTL_SECONDS = 8.0
+
+
 def _fetch_current_prices(symbols: set[str]) -> dict[str, float]:
     """Faz 268p/268w: her benzersiz sembol için TEK bir fiyat çekiyor
     (100'lerce pozisyon aynı ~10-15 watchlist sembolünü paylaşıyor) —
@@ -152,8 +156,39 @@ def _fetch_current_prices(symbols: set[str]) -> dict[str, float]:
     paralel çekiliyor artık — 15 sıralı istek yerine 15 istek aynı anda,
     toplam süre en yavaş TEK isteğe iniyor (~15 kat değil, ~1 kat gecikme).
     Bir sembol çekilemezse (fail-closed) sadece o sembol sözlükte hiç yer
-    almaz, diğerleri etkilenmez."""
-    return fetch_current_prices_by_symbol(symbols)
+    almaz, diğerleri etkilenmez.
+
+    Faz 347 — kullanıcı bulgusu ("sistem genel olarak hantal"): gerçek
+    ölçüm — Binance hız sınırlayıcısı (exchange_gateway/binance/
+    rate_limit.py, saniyede 15 istek, TÜM süreçler arasında Redis'te
+    PAYLAŞILIYOR) yüzünden 66 benzersiz sembol için bu çağrı ~9 saniye
+    sürüyor — VE bu bütçe canlı trading döngüsüyle (run_trading_cycle_
+    task, close_due_positions_task vb.) AYNI anda paylaşılıyor, dashboard
+    her açıldığında/15sn'de bir yenilendiğinde canlı döngüyle çakışıyor.
+    Kısa süreli (8sn) bir SÜREÇ-İÇİ önbellek — SADECE bu GÖRÜNTÜLEME
+    fonksiyonuna özel, services/position_closer.py::fetch_current_
+    prices_by_symbol'e (stop/hedef/likidasyon kontrolü — Faz 334'ün
+    stop_loss overshoot düzeltmesinin tam ilgilendiği yer) KASITLI
+    olarak BULAŞMIYOR — o fonksiyon her zaman taze fiyat ister, gecikme
+    orada güvenlik riski olurdu. Burada SADECE kullanıcıya gösterilen
+    bir sayı, 8sn'lik bayatlık kabul edilebilir bir tercih."""
+    import time
+
+    now = time.monotonic()
+    cached_hits: dict[str, float] = {}
+    stale_or_missing: set[str] = set()
+    for symbol in symbols:
+        cached = _DISPLAY_PRICE_CACHE.get(symbol)
+        if cached is not None and (now - cached[0]) < _DISPLAY_PRICE_CACHE_TTL_SECONDS:
+            cached_hits[symbol] = cached[1]
+        else:
+            stale_or_missing.add(symbol)
+
+    fresh = fetch_current_prices_by_symbol(stale_or_missing) if stale_or_missing else {}
+    for symbol, price in fresh.items():
+        _DISPLAY_PRICE_CACHE[symbol] = (now, price)
+
+    return {**cached_hits, **fresh}
 
 
 @router.get("/positions")
