@@ -27,6 +27,7 @@ _MODULES = [
     ("tp_sl_confluence", "TP/SL Confluence", "tp-sl-confluence", "services.tp_sl_confluence_gatherer", "gather_tp_sl_confluence"),
     ("agent_combination_reliability", "Ajan Kombinasyonu Güvenilirliği", "agent-combination-reliability", "services.agent_combination_reliability_gatherer", "gather_agent_combination_reliability"),
     ("strategy_regime_compatibility", "Strateji × Rejim Uyumu", "strategy-regime-compatibility", "services.strategy_regime_compatibility_gatherer", "gather_strategy_regime_compatibility"),
+    ("strategy_hypothesis_scanner", "Strateji Hipotez Tarayıcı", "strategy-hypothesis-scanner", "services.strategy_hypothesis_scanner_gatherer", "gather_strategy_hypothesis_candidates"),
 ]
 
 
