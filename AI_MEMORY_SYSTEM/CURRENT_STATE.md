@@ -1,12 +1,23 @@
-# Mevcut Durum -- v1.85.0 (Faz 346: Autonomous Strategy Synthesizer v1)
+# Mevcut Durum -- v1.86.0 (Faz 348: Meta-Label Model canlı karara bağlandı)
 
 **Tarih:** 2026-08-21
 **Branch:** main
-**Son commit (HEAD):** Faz 346 (`92185c1`).
-**⚠️ Servis durumu:** uvicorn yeniden başlatıldı (ölçüm-only gatherer/router, canlı karar hattı etkilenmedi) — temiz.
-**⚠️ Bilinen sorun (kullanıcı bulgusu, henüz araştırılmadı):** "Sistem genel olarak hantal/yavaş çalışıyor" — acil değil, sırada (backlog sonlarında).
+**Son commit (HEAD):** Faz 348 (`5343aff`).
+**⚠️ Servis durumu:** uvicorn + celery worker_default + celery beat YENİDEN BAŞLATILDI (RiskTargetStage canlı karar hattı değişti) — temiz.
 **⚠️ `basis_arbitrage_enabled=false` (varsayılan)** — Faz 344 henüz hiçbir gerçek pozisyon açmıyor, kullanıcı Settings'ten açıkça açmadan devreye girmez.
 **⚠️ OPERASYONEL DERS (2026-08-21):** Faz 344'ün hata ayıklaması sırasında pytest DIŞINDA çalıştırılan ham `.venv/bin/python -c` debug scriptleri `conftest.py`'nin `quantdb_test` yönlendirmesini atlayıp GERÇEK `quantdb`'e 5 sahte pozisyon yazdı — kullanıcı Transactions'ta fark edip sordu, kaynağı bulunup onayla silindi. Kalıcı kural [[feedback_debug_scripts_must_target_test_db]] hafızasına eklendi.
+
+## Faz 348 — Meta-Label Model canlı karara bağlandı: sadece pozisyon boyutu çarpanı (2026-08-21)
+
+Kullanıcı isteği (1752 kapanmış işlemle "modüllere bakıp wire edelim"): `services/meta_label_model.py` (Faz 268-sonrası'ndan beri eğitiliyordu ama hiçbir canlı karara bağlanmıyordu) gerçek OOS kanıtı ölçülüp kullanıcıya gösterildi — test_accuracy %85.2 (taban oranı %61.4), test_auc 0.93, n=878 — önceden belirlenmiş "taban oranını gerçekten yenerse bağlanabilir" çizgisini net geçti. Adaptive Barrier Engine de kontrol edildi, zaten aktifti.
+
+Kullanıcı onayıyla (netleştirme sorusu): SADECE pozisyon boyutu çarpanı olarak bağlandı (Kelly boyutlandırmayla AYNI "sadece küçült, asla büyütme" ilkesi) — yön kararı hiç etkilenmiyor. `RiskTargetStage` — stop/target set edildikten HEMEN SONRA (MetaStage'in aksine bu aşamada planned_rr_ratio hesaplanabiliyor) `predict_tp_probability` çağrılıyor, `meta_label_size_multiplier` ile final_size sadece küçültülüyor. Henüz model yoksa (fail-closed None) hiçbir şey değişmez. Yeni `retrain_meta_label_model_task` (günlük) — gerçek model hemen eğitilip kaydedildi, canlıda doğrulandı.
+
+**Test:** 6 yeni test, geniş council/orchestrator/e2e/pairs_trader regresyonu (47+ test) temiz.
+
+## Faz 347 — /positions'a kısa süreli (8sn) görüntüleme fiyat önbelleği (2026-08-21)
+
+Kullanıcı bulgusu: "sistem genel olarak hantal/yavaş çalışıyor." Kök neden: GET /positions (Dashboard + Transactions'ın ikisi de kullanıyor) 66 benzersiz sembolde ~9sn sürüyordu — Binance hız sınırlayıcısı (saniyede 15 istek) TÜM süreçler arasında paylaşılıyor, dashboard yükleme/15sn'lik yenileme canlı trading döngüsüyle AYNI bütçeyi paylaşıp çakışıyordu. Sadece GÖRÜNTÜLEME amaçlı 8sn'lik süreç-içi önbellek eklendi — `services/position_closer.py::fetch_current_prices_by_symbol`'e (stop/hedef/likidasyon kontrolü, güvenlik kritik) KASITLI bulaşmadı. Ölçüldü: 2.35s → 0.0s (sıcak çağrı).
 
 ## Faz 346 — Autonomous Strategy Synthesizer v1: Regime Gate Discovery (2026-08-21)
 
