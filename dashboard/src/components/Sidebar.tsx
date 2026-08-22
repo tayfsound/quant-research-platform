@@ -20,7 +20,7 @@ const GROUPS: { label: string; items: { key: string; label: string }[] }[] = [
       { key: "collective-intelligence", label: "Collective Intelligence" },
       { key: "mae-mfe-confidence", label: "MAE/MFE Güven Aralığı" },
       { key: "meta-learning-effectiveness", label: "Meta-Learning Effectiveness" },
-      { key: "market-world-model", label: "Market World Model" },
+      { key: "market-world-model", label: "Risk Simülatörü" },
       { key: "direction-prediction-v2", label: "Direction Prediction v2" },
       { key: "opportunity-quality", label: "Opportunity Quality" },
       { key: "agent-ablation", label: "Agent Ablation" },

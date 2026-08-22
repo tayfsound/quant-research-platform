@@ -83,7 +83,7 @@ class CognitiveEngine:
         ctx = self.meta_stage.execute(ctx, belief, opinions)
         ctx = self.predictive_risk_stage.execute(ctx)
         ctx = self.drawdown_sizing_stage.execute(ctx)
-        ctx = self.risk_target_stage.execute(ctx)
+        ctx = self.risk_target_stage.execute(ctx, opinions)
         ctx = self.decision_fusion.execute(ctx, belief, opinions)
         ctx = self.risk_gate_stage.execute(ctx)
 

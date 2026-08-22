@@ -22,6 +22,7 @@ RiskTargetStage'e bağlandı, ama SADECE pozisyon boyutu çarpanı olarak
 boyutlandırmayla AYNI "sadece küçült" ilkesi."""
 from sqlalchemy import text
 
+from analytics.opportunity_quality import agreement_from_contributions, agreement_from_opinions
 from contracts.agent_confidence_model import AgentConfidenceModel
 from services.agent_confidence_model import ConfidenceModelRepository, _normalize_raw_features, _vectorize
 
@@ -38,6 +39,17 @@ META_LABEL_FEATURE_SCHEMA = {
         "confidence", "planned_rr_ratio", "adx", "di_plus", "di_minus",
         "rsi_value", "hurst_exponent", "realized_vol_percentile",
         "bollinger_percent_b", "vwap_deviation_pct",
+        # Faz 350 — kullanıcı bulgusu: 1998 gerçek kapanmış işlemde
+        # (analytics/opportunity_quality.py) ajan konsensüsü (LONG/SHORT/
+        # WAIT oylarının entropi-tabanlı anlaşma skoru) win_rate ile GÜÇLÜ
+        # ilişkili çıktı — medium anlaşma %92.4 (n=590) vs low anlaşma
+        # %68.5 (n=1401), örtüşmeyen %95 güven aralıkları. O rapor
+        # SADECE ölçümdü, hiçbir gate'e bağlı değildi — burada, zaten
+        # canlıya bağlı olan (Faz 348) meta-label modeline BİR özellik
+        # daha eklenip gerçek OOS'ta taban oranını (mevcut modelin kendi
+        # eski performansı) gerçekten geçip geçmediği ölçülerek karar
+        # verildi (bkz. retrain sonrası test_accuracy/test_auc karşılaştırması).
+        "agent_agreement",
     ],
     "boolean": ["volume_confirmation"],
     "categorical": ["trend", "momentum", "market_structure", "volatility_regime", "long_term_trend_regime"],
@@ -89,6 +101,8 @@ def _extract_meta_label_training_rows(window: int) -> tuple[list[dict], list[int
         feats = _normalize_raw_features(raw_features)
         feats["planned_rr_ratio"] = planned_target_pct / planned_stop_pct
         feats["confidence"] = row["confidence"] or 0.0
+        agreement = agreement_from_contributions(row["agent_contributions"])
+        feats["agent_agreement"] = agreement if agreement is not None else 0.0
 
         feats_list.append(feats)
         labels.append(1 if row["outcome"].get("exit_reason") == "take_profit" else 0)

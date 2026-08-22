@@ -877,6 +877,64 @@ export default function Settings() {
           </div>
         </Card>
 
+        <Card>
+          <h3 className="text-sm font-semibold text-ink mb-1">Pozisyon Havuzu (Max Confidence Modu)</h3>
+          <p className="text-xs text-ink-soft mb-3">
+            Açık: council'ın risk-onaylı yönlü kararları hemen açılmaz, {draft.max_confidence_mode_pool_window_minutes ?? "15"} dakikalık
+            bir havuzda toplanır; pencere kapanınca sadece en yüksek confidence'lı ilk {draft.max_confidence_mode_top_k ?? "3"} aday
+            TAZE fiyattan açılır, geri kalanı reddedilir. Sadece council'ın normal yolunu etkiler — pump_fade/basis_arb
+            kendi izole akışlarında bundan habersiz devam eder. Kapalıyken (varsayılan) bugünkü davranış birebir korunur.
+          </p>
+          <div className="flex gap-2 mb-4">
+            {[
+              { key: "true", label: "Açık" },
+              { key: "false", label: "Kapalı" },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => save("max_confidence_mode_enabled", key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  (settings.max_confidence_mode_enabled ?? "false") === key
+                    ? "bg-accent text-white border-accent"
+                    : "bg-canvas-soft text-ink-soft border-line hover:bg-surface-soft"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <p className="text-xs text-ink-soft mb-2">Havuz penceresi (dakika)</p>
+          <div className="flex gap-2 mb-4">
+            <Input
+              decimal
+              value={draft.max_confidence_mode_pool_window_minutes ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, max_confidence_mode_pool_window_minutes: v }))}
+            />
+            <Button
+              disabled={saving === "max_confidence_mode_pool_window_minutes"}
+              onClick={() => save("max_confidence_mode_pool_window_minutes", draft.max_confidence_mode_pool_window_minutes)}
+            >
+              {saved === "max_confidence_mode_pool_window_minutes" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+
+          <p className="text-xs text-ink-soft mb-2">Pencere başına açılacak aday sayısı (top-K)</p>
+          <div className="flex gap-2">
+            <Input
+              decimal
+              value={draft.max_confidence_mode_top_k ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, max_confidence_mode_top_k: v }))}
+            />
+            <Button
+              disabled={saving === "max_confidence_mode_top_k"}
+              onClick={() => save("max_confidence_mode_top_k", draft.max_confidence_mode_top_k)}
+            >
+              {saved === "max_confidence_mode_top_k" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+        </Card>
+
         {/* Faz 282 — kullanıcı kararı (2026-08-19): pairs trading (hedge)
             stratejisi kalıcı olarak durduruldu (pairs_trading_enabled=false,
             backend'de hâlâ duruyor ama hiç yeni pozisyon açmıyor) — kullanıcı

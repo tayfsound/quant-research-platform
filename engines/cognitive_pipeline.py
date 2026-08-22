@@ -617,7 +617,7 @@ class RiskTargetStage:
     # — asla daraltmaz, sadece "scalp" bölgesine hiç girilmesini engeller.
     DEFAULT_MIN_STOP_PCT = 0.045
 
-    def execute(self, ctx: CognitiveCycleContext) -> CognitiveCycleContext:
+    def execute(self, ctx: CognitiveCycleContext, opinions: list | None = None) -> CognitiveCycleContext:
         # 3. taraf inceleme bulgusu — gerçek: PredictiveRiskStage ve
         # DrawdownSizingStage final_size<=0 (MetaStage WAIT dediğinde,
         # ör. strong_dissent/sideways_market gate'i) ise hemen çıkıyordu
@@ -732,11 +732,14 @@ class RiskTargetStage:
         # eğitilmiş bir model yoksa (fail-closed None) hiçbir şey
         # değişmez, mevcut davranış aynen korunur.
         try:
+            from analytics.opportunity_quality import agreement_from_opinions
             from services.meta_label_model import meta_label_size_multiplier, predict_tp_probability
 
             features = dict(ctx.market.features or {})
             features["confidence"] = ctx.decision.confidence or 0.0
             features["planned_rr_ratio"] = (target_pct / stop_pct) if stop_pct > 0 else 0.0
+            agreement = agreement_from_opinions(opinions)
+            features["agent_agreement"] = agreement if agreement is not None else 0.0
             tp_probability = predict_tp_probability(features)
             if tp_probability is not None and ctx.decision.final_size > 0:
                 multiplier = meta_label_size_multiplier(tp_probability)

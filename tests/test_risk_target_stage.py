@@ -563,3 +563,50 @@ def test_risk_target_stage_does_not_grow_final_size_via_meta_label_model(monkeyp
     result = RiskTargetStage().execute(ctx)
 
     assert abs(result.decision.final_size - 0.3) < 1e-9
+
+
+def test_risk_target_stage_passes_real_agent_agreement_from_opinions_to_meta_label_model(monkeypatch):
+    """Faz 350 — kullanıcı bulgusu: agent_agreement (ajan oylarının
+    entropi-tabanlı anlaşma skoru) 1998 gerçek işlemde win_rate ile güçlü
+    ilişkili çıktı, meta-label modeline özellik olarak eklendi (gerçek OOS
+    kanıtı: test_accuracy %85.2 -> %90.2, aynı ~880 örneklemde). Bu test,
+    canlı karar anında opinions'tan hesaplanan agreement'ın modele GERÇEKTEN
+    ulaştığını doğruluyor — eğitimdeki (agent_contributions) AYNI formülle."""
+    from contracts.agent import AgentDomain, AgentOpinion
+
+    captured_features = {}
+
+    def _capture(features):
+        captured_features.update(features)
+        return 0.5
+
+    monkeypatch.setattr("services.meta_label_model.predict_tp_probability", _capture)
+
+    opinions = [
+        AgentOpinion(domain=AgentDomain.TECHNICAL, direction="LONG"),
+        AgentOpinion(domain=AgentDomain.MACRO, direction="LONG"),
+        AgentOpinion(domain=AgentDomain.QUANT, direction="LONG"),
+    ]
+    ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
+    ctx.decision.final_size = 0.3
+    RiskTargetStage().execute(ctx, opinions)
+
+    assert captured_features["agent_agreement"] == 1.0  # oybirliği
+
+
+def test_risk_target_stage_defaults_agent_agreement_to_zero_without_opinions(monkeypatch):
+    """opinions verilmeden çağrılırsa (ör. eski çağıranlar/testler) fail-
+    closed 0.0 — hiçbir zaman icat edilmiş bir anlaşma skoru üretilmez."""
+    captured_features = {}
+
+    def _capture(features):
+        captured_features.update(features)
+        return 0.5
+
+    monkeypatch.setattr("services.meta_label_model.predict_tp_probability", _capture)
+
+    ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
+    ctx.decision.final_size = 0.3
+    RiskTargetStage().execute(ctx)
+
+    assert captured_features["agent_agreement"] == 0.0

@@ -20,7 +20,7 @@ _MODULES = [
     ("collective_intelligence", "Collective Intelligence", "collective-intelligence", "services.collective_intelligence_gatherer", "gather_collective_intelligence"),
     ("mae_mfe_confidence", "MAE/MFE Güven Aralığı", "mae-mfe-confidence", "services.mae_mfe_confidence_gatherer", "gather_mae_mfe_confidence"),
     ("meta_learning_effectiveness", "Meta-Learning Effectiveness", "meta-learning-effectiveness", "services.meta_learning_effectiveness_gatherer", "gather_meta_learning_effectiveness"),
-    ("market_world_model", "Market World Model", "market-world-model", "services.market_world_model_gatherer", "gather_market_world_model"),
+    ("market_world_model", "Risk Simülatörü", "market-world-model", "services.market_world_model_gatherer", "gather_market_world_model"),
     ("direction_prediction_v2", "Direction Prediction v2", "direction-prediction-v2", "services.direction_prediction_v2_gatherer", "gather_direction_prediction_v2"),
     ("opportunity_quality", "Opportunity Quality", "opportunity-quality", "services.opportunity_quality_gatherer", "gather_opportunity_quality"),
     ("agent_ablation", "Agent Ablation", "agent-ablation", "services.agent_ablation_gatherer", "gather_agent_ablation"),

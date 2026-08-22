@@ -39,6 +39,47 @@ def compute_agent_agreement(votes: dict[str, int]) -> float:
     return round(max(0.0, 1.0 - (entropy / max_entropy)), 4)
 
 
+def agreement_from_contributions(contributions: list[dict] | None) -> float | None:
+    """GERÇEK kapanmış bir işlemin `decisions.agent_contributions`
+    JSON'ından (her ajanın {"domain":..., "direction":...} oyu) LONG/
+    SHORT/WAIT sayımı yapıp compute_agent_agreement'a verir. services/
+    opportunity_quality_gatherer.py VE services/meta_label_model.py
+    (Faz 350 — agent_agreement eğitim özelliği) AYNI çıkarımı paylaşır —
+    ikisi bağımsızca tekrarlanırsa train/predict tutarsızlığı riski
+    doğar."""
+    votes = {"LONG": 0, "SHORT": 0, "WAIT": 0}
+    found_any = False
+    for item in (contributions or []):
+        if not isinstance(item, dict) or "domain" not in item:
+            continue
+        direction = (item.get("direction") or "").upper()
+        if direction in votes:
+            votes[direction] += 1
+            found_any = True
+    if not found_any:
+        return None
+    return compute_agent_agreement(votes)
+
+
+def agreement_from_opinions(opinions: list) -> float | None:
+    """agreement_from_contributions ile AYNI hesap, ama CANLI karar
+    anında (henüz DB'ye yazılmamış) AgentOpinion nesnelerinden — bkz.
+    engines/cognitive_pipeline.py::RiskTargetStage. Eğitim (geçmiş
+    kapanmış işlemler, contributions dict) ile tahmin (canlı, opinions
+    listesi) anında AYNI formülün uygulanması modelin genelleyebilmesi
+    için kritik."""
+    votes = {"LONG": 0, "SHORT": 0, "WAIT": 0}
+    found_any = False
+    for o in (opinions or []):
+        direction = (getattr(o, "direction", None) or "").upper()
+        if direction in votes:
+            votes[direction] += 1
+            found_any = True
+    if not found_any:
+        return None
+    return compute_agent_agreement(votes)
+
+
 def _agreement_bucket(agreement: float) -> str:
     if agreement < 0.34:
         return "low"

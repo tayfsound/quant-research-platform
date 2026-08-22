@@ -80,6 +80,7 @@ def test_train_meta_label_model_returns_none_when_below_min_samples():
 def _persist_closed_decision_for_meta_label(
     symbol: str, entry_price: float, stop_loss_price: float, take_profit_price: float,
     confidence: float, features: dict, exit_reason: str, closed_at: datetime,
+    agent_opinions: list | None = None,
 ) -> None:
     with SessionFactory.get_session() as session:
         persistor = DecisionPersistor(session)
@@ -96,7 +97,7 @@ def _persist_closed_decision_for_meta_label(
             take_profit_price=take_profit_price,
             quantity=1.0,
             opened_at=closed_at - timedelta(minutes=10),
-            agent_opinions=[],
+            agent_opinions=agent_opinions or [],
             market_snapshot={"features": features},
         )
         persistor.persist(event)
@@ -142,6 +143,7 @@ def test_train_meta_label_model_learns_a_real_pattern_from_fresh_window_dominate
         assert model.domain == META_LABEL_DOMAIN
         assert "planned_rr_ratio" in model.numeric_features
         assert "confidence" in model.numeric_features
+        assert "agent_agreement" in model.numeric_features
         # Gerçek OOS doğrulama alanları hep dolu olmalı.
         assert 0.0 <= model.test_accuracy <= 1.0
         assert 0.0 <= model.baseline_correctness_rate <= 1.0
@@ -151,6 +153,67 @@ def test_train_meta_label_model_learns_a_real_pattern_from_fresh_window_dominate
         conf_idx = model.numeric_features.index("confidence")
         assert model.coefficients[rr_idx] < 0  # genis oran -> P(TP) duser
         assert model.coefficients[conf_idx] > 0  # yuksek confidence -> P(TP) artar
+    finally:
+        with SessionFactory.get_session() as session:
+            from sqlalchemy import text
+            session.execute(text("DELETE FROM decisions WHERE symbol = :symbol"), {"symbol": symbol})
+            session.commit()
+
+
+def _unanimous_long_opinions() -> list[dict]:
+    return [
+        {"domain": "technical", "direction": "LONG"},
+        {"domain": "macro", "direction": "LONG"},
+        {"domain": "quant", "direction": "LONG"},
+    ]
+
+
+def _split_opinions() -> list[dict]:
+    return [
+        {"domain": "technical", "direction": "LONG"},
+        {"domain": "macro", "direction": "SHORT"},
+        {"domain": "quant", "direction": "WAIT"},
+    ]
+
+
+def test_train_meta_label_model_extracts_agent_agreement_from_real_contributions():
+    """Faz 350 — kullanıcı bulgusu: 1998 gerçek kapanmış işlemde ajan
+    konsensüsü win_rate ile güçlü ilişkiliydi (medium %92.4 n=590 vs low
+    %68.5 n=1401). Bu test, o özelliğin GERÇEKTEN agent_contributions'tan
+    doğru çıkarıldığını (unanimous->yüksek, bölünmüş->düşük agreement)
+    doğrular — modelin bunu ÖĞRENip ÖĞRENMEDİĞİni değil (o ayrı, gerçek
+    veriyle Faz 350'de elle doğrulandı: test_accuracy %90.2 vs önceki
+    %85.2, aynı ~880 örneklemde), sadece çıkarımın doğruluğunu."""
+    from analytics.opportunity_quality import agreement_from_contributions
+
+    window = 40
+    base_time = datetime.now(UTC) + timedelta(days=3651)
+    symbol = f"METALABELAGR{uuid4().hex[:8]}"
+
+    try:
+        for i in range(window // 2):
+            _persist_closed_decision_for_meta_label(
+                symbol, entry_price=100.0, stop_loss_price=98.0, take_profit_price=100.5,
+                confidence=0.6, features={"trend": "bullish", "volatility_regime": "normal"},
+                exit_reason="take_profit", closed_at=base_time - timedelta(seconds=i),
+                agent_opinions=_unanimous_long_opinions(),
+            )
+        for i in range(window // 2):
+            _persist_closed_decision_for_meta_label(
+                symbol, entry_price=100.0, stop_loss_price=98.0, take_profit_price=100.5,
+                confidence=0.6, features={"trend": "bullish", "volatility_regime": "normal"},
+                exit_reason="stop_loss", closed_at=base_time - timedelta(seconds=window // 2 + i),
+                agent_opinions=_split_opinions(),
+            )
+
+        model = train_meta_label_model(window=window, min_samples=window)
+        assert model is not None
+        assert model.sample_count == window
+
+        unanimous_agreement = agreement_from_contributions(_unanimous_long_opinions())
+        split_agreement = agreement_from_contributions(_split_opinions())
+        assert unanimous_agreement == 1.0
+        assert split_agreement < unanimous_agreement
     finally:
         with SessionFactory.get_session() as session:
             from sqlalchemy import text

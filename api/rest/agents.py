@@ -20,6 +20,8 @@ _DESCRIPTIONS: dict[AgentDomain, str] = {
     AgentDomain.TIME: "Funding saati, hafta sonu, seans — yön tahmini yapmaz, sadece risk işaretler.",
     AgentDomain.EPISTEMOLOGY: "Veri tamlığı/tazeliği — council'in genel güvenini dengeler.",
     AgentDomain.RELATIVE_STRENGTH: "Bu sembolün getirisi, watchlist'teki diğer sembollerin ortalamasına göre daha mı güçlü/zayıf.",
+    AgentDomain.CREDIT: "Tahvil piyasası kredi koşulları — getiri eğrisi (10Y-2Y) tersine dönmesi ve kredi spread'i genişlemesi, risk varlıklarından ÖNCE gelen resesyon/stres uyarısı.",
+    AgentDomain.VOLATILITY: "Deribit DVOL (kriptonun VIX'i) — ani implied volatilite sıçraması, yön bağımsız genel piyasa-stresi göstergesi.",
 }
 
 _ROLE: dict[AgentDomain, str] = {d: "vote" for d in _DESCRIPTIONS}

@@ -10,26 +10,14 @@ deseni) LONG/SHORT/WAIT sayımı yapılır, compute_agent_agreement ile
 0-1 arası bir anlaşma skoruna çevrilir — pump_fade_v1 hariç (mekanik
 strateji, council oylaması hiç yok)."""
 from analytics.opportunity_quality import (
-    compute_agent_agreement,
+    agreement_from_contributions,
     compute_opportunity_quality_by_agreement,
 )
 from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMENT_BUCKET
 
 
 def _agreement_for_decision(row: dict) -> float | None:
-    contributions = row.get("agent_contributions") or []
-    votes = {"LONG": 0, "SHORT": 0, "WAIT": 0}
-    found_any = False
-    for item in contributions:
-        if not isinstance(item, dict) or "domain" not in item:
-            continue
-        direction = (item.get("direction") or "").upper()
-        if direction in votes:
-            votes[direction] += 1
-            found_any = True
-    if not found_any:
-        return None
-    return compute_agent_agreement(votes)
+    return agreement_from_contributions(row.get("agent_contributions"))
 
 
 def gather_opportunity_quality() -> dict:

@@ -90,6 +90,26 @@ class DecisionRecorder:
         # güncel kapanış fiyatına düş — hiçbir zaman uydurma bir sayı değil.
         entry_price = getattr(ctx.decision, "filled_price", None) or (ctx.market.raw_snapshot or {}).get("close")
 
+        # Faz 350 — Pozisyon Havuzu / Max Confidence Modu: normal council
+        # yolunda (deneysel bucket'sız) risk-onaylı bir açılış, ayar
+        # açıksa hemen açılmak yerine bir pencere boyunca havuzlanabilir
+        # (bkz. services/position_pool.py) — sonra sadece en yüksek
+        # confidence'lı top-K TAZE fiyattan açılır. pump_fade/basis_arb/
+        # pairs_trading zaten kendi experiment_bucket'ıyla council
+        # pipeline'ını (dolayısıyla bu fonksiyonu) hiç çağırmıyor, bu
+        # koldan etkilenmiyorlar. Ayar kapalıyken (varsayılan) try_pool_
+        # candidate() hiçbir şey yapmadan False döner — davranış birebir
+        # aynı kalır.
+        if opens_position and experiment_bucket is None:
+            from services.position_pool import try_pool_candidate
+
+            if try_pool_candidate(
+                ctx, direction, entry_price,
+                weight_snapshot_id=weight_snapshot_id,
+                belief_snapshot_id=belief.id if belief is not None else None,
+            ):
+                opens_position = False
+
         # Faz 192: RiskTargetStage'in gerçek ATR'den kurduğu risk/ödül
         # magnitüdlerini (ctx.decision.stop_loss_distance/take_profit_
         # distance), pozisyon gerçekten açıldığı andaki entry_price'a göre

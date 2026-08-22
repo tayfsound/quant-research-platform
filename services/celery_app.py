@@ -148,6 +148,15 @@ celery_app.conf.beat_schedule = {
         "task": "run_pairs_trading_task",
         "schedule": 300.0,
     },
+    # Faz 350 — Pozisyon Havuzu / Max Confidence Modu. 60sn'de bir kontrol
+    # (pencere varsayılan 15dk, ama bir adayın penceresi tam olarak ne
+    # zaman kapanacağı adayın kendi pooled_at'ine bağlı — sık kontrol
+    # etmezsek seçim gereksiz gecikir). max_confidence_mode_enabled=false
+    # iken (varsayılan) sıfır maliyetli no-op (bkz. tasks.py'nin notu).
+    "resolve-position-pool-every-60s": {
+        "task": "resolve_position_pool_task",
+        "schedule": 60.0,
+    },
     # Faz 201: gerçek bulgu — IngestionPipeline.ingest_order_book() tam
     # çalışan bir metod olarak yazılmıştı ama hiçbir üretim kodu hiç
     # çağırmıyordu; order_book_snapshots tablosu ayların birikimiyle

@@ -285,6 +285,21 @@ def _validate(key: str, value: str) -> None:
                 raise ValueError
         except ValueError:
             raise HTTPException(400, "basis_arbitrage_max_hold_hours must be a positive number")
+    elif key == "max_confidence_mode_enabled":
+        if value not in ("true", "false"):
+            raise HTTPException(400, "max_confidence_mode_enabled must be 'true' or 'false'")
+    elif key == "max_confidence_mode_pool_window_minutes":
+        try:
+            if int(value) < 1:
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "max_confidence_mode_pool_window_minutes must be a positive integer")
+    elif key == "max_confidence_mode_top_k":
+        try:
+            if int(value) < 1:
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "max_confidence_mode_top_k must be a positive integer")
     elif key == "max_open_positions_per_symbol_direction":
         # Faz 268-sonrası: gerçek olaydan (54 XAUTUSDT SHORT aynı anda
         # açık bulundu) eklenen kontrol — kullanıcı Settings sayfasından

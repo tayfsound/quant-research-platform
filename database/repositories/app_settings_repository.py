@@ -530,6 +530,17 @@ DEFAULTS: dict[str, str] = {
     # saat içinde yapıldıysa yeni bir öneri hiç hesaplanmıyor bile —
     # gerçekten yeni kanıt birikmesi için zaman tanınıyor.
     "weight_proposal_cooldown_hours": "6",
+    # Faz 350 — Pozisyon Havuzu / "Max Confidence Modu" (kullanıcı fikri,
+    # 2026-08-21): "council'dan çıkan kararlar bir havuzda toplansın...
+    # canlıda 3-5 işlem alacak ama her gelene atlamamalı, daha garanti
+    # gördüğüne yönelmeli." Varsayılan kapalı — açılana kadar BUGÜNKÜ
+    # davranış (her risk-onaylı karar hemen açılır) birebir korunur.
+    # Sadece council'ın normal (deneysel bucket'sız) yolunu etkiler —
+    # pump_fade/basis_arb/pairs_trading kendi izole akışlarında, bu
+    # ayardan habersiz devam eder (bkz. services/decision_recorder.py).
+    "max_confidence_mode_enabled": "false",
+    "max_confidence_mode_pool_window_minutes": "15",
+    "max_confidence_mode_top_k": "3",
 }
 
 CANDLE_TIMEFRAMES = ("1m", "5m", "15m", "1h", "4h", "1d")

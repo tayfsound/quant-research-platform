@@ -309,6 +309,19 @@ def retrain_meta_label_model_task() -> dict:
     }
 
 
+@celery_app.task(name="resolve_position_pool_task")
+def resolve_position_pool_task() -> dict:
+    """Faz 350 — Pozisyon Havuzu / Max Confidence Modu. Sık çalışır (bkz.
+    celery_app.py beat_schedule) ama services/position_pool.py::
+    resolve_due_pool_windows() sadece penceresi GERÇEKTEN kapanmış
+    adaylar varsa bir şey yapar — max_confidence_mode_enabled=false
+    (varsayılan) iken zaten hiç aday birikmez, bu görev her çalıştığında
+    anında {"due": 0, ...} ile döner, sıfır maliyetli no-op."""
+    from services.position_pool import resolve_due_pool_windows
+
+    return resolve_due_pool_windows()
+
+
 @celery_app.task(name="refresh_barrier_table_task")
 def refresh_barrier_table_task() -> dict:
     """Faz 268-sonrası — kullanıcı isteği: Adaptive Barrier Engine'i

@@ -1,5 +1,7 @@
 """Opportunity Quality / Meta-Labeling testleri — Faz 569-593 (Cognitive Core 2.0)."""
 from analytics.opportunity_quality import (
+    agreement_from_contributions,
+    agreement_from_opinions,
     compute_agent_agreement,
     compute_opportunity_quality_by_agreement,
 )
@@ -58,3 +60,41 @@ def test_trades_missing_agreement_or_win_are_skipped_without_crashing():
     trades = [{"agent_agreement": None, "win": True}] * 25
     result = compute_opportunity_quality_by_agreement(trades, min_group_size=5)
     assert result == {}
+
+
+def test_agreement_from_contributions_counts_domain_votes():
+    contributions = [
+        {"domain": "technical", "direction": "LONG"},
+        {"domain": "macro", "direction": "LONG"},
+        {"domain": "quant", "direction": "SHORT"},
+        {"type": "risk_evaluation", "data": {}},  # domain'siz, oy DEĞİL — atlanmalı
+    ]
+    result = agreement_from_contributions(contributions)
+    assert result == compute_agent_agreement({"LONG": 2, "SHORT": 1, "WAIT": 0})
+
+
+def test_agreement_from_contributions_returns_none_without_any_votes():
+    assert agreement_from_contributions([{"type": "market_snapshot", "data": {}}]) is None
+    assert agreement_from_contributions(None) is None
+    assert agreement_from_contributions([]) is None
+
+
+def test_agreement_from_opinions_matches_agreement_from_contributions():
+    """Faz 350 — kritik tutarlılık: eğitim (contributions dict) ve canlı
+    tahmin (opinions nesnesi) AYNI oy setinde AYNI skoru üretmeli, aksi
+    halde model eğitildiği dağılımı canlıda hiç göremez."""
+    from contracts.agent import AgentDomain, AgentOpinion
+
+    opinions = [
+        AgentOpinion(domain=AgentDomain.TECHNICAL, direction="LONG"),
+        AgentOpinion(domain=AgentDomain.MACRO, direction="LONG"),
+        AgentOpinion(domain=AgentDomain.QUANT, direction="SHORT"),
+    ]
+    contributions = [{"domain": o.domain.value, "direction": o.direction} for o in opinions]
+
+    assert agreement_from_opinions(opinions) == agreement_from_contributions(contributions)
+
+
+def test_agreement_from_opinions_returns_none_for_empty_list():
+    assert agreement_from_opinions([]) is None
+    assert agreement_from_opinions(None) is None

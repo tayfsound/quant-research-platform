@@ -1,10 +1,33 @@
-# Mevcut Durum -- v1.87.0 (Faz 349: Binance Algo Order API migrasyonu düzeltildi)
+# Mevcut Durum -- v1.90.0 (Faz 351: agent_agreement Meta-Label Model'e eklendi — gerçek OOS iyileşmesi)
 
-**Tarih:** 2026-08-21
+**Tarih:** 2026-08-22
 **Branch:** main
-**Son commit (HEAD):** Faz 349 (`187758e`).
-**⚠️ Servis durumu:** uvicorn + celery worker_default + celery beat YENİDEN BAŞLATILDI — temiz.
-**⚠️ `execution_mode` hâlâ global "simulated"** — Faz 349 sadece testnet kodunun GERÇEKTEN çalıştığını kanıtladı, hiçbir canlı davranışı değiştirmedi. Bir sembolü testnet'e almak ayrı, açık bir kullanıcı kararı.
+**Son commit (HEAD):** Faz 351 (henüz commit edilmedi — bu oturumda).
+**⚠️ Servis durumu:** uvicorn + celery worker_default + celery beat YENİDEN BAŞLATILMADI — Faz 351 `engines/cognitive_pipeline.py`/`services/cognitive_engine.py`'de KOD değişikliği (RiskTargetStage artık opinions alıyor), canlı sürece yansıması için restart GEREKİYOR (DB/ayar değişikliği değil).
+**⚠️ `execution_mode` hâlâ global "simulated"** — testnet kodunun çalıştığı kanıtlandı (Faz 349) ama hiçbir canlı davranış değişmedi.
+**⚠️ `max_confidence_mode_enabled=false` (varsayılan)** — Pozisyon Havuzu (Faz 350) inşa edildi ama henüz kullanıcı tarafından açılmadı.
+
+## Faz 351 — Meta-Label Model'e agent_agreement özelliği eklendi: gerçek OOS iyileşmesi (2026-08-22)
+
+Kullanıcı isteği ("2000+ kapanmış işlem var, wire edecek modül yok mu?") ile ölçüm-only modüller yeniden tarandı. `analytics/opportunity_quality.py` (Faz 569-593'ten beri hiçbir gate'e bağlı değildi) gerçek 1998 kapanmış işlemde çarpıcı bir sonuç verdi: ajan konsensüsü (LONG/SHORT/WAIT oylarının entropi-tabanlı anlaşma skoru) "medium" kovada %92.4 win_rate (n=590) vs "low" kovada %68.5 (n=1401) — örtüşmeyen %95 güven aralıkları, gerçek ve büyük bir etki.
+
+Bunu AYRI bir gate/tablo olarak wire etmek yerine (çakışma/çifte-sayım riski), zaten canlıya bağlı (Faz 348) Meta-Label Model'e BİR özellik olarak eklendi — aynı, zaten onaylı mimari. `analytics/opportunity_quality.py`'ye paylaşılan iki saf fonksiyon eklendi: `agreement_from_contributions()` (eğitim, geçmiş `agent_contributions`'tan) ve `agreement_from_opinions()` (canlı, `RiskTargetStage`'e artık iletilen `opinions` listesinden) — ikisi AYNI entropi formülünü kullanıyor, train/predict tutarsızlığı riski yok.
+
+**Gerçek OOS kanıtı (retrain, n=882, aynı örneklem büyüklüğü):** test_accuracy %85.2 → **%90.2**, test_auc 0.93 → **0.957**, baseline_correctness_rate %69.8 (hâlâ soundly geçiliyor). Model gerçekten eğitilip kaydedildi (canlıda aktif).
+
+**Kod değişikliği:** `RiskTargetStage.execute(ctx, opinions=None)` — imza değişti, `services/cognitive_engine.py::run()` artık `opinions`'ı iletiyor. Geriye dönük uyumlu (opinions verilmezse agent_agreement fail-closed 0.0).
+
+**Test:** 4 yeni test (`test_opportunity_quality.py` +4, `test_meta_label_model.py` +1, `test_risk_target_stage.py` +2) + 200+ mevcut ilgili test (decision_recorder/cognitive_binding/e2e/backtest/red_team/tp_sl_confluence vb.) temiz.
+
+## Faz 350 — KRİTİK: sistem saatlerce hiç pozisyon açmıyordu (MISSING_LIMIT) + Pozisyon Havuzu / Max Confidence Modu inşa edildi (2026-08-22)
+
+**Kesinti (kullanıcı bulgusu: "2.000 den fazla kapanan pozisyon var ama 300 kalmış, sistem pozisyon almıyor"):** Kök neden `risk_limits` tablosunda `max_position_size` satırının TAMAMEN eksik olmasıydı — `RiskEngine` her cycle'da `MISSING_LIMIT` ile fail-closed reddediyordu, bu da `GuardrailStage`'in council'ı HİÇ ÇAĞIRMADAN (agent'lara hiç sorulmadan) confidence=0.0/WAIT üretmesine yol açıyordu (~14.000 ardışık WAIT, gerçek ajan hatası YOK — pipeline en baştan kesiliyordu). Ayrıca `max_capital_pct`/`max_concurrent_positions` ayarları önceki bir oturumda saçma değerlere (1000000/100000) çekilmiş bulundu — muhtemelen aynı sorunu bypass etmeye çalışan bir geçmiş müdahale. Düzeltme: `max_position_size=$200k` risk_limits'e eklendi; `max_capital_pct`/`max_concurrent_positions` mevcut 320 pozisyonluk birikimi karşılayacak (%500/500) sağlıklı değerlere çekildi; `starting_capital` zaten kullanıcının istediği 500k'daydı. Canlı doğrulama: `risk_verdict=approved` dönüyor, agent'lar tekrar çağrılıyor.
+
+**Ayrıca:** `api/rest/agents.py`'deki `_DESCRIPTIONS` sözlüğü Faz 333/336'da eklenen Credit/Volatility ajanlarıyla hiç güncellenmemiş kalmıştı (Agents sayfasında boş açıklama) — eklendi.
+
+**Pozisyon Havuzu / Max Confidence Modu (kullanıcı fikri, 2026-08-21 onaylandı):** council'ın normal (deneysel bucket'sız) yolunda risk-onaylı bir karar hemen açılmak yerine `max_confidence_mode_pool_window_minutes` (varsayılan 15dk) boyunca yeni `position_pool_candidates` tablosunda birikir; periyodik görev (`resolve_position_pool_task`, 60sn'de bir kontrol) penceresi kapanmış adayları confidence'a göre sıralayıp sadece `max_confidence_mode_top_k` (varsayılan 3) tanesini GERÇEK, TAZE fiyattan (pool anındaki DEĞİL) `pump_fade_strategy.py`/`basis_arbitrage_strategy.py` ile AYNI "council pipeline'ını atlayan direkt DecisionPersistor" deseniyle açar; geri kalanı "rejected" işaretlenir. Seçim anında hafif bir risk-headroom kontrolü var (ai_enabled/max_concurrent/max_capital_pct hâlâ uygun mu) — uygun değilse "failed". Varsayılan KAPALI, `decisions.status`'a YENİ bir değer eklemiyor (ayrı tablo — mevcut status-tabanlı sorguların kirlenmesi riski yok). `services/decision_recorder.py`'ye tek bir kontrol noktası eklendi (entry_price hesaplandıktan hemen sonra, deneysel bucket'sız + risk-onaylı açılışlarda).
+
+**Test:** 9 yeni test (`tests/test_position_pool.py`) + 54 mevcut ilgili test (decision_recorder/execution_mode/app_settings_api/celery_tasks) temiz. Migration hem `quantdb` hem `quantdb_test`'e uygulandı.
 
 ## Faz 349 — Binance Algo Order API migrasyonu: GERÇEK testnet doğrulamasında bulundu (2026-08-21)
 

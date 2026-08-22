@@ -10,6 +10,18 @@ import { Card, PageHeader, EmptyState, ErrorNote, Spinner } from "../components/
 // (Künsch, 1989) ile ARDIŞIK BLOKLAR yeniden örnekleyip gerçek zaman-serisi
 // yapısını koruyan bir kümülatif getiri dağılımı gösterir. Sadece
 // simülasyon/rapor, hiçbir pozisyon/risk kararı otomatik değişmiyor.
+//
+// Faz 350 — kozmetik yeniden çerçeveleme (harici bir mimari incelemenin
+// bulgusu, kullanıcıyla doğrulandı): hesaplama (analytics/market_world_
+// model.py) DEĞİŞMEDİ, hâlâ aynı geçerli Moving Block Bootstrap. Ama
+// "Ortalama kümülatif getiri" gibi bir sayı (path_length=50 ardışık
+// İŞLEMİN ham fiyat-hareketi bileşimi, pozisyon boyutu/kaldıraç dahil
+// DEĞİL) kolayca "%1563 getiri tahmini" gibi okunup yanlış anlaşılabilir
+// — oysa bu bir GETİRİ TAHMİNİ değil, aynı istatistiksel süreçten art
+// arda işlem gelirse sonuçların ne kadar GENİŞ bir dağılıma yayılabileceğini
+// gösteren bir RİSK simülatörü. Sayfa artık kötü-senaryo (p5/en kötü)
+// metriklerini öne çıkarıyor, "ortalama"yı ikincil gösteriyor ve bunu
+// açıkça belirten bir not içeriyor.
 type Paths = {
   mean_cumulative_return: number;
   p5_cumulative_return: number;
@@ -46,8 +58,8 @@ export default function MarketWorldModel() {
   return (
     <div>
       <PageHeader
-        title="Market World Model"
-        description="Moving Block Bootstrap (Künsch, 1989) — gerçek kapanmış işlem getirilerinin ardışık bağımlılığını koruyan bir simülasyon. Sadece rapor, hiçbir pozisyon/risk kararı otomatik değişmiyor."
+        title="Risk Simülatörü"
+        description="Moving Block Bootstrap (Künsch, 1989) — gerçek kapanmış işlemlerin ardışık bağımlılığını koruyan bir kötü-senaryo simülasyonu. Bir getiri TAHMİNİ değil: aynı istatistiksel süreçten art arda işlem gelirse sonuçlar ne kadar geniş bir aralığa yayılabilir sorusuna cevap. Sadece rapor, hiçbir pozisyon/risk kararı otomatik değişmiyor."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}
@@ -55,8 +67,9 @@ export default function MarketWorldModel() {
       <Card className="mb-6">
         <h3 className="text-sm font-semibold text-ink mb-1">Canlı ölçüm</h3>
         <p className="text-xs text-ink-soft mb-3">
-          Blok uzunluğu {live?.block_size ?? "—"}, yol uzunluğu {live?.path_length ?? "—"} dönem — {live?.n_returns ?? 0} gerçek
-          getiri üzerinden 1000 yeniden-örneklenmiş yol.
+          Blok uzunluğu {live?.block_size ?? "—"}, yol uzunluğu {live?.path_length ?? "—"} ardışık işlem — {live?.n_returns ?? 0} gerçek
+          işlem getirisi üzerinden 1000 yeniden-örneklenmiş yol. Pozisyon boyutu/kaldıraç dahil değil — ham fiyat hareketlerinin
+          bileşimi, gerçek kasa büyüklüğü DEĞİL.
         </p>
 
         {loading ? (
@@ -64,24 +77,31 @@ export default function MarketWorldModel() {
         ) : !live || !live.paths ? (
           <EmptyState label="Henüz yeterli getiri verisi yok (block_size*2'nin altında)." />
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
-              <p className="text-xs text-ink-faint">Ortalama kümülatif getiri</p>
-              <p className="text-lg font-mono text-ink">{(live.paths.mean_cumulative_return * 100).toFixed(2)}%</p>
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div>
+                <p className="text-xs text-ink-faint">En kötü yol</p>
+                <p className="text-lg font-mono text-fall">{(live.paths.worst_cumulative_return * 100).toFixed(2)}%</p>
+              </div>
+              <div>
+                <p className="text-xs text-ink-faint">p5 (kötümser senaryo)</p>
+                <p className="text-lg font-mono text-fall">{(live.paths.p5_cumulative_return * 100).toFixed(2)}%</p>
+              </div>
+              <div>
+                <p className="text-xs text-ink-faint">p95 (iyimser senaryo)</p>
+                <p className="text-lg font-mono text-rise">{(live.paths.p95_cumulative_return * 100).toFixed(2)}%</p>
+              </div>
+              <div>
+                <p className="text-xs text-ink-faint">Ortalama senaryo</p>
+                <p className="text-lg font-mono text-ink-soft">{(live.paths.mean_cumulative_return * 100).toFixed(2)}%</p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs text-ink-faint">p5 (kötümser)</p>
-              <p className="text-lg font-mono text-fall">{(live.paths.p5_cumulative_return * 100).toFixed(2)}%</p>
-            </div>
-            <div>
-              <p className="text-xs text-ink-faint">p95 (iyimser)</p>
-              <p className="text-lg font-mono text-rise">{(live.paths.p95_cumulative_return * 100).toFixed(2)}%</p>
-            </div>
-            <div>
-              <p className="text-xs text-ink-faint">En kötü yol</p>
-              <p className="text-lg font-mono text-fall">{(live.paths.worst_cumulative_return * 100).toFixed(2)}%</p>
-            </div>
-          </div>
+            <p className="text-xs text-ink-faint mt-3 italic">
+              Bu bir portföy getirisi tahmini değildir — asıl bakılması gereken p5/en kötü yoldur (kuyruk riski).
+              "Ortalama" burada bileşik (compounding) etkisiyle abartılı görünebilir, kasa yönetimi kararına
+              girdi olarak KULLANILMAMALIDIR.
+            </p>
+          </>
         )}
       </Card>
 
