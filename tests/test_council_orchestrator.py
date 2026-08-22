@@ -3,6 +3,7 @@ from agents.registry import AgentRegistry
 from contracts.agent import AgentDomain
 from contracts.macro import MacroContext
 from contracts.onchain import OnChainContext
+from contracts.quant import QuantContext
 from contracts.technical import TechnicalContext
 from services.council_orchestrator import CouncilOrchestrator
 
@@ -372,3 +373,81 @@ def test_technical_confidence_model_adjusts_opinion_confidence_when_saved():
         model_file = repo.storage_path / "technical_latest.json"
         if model_file.exists():
             model_file.unlink()
+
+
+# Faz 353 — Mixture-of-Experts Regime Router. Gerçek 4410 kapalı kararla
+# doğrulandı (bkz. council_orchestrator.py'deki wiring yorumu): mean-
+# reversion rejiminde technical_agent'ı izlemek quant_agent'ı izlemekten
+# belirgin şekilde daha kötü, trending rejiminde tam tersi.
+_BULLISH_TECHNICAL = TechnicalContext(
+    trend="bullish", momentum="strengthening", market_structure="higher_highs", volume_confirmation=True
+)
+
+
+def _unbenched_annotate(opinions: list[dict], symbol: str | None = None) -> list[dict]:
+    # Canlı DB'deki gerçek auto-bench durumundan (technical_agent şu an
+    # gerçekten benched) İZOLE test: bu testler MoE tilt'inin KENDİSİNİ
+    # doğruluyor, benching etkileşimini değil (o ayrı, zaten mevcut testlerle
+    # kapsanıyor).
+    return [{"source_reliability": 0.8, "benched": False} for _ in opinions]
+
+
+def test_moe_router_discounts_technical_and_boosts_quant_in_mean_reverting_regime(monkeypatch):
+    registry = AgentRegistry.create_default()
+    orchestrator = CouncilOrchestrator(registry)
+    monkeypatch.setattr(orchestrator.reliability_annotator, "annotate", _unbenched_annotate)
+
+    _, neutral_opinions = orchestrator.deliberate({
+        AgentDomain.TECHNICAL: _BULLISH_TECHNICAL,
+        AgentDomain.QUANT: QuantContext(hurst_exponent=0.5, zscore=-2.5),
+    })
+    technical_neutral = next(o for o in neutral_opinions if o.domain == AgentDomain.TECHNICAL)
+    quant_neutral = next(o for o in neutral_opinions if o.domain == AgentDomain.QUANT)
+
+    _, mr_opinions = orchestrator.deliberate({
+        AgentDomain.TECHNICAL: _BULLISH_TECHNICAL,
+        AgentDomain.QUANT: QuantContext(hurst_exponent=0.2, zscore=-2.5),
+    })
+    technical_mr = next(o for o in mr_opinions if o.domain == AgentDomain.TECHNICAL)
+    quant_mr = next(o for o in mr_opinions if o.domain == AgentDomain.QUANT)
+
+    assert technical_mr.performance_weight < technical_neutral.performance_weight
+    assert quant_mr.performance_weight > quant_neutral.performance_weight
+    assert any("MoE" in c for c in technical_mr.caveats)
+    assert any("MoE" in c for c in quant_mr.caveats)
+    assert not any("MoE" in c for c in technical_neutral.caveats)
+
+
+def test_moe_router_boosts_technical_and_discounts_quant_in_trending_regime(monkeypatch):
+    registry = AgentRegistry.create_default()
+    orchestrator = CouncilOrchestrator(registry)
+    monkeypatch.setattr(orchestrator.reliability_annotator, "annotate", _unbenched_annotate)
+
+    _, neutral_opinions = orchestrator.deliberate({
+        AgentDomain.TECHNICAL: _BULLISH_TECHNICAL,
+        AgentDomain.QUANT: QuantContext(hurst_exponent=0.5, autocorrelation=0.5),
+    })
+    technical_neutral = next(o for o in neutral_opinions if o.domain == AgentDomain.TECHNICAL)
+    quant_neutral = next(o for o in neutral_opinions if o.domain == AgentDomain.QUANT)
+
+    _, trending_opinions = orchestrator.deliberate({
+        AgentDomain.TECHNICAL: _BULLISH_TECHNICAL,
+        AgentDomain.QUANT: QuantContext(hurst_exponent=0.8, autocorrelation=0.5),
+    })
+    technical_trending = next(o for o in trending_opinions if o.domain == AgentDomain.TECHNICAL)
+    quant_trending = next(o for o in trending_opinions if o.domain == AgentDomain.QUANT)
+
+    assert technical_trending.performance_weight > technical_neutral.performance_weight
+    assert quant_trending.performance_weight < quant_neutral.performance_weight
+
+
+def test_moe_router_is_noop_without_quant_context():
+    """QUANT hiç oy vermiyorsa (partial council) hurst bilinmiyor demektir
+    — fail-closed: hiçbir ajanın ağırlığı değişmez."""
+    registry = AgentRegistry.create_default()
+    orchestrator = CouncilOrchestrator(registry)
+
+    _, opinions = orchestrator.deliberate({AgentDomain.TECHNICAL: _BULLISH_TECHNICAL})
+    technical = next(o for o in opinions if o.domain == AgentDomain.TECHNICAL)
+
+    assert not any("MoE" in c for c in technical.caveats)

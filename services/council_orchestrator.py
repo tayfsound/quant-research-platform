@@ -194,6 +194,36 @@ class CouncilOrchestrator:
                 )
                 opinion.recalculate()
 
+        # Faz 353 — Mixture-of-Experts Regime Router (kullanıcı isteği:
+        # "ölçelim hazır olanları wire edelim"). analytics/moe_regime_router.py
+        # GERÇEK 4410 kapalı kararla doğrulandı: mean-reversion rejiminde
+        # (hurst<=0.45) technical_agent'la aynı yönde giden kararlar %62.7
+        # isabetli iken quant_agent'la aynı yönde gidenler %84.6 (n=1087 vs
+        # 501); trending rejiminde (hurst>=0.55) ters yönde: technical %66.5
+        # vs quant %53.1 (n=197 vs 130) — moe_regime_router'ın önerdiği tilt
+        # yönüyle İKİ rejimde de tutarlı. MAX_TILT=%30 ile sınırlı (bir
+        # uzmanı asla tamamen susturmaz), hurst=None (bilinmiyor) iken no-op.
+        quant_ctx = contexts.get(AgentDomain.QUANT)
+        hurst = getattr(quant_ctx, "hurst_exponent", None) if quant_ctx is not None else None
+        if hurst is not None:
+            from analytics.moe_regime_router import compute_moe_expert_weights
+
+            moe = compute_moe_expert_weights(hurst)
+            for opinion in opinions:
+                if opinion.domain == AgentDomain.TECHNICAL:
+                    tilt = moe["momentum_weight"]
+                elif opinion.domain == AgentDomain.QUANT:
+                    tilt = moe["mean_reversion_weight"]
+                else:
+                    continue
+                if tilt != 1.0:
+                    opinion.performance_weight = round(opinion.performance_weight * tilt, 4)
+                    opinion.caveats.append(
+                        f"MoE rejim router'ı ({moe['regime']}, hurst={hurst:.2f}) oy ağırlığını "
+                        f"x{tilt:.2f} ayarladı."
+                    )
+                    opinion.recalculate()
+
         if self.pinned_weight_snapshot_id is not None:
             # Backtest determinizmi: pinned bir snapshot her zaman TAM
             # olarak istenen ID'yi kullanır, rejime göre farklı bir

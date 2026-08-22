@@ -1,11 +1,22 @@
-# Mevcut Durum -- v1.91.0 (Faz 352: Regime Reversal Guardian — yön-bazlı ardışık stop-loss koruması)
+# Mevcut Durum -- v1.92.0 (Faz 353: Mixture-of-Experts Regime Router canlıya bağlandı — gerçek 4410 kararla doğrulandı)
 
 **Tarih:** 2026-08-22
 **Branch:** main
-**Son commit (HEAD):** Faz 352 (bu commit ile).
-**⚠️ Servis durumu:** uvicorn + celery worker_default + celery beat YENİDEN BAŞLATILMA SÜRECİNDE — Faz 351 (RiskTargetStage artık opinions alıyor) VE Faz 352 (regime reversal gate + guardian task) KOD değişiklikleri canlı sürece yansıması için restart gerektiriyor (DB/ayar değişikliği değil).
+**Son commit (HEAD):** Faz 353 (bu commit ile).
+**⚠️ Servis durumu:** Faz 353'ün `services/council_orchestrator.py` değişikliğinin canlı sürece yansıması için uvicorn + celery worker_default restart GEREKİYOR (henüz yapılmadı — bu oturumda commit sonrası).
 **⚠️ `execution_mode` hâlâ global "simulated"** — testnet kodunun çalıştığı kanıtlandı (Faz 349) ama hiçbir canlı davranış değişmedi.
 **⚠️ `max_confidence_mode_enabled=false` (varsayılan)** — Pozisyon Havuzu (Faz 350) inşa edildi ama henüz kullanıcı tarafından açılmadı.
+**⚠️ `max_open_positions_per_symbol_direction=1000`** (varsayılan 5, "admin" tarafından 14 Ağustos'ta gevşetilmiş) — kullanıcı bilinçli olarak DEĞİŞTİRİLMEMESİNİ istedi (test modunda kısıtlama gereksiz). XAUTUSDT'de 17 aynı-yönlü pozisyon birikmişti, bu ayar yüzünden — bilerek dokunulmadı.
+
+## Faz 353 — Mixture-of-Experts Regime Router canlıya bağlandı (2026-08-22)
+
+Kullanıcı isteği ("wire edilmeyen modül/ajan var mı, ölçelim hazır olanları wire edelim") ile analytics/ altındaki 11 ölçüm-only modül taranıp gerçek veriyle önceliklendirildi (bkz. proje hafızası — kalan 10 tanesi hâlâ ölçüm-only, sonraki turda değerlendirilecek). `moe_regime_router.py` (Faz 369-393'ten beri hiçbir yere bağlı değildi) günün XAUTUSDT vakasıyla (17 aynı-yönlü LONG, teknik ajan zayıf ADX/OBV ıraksamasına rağmen LONG oyu vermiş, mean-reversion uzmanı quant ajan WAIT demiş ama benched olduğu için oyu sıfırlanmış) doğrudan alakalı bulundu.
+
+**Gerçek OOS kanıtı (4410 kapalı karar, mekanik stratejiler hariç):** mean-reversion rejiminde (hurst≤0.45) technical_agent'la (momentum-flavored) aynı yöne giden kararlar %62.7 isabetli (n=1087) iken quant_agent'la (mean-reversion-flavored) aynı yöne gidenler %84.6 (n=501) — 22 puanlık fark. Trending rejiminde (hurst≥0.55) TERSİ: technical %66.5 (n=197) vs quant %53.1 (n=130). moe_regime_router'ın önerdiği tilt yönüyle İKİ rejimde de tutarlı.
+
+**Kod değişikliği:** `services/council_orchestrator.py::deliberate()` — debate-penalty döngüsünden hemen sonra, `belief_engine.synthesize()`'dan ÖNCE — `contexts[AgentDomain.QUANT].hurst_exponent` okunup `compute_moe_expert_weights()` çağrılıyor, dönen `momentum_weight`/`mean_reversion_weight` çarpanı SADECE `AgentDomain.TECHNICAL` ve `AgentDomain.QUANT` opinion'larının `performance_weight`'ine uygulanıp `recalculate()` ediliyor. MAX_TILT=%30 ile sınırlı (bir uzmanı asla tamamen susturmaz), QUANT context'i hiç yoksa (partial council) fail-closed no-op.
+
+**Test:** 3 yeni entegrasyon testi (`tests/test_council_orchestrator.py` — mean-reversion tilt, trending tilt, QUANT context yokken no-op; technical_agent'ın canlı DB'de gerçekten benched olması testleri etkilemesin diye `reliability_annotator.annotate()` monkeypatch'lendi) + mevcut `test_moe_regime_router.py` (saf fonksiyon testleri, önceden yazılmış ama hiç çağrılmıyordu) + geniş council/orchestrator/belief regresyonu (118 test) — 2 bilinen pre-existing flaky (`test_partial_council`, `test_single_agent_directional_agreement_is_not_flagged_as_crowding`, `git stash` ile doğrulandı: technical_agent canlı DB'de gerçekten benched, değişiklikten bağımsız) hariç temiz.
 
 ## Faz 352 — Regime Reversal Guardian: yön-bazlı ardışık stop-loss koruması (2026-08-22)
 
