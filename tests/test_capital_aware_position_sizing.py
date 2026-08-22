@@ -7,7 +7,7 @@ ucuz varlıkta pnl görünmeyecek kadar küçük kalıyordu). proposed_size art�
 sermaye bütçesinin (starting_capital * max_capital_pct / max_concurrent_
 positions) güncel fiyata bölünmesiyle hesaplanıyor — pahalı/ucuz varlıklar
 artık aynı gerçek $ riskini taşıyor."""
-from database.repositories.app_settings_repository import AppSettingsRepository, DEFAULTS
+from database.repositories.app_settings_repository import DEFAULTS, AppSettingsRepository
 from database.session_factory import SessionFactory
 from market_data.ingestion.mock_adapter import MockOHLCVAdapter
 from services.orchestrator import CognitiveOrchestrator

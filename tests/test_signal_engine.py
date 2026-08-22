@@ -5,7 +5,7 @@ market_structure, zscore, vb.) üretimde HİÇBİR kod hesaplamıyordu, ve
 büyük/küçük harf uyuşmazlığı yüzünden RSI de hiç gerçek değildi — 9
 ajanlık council'in yarısından fazlası üretimde her zaman varsayılan/nötr
 değerlerle çalışıyordu."""
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 
 from market_data.features.signal_engine import (
     compute_pattern_signals,
@@ -187,8 +187,9 @@ def test_regime_changepoint_ignores_acceleration_in_the_same_direction():
 
 
 def test_fibonacci_signal_measures_support_from_the_most_recent_swing_high_in_an_uptrend():
-    from market_data.features.signal_engine import _fibonacci_signal
     import numpy as np
+
+    from market_data.features.signal_engine import _fibonacci_signal
 
     # Dip (idx 0, fiyat 100) daha önce, tepe (idx 10, fiyat 200) daha
     # sonra oluştu -> en son hareket YUKARI -> retracement tepeden aşağı
@@ -206,8 +207,9 @@ def test_fibonacci_signal_measures_support_from_the_most_recent_swing_high_in_an
 
 
 def test_fibonacci_signal_measures_resistance_from_the_most_recent_swing_low_in_a_downtrend():
-    from market_data.features.signal_engine import _fibonacci_signal
     import numpy as np
+
+    from market_data.features.signal_engine import _fibonacci_signal
 
     # Tepe (idx 0, fiyat 200) daha önce, dip (idx 10, fiyat 100) daha
     # sonra oluştu -> en son hareket AŞAĞI -> retracement dipten yukarı
@@ -225,8 +227,9 @@ def test_fibonacci_signal_measures_resistance_from_the_most_recent_swing_low_in_
 
 
 def test_fibonacci_signal_returns_none_when_price_is_far_from_any_level():
-    from market_data.features.signal_engine import _fibonacci_signal
     import numpy as np
+
+    from market_data.features.signal_engine import _fibonacci_signal
 
     closes = np.array([100.0] * 20)
     highs = np.array([100.0] * 20)
@@ -359,8 +362,9 @@ def test_obv_trend_rising_when_volume_flows_into_up_days():
 
 
 def test_price_obv_bearish_divergence_when_price_rises_but_volume_flow_falls():
-    from market_data.features.signal_engine import _obv_signal
     import numpy as np
+
+    from market_data.features.signal_engine import _obv_signal
 
     # Fiyat net yükseliyor ama YUKARI barlarda hacim küçük, AŞAĞI
     # (geri çekilme) barlarında hacim büyük -> gerçek hacim akışı (OBV) net düşüyor.
@@ -516,8 +520,9 @@ def test_wyckoff_phase_is_neutral_when_range_has_no_clear_preceding_trend():
 
 
 def test_is_trading_range_detects_real_contraction():
-    from market_data.features.signal_engine import _is_trading_range
     import numpy as np
+
+    from market_data.features.signal_engine import _is_trading_range
 
     downtrend = _trend_bars(250, 150, 40)
     trading_range = _range_bars(support=145.0, resistance=155.0, n=40, volume=100.0)
@@ -532,8 +537,9 @@ def test_is_trading_range_detects_real_contraction():
 
 
 def test_is_trading_range_returns_none_for_a_pure_trend():
-    from market_data.features.signal_engine import _is_trading_range
     import numpy as np
+
+    from market_data.features.signal_engine import _is_trading_range
 
     pure_trend = _trend_bars(100, 300, 80)
     highs = np.array([d.high for d in pure_trend], dtype=float)
@@ -542,8 +548,9 @@ def test_is_trading_range_returns_none_for_a_pure_trend():
 
 
 def test_preceding_trend_direction_identifies_real_decline_and_rise():
-    from market_data.features.signal_engine import _preceding_trend_direction
     import numpy as np
+
+    from market_data.features.signal_engine import _preceding_trend_direction
 
     down_closes = np.array([d.close for d in _trend_bars(250, 150, 40)])
     assert _preceding_trend_direction(down_closes, tr_start_idx=39) == "down"

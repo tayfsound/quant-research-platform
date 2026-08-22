@@ -560,8 +560,8 @@ class PumpFadeStrategy:
             # kapsam notu).
             execution_cost_estimate = None
             try:
-                from database.repositories.market_data_repository import MarketDataRepository
                 from contracts.market_data import DataSource
+                from database.repositories.market_data_repository import MarketDataRepository
                 from services.execution_impact_estimator import estimate_execution_cost_pct
 
                 order_book = MarketDataRepository(session).get_latest_order_book_snapshot(

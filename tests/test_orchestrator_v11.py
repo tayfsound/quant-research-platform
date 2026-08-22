@@ -1,5 +1,6 @@
 from services.orchestrator import CognitiveOrchestrator
 
+
 def test_cycle_returns_pnl():
     orch = CognitiveOrchestrator()
     out = orch.run_cycle(seed=42)

@@ -3,8 +3,8 @@ from datetime import datetime, timedelta
 from uuid import uuid4
 
 from contracts.weight_approval import WeightApproval
-from database.session_factory import SessionFactory
 from database.repositories.weight_approval_repository import WeightApprovalRepository
+from database.session_factory import SessionFactory
 
 
 def test_auto_reject_stale():

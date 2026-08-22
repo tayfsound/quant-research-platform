@@ -7,16 +7,14 @@ sahtelendi — bu dosyanın amacı CMA-ES matematiğini değil (bkz.
 test_agent_tuner.py), ONAY KAPISI mantığını (eşik altında öneri yok, zaten
 bekleyen onay varsa tekrar önerilmiyor, onaylanınca gerçekten okunabiliyor)
 test etmek."""
-from datetime import UTC, datetime
 from uuid import uuid4
 
-import meta_optimizer.agent_tuner as agent_tuner_module
 import services.meta_learning_scheduler as scheduler_module
 from agents.technical_agent import TechnicalAgentCoefficients
+from contracts.technical import TechnicalContext
 from database.repositories.agent_tuning_approval_repository import AgentTuningApprovalRepository
 from database.session_factory import SessionFactory
 from meta_optimizer.agent_tuner import HistoricalTechnicalRecord
-from contracts.technical import TechnicalContext
 
 
 def _fake_records(n: int) -> list[HistoricalTechnicalRecord]:
@@ -142,8 +140,8 @@ def test_agent_registry_uses_approved_coefficients_when_present(monkeypatch):
     """agents/registry.py::create_default()'ın onaylanmış θ'yı gerçekten
     TechnicalAgent'a geçirdiğini kanıtlıyor — DB'ye hiç dokunmadan, tek
     lookup fonksiyonunu monkeypatch'leyerek."""
-    from contracts.agent import AgentDomain
     from agents.registry import AgentRegistry
+    from contracts.agent import AgentDomain
 
     tuned = TechnicalAgentCoefficients(trend_weight=1.99)
     monkeypatch.setattr(
@@ -157,8 +155,8 @@ def test_agent_registry_uses_approved_coefficients_when_present(monkeypatch):
 
 
 def test_agent_registry_falls_back_to_defaults_when_no_approval_exists(monkeypatch):
-    from contracts.agent import AgentDomain
     from agents.registry import AgentRegistry
+    from contracts.agent import AgentDomain
 
     monkeypatch.setattr(
         scheduler_module, "get_approved_technical_agent_coefficients", lambda: None,

@@ -1,11 +1,12 @@
 """Genetic Algorithm."""
 import random
-from typing import Dict, Callable, Any
+from collections.abc import Callable
 from dataclasses import dataclass
+
 
 @dataclass
 class Individual:
-    params: Dict[str, float]
+    params: dict[str, float]
     fitness: float = 0.0
 
 class GeneticAlgorithm:
@@ -13,14 +14,14 @@ class GeneticAlgorithm:
         self.population_size = population_size
         self.best: Individual = None
         self._population: list = []
-    
-    def initialize(self, param_ranges: Dict[str, tuple]) -> None:
+
+    def initialize(self, param_ranges: dict[str, tuple]) -> None:
         self._population = []
         for _ in range(self.population_size):
             params = {k: random.uniform(v[0], v[1]) for k, v in param_ranges.items()}
             self._population.append(Individual(params=params))
-    
-    def evolve(self, fitness_fn: Callable[[Dict[str, float]], float], generations: int = 10) -> Individual:
+
+    def evolve(self, fitness_fn: Callable[[dict[str, float]], float], generations: int = 10) -> Individual:
         for _ in range(generations):
             for ind in self._population:
                 ind.fitness = fitness_fn(ind.params)
@@ -41,7 +42,7 @@ class GeneticOptimizer:
         self.ga = GeneticAlgorithm(population_size)
         self.generations = generations
         self.mutation_rate = mutation_rate
-    
+
     def optimize(self, evaluator):
         self.ga.initialize({
             "rsi_threshold": (20.0, 40.0),

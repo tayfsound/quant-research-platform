@@ -1,8 +1,10 @@
 """RiskGateStage integration tests."""
 from unittest.mock import MagicMock
+
 from contracts.context import CognitiveCycleContext
 from contracts.contexts.decision import ActionType
 from engines.cognitive_pipeline import RiskGateStage
+
 
 class FakeLimit:
     value = 0.5
@@ -18,9 +20,9 @@ def test_rejects_oversized():
     ctx.risk.limits = {"max_position_size": FakeLimit()}
     ctx.risk.evaluation = FakeEval()
     ctx.risk.current_drawdown = 0.0
-    
+
     ctx = stage.execute(ctx)
-    
+
     assert ctx.decision.action == ActionType.WAIT
     assert ctx.decision.final_size == 0.0
     assert ctx.risk.evaluation.verdict == "rejected"

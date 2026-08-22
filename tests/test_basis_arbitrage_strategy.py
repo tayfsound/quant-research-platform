@@ -3,7 +3,6 @@ arbitrajı) testleri — bkz. services/basis_arbitrage_strategy.py."""
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-import pytest
 from sqlalchemy import text
 
 from database.repositories.app_settings_repository import AppSettingsRepository
@@ -30,7 +29,7 @@ def _seed_max_position_size(value: float = 1_000_000.0) -> None:
     from datetime import UTC, datetime
     from uuid import uuid4
 
-    from database.repositories.risk_limit_repository import RiskLimitModel, RiskLimitRepository
+    from database.repositories.risk_limit_repository import RiskLimitModel
 
     with SessionFactory.get_session() as session:
         session.execute(text("DELETE FROM risk_limits WHERE limit_type = 'max_position_size'"))

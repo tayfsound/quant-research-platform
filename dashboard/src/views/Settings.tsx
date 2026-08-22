@@ -935,6 +935,49 @@ export default function Settings() {
           </div>
         </Card>
 
+        <Card>
+          <h3 className="text-sm font-semibold text-ink mb-1">Regime Reversal Guardian</h3>
+          <p className="text-xs text-ink-soft mb-3">
+            Bir yönde (LONG ya da SHORT) art arda {draft.reversal_guardian_consecutive_stop_threshold ?? "5"} stop-loss
+            olursa: o yöndeki kârdaki açık pozisyonlar taze fiyattan otomatik kapatılır (kâr kilitlenir) VE bir kazanç
+            gelene kadar o yönde yeni pozisyon açılmaz. Diğer yön hiç etkilenmez. Kill switch'ten farklı — global değil,
+            sadece o yönü, sadece geçici olarak durdurur.
+          </p>
+          <div className="flex gap-2 mb-4">
+            {[
+              { key: "true", label: "Açık" },
+              { key: "false", label: "Kapalı" },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => save("reversal_guardian_enabled", key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  (settings.reversal_guardian_enabled ?? "true") === key
+                    ? "bg-accent text-white border-accent"
+                    : "bg-canvas-soft text-ink-soft border-line hover:bg-surface-soft"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <p className="text-xs text-ink-soft mb-2">Ardışık stop-loss eşiği</p>
+          <div className="flex gap-2">
+            <Input
+              decimal
+              value={draft.reversal_guardian_consecutive_stop_threshold ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, reversal_guardian_consecutive_stop_threshold: v }))}
+            />
+            <Button
+              disabled={saving === "reversal_guardian_consecutive_stop_threshold"}
+              onClick={() => save("reversal_guardian_consecutive_stop_threshold", draft.reversal_guardian_consecutive_stop_threshold)}
+            >
+              {saved === "reversal_guardian_consecutive_stop_threshold" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+        </Card>
+
         {/* Faz 282 — kullanıcı kararı (2026-08-19): pairs trading (hedge)
             stratejisi kalıcı olarak durduruldu (pairs_trading_enabled=false,
             backend'de hâlâ duruyor ama hiç yeni pozisyon açmıyor) — kullanıcı

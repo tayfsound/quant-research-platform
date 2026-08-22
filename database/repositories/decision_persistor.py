@@ -486,7 +486,10 @@ class DecisionPersistor:
             "committed_notional": float(row["committed_notional"] or 0.0),
         }
 
-    def list_closed_trades(self, limit: int = 200, min_opened_at=None, exclude_experiment_bucket: str | None = None):
+    def list_closed_trades(
+        self, limit: int = 200, min_opened_at=None, exclude_experiment_bucket: str | None = None,
+        direction: str | None = None,
+    ):
         # Faz 238: kullanıcı isteği — "kirli geçmiş veriyi temizle."
         # excluded_from_stats=true işaretli satırlar (aşırı capital
         # testlerinden kalan, gerçek olmayan notional'lı işlemler)
@@ -515,6 +518,13 @@ class DecisionPersistor:
         if exclude_experiment_bucket is not None:
             query += " AND (experiment_bucket IS NULL OR experiment_bucket != :exclude_experiment_bucket)"
             params["exclude_experiment_bucket"] = exclude_experiment_bucket
+        if direction is not None:
+            # Faz 352 — Regime Reversal Guardian: YÖN-bazlı ardışık stop
+            # sayacı, kill switch'in GLOBAL sayacının aksine tek bir yönün
+            # (LONG ya da SHORT) kendi geçmişine bakmalı — diğer yönün
+            # kapanışları araya girip streak'i sulandırmasın.
+            query += " AND direction = :direction"
+            params["direction"] = direction
         query += " ORDER BY closed_at DESC LIMIT :limit"
 
         rows = self.session.execute(text(query), params).mappings().all()

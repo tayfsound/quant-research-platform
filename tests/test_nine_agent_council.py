@@ -8,6 +8,7 @@ gerçekten register edildiğini ve CouncilOrchestrator.deliberate() üzerinden
 gerçekten çalışıp tek bir belief'e sentezlendiğini kanıtlıyor."""
 from agents.registry import AgentRegistry
 from contracts.agent import AgentDomain
+from contracts.epistemology import EpistemologyContext
 from contracts.macro import MacroContext
 from contracts.onchain import OnChainContext
 from contracts.order_flow import OrderFlowContext
@@ -15,7 +16,6 @@ from contracts.pattern import PatternContext
 from contracts.quant import QuantContext
 from contracts.technical import TechnicalContext
 from contracts.time_context import TimeContext
-from contracts.epistemology import EpistemologyContext
 from services.council_orchestrator import CouncilOrchestrator
 
 

@@ -9,6 +9,7 @@ fresh scratch DB and the real local dev DB (4996 existing decisions rows,
 zero data loss). No longer expected to fail anywhere."""
 from sqlalchemy import text
 
+
 def _has_timescaledb():
     from database.session_factory import SessionFactory
     try:

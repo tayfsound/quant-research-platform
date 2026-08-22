@@ -2,9 +2,10 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends
-from database.session_factory import SessionFactory
-from database.repositories.weight_approval_repository import WeightApprovalRepository, WeightApprovalModel
+
 from contracts.auth import Role
+from database.repositories.weight_approval_repository import WeightApprovalModel, WeightApprovalRepository
+from database.session_factory import SessionFactory
 from services.auth_service import AuthContext, require_role
 
 router = APIRouter(prefix="/weights", tags=["weights"])

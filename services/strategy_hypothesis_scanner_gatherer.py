@@ -9,8 +9,9 @@ from services.strategy_regime_compatibility_gatherer import MAX_DECISIONS, _stra
 
 
 def gather_strategy_hypothesis_candidates() -> dict:
-    from database.session_factory import SessionFactory
     from sqlalchemy import text
+
+    from database.session_factory import SessionFactory
 
     with SessionFactory.get_session() as session:
         rows = session.execute(

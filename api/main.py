@@ -1,13 +1,56 @@
 """FastAPI ana uygulama — tum router'lar."""
-import time
-
 import os
+import time
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
-from api.rest import agent_ablation, agent_combination_reliability, agents, audit, auth, calibration, causal_inference, cognitive, collective_intelligence, correlation_breakdown, dashboard, depeg_risk, direction_prediction_v2, experiments, feature_ic, feature_registry, liquidity_var, llm_critic, mae_mfe_confidence, market_data, market_world_model, memory, meta_learning_effectiveness, model_drift, models, opportunity_quality, orchestrator, positions, research_summary, risk_limits, seasonality, self_model, settings, shadow, strategies, strategy_hypothesis_scanner, strategy_regime_compatibility, system_events, tokens, tp_sl_confluence, weights, webhooks, workspace
+from api.rest import (
+    agent_ablation,
+    agent_combination_reliability,
+    agents,
+    audit,
+    auth,
+    calibration,
+    causal_inference,
+    cognitive,
+    collective_intelligence,
+    correlation_breakdown,
+    dashboard,
+    depeg_risk,
+    direction_prediction_v2,
+    experiments,
+    feature_ic,
+    feature_registry,
+    liquidity_var,
+    llm_critic,
+    mae_mfe_confidence,
+    market_data,
+    market_world_model,
+    memory,
+    meta_learning_effectiveness,
+    model_drift,
+    models,
+    opportunity_quality,
+    orchestrator,
+    positions,
+    research_summary,
+    risk_limits,
+    seasonality,
+    self_model,
+    settings,
+    shadow,
+    strategies,
+    strategy_hypothesis_scanner,
+    strategy_regime_compatibility,
+    system_events,
+    tokens,
+    tp_sl_confluence,
+    webhooks,
+    weights,
+    workspace,
+)
 from config import get_settings
 from observability.health import router as health_router
 from observability.logger import setup_logging

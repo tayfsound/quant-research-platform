@@ -1,6 +1,6 @@
 """Phase 187 — orchestrator + cognitive engine integration."""
-from unittest.mock import MagicMock, patch
 from services.orchestrator import CognitiveOrchestrator
+
 
 def test_cycle_runs():
     orch = CognitiveOrchestrator(max_position_size=1.0, max_drawdown=0.15, current_drawdown=0.0)

@@ -1,7 +1,6 @@
 """Autonomous Strategy Synthesizer v1 "Regime Gate Discovery" testleri —
 bkz. analytics/strategy_hypothesis_scanner.py."""
 import numpy as np
-import pytest
 
 from analytics.strategy_hypothesis_scanner import (
     scan_for_gate_candidates,

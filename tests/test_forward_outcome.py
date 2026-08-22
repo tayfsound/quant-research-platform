@@ -1,5 +1,6 @@
-from services.forward_outcome import ForwardOutcome
 from market_data.ingestion.mock_adapter import MockOHLCVAdapter
+from services.forward_outcome import ForwardOutcome
+
 
 def test_long_win_when_price_rises():
     adapter = MockOHLCVAdapter(seed=42)
@@ -15,11 +16,13 @@ def test_short_win_when_price_falls():
     fo = ForwardOutcome(bars_forward=10)
     result = fo.calculate(data[0].close, "SHORT", data)
     assert "pnl" in result
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+
 from market_data.ingestion.ohlcv import OHLCV
 
+
 def _bars(n, start=100.0, step=1.0):
-    t0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    t0 = datetime(2026, 1, 1, tzinfo=UTC)
     out = []
     for i in range(n):
         p = start + i * step

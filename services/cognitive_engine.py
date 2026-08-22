@@ -2,8 +2,6 @@
 from agents.registry import AgentRegistry
 from config import get_settings
 from contracts.context import CognitiveCycleContext
-from database.connection import get_session
-from database.repositories.decision_persistor import DecisionPersistor
 from engines.cognitive_pipeline import (
     BinderStage,
     CouncilStage,

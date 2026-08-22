@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 def _client():
     from fastapi.testclient import TestClient
+
     from api.main import app
     return TestClient(app)
 

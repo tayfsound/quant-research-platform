@@ -8,7 +8,6 @@ api_*/db_query_latency_seconds eklendi VE gerçek kod yollarına bağlandı
 (RiskEngine, RecordingStage, LearningLoop, FastAPI middleware,
 DecisionPersistor) — bkz. CURRENT_STATE.md.
 """
-import time
 
 import psutil
 from prometheus_client import REGISTRY, Counter, Gauge, Histogram, Info, generate_latest

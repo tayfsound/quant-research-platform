@@ -7,10 +7,11 @@ from contracts.decision_event import DecisionEvent
 from ml.training.feature_extractor import TrainingFeatureExtractor
 from ml.training.replay_memory import ReplayMemory
 
+
 class SampleQualityScorer:
     def score(self, sample: dict) -> float:
         return sample.get("quality_score", 0.5)
-    
+
     def score_sample(self, event: DecisionEvent) -> dict:
         confidence = event.confidence if event.confidence else 0.5
         outcome = event.outcome or {}
@@ -61,7 +62,7 @@ class TrainingIntelligence:
                 count += 1
             except Exception:
                 continue
-        
+
         if samples:
             with open(output_path, "w") as f:
                 for s in samples:
@@ -73,7 +74,7 @@ class TrainingIntelligence:
                         "quality_score": s["quality_score"],
                         "timestamp": s["timestamp"]
                     })
-        
+
         return {
             "sample_count": count,
             "skipped_low_quality": skipped_low_quality,

@@ -1,15 +1,16 @@
 from datetime import datetime, timedelta
+
 """Weight Optimizer — Bayesian smoothing ile stabil ağırlık önerisi."""
 
 from enum import Enum
 
 from contracts.agent import VOTING_AGENT_DOMAINS
 from contracts.agent_weight_snapshot import AgentWeightSnapshot
+from contracts.weight_approval import WeightApproval
+from database.repositories.weight_approval_repository import WeightApprovalRepository
+from database.session_factory import SessionFactory
 from services.agent_memory import AgentMemory, get_reliability_legacy_cutoff
 from services.weight_repository import WeightRepository
-from contracts.weight_approval import WeightApproval
-from database.session_factory import SessionFactory
-from database.repositories.weight_approval_repository import WeightApprovalRepository
 
 MAX_WEIGHT_DELTA = 0.10
 # Faz 268-sonrası — kullanıcı bulgusu, gerçek olay: reliability_legacy_

@@ -157,6 +157,13 @@ celery_app.conf.beat_schedule = {
         "task": "resolve_position_pool_task",
         "schedule": 60.0,
     },
+    # Faz 352 — Regime Reversal Guardian. close_due_positions_task ile AYNI
+    # cadence — yön-bazlı ardışık stop sayacı kadar hızlı tepki vermeli,
+    # kârdaki pozisyonlar dönüş sinyali gerçekten oluşunca hemen kilitlensin.
+    "regime-reversal-guardian-every-60s": {
+        "task": "regime_reversal_guardian_task",
+        "schedule": 60.0,
+    },
     # Faz 201: gerçek bulgu — IngestionPipeline.ingest_order_book() tam
     # çalışan bir metod olarak yazılmıştı ama hiçbir üretim kodu hiç
     # çağırmıyordu; order_book_snapshots tablosu ayların birikimiyle

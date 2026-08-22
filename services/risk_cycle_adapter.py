@@ -1,7 +1,8 @@
 """Orchestrator dict kararlari <-> CognitiveCycleContext koprusu."""
 from contracts.context import CognitiveCycleContext
 from contracts.contexts.decision import ActionType, Decision, DecisionReason
-from contracts.contexts.risk import RiskContext, RiskLimitEntry, RiskEvaluation, RiskReason
+from contracts.contexts.risk import RiskContext, RiskEvaluation, RiskLimitEntry
+
 
 def direction_to_action(direction: str) -> ActionType:
     d = (direction or "").upper()
@@ -49,14 +50,14 @@ def apply_gate_result(ctx: CognitiveCycleContext) -> dict:
             reason_msgs.append(r)
         else:
             reason_msgs.append(getattr(r, "message", str(r)))
-    
+
     approved = verdict == "approved" and ctx.decision.action != ActionType.WAIT
     direction = "NEUTRAL"
     if ctx.decision.action == ActionType.ENTER_LONG:
         direction = "LONG"
     elif ctx.decision.action == ActionType.ENTER_SHORT:
         direction = "SHORT"
-    
+
     return {
         "approved": approved,
         "direction": direction,

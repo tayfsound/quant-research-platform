@@ -309,6 +309,18 @@ def retrain_meta_label_model_task() -> dict:
     }
 
 
+@celery_app.task(name="regime_reversal_guardian_task")
+def regime_reversal_guardian_task() -> dict:
+    """Faz 352 — Regime Reversal Guardian. reversal_guardian_enabled=false
+    iken (varsayılan AÇIK olsa da kullanıcı kapatabilir) sıfır maliyetli
+    no-op. bkz. services/regime_reversal_guardian.py::run_guardian_sweep()
+    docstring'i — GERÇEK bir olayla (2026-08-22, LONG'da art arda 14
+    stop) doğrulanan bir korumalı mekanizma."""
+    from services.regime_reversal_guardian import run_guardian_sweep
+
+    return run_guardian_sweep()
+
+
 @celery_app.task(name="resolve_position_pool_task")
 def resolve_position_pool_task() -> dict:
     """Faz 350 — Pozisyon Havuzu / Max Confidence Modu. Sık çalışır (bkz.
@@ -350,8 +362,8 @@ def auto_reject_stale_weight_approvals_task(max_age_hours: float = 24) -> dict:
     karar vermemiş) onayları otomatik reddeden POST /weights/auto-reject
     hiçbir zaman zamanlanmamıştı — sadece elle çağrılabiliyordu. Artık
     günlük bir güvenlik ağı olarak çalışıyor."""
-    from database.session_factory import SessionFactory
     from database.repositories.weight_approval_repository import WeightApprovalRepository
+    from database.session_factory import SessionFactory
 
     with SessionFactory.get_session() as session:
         repo = WeightApprovalRepository(session)

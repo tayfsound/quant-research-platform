@@ -3,15 +3,16 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from market_data.features.indicators import rsi
 from market_data.ingestion.data_provider import (
-    MockProvider,
     BinanceProvider,
+    MockProvider,
     RoutingProvider,
     get_ohlcv_provider,
     get_provider_for_symbol,
 )
 from market_data.ingestion.ohlcv import OHLCV, from_binance_klines
-from market_data.features.indicators import rsi
+
 
 def test_mock_provider_returns_ohlcv():
     p = MockProvider(seed=42)

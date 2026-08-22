@@ -1,6 +1,7 @@
 """BinderStage processes only wisdom-type knowledge items."""
 from contracts.context import CognitiveCycleContext
 
+
 def test_only_wisdom_produces_binder_belief():
     from engines.cognitive_pipeline import BinderStage
     stage = BinderStage()

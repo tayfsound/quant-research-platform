@@ -9,14 +9,12 @@ import time
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-import pytest
 import redis
 
 from config import get_settings
 from market_data.ingestion.ohlcv import OHLCV
 from services.orchestrator import (
     _RISK_BARS_CACHE_KEY_PREFIX,
-    _RISK_BARS_CACHE_TTL_SECONDS,
     _get_risk_bars_cached,
 )
 

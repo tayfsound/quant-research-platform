@@ -13,7 +13,6 @@ class ContradictionDetector:
         }
         """
         challenges = len(criticism.get("challenges", []))
-        risk_flags = len(criticism.get("risk_flags", []))
         improvements = len(criticism.get("improvements", []))
 
         # Çelişki seviyesi hesapla

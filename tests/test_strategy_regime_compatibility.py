@@ -4,8 +4,6 @@ sorusuna GERÇEK verilerle cevap veren, ölçüm-only bir modül."""
 from datetime import UTC, datetime
 from uuid import uuid4
 
-import pytest
-
 from analytics.strategy_regime_compatibility import compute_strategy_regime_compatibility
 from services.strategy_regime_compatibility_gatherer import _strategy_label
 
@@ -149,7 +147,6 @@ def test_gather_strategy_regime_compatibility_splits_ai_council_by_trade_type():
     ai_council_LONG_scalp/ai_council_LONG_swing olarak AYRI raporlanmalı."""
     from database.repositories.decision_persistor import DecisionPersistor
     from database.session_factory import SessionFactory
-
     from services.strategy_regime_compatibility_gatherer import gather_strategy_regime_compatibility
 
     symbol = f"SRCTT{uuid4().hex[:8]}USDT"

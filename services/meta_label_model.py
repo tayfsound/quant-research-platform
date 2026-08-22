@@ -22,7 +22,7 @@ RiskTargetStage'e bağlandı, ama SADECE pozisyon boyutu çarpanı olarak
 boyutlandırmayla AYNI "sadece küçült" ilkesi."""
 from sqlalchemy import text
 
-from analytics.opportunity_quality import agreement_from_contributions, agreement_from_opinions
+from analytics.opportunity_quality import agreement_from_contributions
 from contracts.agent_confidence_model import AgentConfidenceModel
 from services.agent_confidence_model import ConfidenceModelRepository, _normalize_raw_features, _vectorize
 

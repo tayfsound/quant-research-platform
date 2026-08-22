@@ -13,8 +13,8 @@ var" sonucu icat edilmiyor.
 Kasıtlı olarak SADECE ölçüm/rapor — hiçbir zamanlama kararını (ör. belirli
 saatlerde işlem açmayı durdurma) burada otomatik UYGULAMIYOR."""
 from collections import defaultdict
+from collections.abc import Callable
 from datetime import datetime
-from typing import Callable
 
 MIN_BUCKET_SIZE = 20
 

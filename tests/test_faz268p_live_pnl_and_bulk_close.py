@@ -37,13 +37,14 @@ def _open_position(symbol: str, direction: str = "LONG", quantity: float = 1.0, 
 @pytest.fixture
 def client():
     from fastapi.testclient import TestClient
+
     from api.main import app
     return TestClient(app)
 
 
 def _patch_price(monkeypatch, price: float):
-    from market_data.ingestion.ohlcv import OHLCV
     from market_data.ingestion import data_provider as dp_module
+    from market_data.ingestion.ohlcv import OHLCV
 
     def fake_get_ohlcv(self, symbol, timeframe, limit=1):
         now = datetime.now(UTC)
@@ -110,8 +111,8 @@ def test_close_profitable_closes_only_net_positive_positions(client, monkeypatch
     # provider'ı) — ama pozisyonların yönü/giriş fiyatı farklı olduğu için
     # biri kârlı, diğeri zararlı olacak şekilde AYRI fiyat lazım. Sembole
     # göre farklı fiyat dönen bir provider kullanıyoruz.
-    from market_data.ingestion.ohlcv import OHLCV
     from market_data.ingestion import data_provider as dp_module
+    from market_data.ingestion.ohlcv import OHLCV
 
     def fake_get_ohlcv(self, symbol, timeframe, limit=1):
         now = datetime.now(UTC)

@@ -1,5 +1,6 @@
 from services.orchestrator import CognitiveOrchestrator
 
+
 def test_full_cycle():
     orch = CognitiveOrchestrator()
     result = orch.run_cycle(seed=123)

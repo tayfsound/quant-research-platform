@@ -1,8 +1,8 @@
 """Faz 188: trading_mode (test/live) + max_concurrent_positions/max_capital_pct
 — RiskEngine'in gerçekten bu ayarları uyguladığını doğrular."""
-from engines.risk_engine import RiskEngine
 from contracts.context import CognitiveCycleContext
 from contracts.contexts.risk import RiskLimitEntry
+from engines.risk_engine import RiskEngine
 
 
 def _ctx(direction="LONG", size=0.3):

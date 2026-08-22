@@ -218,8 +218,9 @@ def test_concept_drift_does_not_bench_on_improvement():
     """Doğruluk YÜKSELİYORSA (baseline kötü, recent iyi) bu bir
     iyileşme — benching kuralı sadece GERİLEMEYİ (regresyon) cezalandırmalı,
     iyileşmeyi değil."""
-    from services.agent_memory import AgentMemory as _AgentMemory
     import tempfile
+
+    from services.agent_memory import AgentMemory as _AgentMemory
 
     with tempfile.TemporaryDirectory() as tmp:
         memory = _AgentMemory(storage_path=tmp)

@@ -13,9 +13,8 @@ sembollük çekirdek listeden, en likit iki "piyasa lideri" (BTCUSDT,
 ETHUSDT) SEBEP adayı olarak, listenin GERİ KALANI ETKİ adayı olarak
 test ediliyor — "BTC/ETH'nin hareketi diğer varlıkları öngörüyor mu"
 sorusuna gerçek veriyle cevap."""
-from market_data.ingestion.data_provider import RoutingProvider
-
 from analytics.causal_inference import apply_fdr_correction, compute_granger_causality
+from market_data.ingestion.data_provider import RoutingProvider
 
 CAUSE_SYMBOLS = ["BTCUSDT", "ETHUSDT"]
 

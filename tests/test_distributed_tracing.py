@@ -5,10 +5,11 @@ setup_logging()'in contextvars merge'i gerçekten etkinleştirdiğini, (2)
 build_cognitive_context()'in her sembol için cycle_id'yi bind ettiğini,
 (3) Celery sinyallerinin (before_task_publish/task_prerun/task_postrun)
 standart correlation-ID desenini doğru uyguladığını doğruluyor."""
+from datetime import UTC, datetime, timedelta
+
 import structlog
 
 from market_data.ingestion.ohlcv import OHLCV
-from datetime import UTC, datetime, timedelta
 
 
 def _bars(n=60):
@@ -190,12 +191,12 @@ def test_run_trading_cycle_task_logs_a_task_level_summary_line():
     aynı anda çalışan kopyasıyla PAYLAŞILAN bir anahtar — test öncesi
     temizlenmezse, canlı bir cycle tam o sırada kilidi tutuyorsa bu test
     'skipped: previous_cycle_still_running' ile flaky şekilde geçebilir."""
+    from unittest.mock import patch
+
     import redis
+    from structlog.testing import capture_logs
 
     from config import get_settings
-    from unittest.mock import MagicMock, patch
-
-    from structlog.testing import capture_logs
 
     redis.from_url(get_settings().REDIS_URL).delete("lock:run_trading_cycle_task")
 

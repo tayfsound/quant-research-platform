@@ -1249,8 +1249,9 @@ def test_excluded_from_stats_position_does_not_pollute_agent_learning_on_close()
     reliability_legacy_cutoff_at SADECE decision_opened_at'e göre zaman
     tabanlı filtreliyor — kesimden SONRA açılıp bilinen bir bug'dan
     etkilenen (excluded_from_stats=true) bir kararı yakalamıyor."""
-    from contracts.decision_event import DecisionEvent
     from sqlalchemy import text
+
+    from contracts.decision_event import DecisionEvent
 
     symbol = f"POSEXCLLRN{uuid4().hex[:8]}"
     now = datetime.now(UTC)
@@ -1271,9 +1272,8 @@ def test_excluded_from_stats_position_does_not_pollute_agent_learning_on_close()
 
     closer = PositionCloser(_FixedPriceProvider(110.0), hold_seconds=3600)
     from unittest.mock import patch
-    with patch.object(closer.agent_memory, "record") as record_spy:
-        with SessionFactory.get_session() as session:
-            closed = closer.close_due_positions(DecisionPersistor(session))
+    with patch.object(closer.agent_memory, "record") as record_spy, SessionFactory.get_session() as session:
+        closed = closer.close_due_positions(DecisionPersistor(session))
 
     assert str(event.id) in {c["decision_id"] for c in closed}
     assert not record_spy.called

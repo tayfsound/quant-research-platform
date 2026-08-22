@@ -8,7 +8,6 @@ from uuid import uuid4
 
 import pytest
 
-from contracts.market_data import DataSource
 from database.repositories.market_data_repository import MarketDataRepository
 from database.session_factory import SessionFactory
 from exchange_gateway.binance.live_feed import LiveMarketFeed

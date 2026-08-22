@@ -70,9 +70,7 @@ class BeliefRepository:
         }
 
         self.session.execute(
-            insert(
-                sa_table := self._table(),
-            ).values(**data),
+            insert(self._table()).values(**data),
         )
 
         self.session.commit()

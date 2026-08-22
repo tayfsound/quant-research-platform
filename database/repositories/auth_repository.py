@@ -2,7 +2,7 @@
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
 
-from contracts.auth import APIKey, AuditLogEntry, Role, User
+from contracts.auth import APIKey, AuditLogEntry, User
 from database.base import Base
 
 

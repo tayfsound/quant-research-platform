@@ -541,6 +541,20 @@ DEFAULTS: dict[str, str] = {
     "max_confidence_mode_enabled": "false",
     "max_confidence_mode_pool_window_minutes": "15",
     "max_confidence_mode_top_k": "3",
+    # Faz 352 — Regime Reversal Guardian (kullanıcı fikri, 2026-08-22,
+    # GERÇEK bir olayla doğrulandı: LONG'da art arda 14 stop-loss, aynı
+    # anda 275 açık LONG'un 170'i zararda). Kill switch'ten (GLOBAL,
+    # ai_enabled'ı kapatır) FARKLI: bu YÖN-bazlı — sadece o yönü durdurur,
+    # diğer yön etkilenmez, ve bir kazanç gelince kendi kendine açılır
+    # (hiçbir "duraklatıldı" bayrağı persiste edilmiyor). Varsayılan AÇIK
+    # — kill switch gibi koruyucu bir mekanizma, alfa üreten/deneysel bir
+    # modül değil. Gerçek geçmiş dağılımla kalibre edildi (bkz.
+    # services/regime_reversal_guardian.py): LONG streak'leri normalde
+    # 1-4, SHORT çok daha oynak (bazı geçmiş streak'ler 50-95) — 5 hem
+    # gerçek olayı (14) rahat yakalıyor hem gürültü seviyesindeki 1-4
+    # streak'lerde tetiklenmiyor.
+    "reversal_guardian_enabled": "true",
+    "reversal_guardian_consecutive_stop_threshold": "5",
 }
 
 CANDLE_TIMEFRAMES = ("1m", "5m", "15m", "1h", "4h", "1d")

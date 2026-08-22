@@ -1,13 +1,13 @@
 """Volatility-based circuit breaker."""
-from typing import List
+
 
 class VolatilityCircuitBreaker:
     def __init__(self, threshold: float = 0.05, lookback: int = 20):
         self.threshold = threshold
         self.lookback = lookback
-        self.history: List[float] = []
+        self.history: list[float] = []
         self.tripped: bool = False
-    
+
     def check(self, price: float) -> bool:
         self.history.append(price)
         if len(self.history) > self.lookback:
@@ -20,7 +20,7 @@ class VolatilityCircuitBreaker:
             self.tripped = True
             return False
         return True
-    
+
     def reset(self):
         self.tripped = False
         self.history = []

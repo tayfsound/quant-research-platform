@@ -21,8 +21,8 @@ kullanım senaryosu (VPIN gibi tick-seviyesi bir analiz) buna ihtiyaç
 duymuyor. Bilinçli olarak dokunulmadı — gerçek bir ihtiyaç doğarsa
 kullanılabilir durumda duruyor, ama şu an başlatılmıyor."""
 import json
+from collections.abc import Iterable
 from datetime import UTC, datetime
-from typing import Iterable
 from uuid import uuid4
 
 import websockets

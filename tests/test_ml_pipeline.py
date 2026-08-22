@@ -1,8 +1,8 @@
 """ML pipeline testleri."""
-import pytest
-from ml.training.replay_memory import ReplayMemory
-from ml.training.pipeline import TrainingPipeline
 from ml.models.classifier import DecisionClassifier
+from ml.training.pipeline import TrainingPipeline
+from ml.training.replay_memory import ReplayMemory
+
 
 def test_pipeline_insufficient_data():
     pipe = TrainingPipeline()
@@ -37,7 +37,7 @@ def test_pipeline_end_to_end():
             "quality_score": 0.8,
             "label": 1 if i % 3 == 0 else 0
         })
-    
+
     pipe = TrainingPipeline(memory=memory)
     result = pipe.run(min_samples=10)
     assert result["status"] == "trained"

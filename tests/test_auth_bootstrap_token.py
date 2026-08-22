@@ -9,7 +9,7 @@ test runs, so "is this really the first user ever" isn't reproducible via
 real registration order — UserRepository.count() is mocked to force the
 bootstrap branch, same technique the auth_helpers.py docstring already
 justifies for order-independence."""
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from uuid import uuid4
 
 from config import Settings
@@ -17,6 +17,7 @@ from config import Settings
 
 def _client():
     from fastapi.testclient import TestClient
+
     from api.main import app
 
     return TestClient(app)

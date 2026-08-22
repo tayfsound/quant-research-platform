@@ -3,8 +3,8 @@ from uuid import uuid4
 
 from contracts.auth import Role
 from contracts.weight_approval import WeightApproval
-from database.session_factory import SessionFactory
 from database.repositories.weight_approval_repository import WeightApprovalRepository
+from database.session_factory import SessionFactory
 from services.weight_repository import WeightRepository
 from tests.auth_helpers import make_authed_headers
 
@@ -12,6 +12,7 @@ from tests.auth_helpers import make_authed_headers
 def test_approve_endpoint_applies_weights():
     """POST /weights/{id}/approve should flip DB status AND persist a real weight snapshot."""
     from fastapi.testclient import TestClient
+
     from api.main import app
 
     proposed = {"technical": 1.42, "macro": 0.87}
@@ -51,6 +52,7 @@ def test_approve_endpoint_carries_regime_through_to_the_saved_snapshot():
     snapshot olarak kaydedilir ve karar anında hiçbir zaman regime-özel
     olarak seçilmez."""
     from fastapi.testclient import TestClient
+
     from api.main import app
 
     proposed = {"technical": 1.77}
@@ -85,6 +87,7 @@ def test_approve_endpoint_carries_regime_through_to_the_saved_snapshot():
 
 def test_pending_endpoint_includes_regime_field():
     from fastapi.testclient import TestClient
+
     from api.main import app
 
     approval = WeightApproval(
@@ -112,6 +115,7 @@ def test_pending_endpoint_returns_timestamp_and_max_delta_for_readable_ui():
     ve zaman damgasını gösterebilmesi için /pending artık previous/
     proposed'ın yanında timestamp ve max_delta'yı da döndürüyor."""
     from fastapi.testclient import TestClient
+
     from api.main import app
 
     approval = WeightApproval(

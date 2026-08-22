@@ -1,7 +1,7 @@
 """Market data testleri."""
-import pytest
+from market_data.features.indicators import ema, rsi
 from market_data.ingestion.mock_adapter import MockOHLCVAdapter
-from market_data.features.indicators import rsi, ema, macd
+
 
 def test_mock_deterministic():
     a1 = MockOHLCVAdapter(seed=42)

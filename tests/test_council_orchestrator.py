@@ -173,9 +173,9 @@ def test_council_stage_derives_regime_from_market_features_and_forwards_it(monke
     PositionCloser._extract_market_regime'in kapanmış işlemleri
     etiketlediği AYNI format ("trend_volatility") olmalı — aksi halde
     regime-özel snapshot'lar karar anında hiçbir zaman doğru seçilmez."""
+    import services.council_orchestrator as co_module
     from contracts.context import CognitiveCycleContext
     from engines.cognitive_pipeline import CouncilStage
-    import services.council_orchestrator as co_module
 
     captured = {}
     original_deliberate = co_module.CouncilOrchestrator.deliberate
@@ -203,9 +203,9 @@ def test_council_stage_computes_real_data_freshness_from_last_bar_timestamp(monk
     deliberate()'e vermeli — ajanların kendi hardcoded varsayılanı değil."""
     from datetime import UTC, datetime, timedelta
 
+    import services.council_orchestrator as co_module
     from contracts.context import CognitiveCycleContext
     from engines.cognitive_pipeline import CouncilStage
-    import services.council_orchestrator as co_module
 
     captured = {}
     original_deliberate = co_module.CouncilOrchestrator.deliberate
@@ -230,9 +230,9 @@ def test_council_stage_computes_real_data_freshness_from_last_bar_timestamp(monk
 
 
 def test_council_stage_leaves_data_freshness_none_without_a_last_bar_timestamp(monkeypatch):
+    import services.council_orchestrator as co_module
     from contracts.context import CognitiveCycleContext
     from engines.cognitive_pipeline import CouncilStage
-    import services.council_orchestrator as co_module
 
     captured = {}
     original_deliberate = co_module.CouncilOrchestrator.deliberate

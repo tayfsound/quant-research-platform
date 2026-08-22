@@ -8,7 +8,6 @@ import pytest
 from analytics.metrics.engine import MetricsEngine
 from analytics.metrics.equity import EquityAnalytics
 
-
 # equity = [100, 200, 100, 400] chosen so every ratio comes out to a clean
 # number by hand:
 #   peak            = [100, 200, 200, 400]

@@ -13,10 +13,10 @@ Faz 268-sonrası — kullanıcı bulgusu: bunu wire ettikten sonra bile
 tutuluyordu. Artık gerçek, kalıcı (AgentMemory) isabet oranından hesaplanıyor
 — bu test artık hardcoded default'tan sapmayı DEĞİL, gerçek isabet
 geçmişinin doğru şekilde yansıdığını doğruluyor."""
+from agents.registry import AgentRegistry
 from contracts.agent import AgentDomain
 from contracts.agent_performance import AgentPerformanceRecord
 from contracts.technical import TechnicalContext
-from agents.registry import AgentRegistry
 from services.agent_memory import AgentMemory
 from services.council_orchestrator import CouncilOrchestrator
 

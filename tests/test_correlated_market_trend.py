@@ -2,12 +2,12 @@
 trend gösterdiğinde kripto analizine ikinci görüş olarak akıyor."""
 from uuid import uuid4
 
+from agents.technical_agent import TechnicalAgent
 from contracts.context import CognitiveCycleContext
 from contracts.decision_event import DecisionEvent
 from contracts.technical import TechnicalContext
 from database.repositories.decision_persistor import DecisionPersistor
 from database.session_factory import SessionFactory
-from agents.technical_agent import TechnicalAgent
 from services.context_adapter import ContextAdapter
 
 

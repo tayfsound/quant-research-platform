@@ -69,48 +69,48 @@ def test_risk_engine_approval_increments_real_metrics():
 
 
 def test_recording_stage_increments_decisions_total():
-    with patch("transformers.AutoModel.from_pretrained"):
-        with patch("transformers.AutoTokenizer.from_pretrained"):
-            from contracts.context import CognitiveCycleContext
-            from services.cognitive_engine import CognitiveEngine
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        from contracts.context import CognitiveCycleContext
+        from services.cognitive_engine import CognitiveEngine
 
-            before = _metric_value("decisions_total", {"symbol": "METRICSTEST3"})
+        before = _metric_value("decisions_total", {"symbol": "METRICSTEST3"})
 
-            engine = CognitiveEngine()
-            ctx = CognitiveCycleContext()
-            ctx.market.symbol = "METRICSTEST3"
-            ctx.decision.proposed_direction = "LONG"
-            ctx.decision.confidence = 0.8
-            ctx.risk.current_drawdown = 0.0
-            ctx.risk.limits = {"max_position_size": FakeLimit()}
-            engine.run(ctx, persist=True)
+        engine = CognitiveEngine()
+        ctx = CognitiveCycleContext()
+        ctx.market.symbol = "METRICSTEST3"
+        ctx.decision.proposed_direction = "LONG"
+        ctx.decision.confidence = 0.8
+        ctx.risk.current_drawdown = 0.0
+        ctx.risk.limits = {"max_position_size": FakeLimit()}
+        engine.run(ctx, persist=True)
 
-            after = _metric_value("decisions_total", {"symbol": "METRICSTEST3"})
-            assert after == before + 1
+        after = _metric_value("decisions_total", {"symbol": "METRICSTEST3"})
+        assert after == before + 1
 
 
 def test_api_middleware_increments_request_metrics():
-    with patch("transformers.AutoModel.from_pretrained"):
-        with patch("transformers.AutoTokenizer.from_pretrained"):
-            from fastapi.testclient import TestClient
-            from api.main import app
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        from fastapi.testclient import TestClient
 
-            before = _histogram_count(
-                "api_request_latency_seconds", {"method": "GET", "path": "/health"}
-            )
+        from api.main import app
 
-            client = TestClient(app)
-            response = client.get("/health")
-            assert response.status_code == 200
+        before = _histogram_count(
+            "api_request_latency_seconds", {"method": "GET", "path": "/health"}
+        )
 
-            after = _histogram_count(
-                "api_request_latency_seconds", {"method": "GET", "path": "/health"}
-            )
-            assert after == before + 1
+        client = TestClient(app)
+        response = client.get("/health")
+        assert response.status_code == 200
+
+        after = _histogram_count(
+            "api_request_latency_seconds", {"method": "GET", "path": "/health"}
+        )
+        assert after == before + 1
 
 
 def test_db_persist_records_latency_observation():
     from uuid import uuid4
+
     from contracts.decision_event import DecisionEvent
     from database.repositories.decision_persistor import DecisionPersistor
     from database.session_factory import SessionFactory

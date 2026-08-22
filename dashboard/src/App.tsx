@@ -31,6 +31,18 @@ import { clearToken, hasToken } from './api/auth';
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(hasToken);
   const [view, setView] = useState('dashboard');
+  // Kullanıcı isteği: tabloları incelerken menü ekranda yer kaplamasın —
+  // gizlenebilir olsun, tercih tarayıcı kapatılıp açılsa bile kalıcı olsun.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => localStorage.getItem('sidebar_collapsed') === '1',
+  );
+  const toggleSidebar = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem('sidebar_collapsed', next ? '1' : '0');
+      return next;
+    });
+  };
   // Faz 266: kullanıcı isteği — Transactions'ta bir işlem satırına
   // tıklayınca direkt o varlığın grafiğine gitsin. MarketOverview kendi
   // "seçili sembol" durumunu kendi içinde tutuyor (App.tsx'in "view"
@@ -62,7 +74,13 @@ function App() {
 
   return (
     <div className="min-h-screen bg-canvas text-ink flex">
-      <Sidebar current={view} onChange={setView} onLogout={handleLogout} />
+      <Sidebar
+        current={view}
+        onChange={setView}
+        onLogout={handleLogout}
+        collapsed={sidebarCollapsed}
+        onToggleCollapsed={toggleSidebar}
+      />
       <main className="flex-1 min-w-0 overflow-x-auto">
         <div className="max-w-6xl mx-auto px-8 py-8">
           {view === 'dashboard' && <Dashboard />}

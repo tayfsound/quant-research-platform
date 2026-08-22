@@ -20,7 +20,8 @@ def test_engine_persist_and_learn_is_a_deliberate_noop():
     AgentMemory'ye (learning_loop.record) ne de ağırlıklara (weight_
     optimizer.optimize + kaydetme) hiçbir şey yazmıyor — bu test bunu
     kanıtlıyor."""
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import MagicMock, patch
+
     from contracts.outcome import TradeOutcome
     from services.cognitive_engine import CognitiveEngine
 

@@ -1,5 +1,7 @@
 from unittest.mock import patch
+
 from services.outcome_tracker import OutcomeTracker
+
 
 def test_build_training_dataset():
     tracker = OutcomeTracker()

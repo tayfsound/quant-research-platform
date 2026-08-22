@@ -3,8 +3,6 @@
 toplar (Faz 331'de Agent Combination Reliability eklenip 11'e çıktı)."""
 from unittest.mock import patch
 
-import pytest
-
 from contracts.auth import Role
 from tests.auth_helpers import make_authed_headers
 

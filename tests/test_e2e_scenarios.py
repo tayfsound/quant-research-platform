@@ -40,43 +40,41 @@ def _fetch_decision(decision_id) -> dict | None:
 
 def test_guardrail_red_rejects_pre_fusion_real_db():
     """No max_position_size limit -> GuardrailStage rejects before Council/Fusion even run."""
-    with patch("transformers.AutoModel.from_pretrained"):
-        with patch("transformers.AutoTokenizer.from_pretrained"):
-            engine = _engine()
-            ctx = _base_ctx()
-            ctx.decision.proposed_size = 1.0
-            ctx.risk.limits = {}  # no max_position_size -> RiskEngine MISSING_LIMIT
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        engine = _engine()
+        ctx = _base_ctx()
+        ctx.decision.proposed_size = 1.0
+        ctx.risk.limits = {}  # no max_position_size -> RiskEngine MISSING_LIMIT
 
-            with patch.object(engine, "council_stage") as mock_council:
-                ctx = engine.run(ctx, persist=True)
-                mock_council.execute.assert_not_called()
+        with patch.object(engine, "council_stage") as mock_council:
+            ctx = engine.run(ctx, persist=True)
+            mock_council.execute.assert_not_called()
 
-            assert ctx.decision.action.value == "WAIT"
-            assert ctx.decision.final_size == 0.0
-            assert ctx.risk.evaluation.verdict == "rejected"
-            assert any(r.code == "MISSING_LIMIT" for r in ctx.risk.evaluation.reasons)
+        assert ctx.decision.action.value == "WAIT"
+        assert ctx.decision.final_size == 0.0
+        assert ctx.risk.evaluation.verdict == "rejected"
+        assert any(r.code == "MISSING_LIMIT" for r in ctx.risk.evaluation.reasons)
 
-            row = _fetch_decision(ctx.cycle_id)
-            assert row is not None
-            assert float(row["size"]) == 0.0
-            assert row["direction"] == "LONG"
+        row = _fetch_decision(ctx.cycle_id)
+        assert row is not None
+        assert float(row["size"]) == 0.0
+        assert row["direction"] == "LONG"
 
 
 def test_outcome_none_learning_is_noop_real_db():
     """Decision persisted for real, no outcome ever attached -> learning never fires."""
-    with patch("transformers.AutoModel.from_pretrained"):
-        with patch("transformers.AutoTokenizer.from_pretrained"):
-            engine = _engine()
-            ctx = _base_ctx()
-            ctx.decision.proposed_size = 0.3
-            ctx.risk.limits = {"max_position_size": FakeLimit()}
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        engine = _engine()
+        ctx = _base_ctx()
+        ctx.decision.proposed_size = 0.3
+        ctx.risk.limits = {"max_position_size": FakeLimit()}
 
-            with patch.object(engine.learning_loop, "record") as mock_record:
-                ctx = engine.run(ctx, persist=True)
-                mock_record.assert_not_called()
+        with patch.object(engine.learning_loop, "record") as mock_record:
+            ctx = engine.run(ctx, persist=True)
+            mock_record.assert_not_called()
 
-            row = _fetch_decision(ctx.cycle_id)
-            assert row is not None  # decision itself IS recorded
+        row = _fetch_decision(ctx.cycle_id)
+        assert row is not None  # decision itself IS recorded
 
 
 def test_outcome_var_no_longer_triggers_agent_memory_update_but_db_row_still_persists():
@@ -85,30 +83,29 @@ def test_outcome_var_no_longer_triggers_agent_memory_update_but_db_row_still_per
     ::_persist_and_learn üstündeki not (ctx.outcome burada ForwardOutcome'ın aynı
     cycle'da geriye dönük hesapladığı düşük kaliteli bir "tahmin", gerçek bir
     pozisyon kapanışı değil; kullanıcı kararıyla öğrenme döngüsünden çıkarıldı)."""
-    with patch("transformers.AutoModel.from_pretrained"):
-        with patch("transformers.AutoTokenizer.from_pretrained"):
-            from contracts.outcome import TradeOutcome
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        from contracts.outcome import TradeOutcome
 
-            engine = _engine()
-            ctx = _base_ctx()
-            ctx.decision.proposed_size = 0.3
-            ctx.risk.limits = {"max_position_size": FakeLimit()}
+        engine = _engine()
+        ctx = _base_ctx()
+        ctx.decision.proposed_size = 0.3
+        ctx.risk.limits = {"max_position_size": FakeLimit()}
 
-            ctx = engine.run(ctx, persist=False)
-            row_before_finalize = _fetch_decision(ctx.cycle_id)
-            assert row_before_finalize is None  # persist=False -> nothing written yet
+        ctx = engine.run(ctx, persist=False)
+        row_before_finalize = _fetch_decision(ctx.cycle_id)
+        assert row_before_finalize is None  # persist=False -> nothing written yet
 
-            ctx.outcome = TradeOutcome(
-                pnl=42.0, win=True, decision="LONG", confidence_at_decision=0.8,
-            )
+        ctx.outcome = TradeOutcome(
+            pnl=42.0, win=True, decision="LONG", confidence_at_decision=0.8,
+        )
 
-            real_record = engine.learning_loop.agent_memory.record
-            with patch.object(
-                engine.learning_loop.agent_memory, "record", wraps=real_record
-            ) as spy_record:
-                engine.finalize(ctx)
-                spy_record.assert_not_called()
+        real_record = engine.learning_loop.agent_memory.record
+        with patch.object(
+            engine.learning_loop.agent_memory, "record", wraps=real_record
+        ) as spy_record:
+            engine.finalize(ctx)
+            spy_record.assert_not_called()
 
-            row = _fetch_decision(ctx.cycle_id)
-            assert row is not None
-            assert str(row["id"]) == str(ctx.cycle_id)
+        row = _fetch_decision(ctx.cycle_id)
+        assert row is not None
+        assert str(row["id"]) == str(ctx.cycle_id)

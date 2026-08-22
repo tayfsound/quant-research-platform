@@ -2,8 +2,6 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
-import numpy as np
-
 from contracts.decision_event import DecisionEvent
 from database.repositories.decision_persistor import DecisionPersistor
 from database.session_factory import SessionFactory

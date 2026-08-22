@@ -1,7 +1,9 @@
 """Egitim pipeline'i."""
 from dataclasses import dataclass, field
-from ml.training.replay_memory import ReplayMemory
+
 from ml.models.classifier import DecisionClassifier
+from ml.training.replay_memory import ReplayMemory
+
 
 @dataclass
 class TrainingResult:
@@ -11,7 +13,7 @@ class TrainingResult:
     status: str = "trained"
     samples: int = 0
     positive_ratio: float = 0.0
-    
+
     def __getitem__(self, key):
         return getattr(self, key)
 
@@ -23,7 +25,7 @@ class TrainingPipeline:
         self.memory = memory or ReplayMemory(capacity=10000)
         self.classifier = classifier or DecisionClassifier()
         self.registry = registry
-    
+
     def run(self, min_samples: int = 10, model_type: str = None, predictions: list = None, hyperparams: dict = None):
         # Predictions verildiyse direkt evaluation
         if predictions:
@@ -38,7 +40,7 @@ class TrainingPipeline:
                 samples=len(predictions),
                 positive_ratio=sum(1 for p in predictions if p.get("pnl", 0) > 0) / len(predictions)
             )
-        
+
         if len(self.memory.memory) < min_samples:
             return TrainingResult(model_type=model_type or "default", status="insufficient_data")
         samples = self.memory.sample(batch_size=min(len(self.memory.memory), 1000))

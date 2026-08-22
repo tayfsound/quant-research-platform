@@ -1,10 +1,11 @@
 """Weight approval repository."""
 from datetime import datetime, timedelta
 
-from sqlalchemy import Column, String, DateTime, Float, JSON
+from sqlalchemy import JSON, Column, DateTime, Float, String
 from sqlalchemy.dialects.postgresql import UUID
-from database.base import Base
+
 from contracts.weight_approval import WeightApproval
+from database.base import Base
 
 
 class WeightApprovalModel(Base):

@@ -279,8 +279,6 @@ def test_apply_portfolio_fusion_considers_real_existing_open_positions_not_just_
     (len(directional)==1) eski kod hiç çalışmıyordu bile. Burada
     GERÇEKTEN açık, çok büyük ve yeni öneriyle MÜKEMMEL korele bir
     pozisyon var — tek başına yeni öneri bunu görüp küçülmeli."""
-    from uuid import uuid4
-
     from contracts.decision_event import DecisionEvent
     from database.repositories.decision_persistor import DecisionPersistor
     from database.session_factory import SessionFactory

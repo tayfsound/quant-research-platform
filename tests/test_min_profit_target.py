@@ -7,7 +7,7 @@ kontrol ediyor."""
 from contracts.belief import Belief
 from contracts.context import CognitiveCycleContext
 from contracts.contexts.decision import ActionType
-from database.repositories.app_settings_repository import AppSettingsRepository, DEFAULTS
+from database.repositories.app_settings_repository import DEFAULTS, AppSettingsRepository
 from database.session_factory import SessionFactory
 from services.decision_fusion import DecisionFusion
 

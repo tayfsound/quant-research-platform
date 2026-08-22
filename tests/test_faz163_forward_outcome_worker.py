@@ -7,6 +7,7 @@ aldı)."""
 from market_data.ingestion.mock_adapter import MockOHLCVAdapter
 from services.forward_outcome import ForwardOutcome
 
+
 def test_forward_outcome_with_fee():
     fo = ForwardOutcome(bars_forward=5)
     adapter = MockOHLCVAdapter(seed=42)

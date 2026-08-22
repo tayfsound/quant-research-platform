@@ -1,13 +1,12 @@
 """Cognitive Pipeline Aşamaları — opinions akışı + Debate hafızası + RecordingStage."""
 import structlog
 
-from contracts.contexts.decision import ActionType
-from contracts.contexts.risk import RiskReason
-
 from agents.registry import AgentRegistry
 from contracts.agent import AgentDomain, AgentOpinion
 from contracts.belief import Belief
 from contracts.context import CognitiveCycleContext
+from contracts.contexts.decision import ActionType
+from contracts.contexts.risk import RiskReason
 from contracts.decision_event import DecisionEvent
 from services.context_adapter import ContextAdapter
 from services.council_orchestrator import CouncilOrchestrator
@@ -334,6 +333,25 @@ class MetaStage:
         )
         if short_in_bearish_low:
             meta["decision"] = "WAIT"
+
+        # Faz 352 — Regime Reversal Guardian (kullanıcı fikri, GERÇEK bir
+        # olayla doğrulandı: LONG'da art arda 14 stop-loss, 275 açık
+        # LONG'un 170'i zararda). belief.direction'da son N kapanışta
+        # ardışık stop-loss sayısı eşiği aşarsa (bkz. services/regime_
+        # reversal_guardian.py — stateless, her cycle taze hesaplanır, bir
+        # kazanç gelince kendi kendine kalkar) o yönde YENİ pozisyon
+        # açılmıyor — kill switch'in GLOBAL/kalıcı durdurmasından farklı,
+        # SADECE bu yönü, SADECE streak kırılana kadar etkiler. Mevcut
+        # açık pozisyonların defansif kapatılması ayrı bir periyodik görev
+        # (regime_reversal_guardian_task), burada SADECE yön kararı.
+        if belief.direction in ("LONG", "SHORT") and meta["decision"] == "ACT":
+            try:
+                from services.regime_reversal_guardian import is_direction_paused
+
+                if is_direction_paused(belief.direction):
+                    meta["decision"] = "WAIT"
+            except Exception as exc:
+                structlog.get_logger().warning("regime_reversal_gate_failed", error=str(exc))
 
         # Faz 297 — dış rapor önerisi (kullanıcı doğrulattı): "yüksek
         # entropy/düşük konsensüste action eşiğinin otomatik yükselmesi."

@@ -3,7 +3,7 @@ weight_approval_repository.py ile birebir aynı desen (dedup/has_pending,
 auto_reject_stale, approval_latency_metrics)."""
 from datetime import datetime, timedelta
 
-from sqlalchemy import Column, DateTime, Float, Integer, JSON, String
+from sqlalchemy import JSON, Column, DateTime, Float, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 
 from contracts.agent_tuning_approval import AgentTuningApproval

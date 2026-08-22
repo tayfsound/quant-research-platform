@@ -1,10 +1,11 @@
 """RecordingStage: recorder + belief store side effects."""
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 
 def test_recording_stage_calls_recorder_and_belief_store():
-    from engines.cognitive_pipeline import RecordingStage
-    from contracts.context import CognitiveCycleContext
     from contracts.belief import Belief
+    from contracts.context import CognitiveCycleContext
+    from engines.cognitive_pipeline import RecordingStage
 
     stage = RecordingStage()
     ctx = CognitiveCycleContext()

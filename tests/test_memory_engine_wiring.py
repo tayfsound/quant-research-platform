@@ -46,8 +46,8 @@ def test_real_position_close_writes_a_real_episode():
     services/position_closer.py, GERÇEK bir pozisyon gerçekten kapanınca
     (stop/hedef/manuel), gerçek pnl/win/features ile episodic memory'ye
     yazıyor artık."""
-    from market_data.ingestion.ohlcv import OHLCV
     from market_data.ingestion.data_provider import OHLCVProvider
+    from market_data.ingestion.ohlcv import OHLCV
     from services.position_closer import PositionCloser
 
     symbol = f"MEMREAL{uuid4().hex[:8]}"

@@ -9,12 +9,12 @@ data_quality >= 0.75. The risk-challenge layer was effectively inert.
 
 This proves the fix: a real, high-volatility, unanimous (crowded), high-
 confidence scenario now actually produces a RiskChallenge."""
+from agents.registry import AgentRegistry
 from contracts.agent import AgentDomain
 from contracts.macro import MacroContext
 from contracts.onchain import OnChainContext
 from contracts.technical import TechnicalContext
 from services.council_orchestrator import CouncilOrchestrator
-from agents.registry import AgentRegistry
 
 
 def test_build_debate_context_reflects_real_volatility_and_crowding():

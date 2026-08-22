@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 const GROUPS: { label: string; items: { key: string; label: string }[] }[] = [
   {
     label: "Live",
@@ -41,56 +43,122 @@ const GROUPS: { label: string; items: { key: string; label: string }[] }[] = [
   },
 ];
 
-function Sidebar({ current, onChange, onLogout }: { current: string; onChange: (v: string) => void; onLogout: () => void }) {
+// Kullanıcı isteği: tabloları incelerken menü ekranda yer kaplamasın,
+// gizlenebilir olsun — küçük bir sekme/buton ile aç/kapa VEYA fare sol
+// kenara yaklaşınca kendiliğinden açılıp uzaklaşınca kapanabilsin (ikisi
+// birlikte). `collapsed` App.tsx'te localStorage'a yazılıp kalıcı tutulan
+// "sabitlenmiş" durumu temsil ediyor; `hoverOpen` ise SADECE collapsed
+// haldeyken sol kenar hover'ıyla açılan GEÇİCİ görünürlük — sabit durumu
+// hiç değiştirmiyor, fare çekilince tekrar kapanıyor.
+function Sidebar({
+  current,
+  onChange,
+  onLogout,
+  collapsed,
+  onToggleCollapsed,
+}: {
+  current: string;
+  onChange: (v: string) => void;
+  onLogout: () => void;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+}) {
+  const [hoverOpen, setHoverOpen] = useState(false);
+  const visible = !collapsed || hoverOpen;
+
   return (
-    <nav className="w-64 shrink-0 h-screen sticky top-0 flex flex-col p-4">
-      <div className="flex-1 flex flex-col glass-panel border border-line rounded-xl shadow-layer-2 overflow-hidden">
-        <div className="px-5 py-5 border-b border-line-soft">
-          <div className="flex items-center gap-2">
-            <div className="w-2.5 h-2.5 rounded-full bg-accent" />
-            <div className="font-semibold text-sm tracking-tight text-ink">AI Quant Research</div>
-          </div>
-          <div className="text-[11px] text-ink-faint mt-0.5 pl-4.5">Cognitive Core</div>
-        </div>
+    <>
+      {collapsed && (
+        // Sol kenara ~1cm'lik görünmez algılama şeridi — üzerine gelince
+        // menü geçici olarak açılır.
+        <div
+          className="fixed top-0 left-0 h-screen w-4 z-40"
+          onMouseEnter={() => setHoverOpen(true)}
+        />
+      )}
 
-        <div className="flex-1 overflow-y-auto py-3 px-3">
-          {GROUPS.map((group) => (
-            <div key={group.label} className="mb-4">
-              <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-ink-faint font-semibold">
-                {group.label}
+      <nav
+        onMouseLeave={() => {
+          if (collapsed) setHoverOpen(false);
+        }}
+        className={`w-64 shrink-0 h-screen flex flex-col p-4 z-40 transition-transform duration-200 ease-out ${
+          collapsed
+            ? `fixed top-0 left-0 ${visible ? "translate-x-0" : "-translate-x-[110%]"}`
+            : "sticky top-0 translate-x-0"
+        }`}
+      >
+        <div className="flex-1 flex flex-col glass-panel border border-line rounded-xl shadow-layer-2 overflow-hidden">
+          <div className="px-5 py-5 border-b border-line-soft flex items-start justify-between gap-2">
+            <div>
+              <div className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full bg-accent" />
+                <div className="font-semibold text-sm tracking-tight text-ink">AI Quant Research</div>
               </div>
-              <div className="flex flex-col gap-0.5 mt-1">
-                {group.items.map((item) => {
-                  const active = current === item.key;
-                  return (
-                    <button
-                      key={item.key}
-                      onClick={() => onChange(item.key)}
-                      className={`text-left px-3 py-2 text-sm rounded-lg font-medium ${
-                        active
-                          ? "bg-accent text-white shadow-layer-1"
-                          : "text-ink-soft hover:bg-canvas-soft hover:text-ink"
-                      }`}
-                    >
-                      {item.label}
-                    </button>
-                  );
-                })}
-              </div>
+              <div className="text-[11px] text-ink-faint mt-0.5 pl-4.5">Cognitive Core</div>
             </div>
-          ))}
-        </div>
+            <button
+              onClick={onToggleCollapsed}
+              title="Menüyü gizle"
+              className="shrink-0 w-6 h-6 rounded-md flex items-center justify-center text-ink-faint hover:bg-canvas-soft hover:text-ink"
+            >
+              ‹
+            </button>
+          </div>
 
-        <div className="p-3 border-t border-line-soft">
-          <button
-            onClick={onLogout}
-            className="w-full px-3 py-2 rounded-lg text-sm font-medium text-ink-soft hover:bg-fall-soft hover:text-fall"
-          >
-            Log out
-          </button>
+          <div className="flex-1 overflow-y-auto py-3 px-3">
+            {GROUPS.map((group) => (
+              <div key={group.label} className="mb-4">
+                <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-ink-faint font-semibold">
+                  {group.label}
+                </div>
+                <div className="flex flex-col gap-0.5 mt-1">
+                  {group.items.map((item) => {
+                    const active = current === item.key;
+                    return (
+                      <button
+                        key={item.key}
+                        onClick={() => onChange(item.key)}
+                        className={`text-left px-3 py-2 text-sm rounded-lg font-medium ${
+                          active
+                            ? "bg-accent text-white shadow-layer-1"
+                            : "text-ink-soft hover:bg-canvas-soft hover:text-ink"
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="p-3 border-t border-line-soft">
+            <button
+              onClick={onLogout}
+              className="w-full px-3 py-2 rounded-lg text-sm font-medium text-ink-soft hover:bg-fall-soft hover:text-fall"
+            >
+              Log out
+            </button>
+          </div>
         </div>
-      </div>
-    </nav>
+      </nav>
+
+      {collapsed && (
+        // Köşede duran küçük, "şirin" sekme — tıklanınca menü kalıcı
+        // olarak açılır (sadece hover değil). Menü zaten (hover ile)
+        // görünürken görünmez olur, tekrar üst üste binmesin diye.
+        <button
+          onClick={onToggleCollapsed}
+          title="Menüyü göster"
+          className={`fixed top-1/2 left-0 -translate-y-1/2 z-50 w-5 h-14 rounded-r-full flex items-center justify-center bg-accent text-white shadow-layer-2 transition-opacity duration-200 ${
+            visible ? "opacity-0 pointer-events-none" : "opacity-60 hover:opacity-100"
+          }`}
+        >
+          ›
+        </button>
+      )}
+    </>
   );
 }
 export default Sidebar;

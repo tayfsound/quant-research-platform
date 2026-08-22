@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+
 from api.main import app
 from contracts.auth import Role
 from market_data.ingestion.data_provider import RoutingProvider

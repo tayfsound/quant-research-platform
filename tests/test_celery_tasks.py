@@ -331,35 +331,34 @@ def test_run_pairs_trading_task_runs_and_returns_pair_results():
     """Faz 200: celery beat'in periyodik tetiklediği görev gerçekten
     analytics/pairs_trading.py'yi çalıştırıp PAIR_CANDIDATES'teki her
     çift için bir sonuç döndürüyor."""
-    with patch("transformers.AutoModel.from_pretrained"):
-        with patch("transformers.AutoTokenizer.from_pretrained"):
-            from database.repositories.app_settings_repository import AppSettingsRepository
-            from database.session_factory import SessionFactory
-            from services.celery_app import celery_app
-            from services.tasks import run_pairs_trading_task
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        from database.repositories.app_settings_repository import AppSettingsRepository
+        from database.session_factory import SessionFactory
+        from services.celery_app import celery_app
+        from services.tasks import run_pairs_trading_task
 
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("ai_enabled", "true", updated_by="test")
+            # Faz 282 — kullanıcı kararı: pairs_trading_enabled artık
+            # varsayılan false (strateji durduruldu). Bu test GERÇEK
+            # kointegrasyon/yön mantığını doğruluyor, kapatma
+            # davranışını değil (bkz. test_pairs_trader.py::test_
+            # pairs_trader_skips_everything_when_pairs_trading_disabled) —
+            # o yüzden burada açıkça true yapılıyor.
+            AppSettingsRepository(session).set("pairs_trading_enabled", "true", updated_by="test")
+
+        celery_app.conf.task_always_eager = True
+        celery_app.conf.task_eager_propagates = True
+        try:
+            async_result = run_pairs_trading_task.delay()
+            assert async_result.successful()
+            body = async_result.result
+            assert "pairs" in body
+            assert len(body["pairs"]) == 3  # PAIR_CANDIDATES'teki 3 çift
+        finally:
+            celery_app.conf.task_always_eager = False
             with SessionFactory.get_session() as session:
-                AppSettingsRepository(session).set("ai_enabled", "true", updated_by="test")
-                # Faz 282 — kullanıcı kararı: pairs_trading_enabled artık
-                # varsayılan false (strateji durduruldu). Bu test GERÇEK
-                # kointegrasyon/yön mantığını doğruluyor, kapatma
-                # davranışını değil (bkz. test_pairs_trader.py::test_
-                # pairs_trader_skips_everything_when_pairs_trading_disabled) —
-                # o yüzden burada açıkça true yapılıyor.
-                AppSettingsRepository(session).set("pairs_trading_enabled", "true", updated_by="test")
-
-            celery_app.conf.task_always_eager = True
-            celery_app.conf.task_eager_propagates = True
-            try:
-                async_result = run_pairs_trading_task.delay()
-                assert async_result.successful()
-                body = async_result.result
-                assert "pairs" in body
-                assert len(body["pairs"]) == 3  # PAIR_CANDIDATES'teki 3 çift
-            finally:
-                celery_app.conf.task_always_eager = False
-                with SessionFactory.get_session() as session:
-                    AppSettingsRepository(session).set("pairs_trading_enabled", "false", updated_by="test")
+                AppSettingsRepository(session).set("pairs_trading_enabled", "false", updated_by="test")
 
 
 def test_live_trading_tasks_refuse_to_run_when_market_data_source_is_not_binance(monkeypatch):
@@ -399,49 +398,47 @@ def test_live_trading_tasks_refuse_to_run_when_market_data_source_is_not_binance
 def test_run_trading_cycle_task_runs_a_real_cycle_when_ai_enabled():
     """Faz 190: 'gerçek işlem alıyormuş gibi' — celery beat'in periyodik
     tetiklediği görev, gerçek CognitiveOrchestrator.run_cycle()'ı çalıştırır."""
-    with patch("transformers.AutoModel.from_pretrained"):
-        with patch("transformers.AutoTokenizer.from_pretrained"):
-            from database.repositories.app_settings_repository import AppSettingsRepository
-            from database.session_factory import SessionFactory
-            from services.celery_app import celery_app
-            from services.tasks import run_trading_cycle_task
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        from database.repositories.app_settings_repository import AppSettingsRepository
+        from database.session_factory import SessionFactory
+        from services.celery_app import celery_app
+        from services.tasks import run_trading_cycle_task
 
-            with SessionFactory.get_session() as session:
-                AppSettingsRepository(session).set("ai_enabled", "true", updated_by="test")
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("ai_enabled", "true", updated_by="test")
 
-            celery_app.conf.task_always_eager = True
-            celery_app.conf.task_eager_propagates = True
-            try:
-                async_result = run_trading_cycle_task.delay(symbol="BTCUSDT")
-                assert async_result.successful()
-                body = async_result.result
-                assert body["symbol"] == "BTCUSDT"
-                assert body.get("skipped") is None
-            finally:
-                celery_app.conf.task_always_eager = False
+        celery_app.conf.task_always_eager = True
+        celery_app.conf.task_eager_propagates = True
+        try:
+            async_result = run_trading_cycle_task.delay(symbol="BTCUSDT")
+            assert async_result.successful()
+            body = async_result.result
+            assert body["symbol"] == "BTCUSDT"
+            assert body.get("skipped") is None
+        finally:
+            celery_app.conf.task_always_eager = False
 
 
 def test_run_trading_cycle_task_skips_when_ai_disabled():
-    with patch("transformers.AutoModel.from_pretrained"):
-        with patch("transformers.AutoTokenizer.from_pretrained"):
-            from database.repositories.app_settings_repository import AppSettingsRepository
-            from database.session_factory import SessionFactory
-            from services.celery_app import celery_app
-            from services.tasks import run_trading_cycle_task
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        from database.repositories.app_settings_repository import AppSettingsRepository
+        from database.session_factory import SessionFactory
+        from services.celery_app import celery_app
+        from services.tasks import run_trading_cycle_task
 
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("ai_enabled", "false", updated_by="test")
+
+        celery_app.conf.task_always_eager = True
+        celery_app.conf.task_eager_propagates = True
+        try:
+            async_result = run_trading_cycle_task.delay(symbol="BTCUSDT")
+            assert async_result.successful()
+            assert async_result.result == {"skipped": "ai_disabled"}
+        finally:
+            celery_app.conf.task_always_eager = False
             with SessionFactory.get_session() as session:
-                AppSettingsRepository(session).set("ai_enabled", "false", updated_by="test")
-
-            celery_app.conf.task_always_eager = True
-            celery_app.conf.task_eager_propagates = True
-            try:
-                async_result = run_trading_cycle_task.delay(symbol="BTCUSDT")
-                assert async_result.successful()
-                assert async_result.result == {"skipped": "ai_disabled"}
-            finally:
-                celery_app.conf.task_always_eager = False
-                with SessionFactory.get_session() as session:
-                    AppSettingsRepository(session).set("ai_enabled", "true", updated_by="test")
+                AppSettingsRepository(session).set("ai_enabled", "true", updated_by="test")
 
 
 def test_close_due_positions_task_skips_if_a_previous_run_is_still_in_progress():

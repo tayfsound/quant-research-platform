@@ -1,8 +1,9 @@
 """Teknik göstergeler."""
-from typing import List, Dict
+
 from market_data.ingestion.mock_adapter import OHLCV
 
-def rsi(data: List[OHLCV], period: int = 14) -> float:
+
+def rsi(data: list[OHLCV], period: int = 14) -> float:
     if len(data) < period + 1:
         return 50.0
     closes = [d.close for d in data]
@@ -15,7 +16,7 @@ def rsi(data: List[OHLCV], period: int = 14) -> float:
     rs = avg_gain / avg_loss
     return 100.0 - (100.0 / (1.0 + rs))
 
-def ema(data: List[OHLCV], period: int = 20) -> float:
+def ema(data: list[OHLCV], period: int = 20) -> float:
     if len(data) < period:
         return data[-1].close if data else 0.0
     closes = [d.close for d in data]
@@ -25,7 +26,7 @@ def ema(data: List[OHLCV], period: int = 20) -> float:
         ema_val = (price - ema_val) * multiplier + ema_val
     return ema_val
 
-def macd(data: List[OHLCV]) -> Dict[str, float]:
+def macd(data: list[OHLCV]) -> dict[str, float]:
     ema12 = ema(data, 12)
     ema26 = ema(data, 26)
     macd_line = ema12 - ema26

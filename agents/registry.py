@@ -2,7 +2,6 @@
 from agents.credit_agent import CreditAgent
 from agents.epistemology_agent import EpistemologyAgent
 from agents.macro_agent import MacroAgent
-from agents.volatility_agent import VolatilityAgent
 from agents.onchain_agent import OnChainAgent
 from agents.order_flow_agent import OrderFlowAgent
 from agents.pattern_agent import PatternAgent
@@ -10,6 +9,7 @@ from agents.quant_agent import QuantAgent
 from agents.relative_strength_agent import RelativeStrengthAgent
 from agents.technical_agent import TechnicalAgent
 from agents.time_agent import TimeAgent
+from agents.volatility_agent import VolatilityAgent
 from contracts.agent import AgentDomain
 
 

@@ -6,13 +6,14 @@ kopyası) bunu okuyor."""
 from unittest.mock import patch
 
 from contracts.auth import Role
-from database.repositories.app_settings_repository import AppSettingsRepository, DEFAULTS
+from database.repositories.app_settings_repository import DEFAULTS, AppSettingsRepository
 from database.session_factory import SessionFactory
 from tests.auth_helpers import make_authed_headers
 
 
 def _client():
     from fastapi.testclient import TestClient
+
     from api.main import app
     return TestClient(app)
 

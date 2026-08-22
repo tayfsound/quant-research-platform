@@ -6,10 +6,10 @@ için grafik verisi hiç yoktu. ingest_candles_task bunu celery beat'e
 gerçekten bağlıyor."""
 from unittest.mock import patch
 
+from contracts.market_data import DataSource, Resolution
 from database.repositories.app_settings_repository import AppSettingsRepository
 from database.repositories.market_data_repository import MarketDataRepository
 from database.session_factory import SessionFactory
-from contracts.market_data import DataSource, Resolution
 
 
 def test_ingest_candles_task_writes_real_snapshots_for_crypto_watchlist_symbols():

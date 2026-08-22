@@ -119,9 +119,8 @@ def test_partial_close_rejects_invalid_fraction():
     closer = PositionCloser(_FixedPriceProvider(110.0))
 
     for bad_fraction in (0, -0.1, 1.5):
-        with SessionFactory.get_session() as session:
-            with pytest.raises(ValueError):
-                closer.close_partial(DecisionPersistor(session), str(event.id), bad_fraction)
+        with SessionFactory.get_session() as session, pytest.raises(ValueError):
+            closer.close_partial(DecisionPersistor(session), str(event.id), bad_fraction)
 
 
 def test_partial_close_rejects_already_closed_position():
@@ -131,9 +130,8 @@ def test_partial_close_rejects_already_closed_position():
     with SessionFactory.get_session() as session:
         closer.close_partial(DecisionPersistor(session), str(event.id), 1.0)
 
-    with SessionFactory.get_session() as session:
-        with pytest.raises(ValueError):
-            closer.close_partial(DecisionPersistor(session), str(event.id), 0.5)
+    with SessionFactory.get_session() as session, pytest.raises(ValueError):
+        closer.close_partial(DecisionPersistor(session), str(event.id), 0.5)
 
 
 def test_partial_close_feeds_agent_learning():

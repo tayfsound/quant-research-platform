@@ -1,7 +1,8 @@
 """Simulator testleri."""
-from simulator.fee_engine import FeeEngine, FeeConfig
-from simulator.slippage_model import SlippageModel
+from simulator.fee_engine import FeeConfig, FeeEngine
 from simulator.fill_engine import FillEngine
+from simulator.slippage_model import SlippageModel
+
 
 def test_fee_calculation():
     fee = FeeEngine(FeeConfig(maker_rate=0.0002, taker_rate=0.0005))

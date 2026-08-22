@@ -27,23 +27,23 @@ def test_run_cycle_features_contain_real_computed_technical_signals_not_defaults
 
 
 def test_cognitive_run_endpoint_feeds_real_ohlcv_derived_context():
-    with patch("transformers.AutoModel.from_pretrained"):
-        with patch("transformers.AutoTokenizer.from_pretrained"):
-            from fastapi.testclient import TestClient
-            from api.main import app
-            from contracts.auth import Role
-            from tests.auth_helpers import make_authed_headers
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        from fastapi.testclient import TestClient
 
-            client = TestClient(app)
-            resp = client.post(
-                "/api/v1/cognitive/run?symbol=BTCUSDT",
-                headers=make_authed_headers(Role.OPERATOR),
-            )
-            assert resp.status_code == 200
-            data = resp.json()
-            # Eskiden ctx tamamen boştu -> knowledge/relevant_knowledge'da
-            # gerçek bir market_insight/pattern/quant sinyali olamazdı.
-            # Şimdi gerçek bir cycle_id ve council kararı dönüyor (agent'lar
-            # artık gerçek veriyle çalışıyor, tamamen kör değil).
-            assert data["cycle_id"]
-            assert data["direction"] in ("LONG", "SHORT", "WAIT", "")
+        from api.main import app
+        from contracts.auth import Role
+        from tests.auth_helpers import make_authed_headers
+
+        client = TestClient(app)
+        resp = client.post(
+            "/api/v1/cognitive/run?symbol=BTCUSDT",
+            headers=make_authed_headers(Role.OPERATOR),
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        # Eskiden ctx tamamen boştu -> knowledge/relevant_knowledge'da
+        # gerçek bir market_insight/pattern/quant sinyali olamazdı.
+        # Şimdi gerçek bir cycle_id ve council kararı dönüyor (agent'lar
+        # artık gerçek veriyle çalışıyor, tamamen kör değil).
+        assert data["cycle_id"]
+        assert data["direction"] in ("LONG", "SHORT", "WAIT", "")

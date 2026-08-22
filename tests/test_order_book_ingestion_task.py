@@ -4,10 +4,10 @@
 bağlıyor — OrderFlowAgent'ın veri açlığı çekmesinin kök nedeni."""
 from unittest.mock import patch
 
+from contracts.market_data import DataSource
 from database.repositories.app_settings_repository import AppSettingsRepository
 from database.repositories.market_data_repository import MarketDataRepository
 from database.session_factory import SessionFactory
-from contracts.market_data import DataSource
 
 
 def test_ingest_order_book_task_writes_real_snapshots_for_crypto_watchlist_symbols():

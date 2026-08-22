@@ -13,7 +13,6 @@ gerçek dosya değişikliği daima ayrı, insan onaylı bir adım (bkz.
 migration faz270 docstring'i, "teşhis + öneri kuyruğu evet, otomatik
 self-deploy hayır")."""
 import os
-import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -75,8 +74,9 @@ def get_recent_performance_summary(hours: int = 24) -> dict:
     analytics/failure_classifier.py::summarize_stop_loss_failures'daki
     AYNI izolasyon burada da uygulanıyor: üst düzey alanlar SADECE AI
     konseyi kapanışlarını sayar, pump_fade_v1 ayrı 'pump_fade' alanında."""
-    from database.session_factory import SessionFactory
     from sqlalchemy import text
+
+    from database.session_factory import SessionFactory
 
     with SessionFactory.get_session() as session:
         # Faz 268-sonrası — gerçek kullanıcı bulgusu: bu sorgu opened_at'a

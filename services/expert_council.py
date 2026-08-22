@@ -1,5 +1,5 @@
 """Expert Council V2 — bağlama duyarlı ağırlıklandırma."""
-from contracts.agent import AgentDomain, AgentOpinion
+from contracts.agent import AgentDomain, AgentOpinion, BaseAgent
 from services.agent_memory import AgentMemory
 
 

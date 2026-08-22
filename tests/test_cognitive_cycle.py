@@ -58,8 +58,8 @@ def test_full_cognitive_cycle_with_council():
     assert len(belief_items) == 1
 def test_binder_stage_produces_belief_from_wisdom():
     """BinderStage wisdom itemlarini belief e cevirir (CognitiveBinder bound)."""
-    from engines.cognitive_pipeline import BinderStage, KnowledgeStage
     from contracts.context import CognitiveCycleContext
+    from engines.cognitive_pipeline import BinderStage, KnowledgeStage
 
     ctx = CognitiveCycleContext()
     ctx.market.symbol = "BTCUSDT"

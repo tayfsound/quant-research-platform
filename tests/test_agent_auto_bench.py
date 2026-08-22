@@ -5,10 +5,10 @@ reliability_agent.py) has its vote weight genuinely zeroed out — not a
 (intrinsic_trust * performance_weight) propagates into zero actual
 influence on the belief. It recovers once it shows real, sustained
 better accuracy."""
+from agents.registry import AgentRegistry
 from contracts.agent import AgentDomain
 from contracts.agent_performance import AgentPerformanceRecord
 from contracts.technical import TechnicalContext
-from agents.registry import AgentRegistry
 from services.agent_memory import AgentMemory
 from services.council_orchestrator import CouncilOrchestrator
 

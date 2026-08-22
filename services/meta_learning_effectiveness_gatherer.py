@@ -6,8 +6,9 @@ from analytics.meta_learning_effectiveness import compute_meta_learning_trend
 
 
 def gather_meta_learning_effectiveness() -> dict:
-    from database.session_factory import SessionFactory
     from sqlalchemy import text
+
+    from database.session_factory import SessionFactory
 
     with SessionFactory.get_session() as session:
         rows = session.execute(

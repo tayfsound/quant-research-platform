@@ -1,14 +1,15 @@
 """Simüle fill motoru."""
 from dataclasses import dataclass
-from typing import Optional
+
 from simulator.fee_engine import FeeEngine
 from simulator.slippage_model import SlippageModel
+
 
 @dataclass
 class FillResult:
     filled_price: float
     fee: float
-    pnl: Optional[float]
+    pnl: float | None
 
 # Faz 268e — kritik bulgu: services/orchestrator.py'nin GERÇEK, canlı
 # çağırdığı tek yer (propose()/propose_medium_term()) buraya her zaman

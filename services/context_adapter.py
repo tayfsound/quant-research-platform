@@ -5,7 +5,6 @@ from contracts.context import CognitiveCycleContext
 from contracts.credit import CreditContext
 from contracts.epistemology import EpistemologyContext
 from contracts.macro import MacroContext
-from contracts.volatility import VolatilityContext
 from contracts.onchain import OnChainContext
 from contracts.order_flow import OrderFlowContext
 from contracts.pattern import PatternContext
@@ -13,6 +12,7 @@ from contracts.quant import QuantContext
 from contracts.relative_strength import RelativeStrengthContext
 from contracts.technical import TechnicalContext
 from contracts.time_context import TimeContext
+from contracts.volatility import VolatilityContext
 
 _EXPECTED_FEATURES = ("RSI", "ema", "macd", "trend", "volatility_regime")
 

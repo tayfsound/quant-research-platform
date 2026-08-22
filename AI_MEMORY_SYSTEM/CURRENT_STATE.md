@@ -1,11 +1,23 @@
-# Mevcut Durum -- v1.90.0 (Faz 351: agent_agreement Meta-Label Model'e eklendi — gerçek OOS iyileşmesi)
+# Mevcut Durum -- v1.91.0 (Faz 352: Regime Reversal Guardian — yön-bazlı ardışık stop-loss koruması)
 
 **Tarih:** 2026-08-22
 **Branch:** main
-**Son commit (HEAD):** Faz 351 (henüz commit edilmedi — bu oturumda).
-**⚠️ Servis durumu:** uvicorn + celery worker_default + celery beat YENİDEN BAŞLATILMADI — Faz 351 `engines/cognitive_pipeline.py`/`services/cognitive_engine.py`'de KOD değişikliği (RiskTargetStage artık opinions alıyor), canlı sürece yansıması için restart GEREKİYOR (DB/ayar değişikliği değil).
+**Son commit (HEAD):** Faz 352 (bu commit ile).
+**⚠️ Servis durumu:** uvicorn + celery worker_default + celery beat YENİDEN BAŞLATILMA SÜRECİNDE — Faz 351 (RiskTargetStage artık opinions alıyor) VE Faz 352 (regime reversal gate + guardian task) KOD değişiklikleri canlı sürece yansıması için restart gerektiriyor (DB/ayar değişikliği değil).
 **⚠️ `execution_mode` hâlâ global "simulated"** — testnet kodunun çalıştığı kanıtlandı (Faz 349) ama hiçbir canlı davranış değişmedi.
 **⚠️ `max_confidence_mode_enabled=false` (varsayılan)** — Pozisyon Havuzu (Faz 350) inşa edildi ama henüz kullanıcı tarafından açılmadı.
+
+## Faz 352 — Regime Reversal Guardian: yön-bazlı ardışık stop-loss koruması (2026-08-22)
+
+Kullanıcı fikri, GERÇEK ve o anda yaşanan bir olayla doğrulandı: "piyasa her an dönüş yapabilir, bir yönde art arda pozisyonlar stop olmaya başlarsa sistem yön değişikliği konusunda şüphelenmeye başlamalı." Canlıda: LONG'da art arda 14 stop-loss (birbirinden bağımsız birçok sembolde, ~2 saatlik bir pencerede), aynı anda 275 açık LONG'un 170'i zararda — kullanıcı onayıyla 107 kârdaki LONG elle kapatıldı (+$1566.70 kilitlendi). Bu modül aynı tepkiyi kalıcı/otomatik hale getiriyor.
+
+İki parça: (1) **Ölçüm** — `analytics/regime_reversal.py::consecutive_stop_streak()` (saf fonksiyon) + `services/regime_reversal_guardian.py::compute_direction_stop_streaks()` bir yönün (LONG/SHORT) son kapanışlarında ardışık stop-loss sayısını hesaplar; kill switch'in GLOBAL sayacının (services/risk_state.py) yön-bazlı hali. Mekanik stratejiler (pump_fade_v1/basis_arb_v1) hariç — kendi risk yönetimlerine sahipler, streak'e karışırsa yanlış alarm üretebilir. Stateless: hiçbir "duraklatıldı" bayrağı persiste edilmiyor, bir kazanç gelince streak kendiliğinden sıfırlanır. (2) **Aksiyon** — SADECE ikisi: (a) `regime_reversal_guardian_task` (60sn'de bir, Celery beat) eşiği aşan yöndeki KÂRDAKİ açık pozisyonları tazeden fiyatla defansif kapatır (`/positions/close-profitable` ile AYNI mantık, tek yöne filtrelenmiş). (b) `MetaStage`'e eklenen gate (Faz 342'nin bearish_low SHORT gate'iyle AYNI desen) eşiği aşan yönde yeni pozisyon açılmasını WAIT'e zorluyor.
+
+Yeni ayarlar: `reversal_guardian_enabled` (varsayılan **true** — kill switch gibi koruyucu bir mekanizma, alfa üreten deneysel bir modül değil), `reversal_guardian_consecutive_stop_threshold` (varsayılan 5 — gerçek geçmiş dağılımla kalibre edildi: LONG streak'leri normalde 1-4, SHORT çok daha oynak; 5 hem gerçek olayı (14) rahat yakalıyor hem gürültü seviyesinde tetiklenmiyor). Dashboard Settings'e karşılık gelen kart eklendi.
+
+**Test:** 17 yeni test (`test_regime_reversal.py`, `test_regime_reversal_guardian.py`, `test_meta_stage_regime_reversal_gate.py`) + ilgili geniş regresyon (61 test) temiz.
+
+**Ayrıca bu turda:** proje genelinde import sıralaması otomatik düzeltmesi (isort/ruff) — davranış değişikliği yok, sadece stil.
 
 ## Faz 351 — Meta-Label Model'e agent_agreement özelliği eklendi: gerçek OOS iyileşmesi (2026-08-22)
 

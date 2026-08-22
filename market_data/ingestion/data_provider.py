@@ -3,9 +3,10 @@ import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Protocol
+
 from config import get_settings
-from market_data.ingestion.ohlcv import OHLCV, from_binance_klines
 from market_data.ingestion.mock_adapter import MockOHLCVAdapter
+from market_data.ingestion.ohlcv import OHLCV, from_binance_klines
 
 logger = logging.getLogger(__name__)
 

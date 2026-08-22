@@ -41,6 +41,7 @@ def test_jwt_roundtrip_and_tampered_token_rejected():
 
 def test_register_first_user_becomes_admin_second_becomes_viewer():
     from fastapi.testclient import TestClient
+
     from api.main import app
 
     client = TestClient(app)
@@ -61,6 +62,7 @@ def test_register_first_user_becomes_admin_second_becomes_viewer():
 
 def test_register_rejects_short_password_and_duplicate_username():
     from fastapi.testclient import TestClient
+
     from api.main import app
 
     client = TestClient(app)
@@ -78,6 +80,7 @@ def test_register_rejects_short_password_and_duplicate_username():
 
 def test_login_then_me_roundtrip():
     from fastapi.testclient import TestClient
+
     from api.main import app
 
     client = TestClient(app)
@@ -98,6 +101,7 @@ def test_login_then_me_roundtrip():
 
 def test_api_key_created_and_usable_as_credential():
     from fastapi.testclient import TestClient
+
     from api.main import app
 
     client = TestClient(app)
@@ -114,10 +118,10 @@ def test_api_key_created_and_usable_as_credential():
 
 def test_audit_log_records_both_allowed_and_denied_decisions():
     from fastapi.testclient import TestClient
+
     from api.main import app
 
     client = TestClient(app)
-    admin_headers = make_authed_headers(Role.ADMIN)
     viewer_headers = make_authed_headers(Role.VIEWER)
 
     # An allowed call and a denied one (viewer hitting an admin-only route).
@@ -134,6 +138,7 @@ def test_audit_log_records_both_allowed_and_denied_decisions():
 
 def test_disabled_user_cannot_authenticate():
     from fastapi.testclient import TestClient
+
     from api.main import app
     from contracts.auth import User
     from database.repositories.auth_repository import UserRepository

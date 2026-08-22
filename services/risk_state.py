@@ -12,7 +12,6 @@ from database.repositories.decision_persistor import DecisionPersistor
 from database.session_factory import SessionFactory
 from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMENT_BUCKET
 
-
 _CONCEPT_DRIFT_WIN_RATE_DROP_THRESHOLD = 0.15
 
 

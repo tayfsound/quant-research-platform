@@ -5,6 +5,7 @@ from uuid import uuid4
 
 def _client():
     from fastapi.testclient import TestClient
+
     from api.main import app
     return TestClient(app)
 

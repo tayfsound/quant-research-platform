@@ -25,8 +25,8 @@ from collections import defaultdict
 from itertools import combinations
 
 from analytics.agent_ablation import reconstruct_opinions
-from analytics.collective_intelligence import compute_accuracy_confidence_interval
 from analytics.causal_inference import apply_fdr_correction
+from analytics.collective_intelligence import compute_accuracy_confidence_interval
 
 MIN_GROUP_SIZE = 20
 

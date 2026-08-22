@@ -4,7 +4,6 @@ değil çünkü bu sinyal ajanların teknik görüşünden değil doğrudan iki 
 serisinin istatistiksel ilişkisinden geliyor. Yine de AYNI risk altyapısını
 (RiskEngine — cooldown/ai_enabled/trading_mode/concurrent/capital) kullanıyor,
 onu atlamıyor/gevşetmiyor."""
-from datetime import UTC, datetime
 
 from analytics.pairs_trading import (
     PAIR_CANDIDATES,
@@ -12,11 +11,11 @@ from analytics.pairs_trading import (
     check_cointegration,
     compute_spread_zscore,
 )
+from config.settings import get_settings
 from contracts.context import CognitiveCycleContext
 from database.repositories.app_settings_repository import AppSettingsRepository
 from database.repositories.risk_limit_repository import load_active_limits
 from database.session_factory import SessionFactory
-from config.settings import get_settings
 from engines.cognitive_pipeline import RiskTargetStage
 from engines.risk_engine import RiskEngine
 from market_data.features.signal_engine import compute_daily_atr_pct

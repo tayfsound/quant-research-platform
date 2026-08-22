@@ -12,7 +12,7 @@ def optimize_xgboost(x, y, n_trials: int = 10) -> dict:
         from sklearn.model_selection import cross_val_score
         from xgboost import XGBClassifier
         model = XGBClassifier(**params)
-        scores = cross_val_score(model, X, y, cv=3)
+        scores = cross_val_score(model, x, y, cv=3)
         return scores.mean()
 
     study = optuna.create_study(direction="maximize")

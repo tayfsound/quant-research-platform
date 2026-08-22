@@ -1,6 +1,6 @@
 """GET /market-data/ohlcv, /market-data/order-book, /agents/ — dashboard'un
 Market Overview + Agents sayfaları için eklenen gerçek okuma endpoint'leri."""
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from contracts.auth import Role
@@ -12,6 +12,7 @@ from tests.auth_helpers import make_authed_headers
 
 def _client():
     from fastapi.testclient import TestClient
+
     from api.main import app
 
     return TestClient(app)

@@ -2,10 +2,13 @@ from __future__ import annotations
 
 """Repository portları."""
 from abc import abstractmethod
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 from uuid import UUID
 
 from contracts.decision_audit import DecisionAuditRecord
+
+if TYPE_CHECKING:
+    from meta_optimizer.collector import ExperimentLog
 
 
 class ExperimentLogRepository(Protocol):

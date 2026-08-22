@@ -73,8 +73,9 @@ def _strategy_label(
 
 
 def gather_strategy_regime_compatibility() -> dict:
-    from database.session_factory import SessionFactory
     from sqlalchemy import text
+
+    from database.session_factory import SessionFactory
 
     with SessionFactory.get_session() as session:
         rows = session.execute(

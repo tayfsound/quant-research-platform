@@ -5,6 +5,7 @@ kod değişikliklerinin insan onayı olmadan diske hiç yazılmadığı, sadece
 biriktirildiği kuyruk."""
 from datetime import datetime
 from uuid import UUID, uuid4
+
 from pydantic import BaseModel, Field
 
 

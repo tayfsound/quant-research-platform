@@ -1,10 +1,10 @@
 """Market Data Service sprint: contracts/market_data.py::MarketSnapshot was
 a well-designed, unused contract — this proves the real DB round trip that
 was missing (faz184 migration + MarketDataRepository)."""
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from contracts.market_data import DataQuality, DataSource, MarketSnapshot, Resolution
+from contracts.market_data import DataSource, MarketSnapshot, Resolution
 from database.repositories.market_data_repository import MarketDataRepository
 from database.session_factory import SessionFactory
 

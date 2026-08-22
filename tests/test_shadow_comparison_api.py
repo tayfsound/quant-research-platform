@@ -4,9 +4,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from contracts.auth import Role
-from contracts.decision_event import DecisionEvent
 from contracts.shadow_position import ShadowPosition
-from database.repositories.decision_persistor import DecisionPersistor
 from database.repositories.shadow_position_repository import ShadowPositionRepository
 from database.session_factory import SessionFactory
 from tests.auth_helpers import make_authed_headers
@@ -14,6 +12,7 @@ from tests.auth_helpers import make_authed_headers
 
 def _client():
     from fastapi.testclient import TestClient
+
     from api.main import app
     return TestClient(app)
 

@@ -6,8 +6,8 @@ kalıyor — gerçek veriye dokunan kod burada.
 AgentMemory'nin zaten sakladığı (confidence, was_correct) çiftleri
 doğrudan kullanılıyor — services/confidence_calibration.py'nin ECE
 hesabıyla AYNI veri kaynağı, ayrı bir sorgu icat edilmiyor."""
-from contracts.agent import VOTING_AGENT_DOMAINS
 from analytics.direction_prediction_v2 import compute_brier_score
+from contracts.agent import VOTING_AGENT_DOMAINS
 from services.agent_memory import AgentMemory, get_reliability_legacy_cutoff
 
 

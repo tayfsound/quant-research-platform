@@ -300,6 +300,15 @@ def _validate(key: str, value: str) -> None:
                 raise ValueError
         except ValueError:
             raise HTTPException(400, "max_confidence_mode_top_k must be a positive integer")
+    elif key == "reversal_guardian_enabled":
+        if value not in ("true", "false"):
+            raise HTTPException(400, "reversal_guardian_enabled must be 'true' or 'false'")
+    elif key == "reversal_guardian_consecutive_stop_threshold":
+        try:
+            if int(value) < 1:
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "reversal_guardian_consecutive_stop_threshold must be a positive integer")
     elif key == "max_open_positions_per_symbol_direction":
         # Faz 268-sonrası: gerçek olaydan (54 XAUTUSDT SHORT aynı anda
         # açık bulundu) eklenen kontrol — kullanıcı Settings sayfasından

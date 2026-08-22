@@ -22,8 +22,9 @@ def _extract_real_trades_for_barrier_table(window: int = DEFAULT_WINDOW) -> list
     (_counterfactual_barrier_outcome) zaten ham mae_pct/mfe_pct'ten
     kendi sonucunu yeniden türetiyor, orijinal exit_reason'a bağımlı
     değil."""
-    from database.session_factory import SessionFactory
     from sqlalchemy import text
+
+    from database.session_factory import SessionFactory
 
     with SessionFactory.get_session() as session:
         rows = session.execute(
