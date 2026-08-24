@@ -343,6 +343,23 @@ def _validate(key: str, value: str) -> None:
                 raise ValueError
         except ValueError:
             raise HTTPException(400, "progressive_lock_fraction must be a number in (0, 1]")
+    elif key == "pyramid_regime_gate_enabled":
+        if value not in ("true", "false"):
+            raise HTTPException(400, "pyramid_regime_gate_enabled must be 'true' or 'false'")
+    elif key == "pyramid_worse_price_allowed_regime":
+        # Faz 361 — bkz. analytics/pyramid_regime_gate.py. Sadece gerçek
+        # market_regime formatının ({trend}_{volatility}) üretebileceği
+        # 6 kombinasyona izin veriyoruz — rastgele bir string'in sessizce
+        # her zaman engelleyen (asla eşleşmeyen) bir ayar olmasını önler.
+        if value not in (
+            "bullish_low", "bullish_normal", "bullish_high",
+            "bearish_low", "bearish_normal", "bearish_high",
+        ):
+            raise HTTPException(
+                400,
+                "pyramid_worse_price_allowed_regime must be one of: "
+                "bullish_low, bullish_normal, bullish_high, bearish_low, bearish_normal, bearish_high",
+            )
     else:
         raise HTTPException(400, f"unknown setting key: {key}")
 

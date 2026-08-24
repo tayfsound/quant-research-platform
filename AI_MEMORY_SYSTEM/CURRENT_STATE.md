@@ -1,9 +1,23 @@
-# Mevcut Durum -- v1.97.0 (Faz 359: kademeli kâr kilitleme + "reduced_loss_stop" yeniden etiketleme)
+# Mevcut Durum -- v1.99.0 (Faz 361: rejim-bazlı piramitleme kapısı)
 
 **Tarih:** 2026-08-24
 **Branch:** main
-**Son commit (HEAD):** Faz 359 (bu commit ile).
-**⚠️ Servis durumu:** Faz 353-358 canlıda (24 Ağustos 14:13 UTC ara restart, sorunsuz). **Faz 359 henüz restart edilmedi.**
+**Son commit (HEAD):** Faz 361 (bu commit ile).
+**⚠️ Servis durumu:** Faz 360 (WebSocket gerçek-zamanlı pozisyon izleyici, `services/realtime_position_monitor.py`) canlıda, watchdog'a eklendi, çalışıyor. Faz 361 henüz restart edilmedi (uvicorn/worker_default watchdog tarafından otomatik alacak, ama şimdilik commit-only).
+
+## Faz 361 — Rejime göre piramitleme kapısı: "kötü fiyattan üste ekleme" artık sadece bullish_low'da izinli (2026-08-24)
+
+Backlog madde 23'ün (piramitleme, önceden "kullanıcı ikna olmadı, açık bırakıldı" durumundaydı) devamı. Basit kötü-fiyat/iyi-fiyat testi (rejim ayrımı yapmadan) tüm-zamanlar toplamında anlamlı fark göstermiyordu (worse-price add win_rate %64.3, better-price add'ten bile yüksek) — ama `market_regime` ("{trend}_{volatility}", `position_closer.py::_extract_market_regime` ile AYNI format) kırılımı gerçek tabloyu ortaya çıkardı: 3826 AI-only kapanmış kararda SADECE "bullish_low" rejiminde worse-price add gerçekten avantajlı (n=355, %76 — fresh giriş %63'ten bile yüksek). Diğer TÜM rejimlerde (bullish_normal %53, bullish_high %44, bearish_low %42, bearish_normal %35, bearish_high %28, unknown %30) fresh girişten kötü ya da en kötü seçenek. 22-24 Ağustos zayıflık penceresinde (bkz. madde 27) günlük kırılım daha da çarpıcıydı: worse-price add win_rate %77→%38→%9 (better-price add ve fresh girişten HEP daha kötü, gün geçtikçe kötüleşen bir örüntüyle).
+
+Kullanıcı kararı, matematiksel gerekçesiyle: "sadece en yüksek performans gösterdiği rejimde bunu yapmasına izin verelim, onun dışında kesin olarak yasaklayalım — kârı maksimize, zararı minimize eden tek seçim bu."
+
+**Kod değişikliği:** `analytics/pyramid_regime_gate.py::is_worse_price_pyramid_blocked()` (saf fonksiyon, fail-closed: rejim unknown/None ise engellenir) — `services/decision_recorder.py::record()`'a wire edildi, Position Pool kontrolüyle AYNI yerde (entry_price hesaplandıktan hemen sonra, `experiment_bucket is None` — pump_fade/basis_arb bu koldan etkilenmiyor). Mevcut aynı sembol/yön açık pozisyonların ortalama giriş fiyatı yeni `DecisionPersistor.avg_open_entry_price_by_symbol_direction()` ile okunuyor. Yeni ayarlar: `pyramid_regime_gate_enabled` (varsayılan **true** — kill switch/reversal guardian gibi koruyucu bir mekanizma), `pyramid_worse_price_allowed_regime` (varsayılan **"bullish_low"**, 6 geçerli rejim değeriyle sınırlı).
+
+**Bilinen sınır:** Position Pool (Faz 350, varsayılan kapalı) yoluyla açılan adaylar bu kapıdan GEÇMİYOR — `resolve_due_pool_windows()` council'ın market context'ine (dolayısıyla rejime) sahip değil, ayrı bir iş gerektirir; havuz zaten kapalı olduğu için düşük öncelik.
+
+**Test:** 9 yeni test (`tests/test_pyramid_regime_gate.py` — saf fonksiyon, 9 senaryo) + 2 entegrasyon testi (`tests/test_decision_recorder.py` — bearish_normal'da engellenir, bullish_low'da izin verilir) + ilgili regresyon (`test_position_pool.py`, `test_app_settings_api.py`, `test_decision_recorder_execution_mode.py` — 28 test) temiz.
+
+**Ayrıca bu turda — Faz 360, WebSocket gerçek-zamanlı pozisyon kapatma (backlog madde 26, kullanıcı onaylı):** `close_due_positions()` artık pozisyon başına değil benzersiz sembol başına tek fiyat isteği atıyor (794→149 istek), per-pozisyon mantık `_process_position_at_price()`'a çıkarıldı. `DecisionPersistor.close_position()`'a `WHERE status='open'` yarış-koruması eklendi (rowcount-bazlı bool dönüyor). Yeni `services/realtime_position_monitor.py` — Binance trade WebSocket'ine (geçerli sembol listesi gerçek `exchangeInfo`'dan, ~30dk'da bir tazelenir — ilk denemede AAPL gibi Binance'te olmayan sembollerin TÜM bağlantıyı HTTP 400 ile reddettirdiği bulunup düzeltildi) abone olup her tick'te AYNI `_process_position_at_price()`'ı çalıştırıyor. REST periyodik tarama (60sn) KALDIRILMADI, arkadaki güvenlik ağı olarak duruyor. `scripts/service_watchdog.sh`'a eklendi, kalıcı süreç olarak çalışıyor — canlı doğrulandı (gerçek stop-tetiklenmiş bir pozisyonu, VIRTUALUSDT, doğru kapattı).
 
 ## Faz 359 — Kademeli kâr kilitleme + "reduced_loss_stop" yeniden etiketleme (2026-08-24)
 

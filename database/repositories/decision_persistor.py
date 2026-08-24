@@ -486,6 +486,25 @@ class DecisionPersistor:
         ).all()
         return {row.direction: float(row.notional or 0.0) for row in rows}
 
+    def avg_open_entry_price_by_symbol_direction(self, symbol: str) -> dict[str, float]:
+        """Faz 361 — analytics/pyramid_regime_gate.py::is_worse_price_
+        pyramid_blocked() için: bu sembol/yönde ZATEN açık pozisyonların
+        ortalama giriş fiyatı. Yeni bir girişin bu ortalamaya göre "daha
+        kötü fiyattan" olup olmadığını (piramitleme + tepeden giriş)
+        anlamak için — sum_open_notional_by_symbol_direction ile AYNI
+        WHERE deseni, farklı agregasyon (AVG, SUM değil)."""
+        rows = self.session.execute(
+            text(
+                "SELECT direction, avg(entry_price) AS avg_entry_price "
+                "FROM decisions "
+                "WHERE status = 'open' AND symbol = :symbol AND direction IN ('LONG','SHORT') "
+                "AND entry_price IS NOT NULL "
+                "GROUP BY direction"
+            ),
+            {"symbol": symbol},
+        ).all()
+        return {row.direction: float(row.avg_entry_price) for row in rows}
+
     def open_positions_summary(self) -> dict:
         """Faz 262 — Faz 224'ün kapanmış işlemler için çözdüğü AYNI bug,
         açık pozisyonlarda hâlâ vardı: GET /positions'ın döndürdüğü liste

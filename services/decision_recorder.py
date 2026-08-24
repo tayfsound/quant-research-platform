@@ -110,6 +110,37 @@ class DecisionRecorder:
             ):
                 opens_position = False
 
+        # Faz 361 — kullanıcı bulgusu: aynı sembol/yönde açık pozisyon
+        # varken daha kötü fiyattan üste eklemek (piramitleme + tepeden
+        # giriş) SADECE "bullish_low" rejiminde gerçekten avantajlı
+        # (bkz. analytics/pyramid_regime_gate.py — gerçek 3826 kararlık
+        # AI-only veriyle ölçüldü). Kullanıcı kararı: diğer TÜM
+        # rejimlerde (unknown dahil, fail-closed) kesin olarak yasakla.
+        # Position Pool (Faz 350) yoluyla açılan adaylar burada DEĞİL,
+        # services/position_pool.py::resolve_due_pool_windows()'ta
+        # (TAZE fiyattan, council market context'i olmadan) açılıyor —
+        # bu kapı ORAYA henüz bağlanmadı (havuz varsayılan kapalı,
+        # düşük öncelik).
+        if opens_position and entry_price and experiment_bucket is None:
+            from analytics.pyramid_regime_gate import is_worse_price_pyramid_blocked
+            from database.repositories.app_settings_repository import AppSettingsRepository
+
+            settings_repo = AppSettingsRepository(self.session)
+            if settings_repo.get("pyramid_regime_gate_enabled") == "true":
+                allowed_regime = settings_repo.get("pyramid_worse_price_allowed_regime")
+                existing_avg = self.persistor.avg_open_entry_price_by_symbol_direction(
+                    ctx.market.symbol
+                ).get(direction)
+                features = ctx.market.features or {}
+                trend = features.get("trend", "unknown")
+                market_regime = (
+                    f"{trend}_{features.get('volatility_regime', 'normal')}" if trend != "unknown" else None
+                )
+                if is_worse_price_pyramid_blocked(
+                    direction, entry_price, existing_avg, market_regime, allowed_regime=allowed_regime
+                ):
+                    opens_position = False
+
         # Faz 192: RiskTargetStage'in gerçek ATR'den kurduğu risk/ödül
         # magnitüdlerini (ctx.decision.stop_loss_distance/take_profit_
         # distance), pozisyon gerçekten açıldığı andaki entry_price'a göre

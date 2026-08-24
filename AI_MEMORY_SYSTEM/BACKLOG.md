@@ -154,17 +154,32 @@ gerçek kodla teyit edilecek:
     farklı `lookback_hours` değerleriyle yeniden çalıştıran bir mini-
     backtest kurmak gerekiyor. İkisi de `find_pump_candidates` mantığına
     dokunduğu için AYNI turda ele alınacak — henüz başlanmadı.
-23. **[AÇIK/EN SONA — KAPATILMADI] Aynı sembolde kötü fiyattan piramitleme
-    (madde 4'ün devamı).** 2026-08-24'te gerçek veriyle ölçüldü: basit
-    "kötü fiyat mı iyi fiyat mı" testi (n=3068 vs 1653) anlamlı fark
-    göstermedi (%59.7 vs %61.3); derinlik/yoğunluk testleri de tutarsız
-    çıktı (küçük örneklemler, SHORT yönüyle confound riski). Kullanıcı
-    HENÜZ İKNA OLMADI, "kapatmayalım, ileride daha fazla veriyle tekrar
-    ölçelim" dedi — bilerek açık bırakıldı, todo'nun EN SONUNA alındı.
-    Buna karşılık, kullanıcının kabul ettiği FARKLI bir tez (toplam
-    maruziyeti sınırlamak) Faz 358'de ayrı, doğrudan bir $-tavanı olarak
-    uygulandı — madde 4'ün orijinal "kötü fiyattan reddet" önerisinden
-    FARKLI, kazanma-oranı iddiası içermiyor.
+23. **[ÇÖZÜLDÜ — Faz 361, 2026-08-24] Aynı sembolde kötü fiyattan
+    piramitleme (madde 4'ün devamı).** İlk basit test (kötü/iyi fiyat,
+    rejim ayrımı yapmadan) anlamlı fark göstermemişti — kullanıcı ikna
+    olmadı, açık bıraktı. Rejime göre (`market_regime = "{trend}_
+    {volatility}"`) kırılınca gerçek tablo ortaya çıktı (3826 AI-only
+    kapanmış karar): SADECE "bullish_low" rejiminde worse-price add
+    gerçekten avantajlı (n=355, %76 — fresh giriş %63'ten bile yüksek).
+    Diğer TÜM rejimlerde (bullish_normal %53, bullish_high %44,
+    bearish_low %42, bearish_normal %35, bearish_high %28, unknown %30)
+    fresh girişten kötü ya da en kötü seçenek. 22-24 Ağustos zayıflık
+    penceresinde günlük kırılım daha da netti: worse-price add win_rate
+    %77→%38→%9 (better-price add ve fresh girişten hep daha kötü).
+    Kullanıcı kararı: "sadece en yüksek performans gösterdiği rejimde
+    izin verelim, onun dışında kesin olarak yasaklayalım." Uygulandı:
+    `analytics/pyramid_regime_gate.py::is_worse_price_pyramid_blocked()`
+    (saf fonksiyon) + `services/decision_recorder.py`'ye wire edildi
+    (entry_price hesaplandıktan hemen sonra, Position Pool kontrolüyle
+    AYNI yer) + `DecisionPersistor.avg_open_entry_price_by_symbol_
+    direction()`. Ayarlar: `pyramid_regime_gate_enabled` (varsayılan
+    true, koruyucu mekanizma), `pyramid_worse_price_allowed_regime`
+    (varsayılan "bullish_low"). Fail-closed: rejim unknown/None ise
+    engellenir. **Bilinen sınır:** Position Pool (madde altındaki Faz
+    350, varsayılan kapalı) yoluyla açılan adaylar bu kapıdan GEÇMİYOR
+    — `resolve_due_pool_windows()` council market context'ine (dolayısıyla
+    rejime) sahip değil, ayrı bir iş gerektirir, düşük öncelik (havuz
+    zaten kapalı).
 
 24. **Transactions sayfasındaki kapalı işlemler tablosu 100 kayıtla
     sınırlı (`GET /trades?limit=100`, `api/rest/positions.py::
@@ -200,30 +215,55 @@ gerçek kodla teyit edilecek:
     kilitleme uygulandı** — check aralığı sıklaştırma AYRI, madde 26'ya
     taşındı (rate-limit nedeniyle basit REST polling ile güvenli değil).
 
-26. **Pozisyon kapatma için "anlık" fiyat taraması (kayma azaltma).**
-    Kullanıcı isteği (2026-08-24): giriş için kayma önemli değil, ama
-    ÇIKIŞ için önemli — `close_due_positions_task` şu an 60sn'de bir
-    çalışıyor, bu pencere içinde fiyat çekilmiş stopu atlayabiliyor
-    (gerçek KAIAUSDT/LTCUSDT örnekleri). Kontrol edildi: 149 benzersiz
-    açık pozisyon sembolü var, Binance'in paylaşılan REST hız limiti
-    (15 istek/sn, TÜM süreçler arası paylaşılıyor) altında bunu 5-10sn'ye
-    çekmek bile TEK BAŞINA bütçenin çoğunu tüketir ve önceki bir oturumda
-    tam bu tür bir çakışma yüzünden gerçek bir kesinti yaşanmıştı. Gerçek
-    "anlık" için REST polling YETERSİZ — WebSocket akışı gerekiyor.
-    `exchange_gateway/binance/live_feed.py::LiveMarketFeed` diye bir
-    iskelet ZATEN var (Faz 247-249'dan beri hiç kullanılmıyor, sabit
-    sembol listesiyle kuruluyor, kalıcı bağlantı/yeniden-bağlanma riski
-    taşıyor) — pozisyon kapatma için yeniden kullanılabilir ama gerçek,
-    ayrı bir mimari iş (dinamik sembol aboneliği, kalıcı süreç, mevcut
-    periyodik-polling mimarisinden farklı bir model). Kullanıcı onayı
-    olmadan başlanmadı — büyük/riskli bir değişiklik.
+26. **[ÇÖZÜLDÜ — Faz 360, 2026-08-24] Pozisyon kapatma için "anlık" fiyat
+    taraması (kayma azaltma).** Kullanıcı onayıyla uygulandı:
+    `services/realtime_position_monitor.py` — Binance trade WebSocket'ine
+    (geçerli sembol filtresi `exchangeInfo` ile, ~30dk'da bir tazelenir)
+    abone olup her tick'te `PositionCloser._process_position_at_price()`'ı
+    (REST periyodik tarama ile AYNI, paylaşılan mantık) çalıştırıyor.
+    REST periyodik tarama (`close_due_positions_task`, 60sn) KALDIRILMADI
+    — WS koparsa/gecikirse arkadaki güvenlik ağı. `DecisionPersistor.
+    close_position()`'a `WHERE status='open'` yarış-koruması eklendi (iki
+    yol aynı pozisyonu eşzamanlı görebiliyor artık). Kalıcı süreç olarak
+    çalışıyor, `scripts/service_watchdog.sh`'a eklendi (düşerse otomatik
+    yeniden başlar). Canlı doğrulandı: gerçek bir stop-tetiklenmiş
+    pozisyonu (VIRTUALUSDT) doğru kapattı.
 
-27. **Scalp LONG isabet oranındaki düşüş (%95 → %83) araştırılacak.**
-    Kullanıcı isteği (2026-08-24): daha önce ölçülen LONG bozulmasının
-    (Faz 356: %96.2→%80.6, genel) büyük kısmının scalp işlemlerinden
-    geldiği düşünülüyor — scalp LONG'un kendi içinde ayrı ölçülüp
-    (trade_type='scalp' AND direction='LONG', zaman bazlı retest) neyin
-    değiştiği araştırılacak. Henüz ölçülmedi.
+27. **[ÇÖZÜLDÜ — Faz 360-361, 2026-08-24] Scalp LONG isabet oranındaki
+    düşüş (%95 → %83) araştırıldı.** Doğru metodolojiyle (manual_full/
+    manual_partial hariç, gerçek AI kararları) günlük kırılım: 19-21
+    Ağustos %87-100 (kullanıcının hatırladığı iyi dönem), 22 Ağustos'ta
+    çöküş (%18), 23-24'te devam eden zayıflık (%48, %15). İki ayrı kök
+    neden bulundu: (1) 22 Ağustos sabahı GERÇEK bir altyapı kesintisi
+    (`risk_limits.max_position_size` eksikti, saatlerce ~14.000 ardışık
+    fail-closed WAIT — ajanlara hiç sorulmadan, aynı gün Faz 350'de
+    bulunup düzeltildi). (2) 23-24 Ağustos'taki devam eden zayıflık
+    piramitleme ile ilişkili çıktı — bkz. madde 23, Faz 361'de rejim-
+    bazlı kapı ile ele alındı.
+
+## 🆕 Yeni bulgular (henüz ölçülmedi)
+
+28. **SHORT swing isabet oranı çarpıcı derecede düşük.** Kullanıcı bulgusu
+    (2026-08-24, muhtemelen bir dashboard/research panelinden):
+    `ai_council_SHORT_swing` genel isabet %9.0 (n=465) vs `ai_council_
+    LONG_swing` %91.5 (n=823). Faz 342'nin zaten bulup gate'lediği
+    "SHORT + bearish + low volatility" kombinasyonuyla (n=424, %8.3)
+    çakışıyor olabilir — swing SHORT popülasyonunun çoğu o rejimde
+    birikmiş olabilir. Doğrulanması gerekiyor: madde 28'i madde 23'teki
+    gibi rejime göre kırıp, gerçekten SADECE bearish_low mu yoksa SHORT
+    swing'in TÜMÜ mü sorunlu olduğunu ayırt etmek lazım — henüz ölçülmedi.
+
+29. **[SONA ERTELENDİ, KULLANICI ONAYIYLA] Eşzamanlı açık pozisyon sayısı
+    (test modu ~2.000 vs canlı hedef 5-10) ile kazanma oranı korelasyonu.**
+    Kullanıcı sorusu (2026-08-24): test modunda çok fazla eşzamanlı işlem
+    açık kalması sistemi olduğundan başarılı gösteriyor olabilir mi?
+    Ölçüldü (5194 kapanmış karar, interval-overlap sorgusu): olgun dönemde
+    (8 Ağustos sonrası) eşzamanlı pozisyon sayısı HİÇBİR ZAMAN 255'in
+    altına inmemiş — sistemin gerçekten 5-10 pozisyonla çalıştığı hiçbir
+    dönem yok, bu soruyu geçmiş veriyle cevaplamak mümkün değil. En yakın
+    mevcut altyapı: Faz 350'nin Position Pool/Max Confidence Modu (top-K
+    seçim, varsayılan kapalı) — kontrollü açılıp gerçek ölçüm yapılabilir.
+    Kullanıcı isteğiyle şimdilik ertelendi, todo'nun sonunda kalıyor.
 
 ## Notlar
 

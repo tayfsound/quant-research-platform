@@ -587,6 +587,21 @@ DEFAULTS: dict[str, str] = {
     # streak'lerde tetiklenmiyor.
     "reversal_guardian_enabled": "true",
     "reversal_guardian_consecutive_stop_threshold": "5",
+
+    # Faz 361 — kullanıcı bulgusu: aynı sembol/yönde açık pozisyon varken
+    # daha kötü fiyattan üste eklemek (piramitleme + tepeden giriş) tüm-
+    # zamanlar toplamında zararlı görünmüyordu, ama market_regime'e göre
+    # kırılınca (bkz. analytics/pyramid_regime_gate.py) SADECE "bullish_low"
+    # rejiminde gerçekten avantajlı (n=355, %76 win_rate) — diğer TÜM
+    # rejimlerde (bearish_low %42, bearish_normal %35, bearish_high %28,
+    # bullish_normal %53, bullish_high %44, unknown %30) fresh girişten ya
+    # kötü ya da en kötü seçenek. Kullanıcı kararı: "sadece en yüksek
+    # performans gösterdiği rejimde izin verelim, onun dışında kesin
+    # olarak yasaklayalım." Varsayılan AÇIK — koruyucu bir mekanizma
+    # (reversal_guardian_enabled ile AYNI ilke), alfa üreten deneysel bir
+    # modül değil.
+    "pyramid_regime_gate_enabled": "true",
+    "pyramid_worse_price_allowed_regime": "bullish_low",
 }
 
 CANDLE_TIMEFRAMES = ("1m", "5m", "15m", "1h", "4h", "1d")

@@ -83,6 +83,71 @@ def test_leverage_is_clamped_to_keep_liquidation_safely_beyond_the_stop(tmp_path
             AppSettingsRepository(session).set("symbol_leverage", original, updated_by="test")
 
 
+def test_worse_price_pyramid_add_blocked_outside_allowed_regime():
+    """Faz 361 — kullanıcı kararı: aynı sembol/yönde açık pozisyon
+    varken daha kötü fiyattan üste eklemek SADECE bullish_low rejiminde
+    izinli, diğer TÜM rejimlerde kesin olarak engellenmeli."""
+    from database.session_factory import SessionFactory
+
+    symbol = f"PYRTEST{__import__('uuid').uuid4().hex[:6]}USDT"
+    recorder = DecisionRecorder()
+
+    with SessionFactory.get_session() as session:
+        DecisionPersistor(session).persist(_open_long_event(symbol, entry_price=100.0))
+
+    ctx = CognitiveCycleContext(
+        market={
+            "symbol": symbol,
+            "raw_snapshot": {"close": 110.0},
+            "features": {"trend": "bearish", "volatility_regime": "normal"},
+        },
+        decision={
+            "proposed_direction": "LONG", "final_action": "LONG",
+            "final_size": 10.0, "stop_loss_distance": 5.0, "take_profit_distance": 5.0,
+        },
+        risk={"evaluation": {"verdict": "approved"}},
+    )
+
+    event = recorder.record(ctx, [])
+    assert event.status == "no_trade"
+
+
+def test_worse_price_pyramid_add_allowed_in_bullish_low_regime():
+    from database.session_factory import SessionFactory
+
+    symbol = f"PYRTEST{__import__('uuid').uuid4().hex[:6]}USDT"
+    recorder = DecisionRecorder()
+
+    with SessionFactory.get_session() as session:
+        DecisionPersistor(session).persist(_open_long_event(symbol, entry_price=100.0))
+
+    ctx = CognitiveCycleContext(
+        market={
+            "symbol": symbol,
+            "raw_snapshot": {"close": 110.0},
+            "features": {"trend": "bullish", "volatility_regime": "low"},
+        },
+        decision={
+            "proposed_direction": "LONG", "final_action": "LONG",
+            "final_size": 10.0, "stop_loss_distance": 5.0, "take_profit_distance": 5.0,
+        },
+        risk={"evaluation": {"verdict": "approved"}},
+    )
+
+    event = recorder.record(ctx, [])
+    assert event.status == "open"
+
+
+def _open_long_event(symbol: str, entry_price: float):
+    from contracts.decision_event import DecisionEvent
+
+    return DecisionEvent(
+        symbol=symbol, proposed_direction="LONG", final_action="LONG", final_size=10.0,
+        status="open", entry_price=entry_price, quantity=10.0,
+        opened_at=datetime.now(UTC),
+    )
+
+
 def test_record_and_replay():
     recorder = DecisionRecorder()
 
