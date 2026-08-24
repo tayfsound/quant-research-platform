@@ -28,6 +28,17 @@ is_celery_default_alive() {
     pgrep -f "celery -A services.celery_app worker -Q celery --loglevel=info -n worker_default" > /dev/null 2>&1
 }
 
+# Faz 360 — kullanıcı isteği: pozisyon kapatmada kaymayı azaltmak için
+# gerçek-zamanlı WebSocket izleyici (services/realtime_position_monitor.py).
+# REST periyodik tarama (close_due_positions_task) hâlâ arkadaki güvenlik
+# ağı olarak çalışıyor — bu süreç sadece kapanışı hızlandırıyor, WS koparsa
+# sistem güvenliği REST'e geri düşüyor. Kalıcı bir asyncio event loop'u
+# gerektirdiği için Celery'nin prefork worker modeline uymuyor, ayrı bir
+# süreç olarak izleniyor.
+is_realtime_monitor_alive() {
+    pgrep -f "services.realtime_position_monitor" > /dev/null 2>&1
+}
+
 is_health_ok() {
     [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/health 2>/dev/null)" = "200" ]
 }
@@ -46,6 +57,13 @@ start_celery_default() {
     disown
 }
 
+start_realtime_monitor() {
+    log "realtime_position_monitor DOWN -- yeniden başlatılıyor"
+    cd "$REPO_DIR" || return
+    nohup .venv/bin/python -m services.realtime_position_monitor > /tmp/realtime_position_monitor_watchdog.log 2>&1 &
+    disown
+}
+
 log "watchdog başladı (kontrol aralığı: ${CHECK_INTERVAL_SECONDS}sn, repo: ${REPO_DIR})"
 
 while true; do
@@ -54,6 +72,9 @@ while true; do
     fi
     if ! is_celery_default_alive; then
         start_celery_default
+    fi
+    if ! is_realtime_monitor_alive; then
+        start_realtime_monitor
     fi
     sleep "$CHECK_INTERVAL_SECONDS"
 done
