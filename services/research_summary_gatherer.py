@@ -28,6 +28,12 @@ _MODULES = [
     ("agent_combination_reliability", "Ajan Kombinasyonu Güvenilirliği", "agent-combination-reliability", "services.agent_combination_reliability_gatherer", "gather_agent_combination_reliability"),
     ("strategy_regime_compatibility", "Strateji × Rejim Uyumu", "strategy-regime-compatibility", "services.strategy_regime_compatibility_gatherer", "gather_strategy_regime_compatibility"),
     ("strategy_hypothesis_scanner", "Strateji Hipotez Tarayıcı", "strategy-hypothesis-scanner", "services.strategy_hypothesis_scanner_gatherer", "gather_strategy_hypothesis_candidates"),
+    # Faz 356 — kullanıcı isteği: "2-3 gündür kazanma oranım düştü, sistem
+    # bunu kendi kendine fark edebilsin mi." "scientific-self-correction"
+    # view'ı için henüz ayrı bir detay sayfası yok (dedicated page bu
+    # turun kapsamı dışında bırakıldı) — "Detaya git" şimdilik boş içerik
+    # gösterir, kart özeti yine de canlı ve doğru.
+    ("scientific_self_correction", "Bilimsel Öz-Düzeltme", "scientific-self-correction", "services.scientific_self_correction_gatherer", "gather_scientific_self_correction"),
 ]
 
 

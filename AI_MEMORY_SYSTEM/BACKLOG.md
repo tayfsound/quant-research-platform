@@ -95,12 +95,13 @@ gerçek kodla teyit edilecek:
 
 ## 🆕 Yeni özellik/analiz istekleri (henüz kod incelemesi gerekmiyor, tasarım kararı gerekiyor)
 
-12. **Kazanma oranı çöküşü (21-23 Ağustos, ~%85 → %38) için otomatik rejim-
-    değişimi tespiti.** `analytics/scientific_self_correction.py` (bugünkü
-    taramada bulunan, hiçbir yere wire edilmemiş modül) TAM OLARAK bunun için
-    yazılmış — iki-oran z-testiyle bir hipotezin/stratejinin edge'inin zamanla
-    kaybolup kaybolmadığını dürüstçe test ediyor. Sıradaki wire-edilecek modül
-    adayı olarak öne çıkıyor.
+12. **[ÇÖZÜLDÜ — Faz 356] Kazanma oranı çöküşü (21-23 Ağustos, ~%85 → %38)
+    için otomatik rejim-değişimi tespiti.** `scientific_self_correction.py`
+    canlıya bağlandı (Genel Özet paneli, 14. modül). Gerçek bulgu: genel
+    isabet düşmemiş (%70→%79, iyileşmiş), ama **LONG özelinde gerçek/anlamlı
+    bir bozulma var** (%96.2→%80.6, p<0.0001). SHORT ve deney kovaları
+    (control/treatment) değişmemiş. Kullanıcının sezgisi kısmen doğru
+    çıktı — sistem genelinde değil, sadece LONG'da.
 13. **Portföy-seviyeli "triyaj" mantığı**: "100 pump_fade pozisyonum var, 70'i
     +20k kârda, 30'u riskli — kötüye giderse -50k olabilir, şimdi hepsini kapatıp
     +2k'da kalmak -50k'dan iyidir" tarzı senaryo-bazlı karar. Şu an sistemde

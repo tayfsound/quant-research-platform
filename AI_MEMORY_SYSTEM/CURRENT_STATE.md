@@ -1,9 +1,21 @@
-# Mevcut Durum -- v1.93.0 (Faz 355: Confidence Timeline mimari düzeltmesi — portföy indirimi artık final_size'ı da küçültüyor + ACT kararını yeniden kontrol ediyor)
+# Mevcut Durum -- v1.94.0 (Faz 356: Scientific Self-Correction canlıya bağlandı — council'in isabet oranı yön/deney-kovası bazında otomatik retest ediliyor)
 
-**Tarih:** 2026-08-23/24
+**Tarih:** 2026-08-24
 **Branch:** main
-**Son commit (HEAD):** Faz 355 (bu commit ile).
-**⚠️ Servis durumu:** Faz 353 (MoE Regime Router) + Faz 354 (dashboard bugları) + Faz 355 (confidence timeline) — hiçbiri henüz canlıya (uvicorn/celery restart) yansımadı. Kullanıcıyla birlikte uygun bir zamanda restart edilecek.
+**Son commit (HEAD):** Faz 356 (bu commit ile).
+**✅ Servis durumu:** Faz 353 (MoE Regime Router) + Faz 354 (dashboard bugları) + Faz 355 (confidence timeline) — uvicorn/celery/beat 24 Ağustos 12:37 UTC'de temiz restart edildi (önceki restart'taki gibi bir tıkanıklık yaşanmadı), hepsi canlıda doğrulandı (/health 200, yeni karar akıyor).
+
+## Faz 356 — Scientific Self-Correction canlıya bağlandı (2026-08-24)
+
+Kullanıcı isteği: "2-3 gündür kazanma oranım düştü... sistem bunu kendi kendine fark edip etiketleyebilsin mi." `analytics/scientific_self_correction.py` (iki-oran z-testiyle bir hipotezin edge'inin zamanla kaybolup kaybolmadığını test eden, hiçbir yere wire edilmemiş modül) için gerçek veriyle önce SORUNUN KENDİSİ doğrulandı: `experiments` tablosu (docstring'in önerdiği doğal tüketici) incelendi, sadece 7 satır (hepsi tek bir geliştirme-zamanı "RSI<30" test kaydı) — anlamlı bir retest kaynağı değil. Bunun yerine `decisions` tablosundan (mae_mfe_confidence_gatherer.py'nin kanıtlanmış deseniyle AYNI) besleniyor.
+
+**Gerçek bulgu (recent_days=3, pump_fade/basis_arb hariç):** genel isabet aslında DÜŞMEMİŞ, İYİLEŞMİŞ (%70.3→%79.0) — ama **LONG özelinde GERÇEK ve istatistiksel olarak anlamlı bir bozulma var** (%96.2→%80.6, p<0.0001, `hypothesis_still_valid=false`, n=977 vs 1136). SHORT değişmemiş (~%22 sabit — kronik kötü, drift değil). Deney kovaları (control/treatment) ayrı ayrı anlamlı değişmemiş. Yani kullanıcının "%85-90'dan %38'e düştü" izlenimi ham rakamla tam örtüşmüyor ama sezgisi (yakın zamanda gerçek bir bozulma var) doğrulandı — SADECE LONG'da, sistem genelinde değil.
+
+**Kod:** `services/scientific_self_correction_gatherer.py::gather_scientific_self_correction()` — overall + yön (LONG/SHORT) + experiment_bucket kırılımlarında retest çalıştırıyor, `research_summary_gatherer.py::_MODULES` registry'sine 14. modül olarak eklendi (mevcut şekil-agnostik "Genel Özet" kartı otomatik gösteriyor, frontend değişikliği gerekmedi — "Detaya git" için ayrı bir sayfa bu turun kapsamı dışında bırakıldı, boş içerik gösterir).
+
+**Test:** 3 yeni entegrasyon testi (gerçek DecisionPersistor.persist/close_position ile — LONG bozulması doğru tespit ediliyor, mekanik stratejiler dışlanıyor, min-sample altında fail-closed boş dönüyor) temiz.
+
+**Not:** entry_timing.py için de daha isabetli bir soru soruldu ("ilk N dakikada belirgin MAE oluşursa nihai sonuç ne olur") — gerçek, monoton bir bulgu çıktı (erken >%5 MAE → %55.6 kazanma vs erken MAE yoksa %99.9) ama bunu WIRE etmek (örn. erken büyük ters harekette stop sıkılaştırma) BACKLOG.md #5'teki kâr-koruma/trailing eksikliğiyle aynı, ayrı bir tasarım kararı — henüz uygulanmadı.
 
 ## Faz 355 — Confidence Timeline mimari düzeltmesi (2026-08-23/24)
 
