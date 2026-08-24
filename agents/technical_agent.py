@@ -21,7 +21,6 @@ class TechnicalAgentCoefficients:
     rsi_extreme_weight: float = 1.0
     volume_confirmation_penalty: float = 0.3
     bollinger_confirm_weight: float = 0.5
-    vwap_confirm_weight: float = 0.3
     adx_weak_discount: float = 0.7
     adx_strong_confirm_weight: float = 0.4
     obv_divergence_weight: float = 0.3
@@ -41,7 +40,7 @@ class TechnicalAgentCoefficients:
         return [
             self.trend_weight, self.momentum_weight, self.market_structure_weight,
             self.ema_alignment_weight, self.rsi_extreme_weight, self.volume_confirmation_penalty,
-            self.bollinger_confirm_weight, self.vwap_confirm_weight, self.adx_weak_discount,
+            self.bollinger_confirm_weight, self.adx_weak_discount,
             self.adx_strong_confirm_weight, self.obv_divergence_weight, self.confidence_divisor,
             self.htf_agreement_confidence_multiplier, self.htf_disagreement_confidence_multiplier,
         ]
@@ -51,7 +50,7 @@ class TechnicalAgentCoefficients:
         return [
             "trend_weight", "momentum_weight", "market_structure_weight",
             "ema_alignment_weight", "rsi_extreme_weight", "volume_confirmation_penalty",
-            "bollinger_confirm_weight", "vwap_confirm_weight", "adx_weak_discount",
+            "bollinger_confirm_weight", "adx_weak_discount",
             "adx_strong_confirm_weight", "obv_divergence_weight", "confidence_divisor",
             "htf_agreement_confidence_multiplier", "htf_disagreement_confidence_multiplier",
         ]
@@ -164,14 +163,20 @@ class TechnicalAgent:
             contributions["bollinger_confirm"] = -c.bollinger_confirm_weight
             evidence.append(f"Fiyat alt Bollinger Bandının altında ({context.bollinger_percent_b:.2f}) — düşüş trendini teyit ediyor")
 
-        # Faz 237: VWAP sapması — fiyat "adil değerin" ne kadar üstünde/
-        # altında, mevcut trend'i doğrulayan yönde hafif bir kanıt.
-        if context.vwap_deviation_pct > 0.01 and context.trend == "bullish":
-            contributions["vwap_confirm"] = c.vwap_confirm_weight
-            evidence.append(f"Fiyat VWAP'ın {context.vwap_deviation_pct:.2%} üzerinde — gerçek alım baskısı")
-        elif context.vwap_deviation_pct < -0.01 and context.trend == "bearish":
-            contributions["vwap_confirm"] = -c.vwap_confirm_weight
-            evidence.append(f"Fiyat VWAP'ın {context.vwap_deviation_pct:.2%} altında — gerçek satım baskısı")
+        # Faz 357 — kullanıcı bulgusu + gerçek veri: "vwap_confirm" (Faz 237,
+        # fiyat VWAP'tan >%1 uzaklaşmışsa mevcut trendi "gerçek alım/satım
+        # baskısı" olarak teyit ediyordu) TAMAMEN KALDIRILDI. Gerçek 4950
+        # kapalı kararla, trend sabit tutularak (confound önlendi) ölçüldü:
+        # trend tek başına ateşlendiğinde %80.0 (n=820, LONG'da %94.3),
+        # vwap_confirm de EK olarak ateşlendiğinde %33.7'ye (n=947, LONG'da
+        # %58.4) düşüyordu — kodun varsayımının (VWAP'tan uzaklaşmak =
+        # teyit) TERSİNE, gerçekte aşırı-uzama/tükenme sinyaliydi. Faz
+        # 339'daki quant_agent::long_term_trend_regime kaldırılmasıyla AYNI
+        # ilke: indirmek değil, kesmek — kanıt net ve büyük örneklemliydi.
+        # context.vwap_deviation_pct (ham özellik) sistemden SİLİNMEDİ —
+        # feature_registry/signal_engine/meta_label_model/agent_confidence_
+        # model hâlâ kullanıyor, sadece TechnicalAgent'ın ondan beslenmesi
+        # kesildi (Faz339'un AYNI deseni).
 
         # Faz 237: ADX — trend YÖNÜ değil GÜCÜ. Zayıf/yatay trend'te (ADX<20)
         # bu ajanın kendi trend/momentum sinyallerine güveni azaltılıyor;

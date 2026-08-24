@@ -1,9 +1,23 @@
-# Mevcut Durum -- v1.94.0 (Faz 356: Scientific Self-Correction canlıya bağlandı — council'in isabet oranı yön/deney-kovası bazında otomatik retest ediliyor)
+# Mevcut Durum -- v1.95.0 (Faz 357: TechnicalAgent'tan vwap_confirm tamamen kaldırıldı — gerçek veriyle zararlı bulundu)
 
 **Tarih:** 2026-08-24
 **Branch:** main
-**Son commit (HEAD):** Faz 356 (bu commit ile).
-**✅ Servis durumu:** Faz 353 (MoE Regime Router) + Faz 354 (dashboard bugları) + Faz 355 (confidence timeline) — uvicorn/celery/beat 24 Ağustos 12:37 UTC'de temiz restart edildi (önceki restart'taki gibi bir tıkanıklık yaşanmadı), hepsi canlıda doğrulandı (/health 200, yeni karar akıyor).
+**Son commit (HEAD):** Faz 357 (bu commit ile).
+**✅ Servis durumu:** Faz 353-356 uvicorn/celery/beat 24 Ağustos 12:37 UTC'de temiz restart edildi. **Faz 357 henüz restart edilmedi** — TechnicalAgent kod değişikliği canlıya yansıması için restart gerekiyor.
+
+## Faz 357 — TechnicalAgent'tan vwap_confirm tamamen kaldırıldı (2026-08-24)
+
+Kullanıcının "macro ajan çok mu baskın" sorusu araştırılırken (aşağıda) technical_agent'ın genel sağlığı sorgulandı — gerçek 4950 kapalı kararla ölçüldü: technical'ı izlemek %56.0, göz ardı etmek %74.9 (technical'a UYMAMAK daha iyi). Ajan 9 alt-bileşenine ayrıştırıldı (Faz 339'daki quant_agent metodolojisiyle AYNI): `vwap_confirm` (fiyat VWAP'tan >%1 uzaklaşmışsa mevcut trendi "gerçek alım/satım baskısı" olarak teyit ediyordu, Faz 237) n=947 ile %33.7 — belirgin biçimde en kötü bileşen.
+
+Kullanıcının haklı şüphesi üzerine ("vwap_confirm'in gerçekten işe yaramaz olduğuna emin miyiz?") confound kontrolü yapıldı: `vwap_confirm` yapısal olarak SADECE `trend` zaten aynı yöndeyken ateşleniyor (kod şartı), yani ikisi hep birlikte geliyordu — ilk ölçüm bunları karıştırmış olabilirdi. `trend`'i SABİT tutup (sadece trend ateşlenen durumlar) `vwap_confirm`'in EK olarak var/yok olmasına göre ayrıştırıldı: **sadece trend %80.0 (n=820, LONG'da %94.3) → trend+vwap %33.7 (n=947, LONG'da %58.4)**. Confound'dan arındırılınca bulgu DAHA GÜÇLÜ çıktı — kodun varsayımının (VWAP'tan uzaklaşmak=teyit) tersine, gerçekte aşırı-uzama/tükenme sinyali.
+
+Kullanıcı kararı: "zararlı madem direkt kaldıralım, iz bile kalmasın." `agents/technical_agent.py`'den `vwap_confirm` bloğu + `vwap_confirm_weight` katsayısı (dataclass field + `as_vector()`/`field_names()`) tamamen silindi, `meta_optimizer/agent_tuner.py`'nin CMA-ES arama uzayından (`FIELD_BOUNDS`) da çıkarıldı. Kontrol edildi: `agent_tuning_approvals` tablosunda technical_agent_v1 için hiç onaylanmış satır yok — geriye dönük uyumluluk/migrasyon riski yok. `context.vwap_deviation_pct` (ham özellik) BİLİNÇLİ OLARAK silinmedi — feature_registry/signal_engine/meta_label_model/agent_confidence_model hâlâ kullanıyor (Faz339'un `long_term_trend_regime` hamöznitelik ayrımıyla AYNI desen).
+
+**Test:** `tests/test_technical_agent.py` + `tests/test_agent_tuner.py` + `tests/test_meta_learning_scheduler.py` (35 test) — hiçbiri `vwap_confirm`'e doğrudan bağımlı değildi, hepsi temiz.
+
+**Not (macro ajan araştırması, aynı oturum):** kullanıcının "macro çok baskın, scalp'te kısa-vadeli düşüşleri kaçırıyor" endişesi gerçek veriyle test edildi — SONUÇ TERSİ ÇIKTI. Macro/technical çatıştığında (son 7 günde 1308 gerçek çatışma) macro'yu izlemek scalp'te %89.5, swing'te %83.1; technical'ı izlemek sırasıyla %18.6/%7.1. Macro'nun ağırlığı AZALTILMADI — kanıt tam tersini gösteriyor. Onchain ajan da ayrıca doğrulandı: nadiren oy veriyor (~%6) ama izlendiğinde %82.1 isabetli — kullanıcının "en güvendiğim sinyal" sezgisi kanıtlandı, dokunulmadı (zaten sağlıklı).
+
+## Faz 356 — Scientific Self-Correction canlıya bağlandı (2026-08-24)
 
 ## Faz 356 — Scientific Self-Correction canlıya bağlandı (2026-08-24)
 

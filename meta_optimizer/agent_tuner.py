@@ -49,7 +49,6 @@ FIELD_BOUNDS: dict[str, tuple[float, float]] = {
     "rsi_extreme_weight": (0.0, 2.0),
     "volume_confirmation_penalty": (0.0, 2.0),
     "bollinger_confirm_weight": (0.0, 2.0),
-    "vwap_confirm_weight": (0.0, 2.0),
     "adx_weak_discount": (0.0, 1.0),
     "adx_strong_confirm_weight": (0.0, 2.0),
     "obv_divergence_weight": (0.0, 2.0),
