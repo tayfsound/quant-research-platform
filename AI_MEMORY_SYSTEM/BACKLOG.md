@@ -265,6 +265,21 @@ gerçek kodla teyit edilecek:
     seçim, varsayılan kapalı) — kontrollü açılıp gerçek ölçüm yapılabilir.
     Kullanıcı isteğiyle şimdilik ertelendi, todo'nun sonunda kalıyor.
 
+30. **Basis Arb: %75 kazanma oranı ama toplam PNL eksi.** Kullanıcı bulgusu
+    (2026-08-24): 8 kapanmış işlem, 6 kazanan/2 kaybeden, ama toplam
+    -$88.66. DB'den çekildi: STORJUSDT ve SCRTUSDT'nin SHORT bacakları
+    TAM AYNI tutarda (-$98.05, -$98.05 — şüpheli derecede özdeş) `reason=
+    liquidation` ile likide olmuş; karşılık gelen LONG bacakları
+    (muhtemelen spot/hedge tarafı) sorunsuz, ılımlı kârla (+$60.79,
+    +$42.74) `manual_full` ile kapanmış. Yani hedge'in SHORT/perp
+    tarafı, basis spread'i yakalamadan ÖNCE likide oluyor — muhtemelen
+    o bacağın kaldıraç/teminat boyutlandırması spread'in beklenen
+    büyüklüğüne göre çok dar. Kök neden henüz `services/basis_
+    arbitrage_strategy.py`'de incelenmedi — iki liquidation tutarının
+    özdeş olması (rastgele değil, sabit bir teminat/boyut formülüne
+    işaret ediyor) ilk bakılacak yer. Henüz ölçülmedi/kod incelemesi
+    yapılmadı.
+
 ## Notlar
 
 - Kullanıcı `max_open_positions_per_symbol_direction`'a (1000) bilerek
