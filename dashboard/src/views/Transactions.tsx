@@ -663,6 +663,13 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
   const OPEN_PAGE_SIZE = 100;
   const [openPage, setOpenPage] = useState(0);
 
+  // Faz 362-devam — kullanıcı isteği: "kör gidiyorum, geriye dönüp
+  // inceleme yapamıyorum" — kapanmış işlemler de OPEN_PAGE_SIZE ile AYNI
+  // desende, offset destekli GET /trades'e bağlandı (backend Faz 268y'nin
+  // açık pozisyon sayfalamasıyla AYNI deseni izliyor).
+  const TRADES_PAGE_SIZE = 100;
+  const [tradesPage, setTradesPage] = useState(0);
+
   const hasActiveFilters = typeFilter !== "all" || directionFilter !== "all" || outcomeFilter !== "all";
 
   const filteredTrades = useMemo(() => {
@@ -716,7 +723,9 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
         setOpen(data.positions || []);
         setOpenSummary(data.summary || null);
       });
-    fetch("/api/v1/trades", { headers: authHeaders() })
+    const tradesOffset = hasActiveFilters ? 0 : tradesPage * TRADES_PAGE_SIZE;
+    const tradesLimit = hasActiveFilters ? 5000 : TRADES_PAGE_SIZE;
+    fetch(`/api/v1/trades?limit=${tradesLimit}&offset=${tradesOffset}`, { headers: authHeaders() })
       .then((r) => r.json())
       .then((data) => {
         setTrades(data.trades || []);
@@ -729,7 +738,7 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
     const interval = setInterval(load, 15000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openPage, hasActiveFilters]);
+  }, [openPage, tradesPage, hasActiveFilters]);
 
   const partialClose = async (id: string, fraction: number) => {
     setCloseError(null);
@@ -922,10 +931,11 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
       )}
 
       <h2 className="text-sm font-semibold text-ink-soft uppercase tracking-wide mb-1">Kapanmış İşlemler</h2>
-      {summary && summary.count > trades.length && (
+      {summary && summary.count > TRADES_PAGE_SIZE && !hasActiveFilters && (
         <p className="text-xs text-ink-faint mb-3">
-          En son {trades.length} işlem gösteriliyor (toplam {summary.count} — üstteki özet kutuları
-          her zaman gerçek toplamı yansıtır).
+          {tradesPage * TRADES_PAGE_SIZE + 1}-{tradesPage * TRADES_PAGE_SIZE + trades.length} / {summary.count}{" "}
+          işlem gösteriliyor — altta sayfalarla gezebilirsiniz (üstteki özet kutuları her zaman gerçek
+          toplamı yansıtır).
         </p>
       )}
 
@@ -974,6 +984,30 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
               onExplain={() => setExplainId(t.id)}
             />
           ))}
+        </div>
+      )}
+
+      {summary && summary.count > TRADES_PAGE_SIZE && !hasActiveFilters && (
+        <div className="flex items-center justify-center gap-3 mt-4 mb-8">
+          <Button
+            variant="secondary"
+            disabled={tradesPage === 0}
+            onClick={() => setTradesPage((p) => Math.max(0, p - 1))}
+            className="!px-3 !py-1.5 text-xs"
+          >
+            ← Önceki
+          </Button>
+          <span className="text-xs text-ink-faint">
+            Sayfa {tradesPage + 1} / {Math.ceil(summary.count / TRADES_PAGE_SIZE)}
+          </span>
+          <Button
+            variant="secondary"
+            disabled={(tradesPage + 1) * TRADES_PAGE_SIZE >= summary.count}
+            onClick={() => setTradesPage((p) => p + 1)}
+            className="!px-3 !py-1.5 text-xs"
+          >
+            Sonraki →
+          </Button>
         </div>
       )}
 

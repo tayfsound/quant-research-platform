@@ -61,11 +61,9 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
    sembolün kendi yığılmasını değil) — ayrı, doğrudan bir $-tavanı olarak
    uygulandı.
 
-5. **Kâr koruma / trailing yok — 10k kârdan başa-başa kadar bekliyor.**
-   Kod incelemesi teyit ediyor: `PositionCloser`/`RiskTargetStage` sadece sabit
-   stop/target ve (varsa) breakeven tetikleyicisiyle çalışıyor, gerçekleşmemiş
-   kârın tepe noktasından ne kadar geri çekilmeye izin verileceğine dair (trailing
-   stop / kâr kilitleme) hiçbir mekanizma yok.
+5. **[ÇÖZÜLDÜ — Faz 359, 2026-08-24] Kâr koruma / trailing yok — 10k kârdan
+   başa-başa kadar bekliyor.** Kademeli kâr kilitleme (`progressive_lock_
+   min_profit_r`/`progressive_lock_fraction`) uygulandı — bkz. madde 25.
 
 ## Madde 6-10 — 2026-08-24'te tek tek kodla doğrulandı
 
@@ -134,23 +132,57 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
     stop yanlış yerleştirildiği için mi, yoksa gerçekten yön hatası mı olduğu
     araştırılmalı; bu kaybın toplam zarardaki payı % olarak dashboard'a kart
     olarak eklenmeli (SL/likidasyon/breakeven kırılımı).
-16. Settings'teki mum aralığı (candle timeframe) seçimi tek seçime zorluyor —
-    kullanıcı 15dk/4s/1g'nin AYRI AYRI değerlendirilip değerlendirilmediğini
-    soruyor; eğer zaten öyle çalışıyorsa bu ayar ölü bölge, tartışılmalı.
+16. **[ÇÖZÜLDÜ — 2026-08-24, A/B'den ÜRETİME terfi ettirildi] Settings'teki
+    mum aralığı (candle timeframe) tek seçime zorluyor mu?** `candle_
+    timeframe` (tekil) ÖLÜ DEĞİL — birincil karar zaman dilimi. "15dk/4s
+    ayrı ayrı değerlendiriliyor mu" sorusu: Multi-Timeframe Cascade
+    (Faz 268c, `propose_multi_timeframe()`) zaten var VE gerçekten
+    çalışıyormuş — ilk kontrolüm (5000 satırlık yanlış alanda arama)
+    hatalıydı, düzeltilmiş sorguda **79.028 karar** bulundu (13-24
+    Ağustos, kesintisiz). Gerçek `services/ab_testing.py::evaluate_
+    experiment` ile ölçüldü (n=1117 control / 1094 treatment kapanmış
+    işlem): agrega fark anlamsız (p=0.63) ama yön kırılımında SHORT win
+    rate'i %8.5'ten %21.9'a çıkarıyor (p=0.00008, çok anlamlı), LONG'da
+    anlamlı zarar yok (p=0.69). Maliyet: sembol başına ~3x CognitiveEngine
+    (yerel CPU, LLM API'sine dokunmuyor) + 2 ek Binance REST isteği/
+    sembol/cycle. Kullanıcı kararı (CPU maliyeti M5'te sorun değil, rate-
+    limit'te %50 trafikte sorun görülmedi): deney sonlandırıldı, ÜRETİME
+    terfi ettirildi — `multi_timeframe_cascade_ab_test_enabled=false`,
+    `multi_timeframe_cascade_enabled=true` (app_settings'te canlı
+    olarak değiştirildi, restart gerekmiyor, bir sonraki cycle'dan
+    itibaren TÜM sembollerde aktif).
 17. **"Tepeden giriş" hâlâ devam ediyor** (bugünkü XAUTUSDT örneği zaten
     incelendi — ADX zayıfken bile hiçbir sert engel yok). Kullanıcı özellikle
     destek/direnç seviyesi bazlı bir filtre istiyor: kritik seviyeden %X'ten
     fazla uzaktaysa (örn. tepeden/dipten kovalıyorsa) giriş engellensin.
 18. Genel: sistem "her fırsatı alıyor," seçicilik eksik — giriş eşiği/kriterleri
     gözden geçirilmeli.
-19. "Pozisyon büyütme asla" ilkesi (sadece küçültme) — zaten meta-label/Kelly'de
-    kısmen var, ama genel bir mimari ilke olarak dokümante edilip her yeni
-    modülde bu kurala uyulduğu doğrulanmalı.
+19. **[ÇÖZÜLDÜ — 2026-08-24, TAM olarak] "Pozisyon büyütme asla" ilkesi
+    dokümante edildi, TÜM çarpanlar doğrulandı VE bulunan tek istisna
+    kapatıldı.** `docs/index.md`'ye "Temel Prensipler"e eklendi.
+    Doğrulananlar: `kelly_size_multiplier`, `meta_label_size_multiplier`,
+    `drawdown_size_multiplier`, `InnerCritic.confidence_multiplier`,
+    pump_fade'in iki yoğunluk/rejim çarpanı, `pyramid_dampened_leverage`,
+    `max_safe_leverage`. **Bulunan istisna kapatıldı:** `services/agent_
+    confidence_model.py::predict_confidence_multiplier`'ın üst sınırı
+    (`MULTIPLIER_MAX`) `1.5`'ten `1.0`'a çekildi — kullanıcı kararı:
+    "ilkenin ruhuna açılan teorik gediği hemen kapatalım, Kelly
+    boyutlandırma kontrolden çıkmasın." Artık ajan-güveni katmanı da
+    dahil TÜM çarpanlar istisnasız SADECE küçültebiliyor. 2 test
+    güncellendi (`test_agent_confidence_model.py`, `test_council_
+    orchestrator.py` — yukarı-yönlü senaryolar aşağı-yönlü senaryolara
+    çevrildi, ilgili regresyon temiz).
 20. Arbitraj pozisyon detay kartı istek listesi: spot/futures bacak, entry/current
     basis, funding earned, fees, unrealized/net PnL, exit condition — Dashboard'a
     yeni bir detay görünümü.
-21. Dashboard'a "AI şu an piyasa yönünü nasıl görüyor" bilgi kartı (mevcut
-    ortalama/dominant belief.direction'ın canlı özeti).
+21. **[YAPILDI — kod hazır, COMMIT/WIRE EDİLMEDİ, 2026-08-24] Dashboard'a
+    "AI şu an piyasa yönünü nasıl görüyor" bilgi kartı.** `DecisionPersistor.
+    latest_direction_confidence_by_symbol()` (DISTINCT ON, tek sorgu, son
+    24 saatte taranmış her sembolün EN SON yön/confidence'ı) + yeni `GET
+    /dashboard/market-direction-summary` + Dashboard.tsx'e yeni kart
+    (LONG/SHORT/WAIT yüzdeleri, ortalama güven, en güvenli 5 LONG/SHORT
+    sembol). 2 yeni backend test + tsc temiz. Kullanıcı dönene kadar
+    commit edilmedi (talimatı gereği).
 22. **Pump-fade'de nadir/aşırı fırsatları (token 2x+ yapmış vb. "absürt"
     hareketler) yakalayabilme.** Kullanıcı isteği (2026-08-24): şu anki
     pump_fade eşikleri (min_gain_pct vb.) muhtemelen bu tür nadir, büyük
@@ -193,13 +225,13 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
     rejime) sahip değil, ayrı bir iş gerektirir, düşük öncelik (havuz
     zaten kapalı).
 
-24. **Transactions sayfasındaki kapalı işlemler tablosu 100 kayıtla
-    sınırlı (`GET /trades?limit=100`, `api/rest/positions.py::
-    list_closed_trades`).** Kullanıcı isteği (2026-08-24): "kör gidiyorum,
-    geriye dönüp inceleme yapamıyorum" — gerçek sayfalama (açık pozisyon
-    tablosunun Faz 268y'de aldığı offset desteğiyle AYNI) veya en azından
-    çok daha yüksek bir limit/tarih aralığı filtresi eklenmeli. Henüz kod
-    incelemesi yapılmadı.
+24. **[YAPILDI — kod hazır, COMMIT EDİLMEDİ, 2026-08-24] Transactions
+    sayfasındaki kapalı işlemler tablosu 100 kayıtla sınırlıydı.**
+    `list_closed_trades()`/`GET /trades`'e `offset` eklendi (`list_open_
+    positions`'ın Faz 268y'deki AYNI deseni). Frontend: `TRADES_PAGE_SIZE`
+    + `tradesPage` state, açık pozisyonlarla AYNI "← Önceki / Sonraki →"
+    sayfalama kontrolleri. 1 yeni backend testi + tsc temiz. Kullanıcı
+    dönene kadar commit edilmedi.
 
 25. **[KISMEN ÇÖZÜLDÜ — Faz 359, (b) madde 26'ya taşındı] "Başabaş çekildi"
     etiketi yanıltıcı — gerçek veriyle doğrulandı, 2026-08-24.** Kullanıcı
@@ -316,6 +348,31 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
     persistence_gatherer.py` Genel Özet paneline bağlandı — optimum N
     veri büyüdükçe otomatik gösterilir (ama canlı ayarı otomatik
     DEĞİŞTİRMEZ, kullanıcı elle günceller).
+
+32. **[ÇÖZÜLDÜ — 2026-08-24] Ölü RL-ödül-şekillendirme kalıntısı temizlendi.**
+    `ActionType.EXIT`'i ararken bulunan `services/opportunity_cost.py`
+    (`OpportunityCostCalculator`) — kullanıcı "Opportunity Quality" (Faz
+    328/351, CANLI) ile karıştırdığını fark etti, ikisi TAMAMEN farklı
+    modüller. Kod arkeolojisi: `opportunity_cost.py`/`outcome_evaluator.py`/
+    `reward_signal.py` üçü de projenin `Faz 1`'den ÖNCEKİ ilk "Initial
+    checkpoint" commit'inin parçası — hiçbiri hiçbir "Faz N" kararıyla
+    bilerek eklenmedi, hiçbiri gerçek `CognitiveEngine.run()` akışına hiç
+    bağlanmadı (Faz 250/268j'nin "sahte ForwardOutcome ile kirletmeyelim"
+    kararıyla AYNI aile — sadece silinmesi unutulmuş). Kullanıcı onayıyla
+    silindi: 3 servis dosyası + `contracts/opportunity.py` (`OpportunityCost`)
+    + `FailureType` (contracts/outcome.py'den) + 3 test dosyası, `contracts/
+    __init__.py`/`services/cognitive_engine.py`'deki ölü referanslar
+    temizlendi. `TradeOutcome`/`DecisionEvaluation` BİLEREK KORUNDU — hâlâ
+    6+ regresyon testinin ("bu alan set edilse bile öğrenme tetiklenmiyor")
+    gerçekten kullandığı bir tip. 72 test (ilgili tüm dosyalar) temiz.
+
+    **Ayrıca bulundu, DOKUNULMADI (kapsam dışı, kullanıcı onayı gerekir):**
+    `services/belief_updater.py` (`BeliefUpdater` — sıfır çağıranı var,
+    `DecisionEvaluation` kullanıyor ama hiçbir yerden tetiklenmiyor) ve
+    `rl/incremental_learning/loop.py` (kendi bağımsız `TradeOutcome`
+    tanımı var, `contracts/outcome.py`'den TAMAMEN bağımsız, sıfır
+    çağıranı var — muhtemelen ayrı, daha eski bir RL taslağı). İkisi de
+    ayrı bir onay/tur gerektirir.
 
 ## Notlar
 

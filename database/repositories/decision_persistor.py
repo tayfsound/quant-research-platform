@@ -212,6 +212,26 @@ class DecisionPersistor:
 
         return [dict(r) for r in rows]
 
+    def latest_direction_confidence_by_symbol(self, since=None) -> list[dict]:
+        """Faz 362-devam — backlog madde 21 (kullanıcı isteği: "AI şu an
+        piyasa yönünü nasıl görüyor" bilgi kartı). Her sembol için EN SON
+        kararın (status'tan bağımsız — WAIT/no_trade dahil, council'in o
+        anki HAM eğilimini yansıtır) direction/confidence/timestamp'i, tek
+        sorguda (`DISTINCT ON`, Postgres'e özgü — 149 sembol için 149 ayrı
+        sorgu yerine). `since` verilirse SADECE o zamandan sonraki kararlar
+        dahil (stale/uzun süredir taranmayan sembolleri hariç tutmak için)."""
+        params: dict = {}
+        query = "SELECT DISTINCT ON (symbol) symbol, direction, confidence, timestamp FROM decisions "
+        if since is not None:
+            query += "WHERE timestamp >= :since "
+            params["since"] = since
+        query += "ORDER BY symbol, timestamp DESC"
+        rows = self.session.execute(text(query), params).all()
+        return [
+            {"symbol": row.symbol, "direction": row.direction, "confidence": row.confidence, "timestamp": row.timestamp}
+            for row in rows
+        ]
+
     def list_recent_directions_for_symbol(self, symbol: str, limit: int = 20) -> list[dict]:
         """Faz 362 — analytics/signal_persistence.py::consistent_direction_
         run_length() için: bu sembol için en yeniden en eskiye doğru son
@@ -566,7 +586,7 @@ class DecisionPersistor:
 
     def list_closed_trades(
         self, limit: int = 200, min_opened_at=None, exclude_experiment_bucket: str | None = None,
-        direction: str | None = None,
+        direction: str | None = None, offset: int = 0,
     ):
         # Faz 238: kullanıcı isteği — "kirli geçmiş veriyi temizle."
         # excluded_from_stats=true işaretli satırlar (aşırı capital
@@ -589,7 +609,7 @@ class DecisionPersistor:
         # sahip) kapanışları AI'ın kill switch'ini/concept drift algısını
         # kirletir, mekanik bir strateji AI'ı sessizce durdurabilirdi.
         query = "SELECT * FROM decisions WHERE status = 'closed' AND excluded_from_stats = false"
-        params: dict = {"limit": limit}
+        params: dict = {"limit": limit, "offset": offset}
         if min_opened_at is not None:
             query += " AND opened_at IS NOT NULL AND opened_at >= :min_opened_at"
             params["min_opened_at"] = min_opened_at
@@ -603,7 +623,11 @@ class DecisionPersistor:
             # kapanışları araya girip streak'i sulandırmasın.
             query += " AND direction = :direction"
             params["direction"] = direction
-        query += " ORDER BY closed_at DESC LIMIT :limit"
+        # Faz 362-devam — kullanıcı isteği: "kör gidiyorum, geriye dönüp
+        # inceleme yapamıyorum" (Transactions'ta kapanmış işlemler hep
+        # ilk 100'le sabitliydi, offset yoktu) — list_open_positions'ın
+        # Faz 268y'de aldığı offset desteğiyle AYNI desen.
+        query += " ORDER BY closed_at DESC LIMIT :limit OFFSET :offset"
 
         rows = self.session.execute(text(query), params).mappings().all()
 

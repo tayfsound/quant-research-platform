@@ -307,16 +307,23 @@ def explain_position(decision_id: str, user: AuthContext = Depends(get_current_u
 
 
 @router.get("/trades")
-def list_closed_trades(limit: int = 100, user: AuthContext = Depends(get_current_user)):
+def list_closed_trades(
+    limit: int = 100, offset: int = 0, user: AuthContext = Depends(get_current_user)
+):
     """Faz 224: kritik bulgu — "summary" artık `limit`'e (tablo için kaç
     satır gösterileceği) bağlı DEĞİL, gerçek toplam üzerinden hesaplanıyor
     (closed_trades_summary — /performance'ın all_time'ıyla AYNI sorgu).
     `trades` listesi hâlâ `limit` ile sınırlı (tabloyu 10 binlerce satır
     render etmemek için) ama bu artık sadece görüntüleme sınırı, istatistik
-    kaynağı değil."""
+    kaynağı değil.
+
+    Faz 362-devam — kullanıcı isteği: "kör gidiyorum, geriye dönüp
+    inceleme yapamıyorum" — `offset` eklendi, GET /positions'la (Faz
+    268y) AYNI gerçek sayfalama deseni. `summary.count` her zaman
+    gerçek toplamı yansıttığı için frontend sayfa sayısını hesaplayabiliyor."""
     with SessionFactory.get_session() as session:
         persistor = DecisionPersistor(session)
-        rows = persistor.list_closed_trades(limit=limit)
+        rows = persistor.list_closed_trades(limit=limit, offset=offset)
         trades = [_serialize(r) for r in rows]
         summary = persistor.closed_trades_summary()
         return {

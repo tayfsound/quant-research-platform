@@ -46,3 +46,55 @@ def concept_drift_status(user: AuthContext = Depends(get_current_user)):
         trading_mode = AppSettingsRepository(session).get("trading_mode")
         diagnostics["enforced"] = trading_mode == "live"
         return diagnostics
+
+
+@router.get("/market-direction-summary")
+def market_direction_summary(user: AuthContext = Depends(get_current_user)):
+    """Faz 362-devam — backlog madde 21, kullanıcı isteği: "AI şu an
+    piyasa yönünü nasıl görüyor" bilgi kartı — mevcut ortalama/dominant
+    belief.direction'ın canlı özeti. Her sembolün EN SON kararının
+    (status'tan bağımsız, council'in o anki ham eğilimi) yön/confidence'ı
+    üzerinden — 24 saatten eski, taranmamış/stale sembolleri hariç
+    tutuyor (aksi halde uzun süre işlem görmemiş bir sembolün eski
+    yönü, güncel bir sinyalmiş gibi ortalamayı kirletirdi)."""
+    from datetime import UTC, datetime, timedelta
+
+    from database.repositories.decision_persistor import DecisionPersistor
+    from database.session_factory import SessionFactory
+
+    since = datetime.now(UTC) - timedelta(hours=24)
+    with SessionFactory.get_session() as session:
+        rows = DecisionPersistor(session).latest_direction_confidence_by_symbol(since=since)
+
+    long_rows = [r for r in rows if r["direction"] == "LONG"]
+    short_rows = [r for r in rows if r["direction"] == "SHORT"]
+    wait_rows = [r for r in rows if r["direction"] not in ("LONG", "SHORT")]
+    total = len(rows)
+
+    def _avg_confidence(lst: list[dict]) -> float | None:
+        if not lst:
+            return None
+        return sum(r["confidence"] or 0.0 for r in lst) / len(lst)
+
+    def _top(lst: list[dict], n: int = 5) -> list[dict]:
+        ranked = sorted(lst, key=lambda r: r["confidence"] or 0.0, reverse=True)[:n]
+        return [{"symbol": r["symbol"], "confidence": r["confidence"]} for r in ranked]
+
+    counts = {"LONG": len(long_rows), "SHORT": len(short_rows), "WAIT": len(wait_rows)}
+    dominant_direction = max(counts, key=counts.get) if total else None
+
+    return {
+        "as_of": datetime.now(UTC).isoformat(),
+        "symbol_count": total,
+        "long_count": len(long_rows),
+        "short_count": len(short_rows),
+        "wait_count": len(wait_rows),
+        "long_pct": (len(long_rows) / total) if total else None,
+        "short_pct": (len(short_rows) / total) if total else None,
+        "wait_pct": (len(wait_rows) / total) if total else None,
+        "dominant_direction": dominant_direction,
+        "avg_confidence_long": _avg_confidence(long_rows),
+        "avg_confidence_short": _avg_confidence(short_rows),
+        "top_long_symbols": _top(long_rows),
+        "top_short_symbols": _top(short_rows),
+    }

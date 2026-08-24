@@ -308,6 +308,16 @@ export default function Dashboard() {
     available: boolean; active?: boolean; enforced?: boolean;
     baseline_win_rate?: number; recent_win_rate?: number; p_value?: number;
   } | null>(null);
+  // Faz 362-devam — backlog madde 21, kullanıcı isteği: "AI şu an piyasa
+  // yönünü nasıl görüyor" bilgi kartı.
+  const [marketDirection, setMarketDirection] = useState<{
+    symbol_count: number; long_count: number; short_count: number; wait_count: number;
+    long_pct: number | null; short_pct: number | null; wait_pct: number | null;
+    dominant_direction: string | null;
+    avg_confidence_long: number | null; avg_confidence_short: number | null;
+    top_long_symbols: { symbol: string; confidence: number }[];
+    top_short_symbols: { symbol: string; confidence: number }[];
+  } | null>(null);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | "unsupported">(
     typeof Notification === "undefined" ? "unsupported" : Notification.permission
   );
@@ -396,6 +406,10 @@ export default function Dashboard() {
       .then((r) => r.json())
       .then(setConceptDrift)
       .catch(() => setConceptDrift(null));
+    fetch("/api/v1/dashboard/market-direction-summary", { headers: authHeaders() })
+      .then((r) => r.json())
+      .then(setMarketDirection)
+      .catch(() => setMarketDirection(null));
   };
 
   const requestNotifPermission = () => {
@@ -620,6 +634,56 @@ export default function Dashboard() {
               sub={`${perf.by_direction.SHORT.win_count} kazandı / ${perf.by_direction.SHORT.loss_count} kaybetti (${perf.by_direction.SHORT.trade_count} işlem)`}
             />
           </div>
+
+          {/* Faz 362-devam — backlog madde 21, kullanıcı isteği: "AI şu an
+              piyasa yönünü nasıl görüyor" bilgi kartı. Son 24 saatte
+              taranmış her sembolün EN SON kararının (status'tan bağımsız
+              — WAIT/no_trade dahil) yön/confidence'ı üzerinden — council'in
+              o anki ham eğilimi, sadece gerçekten açılmış pozisyonlar
+              değil. */}
+          {marketDirection && marketDirection.symbol_count > 0 && (
+            <Card className="mb-6">
+              <p className="text-xs uppercase tracking-wide text-ink-faint font-medium mb-3">
+                AI Şu An Piyasa Yönünü Nasıl Görüyor
+              </p>
+              <div className="grid grid-cols-3 gap-4 mb-3">
+                <div>
+                  <p className="text-2xl font-semibold text-rise">
+                    %{((marketDirection.long_pct ?? 0) * 100).toFixed(0)}
+                  </p>
+                  <p className="text-xs text-ink-soft">
+                    LONG ({marketDirection.long_count}) — ort. güven %
+                    {((marketDirection.avg_confidence_long ?? 0) * 100).toFixed(0)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-2xl font-semibold text-fall">
+                    %{((marketDirection.short_pct ?? 0) * 100).toFixed(0)}
+                  </p>
+                  <p className="text-xs text-ink-soft">
+                    SHORT ({marketDirection.short_count}) — ort. güven %
+                    {((marketDirection.avg_confidence_short ?? 0) * 100).toFixed(0)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-2xl font-semibold text-ink">
+                    %{((marketDirection.wait_pct ?? 0) * 100).toFixed(0)}
+                  </p>
+                  <p className="text-xs text-ink-soft">WAIT ({marketDirection.wait_count})</p>
+                </div>
+              </div>
+              <p className="text-xs text-ink-faint">
+                Son 24 saatte taranmış {marketDirection.symbol_count} sembol, en son karara göre — baskın
+                eğilim: <span className="font-semibold text-ink">{marketDirection.dominant_direction ?? "—"}</span>.
+                {marketDirection.top_long_symbols.length > 0 && (
+                  <> En güvenli LONG: {marketDirection.top_long_symbols.map((s) => `${s.symbol} (%${(s.confidence * 100).toFixed(0)})`).join(", ")}.</>
+                )}
+                {marketDirection.top_short_symbols.length > 0 && (
+                  <> En güvenli SHORT: {marketDirection.top_short_symbols.map((s) => `${s.symbol} (%${(s.confidence * 100).toFixed(0)})`).join(", ")}.</>
+                )}
+              </p>
+            </Card>
+          )}
 
           <TradeTypeBreakdownTable
             title="İşlem türüne göre açık pozisyonlar"
