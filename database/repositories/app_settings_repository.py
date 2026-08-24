@@ -616,6 +616,21 @@ DEFAULTS: dict[str, str] = {
     # ayar OTOMATİK kaymaz — kullanıcı bilinçli olarak günceller.
     "signal_persistence_gate_enabled": "true",
     "signal_persistence_min_consistent_cycles": "4",
+
+    # Faz 362-devam — kullanıcı fikri, ilk (dar örneklem) ölçümde
+    # reddedilmiş ama kullanıcının sorgulamasıyla geniş pencerede (10-24
+    # Ağustos, 3619 pozisyon) doğrulanmış: council elimde açık pozisyon
+    # varken 6+ ardışık cycle boyunca (confidence>=0.65) TERSİNE dönerse,
+    # bu artık gürültü değil gerçek bir sinyal — erken çıkmak %89 daha iyi
+    # sonuç verdi (n=187, toplam fark +$480, en kötü uç değer sadece
+    # -$2.5 — N<=4'teki felaket boyutlu -$800'lük uç değerler tamamen
+    # kayboluyor). Varsayılan AÇIK — koruyucu bir mekanizma (reversal_
+    # guardian_enabled ile AYNI ilke). min_confidence, STRONG_DISSENT_
+    # CONFIDENCE_THRESHOLD (engines/cognitive_pipeline.py) ile AYNI,
+    # zaten kalibre edilmiş bar.
+    "belief_reversal_exit_enabled": "true",
+    "belief_reversal_exit_min_consistent_cycles": "6",
+    "belief_reversal_exit_min_confidence": "0.65",
 }
 
 CANDLE_TIMEFRAMES = ("1m", "5m", "15m", "1h", "4h", "1d")

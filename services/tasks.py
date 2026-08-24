@@ -321,6 +321,19 @@ def regime_reversal_guardian_task() -> dict:
     return run_guardian_sweep()
 
 
+@celery_app.task(name="belief_reversal_exit_task")
+def belief_reversal_exit_task() -> dict:
+    """Faz 362-devam — Belief Reversal Exit. belief_reversal_exit_enabled=
+    false iken (varsayılan AÇIK) sıfır maliyetli no-op. bkz. services/
+    belief_reversal_exit.py::sweep_reversal_exits() docstring'i — geniş
+    örneklemle (10-24 Ağustos, 3619 pozisyon) doğrulanmış: council 6+
+    ardışık cycle boyunca tersine dönerse erken çıkmak %89 daha iyi
+    sonuç veriyor."""
+    from services.belief_reversal_exit import sweep_reversal_exits
+
+    return sweep_reversal_exits()
+
+
 @celery_app.task(name="resolve_position_pool_task")
 def resolve_position_pool_task() -> dict:
     """Faz 350 — Pozisyon Havuzu / Max Confidence Modu. Sık çalışır (bkz.

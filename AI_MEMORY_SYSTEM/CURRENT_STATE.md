@@ -1,9 +1,31 @@
-# Mevcut Durum -- v1.100.0 (Faz 362: sinyal tutarlılığı kapısı)
+# Mevcut Durum -- v1.101.0 (Faz 362-devam: Belief Reversal Exit)
 
 **Tarih:** 2026-08-24
 **Branch:** main
-**Son commit (HEAD):** Faz 362 (bu commit ile).
-**⚠️ Servis durumu:** Faz 360 (WebSocket gerçek-zamanlı pozisyon izleyici) ve Faz 361 (piramitleme rejim kapısı + kaldıraç sönümleyici) canlıda, restart edildi, çalışıyor. Faz 362 henüz restart edilmedi (commit-only).
+**Son commit (HEAD):** Faz 362-devam (bu commit ile).
+**⚠️ Servis durumu:** Faz 360 (WebSocket gerçek-zamanlı pozisyon izleyici) ve Faz 361 (piramitleme rejim kapısı + kaldıraç sönümleyici) canlıda, restart edildi, çalışıyor. Faz 362 ve Faz 362-devam henüz restart edilmedi (commit-only).
+
+## Faz 362-devam — Belief Reversal Exit: council 6+ ardışık cycle tersine dönerse pozisyon defansif kapatılıyor (2026-08-24)
+
+Faz 362'nin (sinyal tutarlılığı, giriş tarafı) ana metnindeki "council fikir değiştirince mevcut pozisyonu kapatalım mı" sorusunun DEVAMI. İlk (dar, 4 günlük, n<=27) ölçüm net "HAYIR" vermişti (auto-exit reddedilmişti) — kullanıcı bunun küçük-örneklem sorunu olabileceğini sorguladı ve HAKLI çıktı: aynı geniş pencerede (10-24 Ağustos, 3619 pozisyon) tamamen farklı bir tablo ortaya çıktı.
+
+**Gerçek veri (confidence>=0.65 ardışık ters-yönlü sinyal, N=onay sayısı):**
+
+| N | n | daha iyi | daha kötü | toplam fark | en kötü uç değer |
+|---|---|---|---|---|---|
+| 1 | 1473 | 530 | 528 | -$56,787 | çok büyük (-$2186 vb.) |
+| 4 | 410 | 220 | 144 | -$8,046 | -$815 |
+| 5 | 327 | 180 | 117 | +$138 (İLK pozitif) | -$225 |
+| **6** | **187** | **147 (%89)** | **18** | **+$480** | **-$2.5** ← uç değerler kayboluyor |
+| 8 | 126 | 106 | 9 | +$453 | -$2.5 |
+
+N<=4'teki felaket boyutlu uç değerler (tek cycle'lık gürültü dönüşleri) N=6'da tamamen kayboluyor — 6+ ardışık cycle boyunca SÜRDÜRÜLEN bir tersine dönüş artık gürültü değil, gerçek bir sinyal.
+
+**Kod değişikliği:** `analytics/signal_persistence.py`'ye eklendi (kullanıcı isteği: "aynı kısım aslında") — `consecutive_reversal_run_length()`, `is_belief_reversal_exit_triggered()`, `find_optimal_reversal_exit_threshold()` (saf fonksiyonlar). Yeni `services/belief_reversal_exit.py` — `services/regime_reversal_guardian.py` (Faz 352) ile AYNI mimari (stateless, `close_partial` ile AYNI kapatma primitifi) ama YÖN-bazlı değil SEMBOL-bazlı çalışıyor. Yeni Celery görevi `belief_reversal_exit_task` (60sn, `regime_reversal_guardian_task` ile AYNI cadence). Ayarlar: `belief_reversal_exit_enabled` (varsayılan **true**), `belief_reversal_exit_min_consistent_cycles` (varsayılan **6**), `belief_reversal_exit_min_confidence` (varsayılan **0.65**, `STRONG_DISSENT_CONFIDENCE_THRESHOLD` ile AYNI kalibre edilmiş bar).
+
+**Sürekli yeniden ölçüm — AYNI panelde:** Kullanıcı isteği: "aynı sayfada görüntüleyebiliriz, aynı kısım aslında." `services/signal_persistence_gatherer.py::gather_signal_persistence_analysis()` artık TEK payload'da hem giriş (`entry_persistence`) hem çıkış (`exit_reversal`) analizini dönüyor — Genel Özet panelindeki AYNI kart, iki alt bölüm.
+
+**Test:** 8 yeni saf fonksiyon testi + 5 yeni servis testi (`tests/test_belief_reversal_exit.py`, `regime_reversal_guardian.py`'nin test desenini birebir izliyor) + geniş regresyon (decision_recorder/position_pool/pyramid_regime_gate/margin_leverage/regime_reversal_guardian/app_settings — 87 test) temiz. Canlı gatherer smoke-test edildi: gerçek DB'de entry optimal_n=4, exit optimal_n=6 — script'lerle birebir eşleşiyor.
 
 ## Faz 362 — Sinyal tutarlılığı kapısı: taze/gürültülü sinyalle işlem açılması engellendi (2026-08-24)
 

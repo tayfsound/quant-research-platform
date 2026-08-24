@@ -292,14 +292,21 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
     işaret ediyor) ilk bakılacak yer. Henüz ölçülmedi/kod incelemesi
     yapılmadı.
 
-31. **[ÇÖZÜLDÜ — Faz 362, 2026-08-24] "Council'in fikir değiştirmesi" verisi
-    — hem çıkış hem giriş tarafı ölçüldü.** Kullanıcı sorusu: kullanılmayan
-    `ActionType.EXIT`'in gerçek bir kapasite eksikliğine (proaktif, inanç-
-    değişimi-tetiklemeli çıkış) işaret ettiği bulundu. Çıkış tarafı ÖLÇÜLDÜ
-    VE REDDEDİLDİ: 159 pozisyonda erken çıkış -$56,395 daha kötü sonuç
-    verirdi, 3-5 ardışık onay istemek DÜZELTMEDİ (N=4'te "daha iyi olurdu"
-    27 örnekte SIFIR) — auto-exit inşa edilmedi. Giriş tarafı ("aynı
-    gürültü yeni pozisyonlara da mı giriyor?") ÖLÇÜLDÜ VE DOĞRULANDI:
+31. **[ÇÖZÜLDÜ — Faz 362/362-devam, 2026-08-24] "Council'in fikir değiştirmesi"
+    verisi — hem çıkış hem giriş tarafı ölçüldü, İKİSİ DE canlıya alındı.**
+    Kullanıcı sorusu: kullanılmayan `ActionType.EXIT`'in gerçek bir
+    kapasite eksikliğine (proaktif, inanç-değişimi-tetiklemeli çıkış)
+    işaret ettiği bulundu. Çıkış tarafı İLK ÖLÇÜMDE (dar, 4 günlük, n<=27)
+    REDDEDİLMİŞTİ — kullanıcı "küçük örneklem sorunu olabilir" diye
+    sorguladı ve HAKLI ÇIKTI: aynı geniş pencerede (10-24 Ağustos, 3619
+    pozisyon) tablo TAMAMEN değişti — N=6 ardışık onaylı (confidence>=0.65)
+    tersine dönüşte %89 "daha iyi olurdu" (n=187, toplam +$480), N<=4'teki
+    felaket boyutlu uç değerler (-$800'e varan) tamamen kayboluyor. Canlıya
+    alındı: `services/belief_reversal_exit.py` + `belief_reversal_exit_task`
+    (60sn, `regime_reversal_guardian` ile AYNI mimari) — ayarlar:
+    `belief_reversal_exit_min_consistent_cycles=6`, `belief_reversal_exit_
+    min_confidence=0.65`, varsayılan açık. Giriş tarafı ("aynı gürültü
+    yeni pozisyonlara da mı giriyor?") ÖLÇÜLDÜ VE DOĞRULANDI:
     3619 pozisyonda run=0-3 (taze/az tutarlı sinyal) TEK TEK ortalama
     zarar ediyordu, run=4'te ilk net pozitif. Toplam-kâr-maksimize eden
     eşik bağımsız ölçümle AYNI N=4'e işaret etti ($116,335 tepe). Canlıya

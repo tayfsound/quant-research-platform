@@ -229,6 +229,26 @@ class DecisionPersistor:
         ).all()
         return [{"direction": row.direction} for row in rows]
 
+    def list_recent_direction_confidence_for_symbol(
+        self, symbol: str, limit: int = 20, since=None
+    ) -> list[dict]:
+        """Faz 362-devam — analytics/signal_persistence.py::consecutive_
+        reversal_run_length() için: list_recent_directions_for_symbol ile
+        AYNI, ama çıkış tetikleyicisinin ihtiyaç duyduğu confidence'ı da
+        döner (giriş kapısı buna ihtiyaç duymuyordu, ayrı/daha hafif
+        metod olarak bırakıldı). `since` verilirse (bkz. belief_reversal_
+        exit.py — pozisyonun KENDİ opened_at'i) SADECE o pozisyon
+        açıldıktan SONRAKİ kararlar döner — yoksa pozisyonun kendi açılış
+        kaydı (aynı yön) en tepede çıkıp run'ı yanlışlıkla sıfırlar."""
+        params = {"symbol": symbol, "limit": limit}
+        query = "SELECT direction, confidence FROM decisions WHERE symbol=:symbol "
+        if since is not None:
+            query += "AND timestamp > :since "
+            params["since"] = since
+        query += "ORDER BY timestamp DESC LIMIT :limit"
+        rows = self.session.execute(text(query), params).all()
+        return [{"direction": row.direction, "confidence": row.confidence} for row in rows]
+
     def list_open_positions(self, limit: int | None = 200, offset: int = 0):
         # Faz 268y — kullanıcı bulgusu: 869 açık pozisyonun sadece ilk
         # 100'ünü (limit sabit, offset hiç yoktu) görebiliyordu, "diğerlerini

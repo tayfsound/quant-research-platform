@@ -81,3 +81,81 @@ def find_optimal_persistence_threshold(
             best_n = n
 
     return {"optimal_n": best_n, "table": table}
+
+
+# ---------------------------------------------------------------------------
+# Faz 362-devam — AYNI sinyal-kalitesi sorusunun ÇIKIŞ tarafı: "elimde açık
+# bir pozisyon varken council art arda güçlü şekilde tersine dönerse, bu
+# gerçek mi gürültü mü?" İlk (dar, 4 günlük, n<=27) ölçüm "her zaman
+# gürültü, asla tetikleme" sonucunu vermişti — kullanıcı haklı çıkarak bunu
+# sorguladı, geniş pencerede (10-24 Ağustos, 3619 pozisyon) TAMAMEN FARKLI
+# bir tablo ortaya çıktı:
+#
+#   N=1: n=1473  better=530  worse=528  toplam fark=-$56,787 (uç değerli, güvenilmez)
+#   N=4: n=410   better=220  worse=144  toplam fark=-$8,046  (hâlâ negatif)
+#   N=5: n=327   better=180  worse=117  toplam fark=+$138    (İLK pozitif)
+#   N=6: n=187   better=147  worse=18   toplam fark=+$480    (uç değerler kayboluyor -- en kötü -$2.5)
+#   N=8: n=126   better=106  worse=9    toplam fark=+$453
+#
+# N=6'da felaket boyutlu "tutmak çok daha iyiydi" uç değerleri (N<=4'te
+# -$800'e varan) tamamen kayboluyor — TEK cycle'lık dönüşler gürültü, ama
+# 6+ ardışık cycle boyunca SÜRDÜRÜLEN bir tersine dönüş gerçek bir sinyal.
+# ---------------------------------------------------------------------------
+
+
+def consecutive_reversal_run_length(
+    prior_decisions_desc: list[dict], position_direction: str, min_confidence: float
+) -> int:
+    """prior_decisions_desc: bu sembol için, en yeniden en eskiye sıralı,
+    her biri 'direction'/'confidence' alanı içeren ÖNCEKİ kararlar. En son
+    karardan geriye doğru, position_direction'ın TERSİNE VE min_confidence
+    üzerinde olan ilk karara kadar ardışık sayıyı döner (consistent_
+    direction_run_length ile AYNI desen — sadece "aynı yön" değil "ters
+    yön + yeterli güven" eşleşmesi arıyor)."""
+    opposite = "SHORT" if position_direction == "LONG" else "LONG"
+    run = 0
+    for d in prior_decisions_desc:
+        if d.get("direction") == opposite and (d.get("confidence") or 0) >= min_confidence:
+            run += 1
+        else:
+            break
+    return run
+
+
+def is_belief_reversal_exit_triggered(consistent_reversal_run_length: int, min_required_cycles: int) -> bool:
+    """True dönerse council, bu pozisyonun yönüne art arda yeterince
+    güçlü/sürdürülmüş şekilde ters düşüyor demektir — defansif çıkış
+    tetiklenmeli."""
+    return consistent_reversal_run_length >= min_required_cycles
+
+
+def find_optimal_reversal_exit_threshold(
+    diffs_by_n: dict[int, list[float]],
+) -> dict:
+    """diffs_by_n: {N: [pnl_erken_cikilsaydi - gercek_pnl, ...]} — her N
+    için, o N'de İLK kez tetiklenen pozisyonların "erken çıksaydık ne
+    olurdu" farkı. TOPLAM faydayı (sum of diffs) maksimize eden N'i bulur.
+    Yeterli veri yoksa (fail-closed) None döner."""
+    if not diffs_by_n:
+        return {"optimal_n": None, "table": []}
+
+    table = []
+    best_n = None
+    best_total = None
+    for n in sorted(diffs_by_n):
+        diffs = diffs_by_n[n]
+        if not diffs:
+            continue
+        total = sum(diffs)
+        count = len(diffs)
+        better = sum(1 for d in diffs if d > 0.01)
+        worse = sum(1 for d in diffs if d < -0.01)
+        table.append({
+            "n": n, "count": count, "total_benefit": round(total, 2),
+            "mean_benefit": round(total / count, 2), "better": better, "worse": worse,
+        })
+        if best_total is None or total > best_total:
+            best_total = total
+            best_n = n
+
+    return {"optimal_n": best_n, "table": table}

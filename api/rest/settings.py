@@ -373,6 +373,22 @@ def _validate(key: str, value: str) -> None:
                 raise ValueError
         except ValueError:
             raise HTTPException(400, "signal_persistence_min_consistent_cycles must be a non-negative integer")
+    elif key == "belief_reversal_exit_enabled":
+        if value not in ("true", "false"):
+            raise HTTPException(400, "belief_reversal_exit_enabled must be 'true' or 'false'")
+    elif key == "belief_reversal_exit_min_consistent_cycles":
+        try:
+            if int(value) < 1:
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "belief_reversal_exit_min_consistent_cycles must be a positive integer")
+    elif key == "belief_reversal_exit_min_confidence":
+        try:
+            v = float(value)
+            if not (0 < v <= 1):
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "belief_reversal_exit_min_confidence must be a number in (0, 1]")
     else:
         raise HTTPException(400, f"unknown setting key: {key}")
 

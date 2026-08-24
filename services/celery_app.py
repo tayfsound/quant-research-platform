@@ -164,6 +164,13 @@ celery_app.conf.beat_schedule = {
         "task": "regime_reversal_guardian_task",
         "schedule": 60.0,
     },
+    # Faz 362-devam — Belief Reversal Exit. regime_reversal_guardian ile
+    # AYNI cadence — council'in bir sembolde tersine dönmesi de fiyat
+    # hareketi kadar hızlı tepki gerektiriyor.
+    "belief-reversal-exit-every-60s": {
+        "task": "belief_reversal_exit_task",
+        "schedule": 60.0,
+    },
     # Faz 201: gerçek bulgu — IngestionPipeline.ingest_order_book() tam
     # çalışan bir metod olarak yazılmıştı ama hiçbir üretim kodu hiç
     # çağırmıyordu; order_book_snapshots tablosu ayların birikimiyle
