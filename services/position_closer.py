@@ -737,17 +737,26 @@ class PositionCloser:
         # girmiyordu, stop/hedef/likidasyon/breakeven/trailing kontrolü
         # sonsuza kadar atlanıyordu. limit=None artık TÜM açık
         # pozisyonları kontrol ediyor.
+        #
+        # Faz 360 — kullanıcı isteği (kapatmada kayma azaltma) araştırılırken
+        # bulunan gerçek bulgu: bu döngü HER pozisyon için AYRI bir fiyat
+        # isteği yapıyordu (794 açık pozisyonda 794 istek, sadece 149
+        # benzersiz sembol olmasına rağmen) — fetch_current_prices_by_symbol
+        # (aşağıda, SADECE görüntüleme amaçlı kullanılan) zaten sembol
+        # başına tek istek yapıyordu ama bu asıl kapatma döngüsü hiç
+        # onu kullanmıyordu. Artık pozisyonlar önce sembole göre
+        # gruplanıp fiyat sembol başına BİR KEZ çekiliyor — hem gerçek
+        # istek yükünü ~5 kat azaltıyor hem de services/realtime_position_
+        # monitor.py'nin (WebSocket, Faz 360) aynı per-sembol/per-pozisyon
+        # kapatma mantığını (_process_position_at_price) paylaşmasına izin
+        # veriyor.
+        positions_by_symbol: dict[str, list[dict]] = {}
         for pos in decision_repo.list_open_positions(limit=None):
-            opened_at = pos.get("opened_at")
-            entry_price = pos.get("entry_price")
-            if opened_at is None or entry_price is None:
+            if pos.get("opened_at") is None or pos.get("entry_price") is None:
                 continue
+            positions_by_symbol.setdefault(pos["symbol"], []).append(pos)
 
-            symbol = pos["symbol"]
-            quantity = pos.get("quantity") or 0.0
-            direction = (pos.get("direction") or "").upper()
-            age = self._age_seconds(opened_at, now)
-
+        for symbol, positions in positions_by_symbol.items():
             # Faz 244: kritik bulgu — hisse/endeks/emtia pozisyonları (MSFT,
             # NVDA, AAPL, ^GSPC, ^IXIC) piyasa kapalıyken (gece, hafta sonu)
             # bile her dakika kontrol ediliyordu; YahooProvider bu durumda
@@ -766,198 +775,15 @@ class PositionCloser:
                 continue
             current_price = data[-1].close
 
-            # Faz 239: kritik bulgu — MARKET_DATA_FALLBACK_TO_MOCK=True
-            # iken gerçek Binance isteği başarısız olduğunda sessizce
-            # sembolden bağımsız ~$50,000 mock fiyata düşülüyordu (artık
-            # varsayılan olarak kapalı, bkz. config/settings.py). İkinci,
-            # bağımsız bir güvenlik katmanı: entry_price'a göre 20 kattan
-            # fazla sapan bir "güncel fiyat" gerçek bir piyasa hareketi
-            # olamaz (bu sistemin işlem yaptığı hiçbir varlık — major
-            # kripto, hisse, endeks, altın-destekli token — bir pozisyonun
-            # ömrü içinde böyle bir hareket yapmaz) — başka bir yoldan
-            # benzer bir bug sızarsa bile gerçek olmayan bir fiyatla
-            # pozisyon kapatılmasını engeller.
-            if current_price <= 0 or current_price > entry_price * 20 or current_price < entry_price / 20:
-                logger.warning(
-                    "position_closer_suspicious_price_skipped",
-                    symbol=symbol, entry_price=entry_price, current_price=current_price,
-                )
-                continue
-
-            pos["stop_loss_price"] = self._apply_breakeven_stop(pos, current_price, decision_repo)
-
-            # Faz 315 — Execution Layer, Faz 1. testnet modundaki bir
-            # pozisyon için kendi iç fiyat-karşılaştırmamızı (periyodik
-            # kontrol döngüsünün BOME/MUBARAK'ta yaşanan gecikme/kayma
-            # sorununu ÜRETEN tam o mekanizma) HİÇ KULLANMIYORUZ —
-            # borsadaki GERÇEK durum soruluyor. Borsada hâlâ açıksa bu
-            # cycle'da yapılacak bir şey yok (continue); kapandıysa
-            # GERÇEK dolum fiyatından exit_reason/exit_price geliyor.
-            if pos.get("execution_mode") == "testnet" and self.execution_service.is_configured():
-                exit_reason, exit_price = self._check_testnet_exit(pos)
-                if exit_reason is None:
+            for pos in positions:
+                result = self._process_position_at_price(pos, current_price, decision_repo, now)
+                if result is None:
                     continue
-            else:
-                # Faz 255: kullanıcı isteği — kaldıraç desteği. Kaldıraçlı
-                # bir pozisyon (leverage>1) gerçek likidasyon fiyatına
-                # ulaşırsa, bu stop-loss'tan ÖNCE kontrol edilir — gerçek
-                # bir kaldıraçlı pozisyon likidasyona uğrarsa sistem bunu
-                # görmezden gelemez (fail-fake olmaz). "liquidation" ayrı,
-                # açıkça etiketlenmiş bir exit_reason — normal stop_loss
-                # ile karışmıyor.
-                liquidation_price = pos.get("liquidation_price")
-                liquidated = liquidation_price is not None and (
-                    (direction == "LONG" and current_price <= liquidation_price)
-                    or (direction == "SHORT" and current_price >= liquidation_price)
-                )
-                if liquidated:
-                    exit_reason = "liquidation"
-                    exit_price = liquidation_price
-                else:
-                    exit_reason = self._exit_reason(
-                        direction, current_price, pos.get("stop_loss_price"), pos.get("take_profit_price")
-                    )
-                    if exit_reason is None:
-                        continue
-                    exit_price = current_price
-
-            if direction == "LONG":
-                gross_pnl = (exit_price - entry_price) * quantity
-            elif direction == "SHORT":
-                gross_pnl = (entry_price - exit_price) * quantity
-            else:
-                gross_pnl = 0.0
-
-            # Faz 223: kullanıcı isteği — "işlem ücretlerinden kurtulmanın
-            # ya da minimize etmenin yolları var mı." Gerçek bulgu: çıkış
-            # her zaman taker oranıyla (%0.05) ücretlendiriliyordu, giriş
-            # gibi. Ama take_profit çıkışı gerçekte hedef fiyata önceden
-            # oturmuş bir LIMIT emrinin dolmasıdır — gerçek borsalarda bu
-            # "maker" sayılır (%0.02, 2.5x daha ucuz). stop_loss ise gerçek
-            # borsalarda tetiklenince MARKET emrine dönüşür — taker kalmalı
-            # (%0.05). Giriş her zaman anlık/reaktif karar olduğu için
-            # (bekleyen bir limit emri modellenmiyor, slippage zaten taker
-            # maliyetini temsil ediyor) taker kalıyor.
-            exit_is_maker = exit_reason == "take_profit"
-            fee = self.fee_engine.calculate(entry_price * quantity) + self.fee_engine.calculate(
-                exit_price * quantity, is_maker=exit_is_maker
-            )
-
-            # Faz 268-sonrası: funding rate maliyeti — SADECE kaldıraçlı
-            # (leverage>1, "spot değil, gerçek perpetual" — bkz. Faz 255)
-            # pozisyonlar için. Spot (leverage=1.0, bu sistemde kasıtlı
-            # olarak "kaldıraçsız" anlamına geliyor) hiçbir zaman funding
-            # ödemez/almaz — gerçek borsa mekaniğiyle tutarlı.
-            funding_cost = 0.0
-            leverage = pos.get("leverage") or 1.0
-            if leverage > 1.0:
-                funding_cost = compute_funding_cost(
-                    symbol=symbol, direction=direction,
-                    notional=entry_price * quantity,
-                    opened_at=opened_at, closed_at=now,
-                )
-
-            pnl = gross_pnl - fee - funding_cost
-
-            # Kullanıcı bulgusu (2026-08-19, gerçek CHIPUSDT örneği): dashboard
-            # "stop_loss" etiketini her zaman zarar sanıyordu, ama breakeven/
-            # trailing stop (pump_fade_v1 dahil, bkz. _apply_breakeven_stop)
-            # fiyatı KÂRA doğru da taşıyabiliyor. İlk düzeltme SADECE stop
-            # fiyatının entry'ye göre KONUMUNA bakıyordu (mekanizma) — ama
-            # gerçek bir XAIUSDT örneği bunun da yanlış olduğunu gösterdi:
-            # stop ham fiyatta entry'nin az ötesine (kâr yönünde) taşınmıştı
-            # ama ücret+funding maliyeti net pnl'i -$54.95'e (gerçek zarar)
-            # çekmişti — dashboard "kârda kapandı" diye etiketlemişti, PNL
-            # eksi gösterirken. Artık NİHAİ (ücret+funding sonrası GERÇEK)
-            # pnl birincil sinyal — "trailing_stop_profit" SADECE pnl
-            # gerçekten pozitifken kullanılıyor, hiçbir zaman gösterilen
-            # pnl işaretiyle çelişmiyor.
-            #
-            # Faz 313 — kullanıcı bulgusu (2026-08-20, gerçek KAIAUSDT/
-            # PENDLEUSDT/HUMAUSDT/NOMUSDT/RPLUSDT örnekleri): "başabaş
-            # çekilmiş görünen pozisyonlar zararla kapanmış." Kök neden:
-            # stop_moved_toward_or_past_entry SADECE mekanizmanın (stop'un
-            # KONUMU) çalıştığını doğruluyordu, gerçekleşen kaybın
-            # ORİJİNAL (ratchet öncesi) stop mesafesine göre GERÇEKTEN
-            # küçültülüp küçültülmediğini hiç kontrol etmiyordu — periyodik
-            # kontrol döngüsü sırasında fiyat, ratchet edilmiş (girişe
-            # yakın) stopu büyük bir kaymayla (slippage/gap) aşıp gerçek,
-            # büyük bir kayıp üretebiliyordu (KAIAUSDT: fiyat-kaynaklı kayıp
-            # -$1103.31, ücret+funding sadece -$55.50). GERÇEK kayıp,
-            # decisions.original_stop_loss_price'ta (pozisyon açılışında
-            # bir kez yazılan, ratchet'in ASLA değiştirmediği ham değer)
-            # saklı orijinal risk mesafesinin belirgin bir kısmından
-            # (yarısından) küçükse mekanizma gerçekten işe yaramış demektir.
-            #
-            # Faz 359 — kullanıcı bulgusu (2026-08-24, gerçek LTCUSDT
-            # örnekleri): "breakeven_stop" etiketi kendisi YANILTICIYDI —
-            # kullanıcı "Başabaş çekildi" görüp $0 civarı bekliyordu, ama
-            # gerçek pnl -$140.22, -$119.64 vb. çıkabiliyordu (orijinal
-            # $950'lik kaybın yarısından azı olduğu için "başarılı" sayılan
-            # bir durum — matematiksel olarak doğru, isim yanlış). Bu dal
-            # artık ASLA "breakeven_stop" üretmiyor (o isim, gerçek ~$0
-            # sonuçlu trailing_stop_profit'e bırakıldı) — zarar azaltılmış
-            # ama HÂLÂ zarar olan durumlar dürüstçe "reduced_loss_stop"
-            # olarak etiketleniyor. Orijinal değer yoksa (migration öncesi
-            # açılmış eski bir pozisyon) fail-closed: doğrulanamıyor,
-            # dürüstçe "stop_loss" kalır.
-            if exit_reason == "stop_loss":
-                stop_price = pos["stop_loss_price"]
-                stop_moved_toward_or_past_entry = (
-                    (direction == "LONG" and stop_price >= entry_price)
-                    or (direction == "SHORT" and stop_price <= entry_price)
-                )
-                if pnl > 0:
-                    exit_reason = "trailing_stop_profit"
-                elif stop_moved_toward_or_past_entry:
-                    original_stop_price = pos.get("original_stop_loss_price")
-                    if original_stop_price is not None:
-                        original_risk_amount = abs(entry_price - original_stop_price) * quantity
-                        if (
-                            original_risk_amount > 0
-                            and abs(pnl) < original_risk_amount * _BREAKEVEN_LOSS_REDUCTION_THRESHOLD
-                        ):
-                            exit_reason = "reduced_loss_stop"
-
-            # Faz 268-sonrası: SADECE burada (pozisyon fiilen kapanırken,
-            # her check cycle'ında değil) gerçek MAE/MFE hesaplanıyor —
-            # backtest'in zaten kullandığı AYNI fonksiyon, canlı ilk kez.
-            mae_mfe = self._compute_live_mae_mfe(symbol, direction, entry_price, age)
-
-            market_regime = self._extract_market_regime(pos)
-            decision_repo.close_position(
-                decision_id=str(pos["id"]),
-                exit_price=exit_price,
-                pnl=pnl,
-                closed_at=now,
-                outcome={
-                    "pnl": pnl,
-                    "gross_pnl": gross_pnl,
-                    "fee": fee,
-                    "funding_cost": funding_cost,
-                    "win": pnl > 0,
-                    "entry_price": entry_price,
-                    "exit_price": exit_price,
-                    "quantity": quantity,
-                    "hold_seconds": age,
-                    "exit_reason": exit_reason,
-                    "mae_pct": mae_mfe["mae_pct"],
-                    "mfe_pct": mae_mfe["mfe_pct"],
-                    "time_to_mae_seconds": mae_mfe["time_to_mae_seconds"],
-                    "time_to_mfe_seconds": mae_mfe["time_to_mfe_seconds"],
-                },
-                market_regime=market_regime,
-            )
-            closed.append({
-                "decision_id": str(pos["id"]), "symbol": symbol, "pnl": pnl, "win": pnl > 0,
-                "exit_reason": exit_reason,
-            })
-
-            if self._record_agent_learning(pos, pnl):
-                learned_any = True
-                if market_regime != "unknown":
-                    regimes_seen.add(market_regime)
-            self._record_episodic_memory(pos, pnl, exit_reason)
+                closed.append(result["closed_entry"])
+                if result["learned"]:
+                    learned_any = True
+                    if result["market_regime"] != "unknown":
+                        regimes_seen.add(result["market_regime"])
 
         if learned_any and len(self.agent_memory.domains()) > 0:
             self.weight_optimizer.propose_weights(evaluation_window=100)
@@ -969,6 +795,225 @@ class PositionCloser:
                 self.weight_optimizer.propose_weights(evaluation_window=100, regime=regime)
 
         return closed
+
+    def _process_position_at_price(
+        self, pos: dict, current_price: float, decision_repo: DecisionPersistor, now: datetime,
+    ) -> dict | None:
+        """Faz 360 — close_due_positions()'ın (REST/periyodik, sembol başına
+        gruplanmış) döngüsünden çıkarıldı — TEK bir pozisyonu, ZATEN bilinen
+        current_price'a göre değerlendirir/gerekirse kapatır. services/
+        realtime_position_monitor.py'nin (WebSocket, gerçek zamanlı tick
+        başına) AYNI mantığı, aynı kod yolunu, hiç kopyalanmadan
+        paylaşabilmesi için ayrı bir metod — iki kapanış yolunun (periyodik
+        REST güvenlik ağı + gerçek zamanlı WS) davranışı ASLA birbirinden
+        sapmamalı. Kapanmadıysa None döner."""
+        opened_at = pos.get("opened_at")
+        entry_price = pos.get("entry_price")
+        symbol = pos["symbol"]
+        quantity = pos.get("quantity") or 0.0
+        direction = (pos.get("direction") or "").upper()
+        age = self._age_seconds(opened_at, now)
+
+        # Faz 239: kritik bulgu — MARKET_DATA_FALLBACK_TO_MOCK=True
+        # iken gerçek Binance isteği başarısız olduğunda sessizce
+        # sembolden bağımsız ~$50,000 mock fiyata düşülüyordu (artık
+        # varsayılan olarak kapalı, bkz. config/settings.py). İkinci,
+        # bağımsız bir güvenlik katmanı: entry_price'a göre 20 kattan
+        # fazla sapan bir "güncel fiyat" gerçek bir piyasa hareketi
+        # olamaz (bu sistemin işlem yaptığı hiçbir varlık — major
+        # kripto, hisse, endeks, altın-destekli token — bir pozisyonun
+        # ömrü içinde böyle bir hareket yapmaz) — başka bir yoldan
+        # benzer bir bug sızarsa bile gerçek olmayan bir fiyatla
+        # pozisyon kapatılmasını engeller.
+        if current_price <= 0 or current_price > entry_price * 20 or current_price < entry_price / 20:
+            logger.warning(
+                "position_closer_suspicious_price_skipped",
+                symbol=symbol, entry_price=entry_price, current_price=current_price,
+            )
+            return None
+
+        pos["stop_loss_price"] = self._apply_breakeven_stop(pos, current_price, decision_repo)
+
+        # Faz 315 — Execution Layer, Faz 1. testnet modundaki bir
+        # pozisyon için kendi iç fiyat-karşılaştırmamızı (periyodik
+        # kontrol döngüsünün BOME/MUBARAK'ta yaşanan gecikme/kayma
+        # sorununu ÜRETEN tam o mekanizma) HİÇ KULLANMIYORUZ —
+        # borsadaki GERÇEK durum soruluyor. Borsada hâlâ açıksa bu
+        # cycle'da yapılacak bir şey yok (None); kapandıysa
+        # GERÇEK dolum fiyatından exit_reason/exit_price geliyor.
+        if pos.get("execution_mode") == "testnet" and self.execution_service.is_configured():
+            exit_reason, exit_price = self._check_testnet_exit(pos)
+            if exit_reason is None:
+                return None
+        else:
+            # Faz 255: kullanıcı isteği — kaldıraç desteği. Kaldıraçlı
+            # bir pozisyon (leverage>1) gerçek likidasyon fiyatına
+            # ulaşırsa, bu stop-loss'tan ÖNCE kontrol edilir — gerçek
+            # bir kaldıraçlı pozisyon likidasyona uğrarsa sistem bunu
+            # görmezden gelemez (fail-fake olmaz). "liquidation" ayrı,
+            # açıkça etiketlenmiş bir exit_reason — normal stop_loss
+            # ile karışmıyor.
+            liquidation_price = pos.get("liquidation_price")
+            liquidated = liquidation_price is not None and (
+                (direction == "LONG" and current_price <= liquidation_price)
+                or (direction == "SHORT" and current_price >= liquidation_price)
+            )
+            if liquidated:
+                exit_reason = "liquidation"
+                exit_price = liquidation_price
+            else:
+                exit_reason = self._exit_reason(
+                    direction, current_price, pos.get("stop_loss_price"), pos.get("take_profit_price")
+                )
+                if exit_reason is None:
+                    return None
+                exit_price = current_price
+
+        if direction == "LONG":
+            gross_pnl = (exit_price - entry_price) * quantity
+        elif direction == "SHORT":
+            gross_pnl = (entry_price - exit_price) * quantity
+        else:
+            gross_pnl = 0.0
+
+        # Faz 223: kullanıcı isteği — "işlem ücretlerinden kurtulmanın
+        # ya da minimize etmenin yolları var mı." Gerçek bulgu: çıkış
+        # her zaman taker oranıyla (%0.05) ücretlendiriliyordu, giriş
+        # gibi. Ama take_profit çıkışı gerçekte hedef fiyata önceden
+        # oturmuş bir LIMIT emrinin dolmasıdır — gerçek borsalarda bu
+        # "maker" sayılır (%0.02, 2.5x daha ucuz). stop_loss ise gerçek
+        # borsalarda tetiklenince MARKET emrine dönüşür — taker kalmalı
+        # (%0.05). Giriş her zaman anlık/reaktif karar olduğu için
+        # (bekleyen bir limit emri modellenmiyor, slippage zaten taker
+        # maliyetini temsil ediyor) taker kalıyor.
+        exit_is_maker = exit_reason == "take_profit"
+        fee = self.fee_engine.calculate(entry_price * quantity) + self.fee_engine.calculate(
+            exit_price * quantity, is_maker=exit_is_maker
+        )
+
+        # Faz 268-sonrası: funding rate maliyeti — SADECE kaldıraçlı
+        # (leverage>1, "spot değil, gerçek perpetual" — bkz. Faz 255)
+        # pozisyonlar için. Spot (leverage=1.0, bu sistemde kasıtlı
+        # olarak "kaldıraçsız" anlamına geliyor) hiçbir zaman funding
+        # ödemez/almaz — gerçek borsa mekaniğiyle tutarlı.
+        funding_cost = 0.0
+        leverage = pos.get("leverage") or 1.0
+        if leverage > 1.0:
+            funding_cost = compute_funding_cost(
+                symbol=symbol, direction=direction,
+                notional=entry_price * quantity,
+                opened_at=opened_at, closed_at=now,
+            )
+
+        pnl = gross_pnl - fee - funding_cost
+
+        # Kullanıcı bulgusu (2026-08-19, gerçek CHIPUSDT örneği): dashboard
+        # "stop_loss" etiketini her zaman zarar sanıyordu, ama breakeven/
+        # trailing stop (pump_fade_v1 dahil, bkz. _apply_breakeven_stop)
+        # fiyatı KÂRA doğru da taşıyabiliyor. İlk düzeltme SADECE stop
+        # fiyatının entry'ye göre KONUMUNA bakıyordu (mekanizma) — ama
+        # gerçek bir XAIUSDT örneği bunun da yanlış olduğunu gösterdi:
+        # stop ham fiyatta entry'nin az ötesine (kâr yönünde) taşınmıştı
+        # ama ücret+funding maliyeti net pnl'i -$54.95'e (gerçek zarar)
+        # çekmişti — dashboard "kârda kapandı" diye etiketlemişti, PNL
+        # eksi gösterirken. Artık NİHAİ (ücret+funding sonrası GERÇEK)
+        # pnl birincil sinyal — "trailing_stop_profit" SADECE pnl
+        # gerçekten pozitifken kullanılıyor, hiçbir zaman gösterilen
+        # pnl işaretiyle çelişmiyor.
+        #
+        # Faz 313 — kullanıcı bulgusu (2026-08-20, gerçek KAIAUSDT/
+        # PENDLEUSDT/HUMAUSDT/NOMUSDT/RPLUSDT örnekleri): "başabaş
+        # çekilmiş görünen pozisyonlar zararla kapanmış." Kök neden:
+        # stop_moved_toward_or_past_entry SADECE mekanizmanın (stop'un
+        # KONUMU) çalıştığını doğruluyordu, gerçekleşen kaybın
+        # ORİJİNAL (ratchet öncesi) stop mesafesine göre GERÇEKTEN
+        # küçültülüp küçültülmediğini hiç kontrol etmiyordu — periyodik
+        # kontrol döngüsü sırasında fiyat, ratchet edilmiş (girişe
+        # yakın) stopu büyük bir kaymayla (slippage/gap) aşıp gerçek,
+        # büyük bir kayıp üretebiliyordu (KAIAUSDT: fiyat-kaynaklı kayıp
+        # -$1103.31, ücret+funding sadece -$55.50). GERÇEK kayıp,
+        # decisions.original_stop_loss_price'ta (pozisyon açılışında
+        # bir kez yazılan, ratchet'in ASLA değiştirmediği ham değer)
+        # saklı orijinal risk mesafesinin belirgin bir kısmından
+        # (yarısından) küçükse mekanizma gerçekten işe yaramış demektir.
+        #
+        # Faz 359 — kullanıcı bulgusu (2026-08-24, gerçek LTCUSDT
+        # örnekleri): "breakeven_stop" etiketi kendisi YANILTICIYDI —
+        # kullanıcı "Başabaş çekildi" görüp $0 civarı bekliyordu, ama
+        # gerçek pnl -$140.22, -$119.64 vb. çıkabiliyordu (orijinal
+        # $950'lik kaybın yarısından azı olduğu için "başarılı" sayılan
+        # bir durum — matematiksel olarak doğru, isim yanlış). Bu dal
+        # artık ASLA "breakeven_stop" üretmiyor (o isim, gerçek ~$0
+        # sonuçlu trailing_stop_profit'e bırakıldı) — zarar azaltılmış
+        # ama HÂLÂ zarar olan durumlar dürüstçe "reduced_loss_stop"
+        # olarak etiketleniyor. Orijinal değer yoksa (migration öncesi
+        # açılmış eski bir pozisyon) fail-closed: doğrulanamıyor,
+        # dürüstçe "stop_loss" kalır.
+        if exit_reason == "stop_loss":
+            stop_price = pos["stop_loss_price"]
+            stop_moved_toward_or_past_entry = (
+                (direction == "LONG" and stop_price >= entry_price)
+                or (direction == "SHORT" and stop_price <= entry_price)
+            )
+            if pnl > 0:
+                exit_reason = "trailing_stop_profit"
+            elif stop_moved_toward_or_past_entry:
+                original_stop_price = pos.get("original_stop_loss_price")
+                if original_stop_price is not None:
+                    original_risk_amount = abs(entry_price - original_stop_price) * quantity
+                    if (
+                        original_risk_amount > 0
+                        and abs(pnl) < original_risk_amount * _BREAKEVEN_LOSS_REDUCTION_THRESHOLD
+                    ):
+                        exit_reason = "reduced_loss_stop"
+
+        # Faz 268-sonrası: SADECE burada (pozisyon fiilen kapanırken,
+        # her check cycle'ında değil) gerçek MAE/MFE hesaplanıyor —
+        # backtest'in zaten kullandığı AYNI fonksiyon, canlı ilk kez.
+        mae_mfe = self._compute_live_mae_mfe(symbol, direction, entry_price, age)
+
+        market_regime = self._extract_market_regime(pos)
+        applied = decision_repo.close_position(
+            decision_id=str(pos["id"]),
+            exit_price=exit_price,
+            pnl=pnl,
+            closed_at=now,
+            outcome={
+                "pnl": pnl,
+                "gross_pnl": gross_pnl,
+                "fee": fee,
+                "funding_cost": funding_cost,
+                "win": pnl > 0,
+                "entry_price": entry_price,
+                "exit_price": exit_price,
+                "quantity": quantity,
+                "hold_seconds": age,
+                "exit_reason": exit_reason,
+                "mae_pct": mae_mfe["mae_pct"],
+                "mfe_pct": mae_mfe["mfe_pct"],
+                "time_to_mae_seconds": mae_mfe["time_to_mae_seconds"],
+                "time_to_mfe_seconds": mae_mfe["time_to_mfe_seconds"],
+            },
+            market_regime=market_regime,
+        )
+        # Faz 360 — başka bir yol (REST periyodik tarama ile WebSocket
+        # gerçek-zamanlı yolu artık AYNI pozisyonu eşzamanlı görebiliyor)
+        # bu pozisyonu bizden ÖNCE kapatmışsa applied=False döner —
+        # öğrenme/episodic memory adımlarını TEKRARLAMIYORUZ (aynı gerçek
+        # kapanış olayı iki kez sayılmasın diye).
+        if not applied:
+            logger.info("position_close_race_lost_to_other_path", decision_id=str(pos["id"]), symbol=symbol)
+            return None
+
+        closed_entry = {
+            "decision_id": str(pos["id"]), "symbol": symbol, "pnl": pnl, "win": pnl > 0,
+            "exit_reason": exit_reason,
+        }
+
+        learned = self._record_agent_learning(pos, pnl)
+        self._record_episodic_memory(pos, pnl, exit_reason)
+
+        return {"closed_entry": closed_entry, "learned": learned, "market_regime": market_regime}
 
 
 def fetch_current_prices_by_symbol(symbols: set[str]) -> dict[str, float]:

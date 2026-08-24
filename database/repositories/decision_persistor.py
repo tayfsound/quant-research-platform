@@ -729,11 +729,21 @@ class DecisionPersistor:
         closed_at,
         outcome: dict | None = None,
         market_regime: str | None = None,
-    ) -> None:
+    ) -> bool:
+        """Faz 360 — kullanıcı onayıyla eklenen gerçek-zamanlı (WebSocket)
+        kapatma yolu, mevcut periyodik (REST) yolla AYNI pozisyonu
+        eşzamanlı görebilir hale geldi (ör. fiyat hem tick'te hem bir
+        sonraki 60sn'lik REST taramasında stop'u geçmiş görünebilir).
+        WHERE'e SADECE bu satırın hâlâ 'open' olduğu şartı eklendi ve
+        rowcount kontrol ediliyor — daha önce bu kontrol hiç yoktu, iki
+        eşzamanlı çağrı birbirinin exit_price/pnl'ini SESSİZCE ezebilirdi.
+        False dönerse (0 satır etkilendi) çağıran taraf pozisyonun zaten
+        BAŞKA bir yoldan kapatıldığını anlar, kendi öğrenme/hafıza
+        adımlarını (ikinci kez) tekrarlamamalı."""
         # Faz 244-246: market_regime verilmezse (ya da "unknown") sütun
         # NULL kalır — icat edilmiş bir rejim atanmaz, Predictive Risk
         # Monte Carlo'su sadece GERÇEKTEN etiketlenmiş kapanışları kullanır.
-        self.session.execute(
+        result = self.session.execute(
             text("""
                 UPDATE decisions
                 SET
@@ -743,7 +753,7 @@ class DecisionPersistor:
                     closed_at = :closed_at,
                     outcome = CAST(:outcome AS jsonb),
                     market_regime = :market_regime
-                WHERE id = :id
+                WHERE id = :id AND status = 'open'
             """),
             {
                 "id": decision_id,
@@ -754,8 +764,12 @@ class DecisionPersistor:
                 "market_regime": market_regime if market_regime and market_regime != "unknown" else None,
             },
         )
+        applied = result.rowcount > 0
 
         self.session.commit()
+
+        if not applied:
+            return False
 
         from database.repositories.event_log_repository import EventLogRepository
 
@@ -765,6 +779,7 @@ class DecisionPersistor:
             entity_id=UUID(str(decision_id)),
             payload={"exit_price": exit_price, "pnl": pnl},
         )
+        return True
 
     def close_position_partial(
         self,

@@ -70,6 +70,102 @@ def test_list_open_positions_with_limit_none_returns_every_row_not_just_the_defa
             session.commit()
 
 
+def test_close_position_returns_false_and_does_not_overwrite_when_already_closed():
+    """Faz 360 — kullanıcı onayıyla eklenen gerçek-zamanlı (WebSocket)
+    kapatma yolu, mevcut periyodik (REST) yolla AYNI pozisyonu eşzamanlı
+    görebilir hale geldi. close_position() artık WHERE status='open'
+    şartı taşıyor ve rowcount'a göre bool dönüyor — ikinci çağrı (pozisyon
+    zaten kapalıyken) HİÇBİR ŞEYİ değiştirmemeli, birincinin exit_price/
+    pnl'ini ezmemeli."""
+    from contracts.decision_event import DecisionEvent
+
+    symbol = f"POSRACE{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+
+    with SessionFactory.get_session() as session:
+        event = DecisionEvent(
+            id=uuid4(), timestamp=now, symbol=symbol,
+            proposed_direction="LONG", final_action="LONG", final_size=1.0, confidence=0.7,
+            status="open", entry_price=100.0, quantity=1.0, opened_at=now,
+            stop_loss_price=90.0, take_profit_price=140.0,
+        )
+        DecisionPersistor(session).persist(event)
+
+    try:
+        with SessionFactory.get_session() as session:
+            first = DecisionPersistor(session).close_position(
+                decision_id=str(event.id), exit_price=140.0, pnl=40.0, closed_at=now,
+                outcome={"exit_reason": "take_profit"},
+            )
+        assert first is True
+
+        # İkinci çağrı — REST periyodik tarama ile WebSocket'in AYNI ANDA
+        # aynı pozisyonu kapatmaya çalıştığı senaryoyu simüle ediyor.
+        with SessionFactory.get_session() as session:
+            second = DecisionPersistor(session).close_position(
+                decision_id=str(event.id), exit_price=999.0, pnl=-500.0, closed_at=now,
+                outcome={"exit_reason": "stop_loss"},
+            )
+        assert second is False
+
+        with SessionFactory.get_session() as session:
+            row = DecisionPersistor(session).get_by_id(str(event.id))
+        # Birincinin yazdığı değerler KORUNMALI, ikincinin (kaybeden) yolu
+        # tarafından ezilmemeli.
+        assert row["exit_price"] == pytest.approx(140.0)
+        assert row["pnl"] == pytest.approx(40.0)
+    finally:
+        with SessionFactory.get_session() as session:
+            from sqlalchemy import text
+            session.execute(text("DELETE FROM decisions WHERE symbol = :s"), {"s": symbol})
+            session.commit()
+
+
+def test_process_position_at_price_skips_learning_when_position_already_closed_by_another_path():
+    """Faz 360 — _process_position_at_price (close_due_positions'ın
+    çıkardığı, WebSocket gerçek-zamanlı yolunun da paylaşacağı metod)
+    close_position() False dönerse (pozisyon başka bir yoldan zaten
+    kapatılmış) öğrenme/episodic memory adımlarını TEKRARLAMAMALI ve
+    None dönmeli — aynı gerçek kapanış olayı iki kez sayılmamalı."""
+    from contracts.decision_event import DecisionEvent
+
+    symbol = f"POSRACE2{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+
+    with SessionFactory.get_session() as session:
+        event = DecisionEvent(
+            id=uuid4(), timestamp=now, symbol=symbol,
+            proposed_direction="LONG", final_action="LONG", final_size=1.0, confidence=0.7,
+            status="open", entry_price=100.0, quantity=1.0, opened_at=now,
+            stop_loss_price=90.0, take_profit_price=140.0,
+        )
+        DecisionPersistor(session).persist(event)
+        # Pozisyon zaten BAŞKA bir yoldan kapatılmış gibi davran.
+        DecisionPersistor(session).close_position(
+            decision_id=str(event.id), exit_price=140.0, pnl=40.0, closed_at=now,
+            outcome={"exit_reason": "take_profit"},
+        )
+
+    try:
+        with SessionFactory.get_session() as session:
+            repo = DecisionPersistor(session)
+            pos = repo.get_by_id(str(event.id))
+            # get_by_id status='closed' döner ama _process_position_at_price
+            # normalde list_open_positions'tan (status='open') gelen bir
+            # dict alır — burada kasıtlı olarak "stale" bir open-benzeri
+            # pozisyon simüle ediyoruz (WS'in taze olmayan cache'i gibi).
+            pos["status"] = "open"
+            closer = PositionCloser(_FixedPriceProvider(80.0))  # stop'un altında -> tetiklenir
+            result = closer._process_position_at_price(pos, 80.0, repo, now)
+
+        assert result is None
+    finally:
+        with SessionFactory.get_session() as session:
+            from sqlalchemy import text
+            session.execute(text("DELETE FROM decisions WHERE symbol = :s"), {"s": symbol})
+            session.commit()
+
+
 def test_risk_approved_directional_decision_opens_a_real_position_with_entry_price_and_no_pnl_yet():
     """DecisionRecorder seviyesinde, doğrudan: gerçek Council'in (boş ctx.market
     ile hep WAIT üretmesi — ayrı, bilinen bir davranış) değişkenliğine bağlı
