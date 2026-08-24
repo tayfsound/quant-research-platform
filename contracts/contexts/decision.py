@@ -8,7 +8,13 @@ class ActionType(StrEnum):
     ENTER_LONG = "ENTER_LONG"
     ENTER_SHORT = "ENTER_SHORT"
     WAIT = "WAIT"
-    EXIT = "EXIT"
+    # Faz 362-devam — kullanıcı isteği: kod incelemesi (2026-08-24) EXIT'in
+    # projenin ilk commit'inden beri hiç canlı bir yolda kullanılmadığını
+    # doğruladı — council pipeline'ı hiçbir zaman "elimdeki pozisyonu aktif
+    # olarak kapat" kararı üretmiyordu (o yetenek artık ayrı, GERÇEK bir
+    # mekanizma: services/belief_reversal_exit.py). Ölü kod olarak
+    # kaldırıldı — REDUCE/RECONSIDER (attention_controller.py'de gerçekten
+    # kullanılıyor) buna dahil değil, onlara dokunulmadı.
     REDUCE = "REDUCE"
     RECONSIDER = "RECONSIDER"
 

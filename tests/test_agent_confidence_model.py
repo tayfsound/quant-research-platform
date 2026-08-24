@@ -66,11 +66,16 @@ def test_predict_confidence_multiplier_scales_by_p_correct_over_baseline(tmp_pat
     high_rsi_multiplier = predict_confidence_multiplier("technical", {"rsi_value": 90.0}, repository=repo)
     low_rsi_multiplier = predict_confidence_multiplier("technical", {"rsi_value": 10.0}, repository=repo)
 
-    assert high_rsi_multiplier > 1.0
+    # Faz 362-devam — kullanıcı kararı: "sadece küçültür, asla büyütmez"
+    # ilkesi bu modele de uygulandı. Yüksek RSI -> yüksek P(doğru) hâlâ
+    # DOĞRU şekilde tahmin ediliyor, ama artık confidence'ı 1.0'ın
+    # ÜSTÜNE çekmiyor (tavana kırpılıyor) — sadece düşük RSI hâlâ
+    # confidence'ı aşağı çekebiliyor.
+    assert high_rsi_multiplier == 1.0
     assert low_rsi_multiplier < 1.0
-    # Sınırlı olmalı (0.5-1.5 arası, agent_confidence_model.py'deki sınır)
-    assert 0.5 <= high_rsi_multiplier <= 1.5
-    assert 0.5 <= low_rsi_multiplier <= 1.5
+    # Sınırlı olmalı (0.5-1.0 arası, agent_confidence_model.py'deki sınır)
+    assert 0.5 <= high_rsi_multiplier <= 1.0
+    assert 0.5 <= low_rsi_multiplier <= 1.0
 
 
 def _persist_closed_decision(symbol: str, technical_direction: str, executed_direction: str,

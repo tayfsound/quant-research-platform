@@ -1,7 +1,5 @@
-"""Calibration testleri — güncellenmiş reward beklentileri."""
-from contracts.outcome import DecisionEvaluation, TradeOutcome
+"""Calibration testleri."""
 from services.calibration import CalibrationMetrics
-from services.reward_signal import RewardSignal
 
 
 def test_brier_score_perfect():
@@ -39,31 +37,3 @@ def test_confidence_histogram():
     assert len(hist) == 10
     total = sum(h["count"] for h in hist)
     assert total == 2
-
-def test_reward_signal_win():
-    rs = RewardSignal(initial_risk=100)
-    outcome = TradeOutcome(pnl=200, win=True)
-    evaluation = DecisionEvaluation(
-        original_confidence=0.8,
-        outcome=outcome,
-        decision_score=0.8,
-        was_prediction_correct=True,
-        learning_signal="confidence_well_calibrated",
-    )
-    reward = rs.compute(evaluation)
-    # decision_score 0.8 + confidence bonus ~0.128 → yaklaşık 0.9+
-    assert reward > 0.5
-
-def test_reward_signal_loss_overconfident():
-    rs = RewardSignal(initial_risk=100)
-    outcome = TradeOutcome(pnl=-300, win=False)
-    evaluation = DecisionEvaluation(
-        original_confidence=0.95,
-        outcome=outcome,
-        decision_score=-1.0,
-        was_prediction_correct=False,
-        learning_signal="overconfident",
-    )
-    reward = rs.compute(evaluation)
-    # decision_score -1.0 + ceza → negatif
-    assert reward < -0.5

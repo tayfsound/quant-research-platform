@@ -19,7 +19,6 @@ from engines.memory_engine import MemoryEngine
 from engines.risk_engine import RiskEngine
 from services.guardrail_stage import GuardrailStage
 from services.learning_loop import LearningLoop
-from services.outcome_evaluator import OutcomeEvaluator
 from services.weight_optimizer import WeightOptimizer
 from services.weight_repository import WeightRepository
 
@@ -58,7 +57,6 @@ class CognitiveEngine:
         # bağlanmayı bekliyor — henüz yapılmadı, ayrı bir iş.
         self.memory_engine = MemoryEngine()
 
-        self.outcome_evaluator = OutcomeEvaluator()
         self.learning_loop = LearningLoop()
         self.weight_repository = WeightRepository()
         self.weight_optimizer = WeightOptimizer(

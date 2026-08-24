@@ -9,23 +9,8 @@ from contracts.outcome import DecisionEvaluation, TradeOutcome
 from database.connection import get_session
 from database.repositories.decision_persistor import DecisionPersistor
 from services.agent_memory import AgentMemory
-from services.outcome_evaluator import OutcomeEvaluator
 from services.weight_optimizer import WeightOptimizer
 from services.weight_repository import WeightRepository
-
-
-def test_outcome_evaluates_pnl():
-    event = DecisionEvent(
-        symbol="BTCUSDT",
-        confidence=0.7,
-        final_action="ENTER_LONG",
-    )
-    outcome = TradeOutcome(pnl=150.0, win=True)
-    evaluator = OutcomeEvaluator()
-    evaluation = evaluator.evaluate(event, outcome)
-
-    assert evaluation.outcome.pnl == 150.0
-    assert evaluation.decision_score > 0
 
 
 def test_weight_update_is_gradual():

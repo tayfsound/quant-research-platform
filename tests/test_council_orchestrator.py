@@ -335,13 +335,19 @@ def test_technical_confidence_model_adjusts_opinion_confidence_when_saved():
     """Faz 264: ajan içi güven kalibrasyonu — kaydedilmiş bir model varsa
     technical ajanının confidence'ı gerçek geçmiş doğruluğa göre
     ayarlanmalı; model yoksa (varsayılan test durumu, diğer testler)
-    hiçbir şey değişmemeli."""
+    hiçbir şey değişmemeli.
+
+    Faz 362-devam — kullanıcı kararı: "sadece küçültür, asla büyütmez"
+    ilkesi bu modele de uygulandı (MULTIPLIER_MAX artık 1.0) — bu yüzden
+    burada bilerek AŞAĞI yönlü bir kalibrasyon senaryosu kuruluyor (düşük
+    RSI -> düşük P(doğru)), yukarı yönlü artık kırpılıyor (bkz. tests/
+    test_agent_confidence_model.py'deki AYNI değişiklik)."""
     from contracts.agent_confidence_model import AgentConfidenceModel
     from services.agent_confidence_model import ConfidenceModelRepository
 
     registry = AgentRegistry.create_default()
     orchestrator = CouncilOrchestrator(registry)
-    ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs", rsi_value=90.0)
+    ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs", rsi_value=10.0)
 
     _, opinions_before = orchestrator.deliberate({AgentDomain.TECHNICAL: ctx})
     technical_before = next(o for o in opinions_before if o.domain == AgentDomain.TECHNICAL)
@@ -356,7 +362,7 @@ def test_technical_confidence_model_adjusts_opinion_confidence_when_saved():
         categorical_features={},
         scaler_mean=[50.0],
         scaler_scale=[10.0],
-        coefficients=[2.0],  # yuksek RSI -> yuksek P(dogru) -> carpan > 1
+        coefficients=[2.0],  # dusuk RSI -> dusuk P(dogru) -> carpan < 1
         intercept=0.0,
         baseline_correctness_rate=0.5,
         train_accuracy=0.6,

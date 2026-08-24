@@ -29,7 +29,17 @@ MIN_TRAINING_SAMPLES = 100
 # bir tahmin yapsa bile tek bir cycle'ın kararını gülünç bir şekilde
 # şişirmesin/söndürmesin.
 MULTIPLIER_MIN = 0.5
-MULTIPLIER_MAX = 1.5
+# Faz 362-devam — kullanıcı kararı (2026-08-24): önceki üst sınır (1.5)
+# "pozisyon boyutu çarpanları SADECE küçültür, asla büyütmez" ilkesine
+# (docs/index.md) TEORİK bir gedik açıyordu — bu, TEK bir ajanın
+# confidence'ını yukarı çekebiliyordu, bu da dolaylı yoldan genel karar
+# confidence'ını (dolayısıyla Kelly boyutlandırmayı) büyütebilirdi. Artık
+# diğer TÜM çarpanlarla (kelly_size_multiplier, meta_label_size_
+# multiplier, InnerCritic, pyramid_dampened_leverage vb.) AYNI ilke:
+# SADECE küçültebilir, asla büyütemez — "bu ajan tahmin ettiğinden daha
+# az doğru çıkmış" sinyali hâlâ confidence'ı düşürür, ama "daha çok doğru
+# çıkmış" sinyali artık YUKARI çekmiyor (mevcut 1.0'da kalıyor).
+MULTIPLIER_MAX = 1.0
 
 # technical_agent.py'nin kendi TechnicalContext'inde GERÇEKTEN elinde olan
 # alanlarla birebir aynı — model, ajanın kendisinin göremediği bir

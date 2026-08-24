@@ -24,8 +24,7 @@ from contracts.macro import MacroContext, MacroIndicator
 from contracts.memory import Episode, EpisodicMemory, SemanticMemory, WorkingMemory
 from contracts.observation import Observation, ObservationType
 from contracts.onchain import OnChainContext
-from contracts.opportunity import OpportunityCost
-from contracts.outcome import DecisionEvaluation, FailureType, TradeOutcome
+from contracts.outcome import DecisionEvaluation, TradeOutcome
 from contracts.technical import TechnicalContext
 
 __all__ = [
@@ -41,8 +40,7 @@ __all__ = [
     "LLMExplanation", "LLMExplainerPort",
     "Observation", "ObservationType",
     "KnowledgeEntry", "KnowledgeCategory",
-    "TradeOutcome", "DecisionEvaluation", "FailureType",
-    "OpportunityCost",
+    "TradeOutcome", "DecisionEvaluation",
     "MacroContext", "MacroIndicator",
     "OnChainContext",
     "TechnicalContext",
