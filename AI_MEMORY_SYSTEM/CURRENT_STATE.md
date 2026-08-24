@@ -1,9 +1,21 @@
-# Mevcut Durum -- v1.96.0 (Faz 358: aynı sembol/yönde $-bazlı maruziyet tavanı eklendi)
+# Mevcut Durum -- v1.97.0 (Faz 359: kademeli kâr kilitleme + "reduced_loss_stop" yeniden etiketleme)
 
 **Tarih:** 2026-08-24
 **Branch:** main
-**Son commit (HEAD):** Faz 358 (bu commit ile).
-**⚠️ Servis durumu:** Faz 353-356 canlıda (24 Ağustos 12:37 UTC restart). **Faz 357 (vwap_confirm kaldırma) + Faz 358 (same-symbol capital cap) henüz restart edilmedi.**
+**Son commit (HEAD):** Faz 359 (bu commit ile).
+**⚠️ Servis durumu:** Faz 353-358 canlıda (24 Ağustos 14:13 UTC ara restart, sorunsuz). **Faz 359 henüz restart edilmedi.**
+
+## Faz 359 — Kademeli kâr kilitleme + "reduced_loss_stop" yeniden etiketleme (2026-08-24)
+
+Kullanıcının gerçek LTCUSDT örnekleriyle ("Başabaş çekildi" ama pnl -$140) bulduğu soruna üç parçalı yanıt. Kullanıcı üç şey istedi: (A) pozisyon KAPATIRKEN fiyat taramasını anlıklaştırmak (girişte önemli değil), (B) kâr arttıkça stop'u girişe değil daha yukarı çekmek (örn. %10 kârda %5'e, ama küçük kârlarda çok sık tetiklenmeyecek şekilde "matematiksel mantıklı bir pencereden"), (C) ekside kapanan "breakeven" işlemleri için yeni, dürüst bir etiket.
+
+**(A) — İncelendi, ERTELENDİ, BACKLOG madde 26'ya taşındı.** 149 benzersiz açık pozisyon sembolü var; Binance'in paylaşılan REST hız limiti (15 istek/sn, TÜM süreçler paylaşıyor) altında `close_due_positions_task`'ı (şu an 60sn) 5-10sn'ye çekmek bile TEK BAŞINA bütçenin çoğunu tüketir — önceki bir oturumda TAM BÖYLE bir çakışma yüzünden gerçek bir kesinti yaşanmıştı. Gerçek "anlık" için WebSocket akışı gerekiyor (`exchange_gateway/binance/live_feed.py::LiveMarketFeed` diye kullanılmayan bir iskelet zaten var) — ama bu, kullanıcı onayı gerektiren, büyük/riskli, ayrı bir mimari iş. Bu turda dokunulmadı.
+
+**(B) — Uygulandı.** `services/position_closer.py::_apply_breakeven_stop` — yeni `progressive_lock_min_profit_r` (varsayılan **1.0R**, GÜVENLİK TABANI) ve `progressive_lock_fraction` (varsayılan **%50**, kullanıcının "hep yarısı" örneğiyle birebir). Mantık: 1.0R kâra ulaşana kadar mekanizma HİÇ değişmiyor (mevcut düz breakeven kuralı — 0.5R'de girişe çek — aynen çalışıyor, kullanıcının "küçük kârda çok sık tetiklenir" endişesi bu tabanla çözüldü). 1.0R'yi geçince: kilitlenen stop = entry + orijinal_risk(`decisions.original_stop_loss_price`, ratchet'in asla değiştirmediği ham değer) × profit_r × %50 — R-katı cinsinden (mutlak $/% değil), farklı sembollerin doğal oynaklığından bağımsız tutarlı davranış. Mevcut `candidates`/`max()` deseni sayesinde "sadece sıkılaştırır" ilkesi otomatik korunuyor (fiyat geri çekilse bile stop asla gevşemiyor).
+
+**(C) — Uygulandı.** "breakeven_stop" etiketi artık ASLA üretilmiyor — zarar-azaltılmış-ama-hâlâ-zarar durumları dürüstçe **"reduced_loss_stop"** olarak etiketleniyor ("Zarar azaltıldı"). Gerçek kâr → hâlâ "trailing_stop_profit" (değişmedi). Eski kayıtlar geriye dönük değiştirilmedi (hâlâ "breakeven_stop" taşıyorlar, dashboard'da "Zarar azaltıldı (eski etiket)" gösteriliyor), istatistiksel kod (`analytics/mae_mfe.py::DECISIVE_EXIT_REASONS`, `llm_tools.py`) ikisini de AYNI kategori sayacak şekilde güncellendi.
+
+**Test:** `tests/test_position_lifecycle.py` — 4 yeni test (eşik altında tetiklenmiyor, eşik üstünde orantılı kilitleniyor, gerileyince gevşemiyor, original_stop yoksa fail-closed atlanıyor) + 4 mevcut testin fiyat senaryoları güncellendi (tam 1R kullananlar 0.7R'ye çekildi — yeni eşikle çakışmasın diye) + 2 assertion yeniden adlandırıldı. 38/38 temiz. `tests/test_mae_mfe.py` (27), `tests/test_app_settings_api.py` (14) regresyonsuz. Dashboard `tsc --noEmit` temiz. Settings.tsx'e YENİ ayar kartı EKLENMEDİ (kapsam dışı bırakıldı — mevcut kardeş ayarların (`breakeven_trigger_r_multiple` vb.) da hiç UI kartı yok, `api/rest/settings.py::_validate()`'e bile önceden eklenmemişlerdi; bu iki yeni ayar en azından `_validate()`'e eklendi, API üzerinden ayarlanabilir).
 
 ## Faz 358 — Aynı sembol/yönde $-bazlı maruziyet tavanı (2026-08-24)
 

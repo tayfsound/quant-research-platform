@@ -145,6 +145,15 @@ gerçek kodla teyit edilecek:
     fırsatları normal aralığın dışında bıraktığı için hiç görmüyor —
     bunları nasıl yakalayabileceğimiz üzerine ayrı bir araştırma/tasarım
     turu gerekiyor. Henüz kod incelemesi yapılmadı, en sona bırakıldı.
+    **Birleştirildi (2026-08-24):** `pump_fade_lookback_hours` (şu an
+    varsayılan 48s) — 24s/72s/1 hafta gibi farklı pencereler daha mı iyi
+    performans gösterir? Kontrol edildi: yerel DB'de ham mum (OHLCV)
+    geçmişi YOK (`candles`/`ohlcv` tablosu yok, `ingest_candles_task`
+    hiç kalıcı yazmıyor) — bu yüzden bunu ölçmek için Binance'in genel
+    API'sinden GERÇEK geçmiş mumları taze çekip `find_pump_candidates`'i
+    farklı `lookback_hours` değerleriyle yeniden çalıştıran bir mini-
+    backtest kurmak gerekiyor. İkisi de `find_pump_candidates` mantığına
+    dokunduğu için AYNI turda ele alınacak — henüz başlanmadı.
 23. **[AÇIK/EN SONA — KAPATILMADI] Aynı sembolde kötü fiyattan piramitleme
     (madde 4'ün devamı).** 2026-08-24'te gerçek veriyle ölçüldü: basit
     "kötü fiyat mı iyi fiyat mı" testi (n=3068 vs 1653) anlamlı fark
@@ -165,8 +174,9 @@ gerçek kodla teyit edilecek:
     çok daha yüksek bir limit/tarih aralığı filtresi eklenmeli. Henüz kod
     incelemesi yapılmadı.
 
-25. **["Başabaş çekildi" etiketi yanıltıcı — gerçek veriyle doğrulandı,
-    2026-08-24].** Kullanıcı gerçek örnekler gösterdi: LTCUSDT scalp LONG
+25. **[KISMEN ÇÖZÜLDÜ — Faz 359, (b) madde 26'ya taşındı] "Başabaş çekildi"
+    etiketi yanıltıcı — gerçek veriyle doğrulandı, 2026-08-24.** Kullanıcı
+    gerçek örnekler gösterdi: LTCUSDT scalp LONG
     "Başabaş çekildi" ama pnl -$140.22, -$119.64, -$92.99, -$66.01 vb.
     Kod incelendi (`services/position_closer.py::_apply_breakeven_stop` +
     `close_due_positions`): MEKANİZMA gerçekten çalışıyor — stop
@@ -186,7 +196,34 @@ gerçek kodla teyit edilecek:
     "başabaş" değil. Olası çözümler (tartışılacak): (a) dashboard
     etiketini "Kısmi Zarar Önlendi" gibi daha dürüst bir isme çevirmek,
     (b) check aralığını sıklaştırmak (gerçek gap'i azaltır), (c) eşiği
-    sıkılaştırmak. Henüz hiçbiri uygulanmadı.
+    sıkılaştırmak. **Faz 359'da (b) ve (c) hariç, (a)+kademeli kâr
+    kilitleme uygulandı** — check aralığı sıklaştırma AYRI, madde 26'ya
+    taşındı (rate-limit nedeniyle basit REST polling ile güvenli değil).
+
+26. **Pozisyon kapatma için "anlık" fiyat taraması (kayma azaltma).**
+    Kullanıcı isteği (2026-08-24): giriş için kayma önemli değil, ama
+    ÇIKIŞ için önemli — `close_due_positions_task` şu an 60sn'de bir
+    çalışıyor, bu pencere içinde fiyat çekilmiş stopu atlayabiliyor
+    (gerçek KAIAUSDT/LTCUSDT örnekleri). Kontrol edildi: 149 benzersiz
+    açık pozisyon sembolü var, Binance'in paylaşılan REST hız limiti
+    (15 istek/sn, TÜM süreçler arası paylaşılıyor) altında bunu 5-10sn'ye
+    çekmek bile TEK BAŞINA bütçenin çoğunu tüketir ve önceki bir oturumda
+    tam bu tür bir çakışma yüzünden gerçek bir kesinti yaşanmıştı. Gerçek
+    "anlık" için REST polling YETERSİZ — WebSocket akışı gerekiyor.
+    `exchange_gateway/binance/live_feed.py::LiveMarketFeed` diye bir
+    iskelet ZATEN var (Faz 247-249'dan beri hiç kullanılmıyor, sabit
+    sembol listesiyle kuruluyor, kalıcı bağlantı/yeniden-bağlanma riski
+    taşıyor) — pozisyon kapatma için yeniden kullanılabilir ama gerçek,
+    ayrı bir mimari iş (dinamik sembol aboneliği, kalıcı süreç, mevcut
+    periyodik-polling mimarisinden farklı bir model). Kullanıcı onayı
+    olmadan başlanmadı — büyük/riskli bir değişiklik.
+
+27. **Scalp LONG isabet oranındaki düşüş (%95 → %83) araştırılacak.**
+    Kullanıcı isteği (2026-08-24): daha önce ölçülen LONG bozulmasının
+    (Faz 356: %96.2→%80.6, genel) büyük kısmının scalp işlemlerinden
+    geldiği düşünülüyor — scalp LONG'un kendi içinde ayrı ölçülüp
+    (trade_type='scalp' AND direction='LONG', zaman bazlı retest) neyin
+    değiştiği araştırılacak. Henüz ölçülmedi.
 
 ## Notlar
 

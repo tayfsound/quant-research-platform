@@ -329,6 +329,20 @@ def _validate(key: str, value: str) -> None:
                 raise ValueError
         except ValueError:
             raise HTTPException(400, "max_same_symbol_direction_capital_pct must be a number in [0, 1]")
+    elif key == "progressive_lock_min_profit_r":
+        # Faz 359 — bkz. services/position_closer.py::_apply_breakeven_stop.
+        try:
+            if float(value) <= 0:
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "progressive_lock_min_profit_r must be a positive number")
+    elif key == "progressive_lock_fraction":
+        try:
+            v = float(value)
+            if not (0 < v <= 1):
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "progressive_lock_fraction must be a number in (0, 1]")
     else:
         raise HTTPException(400, f"unknown setting key: {key}")
 

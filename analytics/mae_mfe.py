@@ -157,7 +157,14 @@ def compute_conditional_mae_distribution(
 # breakeven_stop hiç görünmez, SADECE gerçek (live) decisions.outcome
 # verisiyle çağrıldığında anlamlı. Backtest'e bu mekanizmayı eklemek ayrı
 # bir iş (henüz yapılmadı).
-DECISIVE_EXIT_REASONS = ("take_profit", "stop_loss", "breakeven_stop")
+#
+# Faz 359 — "breakeven_stop" etiketi kullanıcı isteğiyle "reduced_loss_
+# stop" olarak yeniden adlandırıldı (bkz. services/position_closer.py) —
+# eski etiket yanıltıcıydı (gerçek $0 değil, azaltılmış-ama-hâlâ-zarar
+# anlamına geliyordu). Kavramsal olarak AYNI kategori — burada ikisi de
+# kararlı sayılıyor (eski satırlar hâlâ "breakeven_stop" taşıyor, geriye
+# dönük değiştirilmedi).
+DECISIVE_EXIT_REASONS = ("take_profit", "stop_loss", "breakeven_stop", "reduced_loss_stop")
 
 
 def compute_competing_risk_probabilities(
@@ -197,7 +204,7 @@ def compute_competing_risk_probabilities(
         n = len(decisive)
         tp_count = sum(1 for t in decisive if t["exit_reason"] == "take_profit")
         sl_count = sum(1 for t in decisive if t["exit_reason"] == "stop_loss")
-        breakeven_count = sum(1 for t in decisive if t["exit_reason"] == "breakeven_stop")
+        breakeven_count = sum(1 for t in decisive if t["exit_reason"] in ("breakeven_stop", "reduced_loss_stop"))
         label = "|".join(f"{field}={value}" for field, value in zip(group_by, key))
         results[label] = {
             "decisive_sample_size": n,

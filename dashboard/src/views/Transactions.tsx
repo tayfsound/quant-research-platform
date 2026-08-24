@@ -44,7 +44,15 @@ const EXIT_REASON_LABELS: Record<string, string> = {
   // Faz 268ae — kullanıcı isteği: kârlı gidip tersine dönen pozisyonlarda
   // stop girişe (başabaşa) çekiliyor; buna takılmak normal stop_loss'tan
   // (tam zarar) ayrı, "kayıptan kaçınıldı" anlamına geliyor.
-  breakeven_stop: "Başabaş çekildi",
+  //
+  // Faz 359 — kullanıcı bulgusu: "Başabaş çekildi" gerçek $0 civarı
+  // beklentisi yaratıyordu ama pnl -$140 gibi büyük olabiliyordu (orijinal
+  // kaybın yarısından azı olduğu için "başarılı" sayılıyordu — matematiksel
+  // olarak doğru, isim yanlış). Backend artık bunu ASLA "breakeven_stop"
+  // olarak üretmiyor (bkz. services/position_closer.py) — eski kayıtlar
+  // hâlâ bu etiketi taşıdığı için görünüm burada kalıyor, ama dürüstçe.
+  breakeven_stop: "Zarar azaltıldı (eski etiket)",
+  reduced_loss_stop: "Zarar azaltıldı",
   // Faz 291 — kullanıcı bulgusu (gerçek CHIPUSDT örneği): trailing/breakeven
   // stop kâra doğru da taşınabiliyor (bkz. position_closer.py'nin üç yönlü
   // ayrımı) — "Stop oldu" etiketi bunu zarar sanıyordu, ayrı ve doğru etiket.

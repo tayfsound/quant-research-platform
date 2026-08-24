@@ -160,6 +160,23 @@ DEFAULTS: dict[str, str] = {
     # 0.0 = trailing kapalı (sadece breakeven). Varsayılan %5 — min_stop_pct
     # (%4.5) tabanıyla tutarlı, redeploy gerekmeden ayarlanabilir.
     "trailing_stop_distance_pct": "0.05",
+    # Faz 359 — kullanıcı isteği: kâr arttıkça stop SADECE girişe değil,
+    # kârın bir kısmını kilitleyecek şekilde daha yukarı çekilsin (ör.
+    # %10 kârdayken stop %5'e çekilsin). Kullanıcının kendi uyardığı risk:
+    # bunu küçük kârlarda (ör. %1) uygulamak stopu ("yarısı" = %0.5) çok
+    # sıkar, normal gürültüyle anında tetiklenir. Bu eşik bir GÜVENLİK
+    # TABANI — breakeven_trigger_r_multiple'ın (0.5R) ÜSTÜNDE, varsayılan
+    # 1.0R: bu kadar kâra ulaşana kadar mekanizma HİÇ değişmiyor (mevcut
+    # düz breakeven kuralı aynen çalışıyor), sadece eşik geçilince kademeli
+    # kilitleme başlıyor. bkz. services/position_closer.py::_apply_
+    # breakeven_stop.
+    "progressive_lock_min_profit_r": "1.0",
+    # Faz 359 — eşik geçilince kilitlenen stop = entry + orijinal_risk *
+    # profit_r * bu_oran. Varsayılan %50 — kullanıcının "hep yarısı kadar"
+    # örneğiyle birebir, ama mutlak $/% değil R-katı cinsinden (farklı
+    # sembollerin doğal oynaklığından/stop mesafesinden bağımsız tutarlı
+    # davranış).
+    "progressive_lock_fraction": "0.5",
     # Faz 282 — kritik bulgu (2026-08-19, kullanıcı: "kardayken -4k dolar
     # zarar yazmaya başladıysa çok mantıksız"): yukarıdaki breakeven_
     # trigger_r_multiple/trailing_stop_distance_pct, pump_fade_v1'in SABİT

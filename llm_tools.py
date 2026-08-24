@@ -39,7 +39,10 @@ def _closed_trade_counts(session, hours: int, bucket_filter_sql: str) -> dict:
             "count(*) FILTER (WHERE status = 'closed' AND closed_at >= now() - (:hours || ' hours')::interval AND outcome ->> 'exit_reason' NOT IN ('manual_full','manual_partial') AND pnl > 0) AS ai_wins, "
             "count(*) FILTER (WHERE status = 'closed' AND closed_at >= now() - (:hours || ' hours')::interval AND outcome ->> 'exit_reason' = 'take_profit') AS tp_count, "
             "count(*) FILTER (WHERE status = 'closed' AND closed_at >= now() - (:hours || ' hours')::interval AND outcome ->> 'exit_reason' = 'stop_loss') AS sl_count, "
-            "count(*) FILTER (WHERE status = 'closed' AND closed_at >= now() - (:hours || ' hours')::interval AND outcome ->> 'exit_reason' = 'breakeven_stop') AS breakeven_count, "
+            # Faz 359 — "breakeven_stop" "reduced_loss_stop" olarak yeniden
+            # adlandırıldı (eski isim yanıltıcıydı) — ikisi de sayılıyor,
+            # eski satırlar geriye dönük değiştirilmedi.
+            "count(*) FILTER (WHERE status = 'closed' AND closed_at >= now() - (:hours || ' hours')::interval AND outcome ->> 'exit_reason' IN ('breakeven_stop', 'reduced_loss_stop')) AS breakeven_count, "
             "count(*) FILTER (WHERE status = 'closed' AND closed_at >= now() - (:hours || ' hours')::interval AND outcome ->> 'exit_reason' IN ('manual_full','manual_partial')) AS manual_count "
             "FROM decisions "
             "WHERE (excluded_from_stats IS NULL OR excluded_from_stats = false) "

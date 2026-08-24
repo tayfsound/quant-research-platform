@@ -356,9 +356,13 @@ def test_breakeven_stop_ratchets_stop_to_entry_after_1r_profit_and_prevents_full
         AppSettingsRepository(session).set("trailing_stop_distance_pct", "0", updated_by="test")
 
     try:
-        # 1. adım: fiyat tam 1R kadar lehte (110) — ne stop ne hedefe
-        # ulaşmadı, ama breakeven ratchet tetiklenmeli.
-        closer_step1 = PositionCloser(_FixedPriceProvider(entry + (entry - old_stop)))
+        # 1. adım: fiyat 0.7R kadar lehte (107) — flat breakeven eşiğini
+        # (0.5R) geçiyor ama Faz 359'un kademeli kilitleme eşiğini (1.0R,
+        # varsayılan progressive_lock_min_profit_r) GEÇMİYOR — bu test
+        # kasıtlı olarak SADECE flat breakeven mantığını izole ediyor,
+        # 1R'de ikisi de tetiklenip stop'u 100'den daha yükseğe (105)
+        # çekerdi.
+        closer_step1 = PositionCloser(_FixedPriceProvider(entry + (entry - old_stop) * 0.7))
         with SessionFactory.get_session() as session:
             closed_step1 = closer_step1.close_due_positions(DecisionPersistor(session))
         assert not any(c["decision_id"] == str(event.id) for c in closed_step1)
@@ -377,7 +381,7 @@ def test_breakeven_stop_ratchets_stop_to_entry_after_1r_profit_and_prevents_full
 
         closed_ids = {c["decision_id"]: c for c in closed_step2}
         assert str(event.id) in closed_ids
-        assert closed_ids[str(event.id)]["exit_reason"] == "breakeven_stop"
+        assert closed_ids[str(event.id)]["exit_reason"] == "reduced_loss_stop"
 
         with SessionFactory.get_session() as session:
             row = DecisionPersistor(session).get_by_id(str(event.id))
@@ -420,8 +424,11 @@ def test_breakeven_stop_does_not_hide_a_large_slippage_driven_loss():
         AppSettingsRepository(session).set("trailing_stop_distance_pct", "0", updated_by="test")
 
     try:
-        # 1. adım: fiyat tam 1R kadar lehte (110) — stop girişe (100) çekiliyor.
-        closer_step1 = PositionCloser(_FixedPriceProvider(entry + (entry - old_stop)))
+        # 1. adım: fiyat 0.7R kadar lehte (107) — stop girişe (100) çekiliyor.
+        # (Faz 359: tam 1R kullanılmıyor — o, kademeli kilitleme eşiğiyle
+        # çakışıp stopu 100 yerine 105'e çekerdi, bu test SADECE flat
+        # ratchet'i izole ediyor, bkz. yukarıdaki benzer not.)
+        closer_step1 = PositionCloser(_FixedPriceProvider(entry + (entry - old_stop) * 0.7))
         with SessionFactory.get_session() as session:
             closer_step1.close_due_positions(DecisionPersistor(session))
         with SessionFactory.get_session() as session:
@@ -518,7 +525,10 @@ def test_breakeven_stop_never_loosens_and_is_symmetric_for_short():
         AppSettingsRepository(session).set("trailing_stop_distance_pct", "0", updated_by="test")
 
     try:
-        closer_step1 = PositionCloser(_FixedPriceProvider(entry - (old_stop - entry)))  # 90.0, 1R lehte
+        # 0.7R lehte (93) — Faz 359'un kademeli kilitleme eşiğinin (1.0R)
+        # ALTINDA, bu test SADECE flat ratchet'i izole ediyor (bkz. LONG
+        # eşleniğindeki AYNI not).
+        closer_step1 = PositionCloser(_FixedPriceProvider(entry - (old_stop - entry) * 0.7))
         with SessionFactory.get_session() as session:
             closer_step1.close_due_positions(DecisionPersistor(session))
 
@@ -527,15 +537,181 @@ def test_breakeven_stop_never_loosens_and_is_symmetric_for_short():
         assert row["status"] == "open"
         assert row["stop_loss_price"] == entry
 
-        # Fiyat girişin biraz da altına inip geri girişin ÜSTÜNE çıksa
-        # bile (SHORT için "lehte" tekrar) stop girişten daha gevşek bir
-        # yere (>entry, yani eski 110'a doğru) ASLA geri çekilmemeli.
-        closer_step2 = PositionCloser(_FixedPriceProvider(80.0))
+        # Fiyat girişe doğru geri çıkıyor (98, adım 1'deki 93'ten daha AZ
+        # lehte) — stop girişten daha gevşek bir yere (>entry, yani eski
+        # 110'a doğru) ASLA geri çekilmemeli.
+        closer_step2 = PositionCloser(_FixedPriceProvider(98.0))
         with SessionFactory.get_session() as session:
             closer_step2.close_due_positions(DecisionPersistor(session))
         with SessionFactory.get_session() as session:
             row = DecisionPersistor(session).get_by_id(str(event.id))
         assert row["stop_loss_price"] == entry  # hâlâ girişte, gevşemedi
+    finally:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("trailing_stop_distance_pct", "0.05", updated_by="test")
+
+
+def test_progressive_lock_does_not_activate_below_minimum_profit_threshold():
+    """Faz 359 — kullanıcı isteği: kâr arttıkça stop girişten daha da
+    yukarı çekilsin, AMA kullanıcının kendi uyardığı risk: bunu küçük
+    kârlarda uygulamak stopu çok sıkar, normal gürültüyle anında
+    tetiklenir. progressive_lock_min_profit_r (varsayılan 1.0R) bu riski
+    engelliyor — bu eşiğin ALTINDA (burada 0.8R) mekanizma HİÇ devreye
+    girmemeli, stop SADECE düz breakeven'a (entry) kadar gitmeli."""
+    from contracts.decision_event import DecisionEvent
+    from database.repositories.app_settings_repository import AppSettingsRepository
+
+    symbol = f"POSPROGMIN{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    entry, old_stop, target = 100.0, 90.0, 200.0  # risk = 10 (1R)
+
+    with SessionFactory.get_session() as session:
+        event = DecisionEvent(
+            id=uuid4(), timestamp=now, symbol=symbol,
+            proposed_direction="LONG", final_action="LONG", final_size=1.0, confidence=0.7,
+            status="open", entry_price=entry, quantity=1.0, opened_at=now,
+            stop_loss_price=old_stop, take_profit_price=target,
+        )
+        DecisionPersistor(session).persist(event)
+        AppSettingsRepository(session).set("trailing_stop_distance_pct", "0", updated_by="test")
+
+    try:
+        # 0.8R lehte (108) — flat breakeven eşiğini (0.5R) geçiyor ama
+        # kademeli kilitleme eşiğinin (1.0R) ALTINDA kalıyor.
+        closer = PositionCloser(_FixedPriceProvider(108.0))
+        with SessionFactory.get_session() as session:
+            closer.close_due_positions(DecisionPersistor(session))
+
+        with SessionFactory.get_session() as session:
+            row = DecisionPersistor(session).get_by_id(str(event.id))
+        assert row["stop_loss_price"] == entry  # SADECE breakeven, daha yukarı DEĞİL
+    finally:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("trailing_stop_distance_pct", "0.05", updated_by="test")
+
+
+def test_progressive_lock_activates_and_locks_in_proportional_profit_above_threshold():
+    """Faz 359 — eşik (1.0R) geçilince kilitlenen stop = entry +
+    orijinal_risk * profit_r * progressive_lock_fraction. Burada 2R kârda
+    (120), varsayılan %50 oranla stop entry+1R=110'a kilitlenmeli —
+    kullanıcının "kâr arttıkça daha yukarı çeksin" isteğinin doğrudan
+    karşılığı."""
+    from contracts.decision_event import DecisionEvent
+    from database.repositories.app_settings_repository import AppSettingsRepository
+
+    symbol = f"POSPROGLOCK{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    entry, old_stop, target = 100.0, 90.0, 200.0
+
+    with SessionFactory.get_session() as session:
+        event = DecisionEvent(
+            id=uuid4(), timestamp=now, symbol=symbol,
+            proposed_direction="LONG", final_action="LONG", final_size=1.0, confidence=0.7,
+            status="open", entry_price=entry, quantity=1.0, opened_at=now,
+            stop_loss_price=old_stop, take_profit_price=target,
+        )
+        DecisionPersistor(session).persist(event)
+        AppSettingsRepository(session).set("trailing_stop_distance_pct", "0", updated_by="test")
+
+    try:
+        closer = PositionCloser(_FixedPriceProvider(120.0))  # 2R lehte
+        with SessionFactory.get_session() as session:
+            closer.close_due_positions(DecisionPersistor(session))
+
+        with SessionFactory.get_session() as session:
+            row = DecisionPersistor(session).get_by_id(str(event.id))
+        assert row["stop_loss_price"] == pytest.approx(110.0)  # entry + 1R
+    finally:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("trailing_stop_distance_pct", "0.05", updated_by="test")
+
+
+def test_progressive_lock_never_loosens_when_price_recedes_but_stays_above_threshold():
+    """Faz 359 — "sadece sıkılaştırır" ilkesi: fiyat 3R'ye çıkıp (kilit
+    110+15*... hesapla) sonra 1.5R'ye gerilerse (hâlâ eşiğin üstünde ama
+    daha düşük bir kilit önerir), stop ÖNCEKİ (daha sıkı) seviyesinden
+    geriye ASLA çekilmemeli — candidates listesi her zaman mevcut
+    stop_loss_price'ı da içerdiği için max() bunu doğal olarak koruyor."""
+    from contracts.decision_event import DecisionEvent
+    from database.repositories.app_settings_repository import AppSettingsRepository
+
+    symbol = f"POSPROGPEAK{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    entry, old_stop, target = 100.0, 90.0, 200.0
+
+    with SessionFactory.get_session() as session:
+        event = DecisionEvent(
+            id=uuid4(), timestamp=now, symbol=symbol,
+            proposed_direction="LONG", final_action="LONG", final_size=1.0, confidence=0.7,
+            status="open", entry_price=entry, quantity=1.0, opened_at=now,
+            stop_loss_price=old_stop, take_profit_price=target,
+        )
+        DecisionPersistor(session).persist(event)
+        AppSettingsRepository(session).set("trailing_stop_distance_pct", "0", updated_by="test")
+
+    try:
+        # Tepe: 3R kâr (130) -> kilit entry+1.5R=115.
+        closer_peak = PositionCloser(_FixedPriceProvider(130.0))
+        with SessionFactory.get_session() as session:
+            closer_peak.close_due_positions(DecisionPersistor(session))
+        with SessionFactory.get_session() as session:
+            row = DecisionPersistor(session).get_by_id(str(event.id))
+        assert row["stop_loss_price"] == pytest.approx(115.0)
+
+        # Geri çekilme: 1.8R kâra düşüyor (118, hâlâ mevcut 115 stopunun
+        # ÜSTÜNDE — pozisyon tetiklenmez) -> TAZE öneri entry+0.9R=109
+        # olurdu, ama 115 zaten daha sıkı — stop 115'te KALMALI, 109'a
+        # gevşememeli.
+        closer_pullback = PositionCloser(_FixedPriceProvider(118.0))
+        with SessionFactory.get_session() as session:
+            closed = closer_pullback.close_due_positions(DecisionPersistor(session))
+        assert not any(c["decision_id"] == str(event.id) for c in closed)
+        with SessionFactory.get_session() as session:
+            row = DecisionPersistor(session).get_by_id(str(event.id))
+        assert row["stop_loss_price"] == pytest.approx(115.0)  # gevşemedi
+    finally:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("trailing_stop_distance_pct", "0.05", updated_by="test")
+
+
+def test_progressive_lock_skipped_when_original_stop_price_is_unknown():
+    """Faz 359 — fail-closed: original_stop_loss_price yoksa (migration
+    öncesi eski pozisyon) kademeli kilitleme atlanır, SADECE mevcut düz
+    breakeven kuralı çalışır — icat edilmiş bir R referansı asla
+    kullanılmaz."""
+    from contracts.decision_event import DecisionEvent
+    from database.repositories.app_settings_repository import AppSettingsRepository
+    from sqlalchemy import text
+
+    symbol = f"POSPLNO{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    entry, old_stop, target = 100.0, 90.0, 200.0
+
+    with SessionFactory.get_session() as session:
+        event = DecisionEvent(
+            id=uuid4(), timestamp=now, symbol=symbol,
+            proposed_direction="LONG", final_action="LONG", final_size=1.0, confidence=0.7,
+            status="open", entry_price=entry, quantity=1.0, opened_at=now,
+            stop_loss_price=old_stop, take_profit_price=target,
+        )
+        DecisionPersistor(session).persist(event)
+        AppSettingsRepository(session).set("trailing_stop_distance_pct", "0", updated_by="test")
+        # original_stop_loss_price'ı elle NULL'a çekiyoruz — migration
+        # öncesi eski bir pozisyonu simüle ediyor.
+        session.execute(
+            text("UPDATE decisions SET original_stop_loss_price = NULL WHERE id = :id"),
+            {"id": event.id},
+        )
+        session.commit()
+
+    try:
+        closer = PositionCloser(_FixedPriceProvider(120.0))  # 2R lehte olurdu
+        with SessionFactory.get_session() as session:
+            closer.close_due_positions(DecisionPersistor(session))
+
+        with SessionFactory.get_session() as session:
+            row = DecisionPersistor(session).get_by_id(str(event.id))
+        assert row["stop_loss_price"] == entry  # kademeli kilitleme YOK, sadece breakeven
     finally:
         with SessionFactory.get_session() as session:
             AppSettingsRepository(session).set("trailing_stop_distance_pct", "0.05", updated_by="test")
@@ -724,9 +900,12 @@ def test_trailing_stop_closes_the_position_while_still_profitable_after_a_revers
 
 
 def test_trailing_stop_disabled_when_distance_pct_is_zero():
-    """trailing_stop_distance_pct=0 ile trailing tamamen kapalı —
-    SADECE breakeven (girişe çekme) çalışmalı, mevcut davranış
-    (Faz 268ae) hiç değişmemeli."""
+    """trailing_stop_distance_pct=0 ile SABİT-YÜZDELİK trailing tamamen
+    kapalı — ama Faz 359'un R-katı bazlı kademeli kilitlemesi AYRI bir
+    ayar (progressive_lock_fraction), bundan etkilenmiyor: 130'daki fiyat
+    3R kâr demek (>=1.0R eşiği), stop girişin (100) ÖTESİNE, 115'e
+    kilitlenmeli — 130 - 100*0.05=125 (eski trailing_pct'in üreteceği
+    değer) DEĞİL, o mekanizma gerçekten kapalı."""
     from contracts.decision_event import DecisionEvent
     from database.repositories.app_settings_repository import AppSettingsRepository
 
@@ -751,7 +930,7 @@ def test_trailing_stop_disabled_when_distance_pct_is_zero():
 
         with SessionFactory.get_session() as session:
             row = DecisionPersistor(session).get_by_id(str(event.id))
-        assert row["stop_loss_price"] == entry  # SADECE breakeven, 125 DEĞİL
+        assert row["stop_loss_price"] == pytest.approx(115.0)  # kademeli kilitleme (3R*0.5), 125 (eski trailing) DEĞİL
     finally:
         with SessionFactory.get_session() as session:
             AppSettingsRepository(session).set("trailing_stop_distance_pct", "0.05", updated_by="test")
@@ -949,7 +1128,7 @@ def test_pump_fade_trailing_stop_with_tiny_favorable_move_eaten_by_fees_closes_a
         closed = closer_step2.close_due_positions(DecisionPersistor(session))
 
     assert closed[0]["pnl"] < 0
-    assert closed[0]["exit_reason"] == "breakeven_stop"
+    assert closed[0]["exit_reason"] == "reduced_loss_stop"
     assert closed[0]["win"] is False
 
 

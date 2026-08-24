@@ -46,12 +46,14 @@ _MAE_MFE_TIMEFRAME_SECONDS = {
 _MAE_MFE_BAR_TIMEFRAME = "1m"
 _MAE_MFE_MAX_BARS = 1000  # Binance'in gerçek tek-istek tavanı
 
-# Faz 313 — "breakeven_stop" etiketi SADECE gerçekleşen kayıp, orijinal
-# (ratchet öncesi) stop mesafesinin bu oranından KÜÇÜKSE kullanılır —
-# yani ratchet mekanizması kaybı GERÇEKTEN en az yarı yarıya azaltmışsa.
-# 0.5 icat edilmiş değil: "mekanizma anlamlı ölçüde işe yaradı mı"
-# sorusuna en doğal, orta noktalı cevap — daha gevşek bir eşik (ör. 0.9)
-# neredeyse tam-mesafe kayıpları bile "başabaş" gösterebilirdi.
+# Faz 313 — "reduced_loss_stop" etiketi (Faz 359 öncesi adıyla
+# "breakeven_stop" — o isim yanıltıcı bulunup kullanıcı isteğiyle
+# değiştirildi) SADECE gerçekleşen kayıp, orijinal (ratchet öncesi) stop
+# mesafesinin bu oranından KÜÇÜKSE kullanılır — yani ratchet mekanizması
+# kaybı GERÇEKTEN en az yarı yarıya azaltmışsa. 0.5 icat edilmiş değil:
+# "mekanizma anlamlı ölçüde işe yaradı mı" sorusuna en doğal, orta
+# noktalı cevap — daha gevşek bir eşik (ör. 0.9) neredeyse tam-mesafe
+# kayıpları bile "azaltılmış" gösterebilirdi.
 _BREAKEVEN_LOSS_REDUCTION_THRESHOLD = 0.5
 
 
@@ -474,6 +476,20 @@ class PositionCloser:
         else:
             trigger_r_multiple = self._load_breakeven_trigger_r_multiple()
             trailing_pct = self._load_trailing_stop_distance_pct()
+            progressive_lock_min_profit_r = self._load_progressive_lock_min_profit_r()
+            progressive_lock_fraction = self._load_progressive_lock_fraction()
+            # Faz 359 — original_risk (aşağıda) o anki (zaten ratchet
+            # edilmiş olabilecek) stop_loss_price'a göre hesaplanıyor —
+            # düz breakeven tetikleyicisi için yeterli (tek seferlik bir
+            # eşik), ama kademeli kilitleme birden fazla cycle boyunca
+            # TUTARLI bir R tanımına ihtiyaç duyuyor. Bunun için
+            # decisions.original_stop_loss_price (açılışta bir kez
+            # yazılan, ratchet'in ASLA değiştirmediği ham değer — AYNI
+            # alan close_due_positions'ın exit_reason etiketlemesinde de
+            # kullanılıyor) kullanılıyor. Yoksa (migration öncesi eski
+            # pozisyon) fail-closed: kademeli kilitleme atlanır, mevcut
+            # düz davranış aynen korunur.
+            original_stop_for_r = pos.get("original_stop_loss_price")
 
         if direction == "LONG":
             original_risk = entry_price - stop_loss_price
@@ -481,8 +497,14 @@ class PositionCloser:
             if is_pump_fade:
                 if current_price >= entry_price * (1 + breakeven_trigger_pct):
                     candidates.append(entry_price)
-            elif original_risk > 0 and current_price >= entry_price + original_risk * trigger_r_multiple:
-                candidates.append(entry_price)
+            else:
+                if original_risk > 0 and current_price >= entry_price + original_risk * trigger_r_multiple:
+                    candidates.append(entry_price)
+                if original_stop_for_r is not None and original_stop_for_r < entry_price:
+                    true_original_risk = entry_price - original_stop_for_r
+                    profit_r = (current_price - entry_price) / true_original_risk
+                    if profit_r >= progressive_lock_min_profit_r:
+                        candidates.append(entry_price + true_original_risk * profit_r * progressive_lock_fraction)
             if trailing_pct > 0:
                 trailing_candidate = current_price - entry_price * trailing_pct
                 # Trailing SADECE gerçek kâr bölgesinde (entry_price'ın
@@ -499,8 +521,14 @@ class PositionCloser:
             if is_pump_fade:
                 if current_price <= entry_price * (1 - breakeven_trigger_pct):
                     candidates.append(entry_price)
-            elif original_risk > 0 and current_price <= entry_price - original_risk * trigger_r_multiple:
-                candidates.append(entry_price)
+            else:
+                if original_risk > 0 and current_price <= entry_price - original_risk * trigger_r_multiple:
+                    candidates.append(entry_price)
+                if original_stop_for_r is not None and original_stop_for_r > entry_price:
+                    true_original_risk = original_stop_for_r - entry_price
+                    profit_r = (entry_price - current_price) / true_original_risk
+                    if profit_r >= progressive_lock_min_profit_r:
+                        candidates.append(entry_price - true_original_risk * profit_r * progressive_lock_fraction)
             if trailing_pct > 0:
                 trailing_candidate = current_price + entry_price * trailing_pct
                 if trailing_candidate < entry_price:
@@ -607,6 +635,46 @@ class PositionCloser:
             return value if 0.0 < value <= 1.0 else 0.5
         except Exception as exc:
             logger.warning("breakeven_trigger_r_multiple_load_failed", error=str(exc))
+            return 0.5
+
+    @staticmethod
+    def _load_progressive_lock_min_profit_r() -> float:
+        """Faz 359 — kullanıcı isteği: kâr arttıkça stop'u SADECE girişe
+        değil, kârın bir kısmını kilitleyecek şekilde daha yukarı çekmek.
+        Kullanıcının kendi uyardığı risk: küçük bir kâr anında ("%1
+        kârdayken %0.5'e çeksin") çok sıkı bir stop, normal fiyat
+        gürültüsüyle anında tetiklenir. Bu ayar bir GÜVENLİK TABANI: bu
+        R-katından (breakeven_trigger_r_multiple'ın ÜSTÜNDE, varsayılan
+        1.0R) az kârda mekanizma HİÇ değişmiyor — mevcut düz breakeven
+        kuralı (0.5R'de girişe çek) aynen çalışmaya devam ediyor.
+        Sadece bu eşiği GEÇİNCE kademeli kilitleme başlıyor."""
+        try:
+            from database.repositories.app_settings_repository import AppSettingsRepository
+            from database.session_factory import SessionFactory
+
+            with SessionFactory.get_session() as session:
+                value = float(AppSettingsRepository(session).get("progressive_lock_min_profit_r") or 1.0)
+            return value if value > 0.0 else 1.0
+        except Exception as exc:
+            logger.warning("progressive_lock_min_profit_r_load_failed", error=str(exc))
+            return 1.0
+
+    @staticmethod
+    def _load_progressive_lock_fraction() -> float:
+        """Faz 359 — bkz. _load_progressive_lock_min_profit_r. Eşik
+        geçilince kilitlenen stop = entry + original_risk * profit_r *
+        bu_oran — "kârın yarısını kilitle" kullanıcı örneğiyle AYNI ilke,
+        ama R-katı cinsinden (mutlak $/% değil): farklı sembollerin doğal
+        oynaklığından/stop mesafesinden bağımsız, tutarlı bir davranış."""
+        try:
+            from database.repositories.app_settings_repository import AppSettingsRepository
+            from database.session_factory import SessionFactory
+
+            with SessionFactory.get_session() as session:
+                value = float(AppSettingsRepository(session).get("progressive_lock_fraction") or 0.5)
+            return value if 0.0 < value <= 1.0 else 0.5
+        except Exception as exc:
+            logger.warning("progressive_lock_fraction_load_failed", error=str(exc))
             return 0.5
 
     @staticmethod
@@ -815,12 +883,22 @@ class PositionCloser:
             # kontrol döngüsü sırasında fiyat, ratchet edilmiş (girişe
             # yakın) stopu büyük bir kaymayla (slippage/gap) aşıp gerçek,
             # büyük bir kayıp üretebiliyordu (KAIAUSDT: fiyat-kaynaklı kayıp
-            # -$1103.31, ücret+funding sadece -$55.50). Artık GERÇEK kayıp,
+            # -$1103.31, ücret+funding sadece -$55.50). GERÇEK kayıp,
             # decisions.original_stop_loss_price'ta (pozisyon açılışında
             # bir kez yazılan, ratchet'in ASLA değiştirmediği ham değer)
             # saklı orijinal risk mesafesinin belirgin bir kısmından
-            # (yarısından) küçükse "breakeven_stop" — mekanizma gerçekten
-            # işe yaramış demektir. Orijinal değer yoksa (migration öncesi
+            # (yarısından) küçükse mekanizma gerçekten işe yaramış demektir.
+            #
+            # Faz 359 — kullanıcı bulgusu (2026-08-24, gerçek LTCUSDT
+            # örnekleri): "breakeven_stop" etiketi kendisi YANILTICIYDI —
+            # kullanıcı "Başabaş çekildi" görüp $0 civarı bekliyordu, ama
+            # gerçek pnl -$140.22, -$119.64 vb. çıkabiliyordu (orijinal
+            # $950'lik kaybın yarısından azı olduğu için "başarılı" sayılan
+            # bir durum — matematiksel olarak doğru, isim yanlış). Bu dal
+            # artık ASLA "breakeven_stop" üretmiyor (o isim, gerçek ~$0
+            # sonuçlu trailing_stop_profit'e bırakıldı) — zarar azaltılmış
+            # ama HÂLÂ zarar olan durumlar dürüstçe "reduced_loss_stop"
+            # olarak etiketleniyor. Orijinal değer yoksa (migration öncesi
             # açılmış eski bir pozisyon) fail-closed: doğrulanamıyor,
             # dürüstçe "stop_loss" kalır.
             if exit_reason == "stop_loss":
@@ -839,7 +917,7 @@ class PositionCloser:
                             original_risk_amount > 0
                             and abs(pnl) < original_risk_amount * _BREAKEVEN_LOSS_REDUCTION_THRESHOLD
                         ):
-                            exit_reason = "breakeven_stop"
+                            exit_reason = "reduced_loss_stop"
 
             # Faz 268-sonrası: SADECE burada (pozisyon fiilen kapanırken,
             # her check cycle'ında değil) gerçek MAE/MFE hesaplanıyor —
