@@ -1,5 +1,26 @@
 """Faz 255: kaldıraç + likidasyon fiyatı testleri."""
-from simulator.margin import compute_liquidation_price, max_safe_leverage
+from simulator.margin import compute_liquidation_price, max_safe_leverage, pyramid_dampened_leverage
+
+
+def test_pyramid_dampened_leverage_unchanged_for_first_position():
+    assert pyramid_dampened_leverage(5.0, existing_open_count=0) == 5.0
+
+
+def test_pyramid_dampened_leverage_halves_on_second_stacked_position():
+    assert pyramid_dampened_leverage(5.0, existing_open_count=1) == 2.5
+
+
+def test_pyramid_dampened_leverage_shrinks_with_deeper_stack():
+    assert pyramid_dampened_leverage(5.0, existing_open_count=3) == 1.25
+    assert pyramid_dampened_leverage(5.0, existing_open_count=4) == 1.0
+
+
+def test_pyramid_dampened_leverage_never_drops_below_spot():
+    assert pyramid_dampened_leverage(5.0, existing_open_count=99) == 1.0
+
+
+def test_pyramid_dampened_leverage_no_op_for_negative_count():
+    assert pyramid_dampened_leverage(5.0, existing_open_count=-1) == 5.0
 
 
 def test_spot_position_has_no_liquidation_price():

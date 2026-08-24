@@ -57,6 +57,29 @@ def max_safe_leverage(
     return min(exchange_max_leverage, 1.0 / required_liq_distance)
 
 
+def pyramid_dampened_leverage(base_leverage: float, existing_open_count: int) -> float:
+    """Faz 361-devam — kullanıcı bulgusu (gerçek ZECUSDT örneği, 2026-08-24):
+    aynı sembol/yönde art arda açılan 5x kaldıraçlı pozisyonların yön
+    tahmini yanlış çıkınca EFEKTİF kaybı leverage × yığın derinliği kadar
+    büyüyor (5x kaldıraç + 4 kat yığılma = tek/kaldıraçsız bir pozisyona
+    göre ~20x kayıp). analytics/pyramid_regime_gate.py (Faz 361, ana turda)
+    SADECE "hangi fiyattan/rejimde eklendiği" boyutunu ele alıyor — bu,
+    AYRI ve bağımsız bir boyut: kaç tane zaten açık olduğu, rejimden/
+    fiyattan bağımsız olarak.
+
+    existing_open_count aynı sembol/yönde ZATEN açık pozisyon sayısı
+    (bu yeni giriş dahil DEĞİL). İlk pozisyon (existing_open_count=0)
+    tam configured kaldıracı alır; her ek yığın kaldıracı orantılı
+    böler — böylece TOPLAM efektif kaldıraç (leverage × yığın derinliği)
+    kabaca tek bir pozisyonun temel kaldıracında sınırlı kalır, sınırsız
+    büyümez. Asla 1.0'ın (spot) altına inmez — "sadece sıkılaştırır,
+    asla dayatılan bir taban değil" ilkesiyle tutarlı, max_safe_leverage
+    ile AYNI desen."""
+    if existing_open_count <= 0:
+        return base_leverage
+    return max(1.0, base_leverage / (existing_open_count + 1))
+
+
 @dataclass
 class MarginAccount:
     balance: float = 100_000.0

@@ -83,6 +83,44 @@ def test_leverage_is_clamped_to_keep_liquidation_safely_beyond_the_stop(tmp_path
             AppSettingsRepository(session).set("symbol_leverage", original, updated_by="test")
 
 
+def test_leverage_is_dampened_when_stacking_onto_existing_same_direction_positions():
+    """Faz 361-devam — gerçek ZECUSDT örneği: 5x kaldıraçlı aynı sembol/
+    yönde art arda 4-5 pozisyon, yön yanlış çıkınca leverage × yığın
+    derinliği kadar büyüyen bir kayıp üretti (~$6.675). Artık
+    ctx.risk.same_direction_open_counts'a göre kaldıraç orantılı düşüyor."""
+    from database.repositories.app_settings_repository import AppSettingsRepository
+    from database.session_factory import SessionFactory
+
+    symbol = "PYRLEVTESTUSDT"
+    with SessionFactory.get_session() as session:
+        repo = AppSettingsRepository(session)
+        original = repo.get("symbol_leverage")
+        import json
+        mapping = json.loads(original)
+        mapping[symbol] = 5
+        repo.set("symbol_leverage", json.dumps(mapping), updated_by="test")
+
+    try:
+        recorder = DecisionRecorder()
+        entry_price = 100.0
+        risk_mag = entry_price * 0.02  # dar stop -- max_safe_leverage 5x'i hiç sinirlamaz
+
+        ctx = CognitiveCycleContext(
+            market={"symbol": symbol, "raw_snapshot": {"close": entry_price}},
+            decision={
+                "proposed_direction": "LONG", "final_action": "LONG",
+                "final_size": 100.0, "stop_loss_distance": risk_mag, "take_profit_distance": risk_mag,
+            },
+            risk={"evaluation": {"verdict": "approved"}, "same_direction_open_counts": {"LONG": 1}},
+        )
+
+        event = recorder.record(ctx, [])
+        assert event.leverage == 2.5
+    finally:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("symbol_leverage", original, updated_by="test")
+
+
 def test_worse_price_pyramid_add_blocked_outside_allowed_regime():
     """Faz 361 — kullanıcı kararı: aynı sembol/yönde açık pozisyon
     varken daha kötü fiyattan üste eklemek SADECE bullish_low rejiminde
