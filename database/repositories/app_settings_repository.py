@@ -602,6 +602,20 @@ DEFAULTS: dict[str, str] = {
     # modül değil.
     "pyramid_regime_gate_enabled": "true",
     "pyramid_worse_price_allowed_regime": "bullish_low",
+
+    # Faz 362 — kullanıcı bulgusu: "council'in ara sıra bir cycle'da
+    # tersine dönmesi çoğunlukla gürültü — bu gürültüye güvenerek yeni
+    # pozisyonlara da girebilir." Gerçek 3619 kapanmış pozisyonla (10-24
+    # Ağustos) ölçüldü: girişten önce 0-3 ardışık tutarlı cycle varken
+    # işlemler TEK TEK ortalama zarar ediyordu, run=4'te İLK kez net
+    # pozitif oldu — TOPLAM kârı maksimize eden eşik de (hacim×kalite
+    # dengesi) bağımsız olarak aynı N=4'e işaret etti (bkz. analytics/
+    # signal_persistence.py). Varsayılan AÇIK — koruyucu bir mekanizma.
+    # Optimum N veri büyüdükçe değişebilir (services/signal_persistence_
+    # gatherer.py Genel Özet panelinde sürekli yeniden ölçüyor) ama bu
+    # ayar OTOMATİK kaymaz — kullanıcı bilinçli olarak günceller.
+    "signal_persistence_gate_enabled": "true",
+    "signal_persistence_min_consistent_cycles": "4",
 }
 
 CANDLE_TIMEFRAMES = ("1m", "5m", "15m", "1h", "4h", "1d")

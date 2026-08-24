@@ -121,6 +121,77 @@ def test_leverage_is_dampened_when_stacking_onto_existing_same_direction_positio
             AppSettingsRepository(session).set("symbol_leverage", original, updated_by="test")
 
 
+def _persist_prior_direction(symbol: str, direction: str, when: datetime):
+    from contracts.decision_event import DecisionEvent
+
+    with get_session() as session:
+        DecisionPersistor(session).persist(DecisionEvent(
+            symbol=symbol, proposed_direction=direction, final_action=direction,
+            status="no_trade", timestamp=when,
+        ))
+
+
+def test_fresh_signal_blocked_when_prior_consistent_run_below_minimum():
+    """Faz 362 — kullanıcı bulgusu: girişten önce 4'ten az ardışık aynı
+    yönlü cycle varsa (taze dönüş) işlem TEK TEK ortalama zarar ediyordu
+    (gerçek veriyle ölçüldü) -- varsayılan eşik 4. Kapı testlerde
+    conftest.py tarafından bilerek kapatılıyor -- bu test kendi scope'unda
+    açıp geri kapatıyor."""
+    from database.repositories.app_settings_repository import AppSettingsRepository
+    from database.session_factory import SessionFactory
+
+    with SessionFactory.get_session() as session:
+        AppSettingsRepository(session).set("signal_persistence_gate_enabled", "true", updated_by="test")
+    try:
+        symbol = f"SIGTEST{__import__('uuid').uuid4().hex[:6]}USDT"
+        now = datetime.now(UTC)
+        for i in range(3):  # sadece 3 ardisik LONG -- esik olan 4'un altinda
+            _persist_prior_direction(symbol, "LONG", now - timedelta(minutes=10 - i))
+
+        recorder = DecisionRecorder()
+        ctx = CognitiveCycleContext(
+            market={"symbol": symbol, "raw_snapshot": {"close": 100.0}},
+            decision={
+                "proposed_direction": "LONG", "final_action": "LONG",
+                "final_size": 10.0, "stop_loss_distance": 5.0, "take_profit_distance": 5.0,
+            },
+            risk={"evaluation": {"verdict": "approved"}},
+        )
+        event = recorder.record(ctx, [])
+        assert event.status == "no_trade"
+    finally:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("signal_persistence_gate_enabled", "false", updated_by="test")
+
+
+def test_signal_allowed_when_prior_consistent_run_meets_minimum():
+    from database.repositories.app_settings_repository import AppSettingsRepository
+    from database.session_factory import SessionFactory
+
+    with SessionFactory.get_session() as session:
+        AppSettingsRepository(session).set("signal_persistence_gate_enabled", "true", updated_by="test")
+    try:
+        symbol = f"SIGTEST{__import__('uuid').uuid4().hex[:6]}USDT"
+        now = datetime.now(UTC)
+        for i in range(4):  # tam esik kadar (4) ardisik LONG
+            _persist_prior_direction(symbol, "LONG", now - timedelta(minutes=10 - i))
+
+        recorder = DecisionRecorder()
+        ctx = CognitiveCycleContext(
+            market={"symbol": symbol, "raw_snapshot": {"close": 100.0}},
+            decision={
+                "proposed_direction": "LONG", "final_action": "LONG",
+                "final_size": 10.0, "stop_loss_distance": 5.0, "take_profit_distance": 5.0,
+            },
+            risk={"evaluation": {"verdict": "approved"}},
+        )
+        event = recorder.record(ctx, [])
+        assert event.status == "open"
+    finally:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("signal_persistence_gate_enabled", "false", updated_by="test")
+
+
 def test_worse_price_pyramid_add_blocked_outside_allowed_regime():
     """Faz 361 — kullanıcı kararı: aynı sembol/yönde açık pozisyon
     varken daha kötü fiyattan üste eklemek SADECE bullish_low rejiminde

@@ -212,6 +212,23 @@ class DecisionPersistor:
 
         return [dict(r) for r in rows]
 
+    def list_recent_directions_for_symbol(self, symbol: str, limit: int = 20) -> list[dict]:
+        """Faz 362 — analytics/signal_persistence.py::consistent_direction_
+        run_length() için: bu sembol için en yeniden en eskiye doğru son
+        `limit` kararın SADECE direction/timestamp'i (get_by_symbol'un
+        SELECT * ağırlığı olmadan — bu kapı her yeni açılış adayında
+        çalışıyor, ucuz kalmalı). Bu SIRA ile çağrıldığında (mevcut karar
+        henüz persist edilmeden ÖNCE) doğal olarak "önceki" kararları
+        döner, ayrı bir zaman filtresi gerekmez."""
+        rows = self.session.execute(
+            text(
+                "SELECT direction FROM decisions WHERE symbol=:symbol "
+                "ORDER BY timestamp DESC LIMIT :limit"
+            ),
+            {"symbol": symbol, "limit": limit},
+        ).all()
+        return [{"direction": row.direction} for row in rows]
+
     def list_open_positions(self, limit: int | None = 200, offset: int = 0):
         # Faz 268y — kullanıcı bulgusu: 869 açık pozisyonun sadece ilk
         # 100'ünü (limit sabit, offset hiç yoktu) görebiliyordu, "diğerlerini

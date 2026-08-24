@@ -360,6 +360,19 @@ def _validate(key: str, value: str) -> None:
                 "pyramid_worse_price_allowed_regime must be one of: "
                 "bullish_low, bullish_normal, bullish_high, bearish_low, bearish_normal, bearish_high",
             )
+    elif key == "signal_persistence_gate_enabled":
+        if value not in ("true", "false"):
+            raise HTTPException(400, "signal_persistence_gate_enabled must be 'true' or 'false'")
+    elif key == "signal_persistence_min_consistent_cycles":
+        # Faz 362 — bkz. analytics/signal_persistence.py. 0 = kapı fiilen
+        # devre dışı (her run_length>=0) — kapatmak için gate_enabled
+        # zaten var, ama 0 girilirse de fail-closed sonuç aynı, hataya
+        # gerek yok.
+        try:
+            if int(value) < 0:
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "signal_persistence_min_consistent_cycles must be a non-negative integer")
     else:
         raise HTTPException(400, f"unknown setting key: {key}")
 

@@ -90,6 +90,37 @@ class DecisionRecorder:
         # güncel kapanış fiyatına düş — hiçbir zaman uydurma bir sayı değil.
         entry_price = getattr(ctx.decision, "filled_price", None) or (ctx.market.raw_snapshot or {}).get("close")
 
+        # Faz 362 — kullanıcı bulgusu: "council'in ara sıra bir cycle'da
+        # tersine dönmesi çoğunlukla gerçek bir trend değişimi değil,
+        # gürültü — bu gürültüye güvenerek yeni pozisyonlara da girebilir."
+        # Gerçek 3619 kapanmış pozisyonla (10-24 Ağustos, mekanik
+        # stratejiler hariç) doğrulandı: girişten hemen önce o sembol/
+        # yönde 0-3 ardışık tutarlı cycle varken işlemler TEK TEK ortalama
+        # ZARAR ediyordu (run=0: -$4.96, run=3: -$11.89) — run=4'te İLK kez
+        # net pozitif (+$5.03) oluyor. TOPLAM kârı (hacim×kalite dengesini
+        # doğru yakalayan tek metrik) maksimize eden eşik de bağımsız
+        # olarak AYNI noktaya (N=4, $116,335 — N=5-7 istatistiksel
+        # ayırt edilemez şekilde platoluyor, sonrası düşüyor) işaret etti
+        # (bkz. analytics/signal_persistence.py, services/signal_
+        # persistence_gatherer.py — optimum N veri büyüdükçe değişebilir
+        # diye Genel Özet panelinde SÜREKLİ yeniden ölçülüyor, ama canlı
+        # eşik burada AYRI bir ayarla — kullanıcı bilinçli karar vermeden
+        # otomatik kaymasın diye).
+        if opens_position and experiment_bucket is None:
+            from analytics.signal_persistence import (
+                consistent_direction_run_length,
+                is_fresh_signal_blocked,
+            )
+            from database.repositories.app_settings_repository import AppSettingsRepository
+
+            settings_repo = AppSettingsRepository(self.session)
+            if settings_repo.get("signal_persistence_gate_enabled") == "true":
+                min_required = int(settings_repo.get("signal_persistence_min_consistent_cycles"))
+                prior = self.persistor.list_recent_directions_for_symbol(ctx.market.symbol, limit=min_required)
+                run_length = consistent_direction_run_length(prior, direction)
+                if is_fresh_signal_blocked(run_length, min_required):
+                    opens_position = False
+
         # Faz 350 — Pozisyon Havuzu / Max Confidence Modu: normal council
         # yolunda (deneysel bucket'sız) risk-onaylı bir açılış, ayar
         # açıksa hemen açılmak yerine bir pencere boyunca havuzlanabilir

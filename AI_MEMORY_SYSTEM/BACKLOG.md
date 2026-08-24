@@ -292,6 +292,24 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
     işaret ediyor) ilk bakılacak yer. Henüz ölçülmedi/kod incelemesi
     yapılmadı.
 
+31. **[ÇÖZÜLDÜ — Faz 362, 2026-08-24] "Council'in fikir değiştirmesi" verisi
+    — hem çıkış hem giriş tarafı ölçüldü.** Kullanıcı sorusu: kullanılmayan
+    `ActionType.EXIT`'in gerçek bir kapasite eksikliğine (proaktif, inanç-
+    değişimi-tetiklemeli çıkış) işaret ettiği bulundu. Çıkış tarafı ÖLÇÜLDÜ
+    VE REDDEDİLDİ: 159 pozisyonda erken çıkış -$56,395 daha kötü sonuç
+    verirdi, 3-5 ardışık onay istemek DÜZELTMEDİ (N=4'te "daha iyi olurdu"
+    27 örnekte SIFIR) — auto-exit inşa edilmedi. Giriş tarafı ("aynı
+    gürültü yeni pozisyonlara da mı giriyor?") ÖLÇÜLDÜ VE DOĞRULANDI:
+    3619 pozisyonda run=0-3 (taze/az tutarlı sinyal) TEK TEK ortalama
+    zarar ediyordu, run=4'te ilk net pozitif. Toplam-kâr-maksimize eden
+    eşik bağımsız ölçümle AYNI N=4'e işaret etti ($116,335 tepe). Canlıya
+    alındı: `analytics/signal_persistence.py` + `services/decision_
+    recorder.py` (ayar: `signal_persistence_min_consistent_cycles=4`,
+    varsayılan açık). Sürekli yeniden ölçüm için `services/signal_
+    persistence_gatherer.py` Genel Özet paneline bağlandı — optimum N
+    veri büyüdükçe otomatik gösterilir (ama canlı ayarı otomatik
+    DEĞİŞTİRMEZ, kullanıcı elle günceller).
+
 ## Notlar
 
 - Kullanıcı `max_open_positions_per_symbol_direction`'a (1000) bilerek

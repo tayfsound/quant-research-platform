@@ -34,6 +34,14 @@ _MODULES = [
     # turun kapsamı dışında bırakıldı) — "Detaya git" şimdilik boş içerik
     # gösterir, kart özeti yine de canlı ve doğru.
     ("scientific_self_correction", "Bilimsel Öz-Düzeltme", "scientific-self-correction", "services.scientific_self_correction_gatherer", "gather_scientific_self_correction"),
+    # Faz 362 — kullanıcı isteği: "sinyal tutarlılığı" eşiğinin (girişten
+    # önce kaç ardışık cycle aynı yönde olmalı) optimum değeri veri
+    # büyüdükçe değişebilir — sabit bir sayı yerine, her çağrıda TAZE
+    # yeniden hesaplanan bir gözlem katmanı. Canlı gate ayrı bir ayarla
+    # (signal_persistence_min_consistent_cycles) çalışıyor, bu panel
+    # SADECE "şu an veriye göre optimum ne olurdu" sorusuna cevap veriyor
+    # — otomatik uygulanmıyor, kullanıcı isterse elle günceller.
+    ("signal_persistence", "Sinyal Tutarlılığı Eşiği", "signal-persistence", "services.signal_persistence_gatherer", "gather_signal_persistence_analysis"),
 ]
 
 

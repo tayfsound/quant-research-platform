@@ -1,9 +1,25 @@
-# Mevcut Durum -- v1.99.0 (Faz 361: rejim-bazlı piramitleme kapısı)
+# Mevcut Durum -- v1.100.0 (Faz 362: sinyal tutarlılığı kapısı)
 
 **Tarih:** 2026-08-24
 **Branch:** main
-**Son commit (HEAD):** Faz 361 (bu commit ile).
-**⚠️ Servis durumu:** Faz 360 (WebSocket gerçek-zamanlı pozisyon izleyici, `services/realtime_position_monitor.py`) canlıda, watchdog'a eklendi, çalışıyor. Faz 361 henüz restart edilmedi (uvicorn/worker_default watchdog tarafından otomatik alacak, ama şimdilik commit-only).
+**Son commit (HEAD):** Faz 362 (bu commit ile).
+**⚠️ Servis durumu:** Faz 360 (WebSocket gerçek-zamanlı pozisyon izleyici) ve Faz 361 (piramitleme rejim kapısı + kaldıraç sönümleyici) canlıda, restart edildi, çalışıyor. Faz 362 henüz restart edilmedi (commit-only).
+
+## Faz 362 — Sinyal tutarlılığı kapısı: taze/gürültülü sinyalle işlem açılması engellendi (2026-08-24)
+
+`ActionType.EXIT` diye kullanılmayan bir enum değeri bulundu (proje ilk commit'inden beri, hiç bağlanmamış) — kullanıcı sorusu ("bu işe yarar bir şey mi, niye bağlamadık?") council'in "elimde açık pozisyon var, inancım tersine döndü" durumunu HİÇ değerlendirmediğini ortaya çıkardı. Bunu ciddi bir özellik olarak inşa etmeden önce, sistemin ZATEN her cycle'da (pozisyon açılsa da açılmasa da, status='no_trade' dahil) council'in yön+confidence'ını kaydettiği fark edildi — hiçbir yeni enstrümantasyon gerekmeden gerçek "council ne zaman fikir değiştirdi" verisi mevcuttu.
+
+**Çıkış tarafı — REDDEDİLDİ, gerçek veriyle:** Son 4 günde 159 pozisyon için, açıkken aynı sembolde ters yönde güçlü (>=0.65) bir council kararı geldiğinde "o an çıksaydık" ile "gerçekte ne oldu" karşılaştırıldı: gerçek toplam pnl +$10,486 iken erken çıksaydık -$45,909 olurdu (fark: -$56,395). 3-5 ardışık onay istendiğinde (gürültüyü filtrelemek için) sonuç DÜZELMEDİ, kötüleşti — N=4 ardışık onayda "daha iyi olurdu" sayısı 27 örnekte TAM SIFIR. Sinyal yapısal olarak güvenilmez — auto-exit özelliği İNŞA EDİLMEDİ, veri açıkça karşı çıktı.
+
+**Giriş tarafı — DOĞRULANDI, gerçek veriyle, canlıya alındı:** Kullanıcının paralel sorusu ("aynı gürültüyle yeni pozisyonlara da giriyor olabilir miyiz?") haklı çıktı. 10-24 Ağustos, 3619 kapanmış pozisyon (mekanik stratejiler hariç): girişten hemen önce o sembol/yönde 0-3 ardışık tutarlı cycle varken işlemler TEK TEK ortalama ZARAR ediyordu (run=0: n=1495, %48.3 win_rate, -$4.96; run=3: -$11.89) — run=4'te İLK kez net pozitif (+$5.03). Doğru amaç fonksiyonuyla (TOPLAM kâr = mean_pnl(>=N) × count(>=N), sadece işlem-başı ortalamaya bakmak küçük-örneklemli yüksek-N kovalarını yapay güçlü gösterir) optimum eşik BAĞIMSIZ olarak aynı noktaya (**N=4**, toplam $116,335 — N=5-7 istatistiksel ayırt edilemez şekilde platoluyor, sonrası hacim kaybından düşüyor) işaret etti.
+
+**Kod değişikliği:** `analytics/signal_persistence.py` — `consistent_direction_run_length()` (saf, `consecutive_stop_streak` ile AYNI desen) + `is_fresh_signal_blocked()` + `find_optimal_persistence_threshold()` (toplam-kâr-maksimize eden N'i bulan saf fonksiyon — GELECEKTE veri büyüdüğünde yeniden ölçüm için). `services/decision_recorder.py::record()`'a wire edildi (entry_price hesaplandıktan hemen önce, Position Pool/piramitleme kapılarıyla AYNI yer, `experiment_bucket is None`). Yeni `DecisionPersistor.list_recent_directions_for_symbol()` (ucuz — sadece direction/timestamp). Ayarlar: `signal_persistence_gate_enabled` (varsayılan **true**), `signal_persistence_min_consistent_cycles` (varsayılan **4**).
+
+**Sürekli yeniden ölçüm (kullanıcı isteği: "veri büyüdükçe optimum N değişebilir, elimizde güncel veri olsun"):** Yeni `services/signal_persistence_gatherer.py::gather_signal_persistence_analysis()` — her çağrıda TAZE hesaplar, Genel Özet paneline (`services/research_summary_gatherer.py`, 16. modül) bağlandı. SADECE gözlem — canlı eşiği otomatik DEĞİŞTİRMİYOR (küçük/gürültülü bir günde ayarın sessizce kayması riskine karşı), kullanıcı isterse elle günceller.
+
+**Test uyumluluk notu:** Bu kapı (piramitleme kapısının aksine) HER yeni pozisyon açılışına uygulanıyor — geçmişi olmayan taze test sembolleri dahil. Onlarca mevcut test "fresh sembol → pozisyon açılır" varsayıyordu. `conftest.py`'ye session-scoped bir autouse fixture eklendi (`signal_persistence_gate_enabled=false` test DB'sinde) — SADECE bunu bizzat test eden 2 yeni test kendi scope'unda elle açıp kapatıyor.
+
+**Test:** 11 yeni saf fonksiyon testi (`tests/test_signal_persistence.py`) + 2 entegrasyon testi (`tests/test_decision_recorder.py`) + geniş regresyon (decision_recorder/position_pool/pyramid_regime_gate/margin_leverage/council_orchestrator/meta_stage/celery_tasks/e2e — 100+ test) temiz. `test_red_team.py`'deki 2 önceden-var-olan başarısızlık (git stash ile doğrulandı — değişikliklerden bağımsız, ilgisiz bir flaky sorun) dokunulmadı.
 
 ## Faz 361 — Rejime göre piramitleme kapısı: "kötü fiyattan üste ekleme" artık sadece bullish_low'da izinli (2026-08-24)
 
