@@ -681,9 +681,20 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
     };
   }, [filteredTrades, sinceMinutes]);
 
+  // Faz 354 — kullanıcı bulgusu: "50 küsür pump-fade işlemi dashboard
+  // kartlarında görünüyor ama Transactions'ta filtrelediğimde sıfır
+  // görüyorum." Kök neden: tür/yön/kâr-zarar filtresi (matchesTypeFilter
+  // vb.) SADECE o an sayfalanmış `open` state'i üzerinde çalışıyordu —
+  // pump-fade Ağustos 20'den sonra hiç yeni pozisyon açmadığı için (bkz.
+  // pump_fade_enabled=false) tüm pump-fade satırları en-yeni-önce sırada
+  // sayfa 1'in ÇOK gerisinde kalmıştı (794 açık pozisyonda sıra 612-668).
+  // Bir filtre aktifken normal 100'lük sayfalamayı atlayıp TÜM açık
+  // pozisyonları tek seferde çekiyoruz ki filtre gerçekten tüm veri
+  // üzerinde çalışsın.
   const load = () => {
-    const offset = openPage * OPEN_PAGE_SIZE;
-    fetch(`/api/v1/positions?limit=${OPEN_PAGE_SIZE}&offset=${offset}`, { headers: authHeaders() })
+    const offset = hasActiveFilters ? 0 : openPage * OPEN_PAGE_SIZE;
+    const limit = hasActiveFilters ? 5000 : OPEN_PAGE_SIZE;
+    fetch(`/api/v1/positions?limit=${limit}&offset=${offset}`, { headers: authHeaders() })
       .then((r) => r.json())
       .then((data) => {
         setOpen(data.positions || []);
@@ -702,7 +713,7 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
     const interval = setInterval(load, 15000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openPage]);
+  }, [openPage, hasActiveFilters]);
 
   const partialClose = async (id: string, fraction: number) => {
     setCloseError(null);

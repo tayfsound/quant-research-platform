@@ -215,6 +215,7 @@ const TRADE_TYPE_LABELS: Record<string, string> = {
   swing: "Swing",
   hedge: "Hedge",
   pump_fade: "Pump-Fade",
+  basis_arb: "Basis Arb",
 };
 // En dar stoptan en genişe, sonra katman-tabanlı türler — okuma sırası
 // anlamlı olsun diye (rastgele obje key sırası değil).
@@ -230,7 +231,13 @@ const TRADE_TYPE_LABELS: Record<string, string> = {
 // ayarlara bağımlı, kırılgan bir kategoriydi (bkz. api/rest/positions.py::
 // _classify_trade_type üstündeki not) — artık her işlem gerçek stop
 // mesafesine göre scalp/swing'e ayrılıyor.
-const TRADE_TYPE_ORDER = ["scalp", "swing", "hedge", "pump_fade"];
+//
+// Faz 354 — kullanıcı bulgusu: Faz 344'te basis_arb backend'e (_classify_
+// trade_type) eklenmişti ama bu sabit listeye hiç eklenmemiş — 90 açık
+// basis_arb pozisyonu bu tablolarda (ve alttaki oran kartlarında) sessizce
+// hiç görünmüyordu, TAM olarak yukarıdaki pump_fade bulgusuyla AYNI hata
+// sınıfı tekrarlanmış.
+const TRADE_TYPE_ORDER = ["scalp", "swing", "hedge", "pump_fade", "basis_arb"];
 
 // Kullanıcı isteği: "işlem türüne göre açık pozisyonlar diye bir yer
 // eklemişsin güzel ama kapanmış işlemlerin olduğu kısıma ratioları
