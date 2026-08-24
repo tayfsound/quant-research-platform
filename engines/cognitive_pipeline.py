@@ -236,11 +236,16 @@ class MetaStage:
         ctx.decision.uncertainty = meta["uncertainty"]
 
         # Güçlü tek-ses itirazı: benched OLMAYAN (effective_influence>0)
-        # bir ajan normal eşiğin (0.75) üzerinde güvenle nihai yönün
-        # TERSİNE işaret ediyorsa pozisyon açma. Benched bir ajan da
+        # bir ajan normal eşiğin (STRONG_DISSENT_CONFIDENCE_THRESHOLD,
+        # şu an 0.65 — bkz. yukarıdaki tanım ve Faz 268-sonrası'ndaki
+        # 0.75->0.65 değişikliği) üzerinde güvenle nihai yönün TERSİNE
+        # işaret ediyorsa pozisyon açma. Benched bir ajan da
         # (effective_influence=0, kronik düşük isabet nedeniyle oyu
-        # zaten sıfırlanmış) TAMAMEN yok sayılmıyor — çok daha yüksek
-        # bir bar (0.90) geçerse o da WAIT'e zorluyor.
+        # zaten sıfırlanmış) TAMAMEN yok sayılmıyor — çok daha yüksek bir
+        # bar (BENCHED_STRONG_DISSENT_CONFIDENCE_THRESHOLD, şu an 0.70)
+        # geçerse o da WAIT'e zorluyor. (2026-08-24: bu yorum bloğundaki
+        # eski 0.75/0.90 rakamları, aşağıdaki tanımlarla çelişen bir
+        # driftti — güncellendi.)
         strong_dissent = any(
             o.direction in ("LONG", "SHORT")
             and o.direction != belief.direction

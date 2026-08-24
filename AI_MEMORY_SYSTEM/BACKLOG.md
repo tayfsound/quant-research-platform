@@ -87,18 +87,6 @@ gerçek kodla teyit edilecek:
 10. MetaStage yorumları 0.75/0.90'dan bahsediyor ama gerçek sabitler
     `STRONG_DISSENT_CONFIDENCE_THRESHOLD=0.65` / `BENCHED_..._THRESHOLD=0.70`.
 
-## 🟢 Kontrol ettim, kullanıcının hatırladığından farklı çıktı
-
-11. **"Respond sekmesinde LLM GPT olması lazım ama deepseek-v4-flash yazıyor."**
-    Kod kontrol edildi: `llm_reasoner.py::NvidiaDecisionCritic` hâlâ gerçekten
-    `deepseek-ai/deepseek-v4-flash-0731` kullanıyor — GPT'ye geçiş kodda YOK.
-    Muhtemelen kullanıcı bunu, GPT'ye harici olarak danışılan mimari
-    incelemelerle (CURRENT_STATE.md'de sık geçen "harici AI incelemesi/GPT
-    raporu" — uygulama İÇİNDEKİ Respond sekmesi değil, kullanıcının kendi
-    ChatGPT sohbetleri) karıştırıyor. **Netleştirme gerekiyor**: gerçekten
-    Respond sekmesinin modelini NVIDIA'dan OpenAI GPT'ye geçirmek mi istiyorsun
-    (yeni API key/config gerektirir), yoksa yanlış hatırlıyor musun?
-
 ## 🆕 Yeni özellik/analiz istekleri (henüz kod incelemesi gerekmiyor, tasarım kararı gerekiyor)
 
 12. **[ÇÖZÜLDÜ — Faz 356] Kazanma oranı çöküşü (21-23 Ağustos, ~%85 → %38)

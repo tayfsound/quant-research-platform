@@ -137,9 +137,11 @@ class CognitiveEngine:
         (learning_loop.record) ne de ağırlıkları DOĞRUDAN (weight_optimizer.
         optimize + kaydetme) beslemeli — "kalitesiz hiçbir veri ile
         sistemi kirletmeyelim." Gerçek öğrenme artık SADECE
-        services/position_closer.py (gerçek kapanışlar) ve
-        backtest/real_historical_backtest.py (gerçek geçmiş veri,
-        source="backtest") üzerinden gerçekleşiyor. RecordingStage zaten
-        DecisionEvent'i ayrıca (bu metodun dışında) kalıcı hale getiriyor
-        — bu metod artık kasıtlı olarak no-op."""
+        services/position_closer.py (gerçek kapanışlar) üzerinden
+        gerçekleşiyor — backtest/real_historical_backtest.py İKİNCİ bir
+        kaynak olarak anılıyordu ama Faz 284'te tüm backtest sistemi
+        kaldırıldı ("karar mekanizmasına hiç katkısı yoktu"), o yol artık
+        yok (yorum/kod driftı, 2026-08-24'te düzeltildi). RecordingStage
+        zaten DecisionEvent'i ayrıca (bu metodun dışında) kalıcı hale
+        getiriyor — bu metod artık kasıtlı olarak no-op."""
         return
