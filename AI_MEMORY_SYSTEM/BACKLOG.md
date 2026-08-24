@@ -157,6 +157,37 @@ gerçek kodla teyit edilecek:
     uygulandı — madde 4'ün orijinal "kötü fiyattan reddet" önerisinden
     FARKLI, kazanma-oranı iddiası içermiyor.
 
+24. **Transactions sayfasındaki kapalı işlemler tablosu 100 kayıtla
+    sınırlı (`GET /trades?limit=100`, `api/rest/positions.py::
+    list_closed_trades`).** Kullanıcı isteği (2026-08-24): "kör gidiyorum,
+    geriye dönüp inceleme yapamıyorum" — gerçek sayfalama (açık pozisyon
+    tablosunun Faz 268y'de aldığı offset desteğiyle AYNI) veya en azından
+    çok daha yüksek bir limit/tarih aralığı filtresi eklenmeli. Henüz kod
+    incelemesi yapılmadı.
+
+25. **["Başabaş çekildi" etiketi yanıltıcı — gerçek veriyle doğrulandı,
+    2026-08-24].** Kullanıcı gerçek örnekler gösterdi: LTCUSDT scalp LONG
+    "Başabaş çekildi" ama pnl -$140.22, -$119.64, -$92.99, -$66.01 vb.
+    Kod incelendi (`services/position_closer.py::_apply_breakeven_stop` +
+    `close_due_positions`): MEKANİZMA gerçekten çalışıyor — stop
+    girişe(entry_price'a) doğru çekiliyor (gerçek örnek: entry=52.3747,
+    stop=52.3747, tam girişte). Ama İKİ ayrı gerçek sorun var:
+    (1) **Gerçek slippage/gap**: exit_price = periyodik kontrol anındaki
+    current_price (stop fiyatının KENDİSİ değil) — fiyat, çekilmiş stopu
+    check aralığında (60sn) atlayabiliyor. Aynı örnekte exit=52.09,
+    stop=52.3747 — %0.55 gap, ~$115 gerçek fiyat kaynaklı zarar (Faz313'te
+    KAIAUSDT'de zaten tespit edilmiş AYNI mekanizma, o zamandan beri
+    mitigasyon eklenmemiş).
+    (2) **Yanıltıcı eşik**: `_BREAKEVEN_LOSS_REDUCTION_THRESHOLD=0.5` —
+    "breakeven_stop" etiketi gerçek zarar ORİJİNAL (geniş) stop mesafesinin
+    YARISINDAN küçükse veriliyor, ~$0'a yakın olduğu için DEĞİL. Yani
+    orijinal stop $950 kaybettirecekken $140 kaybetmek "başabaş" sayılıyor
+    — matematiksel olarak "tam zarardan iyi" ama kullanıcı dilinde
+    "başabaş" değil. Olası çözümler (tartışılacak): (a) dashboard
+    etiketini "Kısmi Zarar Önlendi" gibi daha dürüst bir isme çevirmek,
+    (b) check aralığını sıklaştırmak (gerçek gap'i azaltır), (c) eşiği
+    sıkılaştırmak. Henüz hiçbiri uygulanmadı.
+
 ## Notlar
 
 - Kullanıcı `max_open_positions_per_symbol_direction`'a (1000) bilerek
