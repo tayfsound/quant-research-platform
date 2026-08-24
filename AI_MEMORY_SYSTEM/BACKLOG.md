@@ -44,16 +44,22 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
    karar dürüstçe WAIT'e çevriliyor. Not: bu SADECE portföy-seviyesi (orchestrator)
    yarısı — DecisionFusion'ın kendi kalibrasyonu zaten sağlamdı, dokunulmadı.
 
-4. **Aynı sembolde tekrar aynı yönde pozisyon açarken elindeki pozisyonun giriş
-   fiyatı hiç kontrol edilmiyor (kullanıcı örneği: $5→$7→$9 LONG piramitleme).**
-   Şu an `max_open_positions_per_symbol_direction` sadece SAYIYI sınırlıyor
-   (ve kullanıcı isteğiyle 1000'de bırakıldı, test modunda dokunulmuyor) — fiyata
-   hiç bakmıyor. Gerçek istek: aynı yönde zaten AÇIK bir pozisyon varsa ve yeni
-   giriş fiyatı elindeki pozisyon(lar)ın ortalamasından/en pahalısından daha
-   kötüyse (LONG'da daha yüksek, SHORT'ta daha düşük), YENİ pozisyonu reddet ya
-   da en azından WAIT'e zorla. Henüz hiçbir yerde böyle bir kontrol yok — kod
-   incelemesiyle doğrulandı (risk_state.py/cognitive_pipeline.py'de sadece sayı
-   bazlı gate var, fiyat bazlı yok).
+4. **[KISMEN ÇÖZÜLDÜ — Faz 358, fiyat-bazlı kısmı madde 23'e taşındı]** Aynı
+   sembolde tekrar aynı yönde pozisyon açarken elindeki pozisyonun giriş
+   fiyatı hiç kontrol edilmiyordu (kullanıcı örneği: $5→$7→$9 LONG
+   piramitleme). Gerçek veriyle ölçüldü (bkz. madde 23): "kötü fiyattan
+   piramitleme kazanma oranını düşürür" tezi net desteklenmedi, kullanıcı
+   henüz ikna olmadı — o kısım AÇIK bırakıldı (madde 23). Ama kullanıcının
+   kabul ettiği FARKLI, daha savunulabilir bir tez ("toplam maruziyeti
+   sınırlamak kötü değil") Faz 358'de uygulandı: yeni `max_same_symbol_
+   direction_capital_pct` ayarı (varsayılan %15, canlı veriyle kontrol
+   edildi — mevcut hiçbir pozisyonu aniden bloklamıyor) — aynı sembol/yönde
+   bağlı GERÇEK marjin kasanın bu yüzdesini geçerse yeni pozisyon reddedilir
+   (`RiskGateStage`, `MAX_SAME_SYMBOL_DIRECTION_CAPITAL`). ENB/Cross-Symbol
+   Correlation Filter'a YAMANMADI — o mekanizma denendi, YANLIŞ yönde sonuç
+   verdiği doğrulandı (farklı sembollerin çeşitlendirmesini ölçüyor, tek
+   sembolün kendi yığılmasını değil) — ayrı, doğrudan bir $-tavanı olarak
+   uygulandı.
 
 5. **Kâr koruma / trailing yok — 10k kârdan başa-başa kadar bekliyor.**
    Kod incelemesi teyit ediyor: `PositionCloser`/`RiskTargetStage` sadece sabit
@@ -133,6 +139,23 @@ gerçek kodla teyit edilecek:
     yeni bir detay görünümü.
 21. Dashboard'a "AI şu an piyasa yönünü nasıl görüyor" bilgi kartı (mevcut
     ortalama/dominant belief.direction'ın canlı özeti).
+22. **Pump-fade'de nadir/aşırı fırsatları (token 2x+ yapmış vb. "absürt"
+    hareketler) yakalayabilme.** Kullanıcı isteği (2026-08-24): şu anki
+    pump_fade eşikleri (min_gain_pct vb.) muhtemelen bu tür nadir, büyük
+    fırsatları normal aralığın dışında bıraktığı için hiç görmüyor —
+    bunları nasıl yakalayabileceğimiz üzerine ayrı bir araştırma/tasarım
+    turu gerekiyor. Henüz kod incelemesi yapılmadı, en sona bırakıldı.
+23. **[AÇIK/EN SONA — KAPATILMADI] Aynı sembolde kötü fiyattan piramitleme
+    (madde 4'ün devamı).** 2026-08-24'te gerçek veriyle ölçüldü: basit
+    "kötü fiyat mı iyi fiyat mı" testi (n=3068 vs 1653) anlamlı fark
+    göstermedi (%59.7 vs %61.3); derinlik/yoğunluk testleri de tutarsız
+    çıktı (küçük örneklemler, SHORT yönüyle confound riski). Kullanıcı
+    HENÜZ İKNA OLMADI, "kapatmayalım, ileride daha fazla veriyle tekrar
+    ölçelim" dedi — bilerek açık bırakıldı, todo'nun EN SONUNA alındı.
+    Buna karşılık, kullanıcının kabul ettiği FARKLI bir tez (toplam
+    maruziyeti sınırlamak) Faz 358'de ayrı, doğrudan bir $-tavanı olarak
+    uygulandı — madde 4'ün orijinal "kötü fiyattan reddet" önerisinden
+    FARKLI, kazanma-oranı iddiası içermiyor.
 
 ## Notlar
 

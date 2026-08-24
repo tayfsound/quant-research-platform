@@ -256,6 +256,29 @@ export default function Settings() {
         </Card>
 
         <Card>
+          <h3 className="text-sm font-semibold text-ink mb-1">Bir sembol/yönde max bağlı sermaye (%)</h3>
+          <p className="text-xs text-ink-soft mb-3">
+            Yukarıdaki sayı-bazlı sınırdan AYRI, tamamlayıcı bir $-bazlı tavan — aynı sembol/yönde
+            bağlı GERÇEK marjin kasanın bu yüzdesini geçerse yeni pozisyon reddedilir (gerçek bir
+            olaydan sonra eklendi: XAUTUSDT LONG'da 17 pozisyon, hepsi dar bir fiyat bandında).
+            Boş/0 = devre dışı.
+          </p>
+          <div className="flex gap-2">
+            <Input
+              type="number"
+              value={draft.max_same_symbol_direction_capital_pct ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, max_same_symbol_direction_capital_pct: v }))}
+            />
+            <Button
+              disabled={saving === "max_same_symbol_direction_capital_pct"}
+              onClick={() => save("max_same_symbol_direction_capital_pct", draft.max_same_symbol_direction_capital_pct)}
+            >
+              {saved === "max_same_symbol_direction_capital_pct" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+        </Card>
+
+        <Card>
           <h3 className="text-sm font-semibold text-ink mb-1">Kasanın max %kaçı kullanılabilir</h3>
           <p className="text-xs text-ink-soft mb-3">0.5 = kasanın en fazla %50'si açık pozisyonlara bağlanabilir.</p>
           <div className="flex gap-2">

@@ -81,6 +81,21 @@ DEFAULTS: dict[str, str] = {
     # dayatılmıyor) — ama gerçek olayın hemen ardından muhafazakâr bir
     # varsayılan olarak 5 seçildi.
     "max_open_positions_per_symbol_direction": "5",
+    # Faz 358 — kullanıcı bulgusu: gerçek olay (2026-08-24) XAUTUSDT LONG'da
+    # 17 pozisyon, hepsi %0.15'lik bir fiyat bandında — sayı-bazlı gate
+    # (yukarıda) kullanıcı isteğiyle test modunda 1000'e gevşetildiği için
+    # bunu yakalamadı. Bu, AYRI ve tamamlayıcı bir $-bazlı tavan: aynı
+    # sembol/yönde bağlı GERÇEK marjin starting_capital'ın bu fraksiyonunu
+    # geçerse yeni pozisyon reddedilir. "0"/boş = devre dışı.
+    #
+    # Varsayılan %15 seçildi (kullanıcı henüz kesin bir sayı onaylamadı —
+    # bu, AYARLANMASI gereken bir başlangıç noktası): canlı veriyle
+    # kontrol edildi, restart anında GERÇEKTEN açık en yüksek maruziyet
+    # BNBUSDT LONG $498k (starting_capital $5M'in %9.96'sı) idi — %10
+    # seçilseydi restart ANINDA bu sembolü tıkardı. %15 mevcut hiçbir
+    # pozisyonu aniden bloklamıyor ama gelecekteki aşırı yığılmayı
+    # (XAUTUSDT örneği gibi) hâlâ yakalıyor.
+    "max_same_symbol_direction_capital_pct": "0.15",
     # Faz 268-sonrası — kritik bulgu: Faz 261'in 1:4 oranı (STOP=2.5x,
     # TARGET=10.0x günlük ATR) kendi yorumunda "eski/gürültülü veriden,
     # yeterli temiz veri birikince yeniden değerlendirilecek" diye

@@ -111,6 +111,12 @@ def load_position_risk_state(
         max_open_per_symbol_direction = (
             int(max_open_per_symbol_direction_raw) if max_open_per_symbol_direction_raw else None
         )
+        # Faz 358 — bkz. contracts/contexts/risk.py::max_same_symbol_
+        # direction_capital_pct docstring'i.
+        max_same_symbol_direction_capital_pct_raw = settings_repo.get("max_same_symbol_direction_capital_pct")
+        max_same_symbol_direction_capital_pct = (
+            float(max_same_symbol_direction_capital_pct_raw) if max_same_symbol_direction_capital_pct_raw else None
+        )
 
         decision_repo = DecisionPersistor(session)
 
@@ -129,8 +135,10 @@ def load_position_risk_state(
         # Faz 268-sonrası — gerçek olay: XAUTUSDT SHORT x54. bkz.
         # contracts/contexts/risk.py::same_direction_open_counts.
         same_direction_open_counts: dict[str, int] = {}
+        same_direction_open_notional: dict[str, float] = {}
         if symbol:
             same_direction_open_counts = decision_repo.count_open_by_symbol_direction(symbol)
+            same_direction_open_notional = decision_repo.sum_open_notional_by_symbol_direction(symbol)
 
         # Kill switch: en son kapanmış işlemlerden (tüm semboller,
         # kronolojik olarak en yeniden en eskiye) geriye doğru, İLK
@@ -224,5 +232,7 @@ def load_position_risk_state(
         "kill_switch_consecutive_losses": kill_switch_consecutive_losses,
         "same_direction_open_counts": same_direction_open_counts,
         "max_open_positions_per_symbol_direction": max_open_per_symbol_direction,
+        "same_direction_open_notional": same_direction_open_notional,
+        "max_same_symbol_direction_capital_pct": max_same_symbol_direction_capital_pct,
         "concept_drift_reason": concept_drift_reason,
     }

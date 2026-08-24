@@ -118,3 +118,66 @@ def test_same_direction_cap_disabled_when_setting_is_none():
     ctx = stage.execute(ctx)
 
     assert ctx.risk.evaluation.verdict == "approved"
+
+
+def test_rejects_when_same_symbol_direction_notional_exceeds_capital_cap():
+    """Faz 358 — kullanıcı bulgusu: gerçek olay XAUTUSDT LONG'da 17
+    pozisyon, hepsi %0.15'lik bir fiyat bandında — sayı-bazlı gate
+    (kullanıcı isteğiyle 1000'e gevşetildiği için) bunu yakalamadı. Bu,
+    AYRI bir $-bazlı tavan: aynı sembol/yönde bağlı GERÇEK marjin
+    starting_capital'ın bir fraksiyonunu geçerse reddedilmeli."""
+    from contracts.contexts.decision import ActionType
+
+    stage = RiskGateStage(MagicMock())
+    ctx = CognitiveCycleContext()
+    ctx.decision.action = ActionType.ENTER_LONG
+    ctx.decision.final_size = 0.1
+    ctx.risk.limits = {"max_position_size": FakeLimit()}
+    ctx.risk.evaluation = FakeEval()
+    ctx.risk.current_drawdown = 0.0
+    ctx.risk.starting_capital = 1_000_000.0
+    ctx.risk.same_direction_open_notional = {"LONG": 200_000.0, "SHORT": 0.0}
+    ctx.risk.max_same_symbol_direction_capital_pct = 0.15  # cap = $150k, mevcut $200k zaten üzerinde
+
+    ctx = stage.execute(ctx)
+
+    assert ctx.risk.evaluation.verdict == "rejected"
+    assert any(r.code == "MAX_SAME_SYMBOL_DIRECTION_CAPITAL" for r in ctx.risk.evaluation.reasons)
+
+
+def test_approves_when_same_symbol_direction_notional_is_below_capital_cap():
+    from contracts.contexts.decision import ActionType
+
+    stage = RiskGateStage(MagicMock())
+    ctx = CognitiveCycleContext()
+    ctx.decision.action = ActionType.ENTER_LONG
+    ctx.decision.final_size = 0.1
+    ctx.risk.limits = {"max_position_size": FakeLimit()}
+    ctx.risk.evaluation = FakeEval()
+    ctx.risk.current_drawdown = 0.0
+    ctx.risk.starting_capital = 1_000_000.0
+    ctx.risk.same_direction_open_notional = {"LONG": 50_000.0, "SHORT": 0.0}
+    ctx.risk.max_same_symbol_direction_capital_pct = 0.15  # cap = $150k, mevcut $50k altinda
+
+    ctx = stage.execute(ctx)
+
+    assert ctx.risk.evaluation.verdict == "approved"
+
+
+def test_same_symbol_direction_capital_cap_disabled_when_setting_is_none():
+    from contracts.contexts.decision import ActionType
+
+    stage = RiskGateStage(MagicMock())
+    ctx = CognitiveCycleContext()
+    ctx.decision.action = ActionType.ENTER_LONG
+    ctx.decision.final_size = 0.1
+    ctx.risk.limits = {"max_position_size": FakeLimit()}
+    ctx.risk.evaluation = FakeEval()
+    ctx.risk.current_drawdown = 0.0
+    ctx.risk.starting_capital = 1_000_000.0
+    ctx.risk.same_direction_open_notional = {"LONG": 999_999_999.0, "SHORT": 0.0}
+    ctx.risk.max_same_symbol_direction_capital_pct = None
+
+    ctx = stage.execute(ctx)
+
+    assert ctx.risk.evaluation.verdict == "approved"

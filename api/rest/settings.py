@@ -319,6 +319,16 @@ def _validate(key: str, value: str) -> None:
                 raise ValueError
         except ValueError:
             raise HTTPException(400, "max_open_positions_per_symbol_direction must be a positive integer")
+    elif key == "max_same_symbol_direction_capital_pct":
+        # Faz 358 — yukarıdaki sayı-bazlı gate'in $-bazlı tamamlayıcısı.
+        # "0" = devre dışı bırakmak için izin veriliyor (max_capital_pct
+        # gibi katı (0,1] değil).
+        try:
+            v = float(value)
+            if not (0 <= v <= 1):
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "max_same_symbol_direction_capital_pct must be a number in [0, 1]")
     else:
         raise HTTPException(400, f"unknown setting key: {key}")
 

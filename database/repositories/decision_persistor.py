@@ -464,6 +464,28 @@ class DecisionPersistor:
         ).all()
         return {row.direction: row.n for row in rows}
 
+    def sum_open_notional_by_symbol_direction(self, symbol: str) -> dict[str, float]:
+        """Faz 358 — kullanıcı bulgusu: count_open_by_symbol_direction
+        SADECE pozisyon SAYISINI görüyor, kaç $ bağlı olduğunu değil — aynı
+        sembolde art arda büyüyen boyutlarla (piramitleme) açılan az sayıda
+        ama devasa pozisyon bu sayaçtan hiç geçmez. Bu, GERÇEK bağlı
+        marjini (kaldıraçtan bağımsız — entry_price*quantity/leverage,
+        risk_state.py::capital_used_pct ile AYNI formül) yön bazında
+        toplar — RiskGateStage'in MAX_SAME_SYMBOL_DIRECTION_CAPITAL_PCT
+        kontrolü için."""
+        rows = self.session.execute(
+            text(
+                "SELECT direction, "
+                "sum(entry_price * quantity / COALESCE(NULLIF(leverage, 0), 1.0)) AS notional "
+                "FROM decisions "
+                "WHERE status = 'open' AND symbol = :symbol AND direction IN ('LONG','SHORT') "
+                "AND entry_price IS NOT NULL AND quantity IS NOT NULL "
+                "GROUP BY direction"
+            ),
+            {"symbol": symbol},
+        ).all()
+        return {row.direction: float(row.notional or 0.0) for row in rows}
+
     def open_positions_summary(self) -> dict:
         """Faz 262 — Faz 224'ün kapanmış işlemler için çözdüğü AYNI bug,
         açık pozisyonlarda hâlâ vardı: GET /positions'ın döndürdüğü liste

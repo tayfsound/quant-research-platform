@@ -1099,6 +1099,36 @@ class RiskGateStage:
                     severity="critical",
                 ))
 
+        # Faz 358 — kullanıcı bulgusu: yukarıdaki SAYI-bazlı gate kullanıcı
+        # isteğiyle 1000'e gevşetilip fiilen devre dışı bırakıldı (test
+        # modunda kısıtlama gereksiz) — ama "aynı sembol/yönde ne kadar $
+        # bağlı" sorusuna hiçbir gate bakmıyordu (gerçek olay: XAUTUSDT
+        # LONG'da 17 pozisyon, %0.15'lik bir bantta). Bu, AYRI ve
+        # tamamlayıcı bir kontrol — ENB/Cross-Symbol Correlation Filter'a
+        # (orchestrator.py::_apply_portfolio_fusion) BİLEREK eklenmedi: o
+        # mekanizma FARKLI sembollerin çeşitlendirmesini ölçüyor, tek bir
+        # sembolün kendi içindeki yığılmasını değil — denenip yanlış yönde
+        # sonuç verdiği doğrulandı (bkz. commit geçmişi). max_capital_pct
+        # ile AYNI, basit "toplam $ tavanı" ilkesi — SADECE bu sembol/yön
+        # için.
+        if (
+            final_direction is not None
+            and ctx.risk.max_same_symbol_direction_capital_pct is not None
+            and ctx.risk.max_same_symbol_direction_capital_pct > 0
+            and ctx.risk.starting_capital
+        ):
+            existing_notional = ctx.risk.same_direction_open_notional.get(final_direction, 0.0)
+            cap = ctx.risk.starting_capital * ctx.risk.max_same_symbol_direction_capital_pct
+            if existing_notional >= cap:
+                reasons.append(RiskReason(
+                    code="MAX_SAME_SYMBOL_DIRECTION_CAPITAL",
+                    message=(
+                        f"${existing_notional:,.0f} {final_direction} notional already open on this symbol "
+                        f">= cap ${cap:,.0f} ({ctx.risk.max_same_symbol_direction_capital_pct:.1%} of capital)"
+                    ),
+                    severity="critical",
+                ))
+
         if reasons:
             ctx.decision.action = ActionType.WAIT
             ctx.decision.final_size = 0.0

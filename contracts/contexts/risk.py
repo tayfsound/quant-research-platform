@@ -49,6 +49,10 @@ class RiskContext(BaseModel):
     max_concurrent_positions: int | None = None
     capital_used_pct: float = 0.0
     max_capital_pct: float | None = None
+    # Faz 358 — MAX_SAME_SYMBOL_DIRECTION_CAPITAL kontrolü mutlak $ tavanı
+    # hesaplamak için gerçek starting_capital'a ihtiyaç duyuyor (capital_
+    # used_pct gibi zaten oranlanmış bir değer değil).
+    starting_capital: float | None = None
     # Faz 189: "stopsuz işlem yapmasın test modunda bile olsa" — bu ikisi
     # trading_mode="test" iken bile ATLANMAZ (aşağıdaki diğerlerinin
     # tersine), çünkü amaç sermaye riskini sınırlamak değil, art arda
@@ -81,6 +85,17 @@ class RiskContext(BaseModel):
     # varsayılan eşik dayatılmıyor, kullanıcı açıkça belirlemeli).
     same_direction_open_counts: dict[str, int] = Field(default_factory=dict)
     max_open_positions_per_symbol_direction: int | None = None
+    # Faz 358 — kullanıcı bulgusu: yukarıdaki sayı-bazlı gate 1000'e
+    # gevşetildiği için (kullanıcı isteğiyle, test modunda kısıtlama
+    # gereksiz) fiilen devre dışı — ama "aynı sembol/yönde ne kadar $
+    # bağlı" sorusuna hâlâ hiçbir gate bakmıyordu (ör. XAUTUSDT LONG'da
+    # 17 pozisyon, hepsi %0.15'lik bir bantta). same_direction_open_
+    # notional: {"LONG": $, "SHORT": $} — bu sembol için ŞU AN açık
+    # GERÇEK marjin (kaldıraçtan bağımsız), yöne göre (bkz. services/
+    # risk_state.py). max_same_symbol_direction_capital_pct <=0/None ise
+    # devre dışı.
+    same_direction_open_notional: dict[str, float] = Field(default_factory=dict)
+    max_same_symbol_direction_capital_pct: float | None = None
     # Faz 268-sonrası — Concept Drift gate (bkz. services/risk_state.py::
     # load_position_risk_state, analytics/concept_drift.py). KASITLI
     # OLARAK burada, load_position_risk_state()'te ÖNCEDEN hesaplanıyor

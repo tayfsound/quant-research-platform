@@ -1,9 +1,21 @@
-# Mevcut Durum -- v1.95.0 (Faz 357: TechnicalAgent'tan vwap_confirm tamamen kaldırıldı — gerçek veriyle zararlı bulundu)
+# Mevcut Durum -- v1.96.0 (Faz 358: aynı sembol/yönde $-bazlı maruziyet tavanı eklendi)
 
 **Tarih:** 2026-08-24
 **Branch:** main
-**Son commit (HEAD):** Faz 357 (bu commit ile).
-**✅ Servis durumu:** Faz 353-356 uvicorn/celery/beat 24 Ağustos 12:37 UTC'de temiz restart edildi. **Faz 357 henüz restart edilmedi** — TechnicalAgent kod değişikliği canlıya yansıması için restart gerekiyor.
+**Son commit (HEAD):** Faz 358 (bu commit ile).
+**⚠️ Servis durumu:** Faz 353-356 canlıda (24 Ağustos 12:37 UTC restart). **Faz 357 (vwap_confirm kaldırma) + Faz 358 (same-symbol capital cap) henüz restart edilmedi.**
+
+## Faz 358 — Aynı sembol/yönde $-bazlı maruziyet tavanı (2026-08-24)
+
+Kullanıcı, madde 4'ün "kötü fiyattan piramitleme kazanma oranını düşürür" tezine HENÜZ ikna olmadı (gerçek veri: n=3068 vs 1653, %59.7 vs %61.3, anlamlı fark yok — bkz. BACKLOG.md madde 23, bilerek AÇIK bırakıldı, todo'nun sonuna alındı). Ama kullanıcının kabul ettiği FARKLI bir tez var: "toplam maruziyeti sınırlamak kötü bir yaklaşım değil." Bu, kazanma-oranı iddiası İÇERMEDEN uygulandı.
+
+**İlk deneme (ENB'ye yamamak) YANLIŞ çıktı, test yakaladı:** portföy-seviyeli ENB/aynı-yönlü-korelasyon indirimine (Faz 355 alanı) mevcut aynı-sembol notional'ını eklemeyi denedim — ama bir entegrasyon testi confidence'ın BEKLENENİN TERSİNE (düşmesi gerekirken hafifçe yükseldiğini) gösterdi. Sebep: ENB/korelasyon FARKLI sembollerin çeşitlendirmesini ölçüyor, TEK bir sembolün kendi içindeki yığılmasını değil — yanlış araçtı. Değişiklik geri alındı (`git checkout --`).
+
+**Doğru çözüm — ayrı, doğrudan bir $-tavanı:** `max_open_positions_per_symbol_direction`'ın (SAYI-bazlı, kullanıcı isteğiyle 1000'e gevşetilmiş) yanına, `max_capital_pct`'in aynı ilkesiyle (basit toplam-$ tavanı) yeni bir ayar: `max_same_symbol_direction_capital_pct` (varsayılan **%15**). `DecisionPersistor.sum_open_notional_by_symbol_direction()` (gerçek marjin, kaldıraçtan bağımsız) → `risk_state.py` → `ctx.risk.same_direction_open_notional`/`starting_capital` → `RiskGateStage`'de yeni `MAX_SAME_SYMBOL_DIRECTION_CAPITAL` reddi (sayı-bazlı gate'le AYNI desen, `engines/cognitive_pipeline.py`).
+
+**Varsayılan %15 seçimi canlı veriyle doğrulandı:** restart anında GERÇEKTEN açık en yüksek maruziyet BNBUSDT LONG $498k idi (starting_capital $5M'in %9.96'sı) — %10 seçilseydi restart ANINDA bu sembolü tıkardı. %15 mevcut hiçbir pozisyonu aniden bloklamıyor.
+
+**Test:** `tests/test_risk_gate.py` (3 yeni: reddediyor/onaylıyor/devre-dışı) + canlı DB'ye karşı `sum_open_notional_by_symbol_direction('BNBUSDT')` doğrulandı ($498,230.99, raw SQL'le birebir eşleşti). Dashboard Settings'e karşılık gelen kart eklendi, `tsc --noEmit` temiz.
 
 ## Faz 357 — TechnicalAgent'tan vwap_confirm tamamen kaldırıldı (2026-08-24)
 
