@@ -67,25 +67,49 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
    kârın tepe noktasından ne kadar geri çekilmeye izin verileceğine dair (trailing
    stop / kâr kilitleme) hiçbir mekanizma yok.
 
-## 🟡 Doğrulanmadı ama muhtemelen doğru — harici incelemenin kalan maddeleri
+## Madde 6-10 — 2026-08-24'te tek tek kodla doğrulandı
 
-Bunları teker teker kodla doğrulamadım (zaman/kapsam), ama #1'i doğrulayan aynı
-inceleme olduğu için güvenilirlik yüksek varsayıyorum, sıradaki turlarda tek tek
-gerçek kodla teyit edilecek:
-
-6. REDUCE kararı recorder'da normal pozisyon açılışıyla aynı yolu izliyor
-   (`action=="REDUCE"` kontrolü yok, sadece `final_size>0` kontrolü var) —
-   "küçült" niyeti "küçük aç" davranışına dönüşüyor olabilir.
-7. Agent-agreement sinyali hem DecisionFusion'da (confidence çarpanı) hem
-   RiskTarget/meta-label'da (boyut çarpanı) AYRI AYRI uygulanıyor — aynı düşük-
-   agreement durumu iki kez cezalandırılıyor olabilir (bug değil ama üst üste
-   binme riski).
-8. Episodic memory / `_persist_and_learn` bilinçli no-op (sahte n-bar outcome
-   kirletmesin diye) ama yorum hâlâ kaldırılmış `real_historical_backtest.py`'den
-   bahsediyor — yorum/kod driftı.
-9. `version.py::SYSTEM_VERSION` (1.53.0) ile `CURRENT_STATE.md` (v1.9x) uyuşmuyor.
-10. MetaStage yorumları 0.75/0.90'dan bahsediyor ama gerçek sabitler
-    `STRONG_DISSENT_CONFIDENCE_THRESHOLD=0.65` / `BENCHED_..._THRESHOLD=0.70`.
+6. **[YANLIŞ ALARM — kapatıldı]** "REDUCE kararı recorder'da normal pozisyon
+   açılışıyla aynı yolu izliyor, `küçült` niyeti `küçük aç` davranışına
+   dönüşüyor olabilir" şüphesi doğrulanmadı. Kod incelendi:
+   `contracts/contexts/decision.py::ActionType` içinde ayrı bir `EXIT`
+   değeri var ama koda `grep`lendi — pipeline'da HİÇBİR YERDE
+   kullanılmıyor (ölü). Sistemde "mevcut açık pozisyonu küçült/kırp"
+   diye bir council-kararı yolu YOK — trimme sadece ayrı, açık uçlardan
+   (`close_partial`, guardian sweep'leri) tetikleniyor. `ActionType.REDUCE`
+   Faz 268g'den beri BİLEREK "düşük konviksiyonla KÜÇÜK aç" anlamına
+   geliyor (`MetaStage`: `final_size = proposed_size * confidence`) —
+   mevcut davranış tasarım gereği, bug değil.
+7. **[GERÇEK, KARAR BEKLİYOR]** Agent-agreement sinyali GERÇEKTEN iki ayrı
+   yoldan cezalandırılıyor: `DecisionFusion.evaluate()` agreement<0.34 ise
+   confidence'ı ×0.6883 çarpıyor (Faz 328) — bu confidence hem ACT/WAIT
+   eşiğini hem Kelly boyutlandırmayı etkiliyor. AYRICA `RiskTargetStage`
+   (`engines/cognitive_pipeline.py`) AYNI `agent_agreement` sinyalini
+   (aynı entropi formülü, `analytics/opportunity_quality.py`) bir ÖZELLİK
+   olarak Meta-Label Model'e veriyor (Faz 351), o da KENDİ öğrenilmiş
+   boyut çarpanını AYRICA uyguluyor. İki mekanizma da tek tek gerçek
+   veriyle doğrulanıp wire edilmişti ama BİRBİRİNDEN BAĞIMSIZ tasarlandı
+   — aynı düşük-agreement durumu şu an iki kez küçültülüyor olabilir.
+   **Karar gerekiyor**: kasıtlı katmanlı temkinlilik olarak mı bırakılsın,
+   yoksa biri kaldırılıp/zayıflatılıp mı tek kanala indirilsin? İkisini
+   birlikte vs ayrı ayrı çalıştırmanın gerçek kalibrasyon etkisini ölçmek
+   gerekiyor.
+8. **[ÇÖZÜLDÜ, 2026-08-24]** `services/cognitive_engine.py::_persist_and_
+   learn` yorumu hâlâ Faz 284'te ("karar mekanizmasına hiç katkısı yoktu")
+   TAMAMEN kaldırılmış `backtest/real_historical_backtest.py`'den ikinci
+   bir öğrenme kaynağıymış gibi bahsediyordu — doğrulandı (dosya gerçekten
+   yok, sadece stale .pyc kalıntısı) ve yorum güncellendi: gerçek öğrenme
+   artık SADECE `position_closer.py` (gerçek kapanışlar) üzerinden.
+9. **[ÇÖZÜLDÜ, 2026-08-24]** `version.py::SYSTEM_VERSION` (1.53.0)
+   `CURRENT_STATE.md`'nin (v1.99.0) 46 versiyon gerisindeydi — Faz 348
+   şemayı birleştirmişti ama sonraki hiçbir faz'da elle senkronlanmamış.
+   1.99.0'a güncellendi (hâlâ elle senkron — otomatik değil, bir sonraki
+   turda tekrar geriye düşebilir).
+10. **[ÇÖZÜLDÜ, 2026-08-24]** `engines/cognitive_pipeline.py`'deki
+    strong-dissent açıklama yorumu hâlâ eski 0.75/0.90 rakamlarından
+    bahsediyordu — gerçek sabitler (`STRONG_DISSENT_CONFIDENCE_THRESHOLD
+    =0.65`, `BENCHED_..._THRESHOLD=0.70`, dosyanın KENDİ tanım yorumunda
+    zaten doğru yazılıydı) ile çelişiyordu. Güncellendi.
 
 ## 🆕 Yeni özellik/analiz istekleri (henüz kod incelemesi gerekmiyor, tasarım kararı gerekiyor)
 
