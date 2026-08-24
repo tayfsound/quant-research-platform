@@ -278,7 +278,15 @@ function ClosedTradeRow({
           {badge && <Badge tone={badge.tone}>{badge.label}</Badge>}
           <Badge tone={t.direction === "LONG" ? "rise" : "fall"}>{t.direction}</Badge>
           {reason && (
-            <Badge tone={reason === "take_profit" ? "rise" : (reason === "stop_loss" || reason === "liquidation") ? "fall" : "neutral"}>
+            <Badge tone={
+              reason === "take_profit" || reason === "trailing_stop_profit" ? "rise"
+              // Faz 359 — kullanıcı bulgusu: reduced_loss_stop/breakeven_stop
+              // (eski etiket) HÂLÂ birer gerçek kayıp (sadece azaltılmış) —
+              // stop_loss/liquidation'la AYNI kırmızı tonda gösterilmeli,
+              // "neutral" (soluk) diğerleriyle karışıp kaybı gizlememeli.
+              : (reason === "stop_loss" || reason === "liquidation" || reason === "reduced_loss_stop" || reason === "breakeven_stop") ? "fall"
+              : "neutral"
+            }>
               {EXIT_REASON_LABELS[reason] || reason}
             </Badge>
           )}
