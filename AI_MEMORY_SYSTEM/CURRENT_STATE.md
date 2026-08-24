@@ -1,9 +1,19 @@
-# Mevcut Durum -- v1.92.0 (Faz 353: Mixture-of-Experts Regime Router canlıya bağlandı — gerçek 4410 kararla doğrulandı)
+# Mevcut Durum -- v1.93.0 (Faz 355: Confidence Timeline mimari düzeltmesi — portföy indirimi artık final_size'ı da küçültüyor + ACT kararını yeniden kontrol ediyor)
 
-**Tarih:** 2026-08-22
+**Tarih:** 2026-08-23/24
 **Branch:** main
-**Son commit (HEAD):** Faz 353 (bu commit ile).
-**⚠️ Servis durumu:** Faz 353'ün `services/council_orchestrator.py` değişikliğinin canlı sürece yansıması için uvicorn + celery worker_default restart GEREKİYOR (henüz yapılmadı — bu oturumda commit sonrası).
+**Son commit (HEAD):** Faz 355 (bu commit ile).
+**⚠️ Servis durumu:** Faz 353 (MoE Regime Router) + Faz 354 (dashboard bugları) + Faz 355 (confidence timeline) — hiçbiri henüz canlıya (uvicorn/celery restart) yansımadı. Kullanıcıyla birlikte uygun bir zamanda restart edilecek.
+
+## Faz 355 — Confidence Timeline mimari düzeltmesi (2026-08-23/24)
+
+Kullanıcının 2 günlük gözlem turunda getirdiği harici mimari incelemenin (bkz. BACKLOG.md #3) en yüksek öncelikli maddesi. Kod incelemesiyle bağımsız doğrulandı: `MetaStage` (`engines/cognitive_pipeline.py`) `final_size`'ı ACT/REDUCE dalında `meta["confidence"]`'a göre TEK seferlik hesaplıyor — bir daha yeniden türetilmiyor. `DecisionFusion` confidence'ı kalibre edip EV kapısını KENDİ confidence'ıyla doğru kontrol ediyor (bu kısım zaten sağlamdı). Ama `orchestrator.py::_apply_portfolio_fusion`'daki İKİ portföy-seviyeli indirim (aynı-yönlü korelasyon, düşük Effective-Number-of-Bets) — `CognitiveEngine.run()` TAMAMEN bittikten SONRA çalışıyor, SADECE `ctx.decision.confidence`'ı güncelliyordu, `final_size`'a HİÇ dokunmuyordu (yorum "sadece boyut küçülüyor" diyordu ama gerçekte hiçbir şey küçülmüyordu — sadece explain sayfasındaki gösterilen sayı değişiyordu) VE act_threshold'u asla yeniden kontrol etmiyordu (ACT kararı eski/yüksek confidence'la kalıcı kalıyordu).
+
+**Düzeltme:** İki indirim bloğu artık `final_size`'ı da AYNI oranda küçültüyor, ve yeni `_revert_to_wait_if_below_act_threshold()` — indirim sonrası confidence act_threshold'un altına düşerse kararı dürüstçe WAIT'e çeviriyor (final_size=0). Karar zaten WAIT'e dönmüşse ikinci indirim bloğu (ENB) artık tekrar loglamıyor (gereksiz gürültü önlendi).
+
+**Test:** `tests/test_portfolio_fusion_wiring.py` — 2 yeni test (final_size'ın gerçekten küçüldüğü, act_threshold altına düşünce WAIT'e dönüldüğü) + 4 mevcut testin act_threshold/max_confidence_mode_enabled mock eksikliği düzeltildi ve YENİ (doğru) davranışa göre eşikleri güncellendi (ör. "gevşek VaR'da boyut hiç değişmemeli" → "eski birim hatasındaki ~30'a çökmemeli," artık meşru ENB küçülmesi payı bırakılarak). 12/12 temiz.
+
+**Not:** Bu, harici incelemenin #1/#2 maddesinin SADECE portföy-seviyesindeki yarısı — DecisionFusion'ın kendi kalibrasyonu zaten sağlamdı, dokunulmadı. REDUCE semantiği (madde #6) ve agent-agreement çifte-uygulama (madde #7) ayrı, henüz incelenmedi.
 **⚠️ `execution_mode` hâlâ global "simulated"** — testnet kodunun çalıştığı kanıtlandı (Faz 349) ama hiçbir canlı davranış değişmedi.
 **⚠️ `max_confidence_mode_enabled=false` (varsayılan)** — Pozisyon Havuzu (Faz 350) inşa edildi ama henüz kullanıcı tarafından açılmadı.
 **⚠️ `max_open_positions_per_symbol_direction=1000`** (varsayılan 5, "admin" tarafından 14 Ağustos'ta gevşetilmiş) — kullanıcı bilinçli olarak DEĞİŞTİRİLMEMESİNİ istedi (test modunda kısıtlama gereksiz). XAUTUSDT'de 17 aynı-yönlü pozisyon birikmişti, bu ayar yüzünden — bilerek dokunulmadı.

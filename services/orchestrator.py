@@ -85,6 +85,36 @@ MIN_EFFECTIVE_BETS = 3.0
 MAX_ENB_DISCOUNT = 0.5  # en fazla %50 ek indirim
 
 
+def _revert_to_wait_if_below_act_threshold(ctx: CognitiveCycleContext, act_threshold: float, reason: str) -> None:
+    """Faz 355 — kullanıcı bulgusu (harici mimari inceleme + bağımsız kod
+    doğrulaması): _apply_portfolio_fusion'daki iki indirim bloğu (aynı-yönlü
+    korelasyon, düşük Effective-Number-of-Bets) SADECE ctx.decision.
+    confidence'ı güncelliyordu — final_size'a HİÇ dokunmuyordu (final_size,
+    MetaStage'de meta["confidence"]/proposed_size*kelly_multiplier ile TEK
+    seferlik hesaplanıp bir daha yeniden türetilmiyordu) VE ACT/REDUCE
+    kararı, indirim sonrası confidence act_threshold'un altına düşse bile
+    hiç yeniden kontrol edilmiyordu — yorum "sadece boyut küçülüyor"
+    diyordu ama gerçekte HİÇBİR ŞEY küçülmüyordu (sadece explain sayfasında
+    gösterilen sayı değişiyordu). Bu fonksiyon, indirim sonrası confidence
+    artık MetaStage'in ACT kararını verdiği eşiği geçemiyorsa kararı
+    dürüstçe WAIT'e çeviriyor (final_size zaten çağıran tarafından aynı
+    oranda küçültülmüş oluyor — bkz. iki çağrı noktası)."""
+    if ctx.decision.action not in (ActionType.ENTER_LONG, ActionType.ENTER_SHORT, ActionType.REDUCE):
+        return
+    if (ctx.decision.confidence or 0.0) >= act_threshold:
+        return
+    ctx.decision.action = ActionType.WAIT
+    ctx.decision.final_size = 0.0
+    ctx.cognition.relevant_knowledge.append({
+        "type": "portfolio_confidence_discount",
+        "data": {
+            "reason": f"{reason}_dropped_below_act_threshold",
+            "confidence": ctx.decision.confidence,
+            "act_threshold": act_threshold,
+        },
+    })
+
+
 def _observe_decision_latency(symbol: str, last_bar_timestamp: datetime) -> None:
     """Faz 268-sonrası: Latency Monitoring — bkz. observability/metrics.py::
     decision_pipeline_latency_seconds'ın modül docstring'i. Negatif bir
@@ -852,6 +882,8 @@ class CognitiveOrchestrator:
             settings_repo = AppSettingsRepository(session)
             starting_capital = float(settings_repo.get("starting_capital"))
             max_var_pct = float(settings_repo.get("max_portfolio_var_pct"))
+            # Faz 355 — bkz. _revert_to_wait_if_below_act_threshold docstring'i.
+            act_threshold = float(settings_repo.get("act_threshold"))
             existing_notional = DecisionPersistor(session).open_notional_by_symbol()
 
         returns: dict[str, list[float]] = {}
@@ -966,6 +998,11 @@ class CognitiveOrchestrator:
             # — SADECE bu cycle'ın yeni önerilerinin (directional) güveni.
             if sym not in directional:
                 continue
+            # Faz 355 — karar zaten (ör. daha önceki bir indirim yüzünden)
+            # WAIT'e dönmüşse ek indirim/kayıt anlamsız — final_size zaten
+            # 0, tekrar tekrar loglamak explain sayfasını gürültüyle doldurur.
+            if directional[sym]["ctx"].decision.action not in (ActionType.ENTER_LONG, ActionType.ENTER_SHORT, ActionType.REDUCE):
+                continue
             if multiplier < 1.0:
                 ctx = directional[sym]["ctx"]
                 before = ctx.decision.confidence or 0.0
@@ -975,8 +1012,18 @@ class CognitiveOrchestrator:
                 # karar neden %28 çıktı" sorusuna hiç cevap vermiyordu —
                 # bu indirim MetaStage'in ACT/REDUCE kararını verdiği
                 # confidence'tan SONRA uygulanıyor (aksiyon zaten
-                # kararlaştırılmış, sadece boyut/gösterilen güven küçülüyor).
-                # Artık nedeni ve öncesi/sonrası açıkça kaydediliyor.
+                # kararlaştırılmış). Artık nedeni ve öncesi/sonrası
+                # açıkça kaydediliyor.
+                #
+                # Faz 355 — kritik bulgu: yukarıdaki yorum "sadece boyut
+                # küçülüyor" diyordu ama final_size bu noktaya kadar HİÇ
+                # yeniden dokunulmuyordu (bkz. _revert_to_wait_if_below_
+                # act_threshold docstring'i) — indirim sadece gösterilen
+                # sayıyı değiştiriyordu, gerçek pozisyon boyutunu DEĞİL.
+                # Artık final_size da AYNI oranda küçültülüyor, ve indirim
+                # sonrası confidence act_threshold'un altına düşerse karar
+                # dürüstçe WAIT'e çevriliyor.
+                ctx.decision.final_size = round((ctx.decision.final_size or 0.0) * multiplier, 8)
                 ctx.cognition.relevant_knowledge.append({
                     "type": "portfolio_confidence_discount",
                     "data": {
@@ -986,6 +1033,7 @@ class CognitiveOrchestrator:
                         "multiplier": round(multiplier, 4),
                     },
                 })
+                _revert_to_wait_if_below_act_threshold(ctx, act_threshold, "same_direction_correlation")
 
         # Faz 268-sonrası — kullanıcının paylaştığı bir incelemeyi
         # doğrularken bulunan gerçek bulgu: yukarıdaki aynı-yönlü
@@ -1008,9 +1056,16 @@ class CognitiveOrchestrator:
             for sym in returns:
                 if sym not in directional:
                     continue
+                # Faz 355 — bkz. same_direction_correlation döngüsündeki AYNI not.
+                if directional[sym]["ctx"].decision.action not in (ActionType.ENTER_LONG, ActionType.ENTER_SHORT, ActionType.REDUCE):
+                    continue
                 ctx = directional[sym]["ctx"]
                 before = ctx.decision.confidence or 0.0
                 ctx.decision.confidence = round(before * enb_multiplier, 4)
+                # Faz 355 — bkz. same_direction_correlation bloğundaki
+                # AYNI not: final_size artık gerçekten küçülüyor, eşik
+                # altına düşerse karar WAIT'e çevriliyor.
+                ctx.decision.final_size = round((ctx.decision.final_size or 0.0) * enb_multiplier, 8)
                 ctx.cognition.relevant_knowledge.append({
                     "type": "portfolio_confidence_discount",
                     "data": {
@@ -1021,6 +1076,7 @@ class CognitiveOrchestrator:
                         "effective_number_of_bets": enb_result["effective_number_of_bets"],
                     },
                 })
+                _revert_to_wait_if_below_act_threshold(ctx, act_threshold, "low_effective_number_of_bets")
 
         fusion = PortfolioFusionStage(PortfolioRiskEngine())
         result = fusion.fuse(

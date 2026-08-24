@@ -24,9 +24,9 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
    filtre aktifken sayfalama atlanıp tüm açık pozisyonlar (limit=5000) tek seferde
    çekiliyor.
 
-## 🔴 Doğrulandı, gerçek — yüksek öncelik
+## ✅ Faz 355'te düzeltildi
 
-3. **Confidence timeline parçalanmış (harici incelemenin #1/#2 maddesi — kodla
+3. **[ÇÖZÜLDÜ — Faz 355] Confidence timeline parçalanmış (harici incelemenin #1/#2 maddesi — kodla
    bağımsız doğrulandı).** `MetaStage` (`cognitive_pipeline.py:235`) `ctx.decision.
    confidence`'ı belirliyor — ACT/WAIT eşiği VE Kelly boyutlandırma BU değeri
    kullanıyor. `DecisionFusion` (`decision_fusion.py:97`) bunu kalibre edilmiş
@@ -39,9 +39,10 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
    ikinci yarısı: eşik sonrası confidence düşse bile pozisyon zaten açılmış oluyor,
    boyut küçülüyor ama "bu karar gerçekten eşiği geçiyor muydu" sorusu bir daha
    sorulmuyor.
-   **Önerilen yaklaşım (tartışılacak):** portföy fusion indirimini MetaStage'den
-   SONRA ama act_threshold kontrolünden ÖNCE taşımak, ya da indirim sonrası
-   threshold'u yeniden kontrol edip düşerse WAIT'e çevirmek.
+   **Çözüm (Faz 355):** iki indirim bloğu artık `final_size`'ı da aynı oranda
+   küçültüyor, ve indirim sonrası confidence act_threshold'un altına düşerse
+   karar dürüstçe WAIT'e çevriliyor. Not: bu SADECE portföy-seviyesi (orchestrator)
+   yarısı — DecisionFusion'ın kendi kalibrasyonu zaten sağlamdı, dokunulmadı.
 
 4. **Aynı sembolde tekrar aynı yönde pozisyon açarken elindeki pozisyonun giriş
    fiyatı hiç kontrol edilmiyor (kullanıcı örneği: $5→$7→$9 LONG piramitleme).**
