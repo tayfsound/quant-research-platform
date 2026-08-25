@@ -189,6 +189,14 @@ class MetaStage:
             settings_repo = AppSettingsRepository(session)
             self.metacognition.act_threshold = float(settings_repo.get("act_threshold"))
             self.metacognition.reduce_threshold = float(settings_repo.get("reduce_threshold"))
+            # Faz 362-devam — self_reliability_gate_enabled'ı AYRI bir
+            # session'la (aşağıda) DEĞİL burada, zaten açık olan session'la
+            # okuyoruz — cascade artık HER sembol için ~3 kat MetaStage.
+            # execute() çağırdığından (150 sembol × 3 = ~450/cycle), her
+            # çağrıda YENİ bir DB session açmak gerçek bir yavaşlamaya/
+            # bağlantı havuzu baskısına yol açtı (canlıda gözlemlendi: bir
+            # cycle 6+ dakika sürüp kilitlendi).
+            self_reliability_gate_enabled = settings_repo.get("self_reliability_gate_enabled") == "true"
 
         # Faz 268-sonrası — kullanıcı isteği: Faz 207'nin test-modu
         # tabanı (reduce_threshold'u 0.05'e indirme) KALDIRILDI. Kullanıcının
@@ -396,27 +404,40 @@ class MetaStage:
         # GERÇEKTEN yeni bilgi: recent_dsr (istatistiksel beceri güveni)
         # ve ece (kalibrasyon kalitesi) — ikisi de şu ana kadar hiçbir
         # yerde canlı kararı etkilemiyordu.
-        try:
-            from analytics.self_model import (
-                DEGRADED_DSR_THRESHOLD,
-                POOR_CALIBRATION_ECE_THRESHOLD,
-                UNTRUSTWORTHY_DSR_THRESHOLD,
-            )
-            from services.self_model_gatherer import get_cached_self_reliability_snapshot
+        #
+        # Faz 362-devam — kullanıcı bulgusu (2026-08-25, gerçek olay):
+        # recent_dsr, son 500 kapanmış işlemin GERÇEKTEN negatif Sharpe
+        # oranı (-0.073, %75 win rate'e rağmen — n_trials şişmesi değil,
+        # doğrulandı: n_trials=1'de bile DSR≈0) yüzünden 0.0'a düşüp
+        # eşiği (0.3) geçti — sistem SAATLERCE hiç pozisyon açmadı. Ölçüm
+        # doğru, mekanizma tasarım gereği çalışıyor — ama test modunda
+        # (henüz üretim/canlı sermaye değil) veri birikimini tamamen
+        # durdurmak istenmiyor. `self_reliability_gate_enabled` ile
+        # devre dışı bırakılabiliyor — trading_mode="live" olduğunda
+        # kullanıcı bunu SEÇEREK açık tutmalı (varsayılan true).
+        # (Değer execute()'ın en başındaki tek DB session'ında okundu.)
+        if self_reliability_gate_enabled:
+            try:
+                from analytics.self_model import (
+                    DEGRADED_DSR_THRESHOLD,
+                    POOR_CALIBRATION_ECE_THRESHOLD,
+                    UNTRUSTWORTHY_DSR_THRESHOLD,
+                )
+                from services.self_model_gatherer import get_cached_self_reliability_snapshot
 
-            self_reliability_inputs = get_cached_self_reliability_snapshot()["inputs"]
-            recent_dsr = self_reliability_inputs.get("recent_dsr")
-            ece = self_reliability_inputs.get("ece")
+                self_reliability_inputs = get_cached_self_reliability_snapshot()["inputs"]
+                recent_dsr = self_reliability_inputs.get("recent_dsr")
+                ece = self_reliability_inputs.get("ece")
 
-            if recent_dsr is not None and recent_dsr < UNTRUSTWORTHY_DSR_THRESHOLD:
-                meta["decision"] = "WAIT"
-            elif meta["decision"] == "ACT" and (
-                (recent_dsr is not None and recent_dsr < DEGRADED_DSR_THRESHOLD)
-                or (ece is not None and ece > POOR_CALIBRATION_ECE_THRESHOLD)
-            ):
-                meta["decision"] = "REDUCE"
-        except Exception as exc:
-            structlog.get_logger().warning("self_reliability_gate_failed", error=str(exc))
+                if recent_dsr is not None and recent_dsr < UNTRUSTWORTHY_DSR_THRESHOLD:
+                    meta["decision"] = "WAIT"
+                elif meta["decision"] == "ACT" and (
+                    (recent_dsr is not None and recent_dsr < DEGRADED_DSR_THRESHOLD)
+                    or (ece is not None and ece > POOR_CALIBRATION_ECE_THRESHOLD)
+                ):
+                    meta["decision"] = "REDUCE"
+            except Exception as exc:
+                structlog.get_logger().warning("self_reliability_gate_failed", error=str(exc))
 
         if meta["decision"] == "WAIT":
             ctx.decision.action = ActionType.WAIT

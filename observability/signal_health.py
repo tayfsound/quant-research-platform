@@ -22,7 +22,23 @@ _STALE_THRESHOLDS_SECONDS = {
     "candle_ingestion": 300,
     "order_book_ingestion": 100,
     "trading_cycle": 600,
+    "position_opening": 10800,
 }
+
+# Faz 363 — kullanıcı bulgusu: 24-25 Ağustos 2026 gecesi yaşanan olayda
+# trading_cycle staleness kontrolü işe yaramazdı — self_reliability_gate
+# ACT/REDUCE'u WAIT'e çeviriyordu ama decisions tablosuna hâlâ normal
+# aralıkla (no_trade, size=0) satır yazılmaya devam ediyordu, yani
+# "trading_cycle" hiç bayat görünmedi. Sistemin GERÇEKTEN çalışıp
+# çalışmadığının asıl ölçütü council'in karar üretmesi değil, GERÇEKTEN
+# pozisyon açması — bu yüzden ayrı, nedene bağımlı olmayan bir kontrol:
+# son 5 günün gerçek decisions.opened_at ara-varış sürelerine bakıldığında
+# medyan ~19sn, p99 ~90dk (aykırı uçlar dahil) — 3 saatlik eşik hem
+# gerçek sessiz piyasa dönemlerinde false-positive üretmeyecek kadar
+# gevşek, hem de saatler süren bir tıkanmayı (self-reliability gate,
+# kuyruk birikmesi, ya da HENÜZ karşılaşmadığımız başka bir sebep — kontrol
+# nedene bakmıyor, sadece sonuca bakıyor) yakalayacak kadar sıkı.
+_POSITION_OPENING_SAMPLE_LOOKBACK_HOURS = 24
 
 # Faz 203-211'in gerçek imzası: sistem "çalışıyor" (cycle'lar üretiliyor)
 # ama HİÇBİR zaman gerçek yönlü (LONG/SHORT) bir karar üretmiyordu, hep
@@ -71,6 +87,31 @@ def _check_zombie_wait(ai_enabled: bool) -> dict:
     }
 
 
+def _check_position_opening(ai_enabled: bool) -> dict:
+    if not ai_enabled:
+        return {"checked": False, "reason": "ai_enabled=false, kontrol atlandı"}
+
+    age = _age_seconds(_latest_timestamp("decisions", "opened_at"))
+    threshold = _STALE_THRESHOLDS_SECONDS["position_opening"]
+    if age is None:
+        # Hiç açılmış pozisyon yoksa (yeni kurulum) bu, sistemin
+        # DURDUĞUNU değil henüz hiç fırsat bulamadığını gösterebilir —
+        # ama yine de sinyal olarak işaretlenir, sessizce geçilmez.
+        return {
+            "checked": True,
+            "healthy": False,
+            "age_seconds": None,
+            "threshold_seconds": threshold,
+            "reason": "hiç açılmış pozisyon kaydı yok",
+        }
+    return {
+        "checked": True,
+        "healthy": age < threshold,
+        "age_seconds": age,
+        "threshold_seconds": threshold,
+    }
+
+
 def check_signal_health() -> dict:
     """Her kritik periyodik modül için: en son gerçek veri ne zaman
     üretildi, eşiği aştı mı. Ayrıca "zombi WAIT" kontrolü — sistem
@@ -107,12 +148,14 @@ def check_signal_health() -> dict:
     }
 
     checks["zombie_wait"] = _check_zombie_wait(ai_enabled)
+    checks["position_opening"] = _check_position_opening(ai_enabled)
 
     overall_healthy = (
         checks["candle_ingestion"]["healthy"]
         and checks["order_book_ingestion"]["healthy"]
         and checks["trading_cycle"]["healthy"]
         and checks["zombie_wait"].get("healthy", True)
+        and checks["position_opening"].get("healthy", True)
     )
 
     return {"healthy": overall_healthy, "checks": checks}

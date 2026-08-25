@@ -15,6 +15,18 @@ def test_ingest_order_book_task_writes_real_snapshots_for_crypto_watchlist_symbo
         from services.celery_app import celery_app
         from services.tasks import ingest_order_book_task
 
+        # Faz 363 — bu task artık _CycleLock kullanıyor (aynı Redis
+        # instance'ı gerçek çalışan celery worker ile paylaşılıyor); canlı
+        # sistem tam bu anda kilidi tutuyor olabilir, testin kendi çağrısı
+        # yanlışlıkla "atlandı" dönmesin diye önce temizleniyor (bkz.
+        # test_close_due_positions_task_skips_if_a_previous_run_is_still_
+        # in_progress'teki AYNI desen).
+        import redis
+
+        from config import get_settings
+
+        redis.from_url(get_settings().REDIS_URL).delete("lock:ingest_order_book_task")
+
         with SessionFactory.get_session() as session:
             AppSettingsRepository(session).set(
                 "watchlist", "BTCUSDT,ETHUSDT,AAPL", updated_by="test"

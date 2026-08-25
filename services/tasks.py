@@ -14,7 +14,20 @@ class _CycleLock:
     sağlıyor — watchlist boyutundan bağımsız, bu hata sınıfı bir daha
     asla oluşamaz. TTL, worker çökerse kilidin sonsuza dek takılı
     kalmaması için bir güvenlik tavanı (gerçek çalışma süresinden çok
-    daha uzun tutuluyor)."""
+    daha uzun tutuluyor).
+
+    Faz 363 — kullanıcı bulgusu: sistem tıkandığında (ör. Binance rate
+    limit'e takılıp yavaşlayınca) bu kilide sahip OLMAYAN sık (<=300sn
+    beat aralıklı) görevler celery beat tarafından üst üste kuyruğa
+    eklenmeye devam ediyor, tek bir yavaşlama kısa sürede binlerce
+    mesajlık kuyruk tıkanmasına dönüşebiliyor (23 Ağustos gecesi
+    yaşanan olayda 9.351 mesaj birikti). Bu tekrarlayan hata sınıfı bir
+    daha oluşmasın diye TÜM sık çalışan görevlere sistematik olarak bu
+    kilit eklendi (ingest_order_book_task, ingest_candles_task,
+    close_due_shadow_positions_task, close_due_benched_shadow_positions_
+    task, regime_reversal_guardian_task, belief_reversal_exit_task,
+    resolve_position_pool_task, run_pairs_trading_task,
+    reconcile_execution_state_task)."""
 
     def __init__(self, key: str, ttl_seconds: int):
         self.key = key
@@ -318,7 +331,10 @@ def regime_reversal_guardian_task() -> dict:
     stop) doğrulanan bir korumalı mekanizma."""
     from services.regime_reversal_guardian import run_guardian_sweep
 
-    return run_guardian_sweep()
+    with _CycleLock("lock:regime_reversal_guardian_task", ttl_seconds=300) as acquired:
+        if not acquired:
+            return {"skipped": "previous_run_still_in_progress"}
+        return run_guardian_sweep()
 
 
 @celery_app.task(name="belief_reversal_exit_task")
@@ -331,7 +347,10 @@ def belief_reversal_exit_task() -> dict:
     sonuç veriyor."""
     from services.belief_reversal_exit import sweep_reversal_exits
 
-    return sweep_reversal_exits()
+    with _CycleLock("lock:belief_reversal_exit_task", ttl_seconds=300) as acquired:
+        if not acquired:
+            return {"skipped": "previous_run_still_in_progress"}
+        return sweep_reversal_exits()
 
 
 @celery_app.task(name="resolve_position_pool_task")
@@ -344,7 +363,10 @@ def resolve_position_pool_task() -> dict:
     anında {"due": 0, ...} ile döner, sıfır maliyetli no-op."""
     from services.position_pool import resolve_due_pool_windows
 
-    return resolve_due_pool_windows()
+    with _CycleLock("lock:resolve_position_pool_task", ttl_seconds=300) as acquired:
+        if not acquired:
+            return {"skipped": "previous_run_still_in_progress"}
+        return resolve_due_pool_windows()
 
 
 @celery_app.task(name="refresh_barrier_table_task")
@@ -608,12 +630,15 @@ def ingest_order_book_task() -> dict:
     crypto_symbols = [s for s in watchlist if looks_like_binance_pair(s)]
     pipeline = IngestionPipeline(BinanceAdapter())
 
-    results = {}
-    for sym in crypto_symbols:
-        try:
-            results[sym] = asyncio.run(pipeline.ingest_order_book(sym))
-        except Exception as exc:
-            results[sym] = {"error": str(exc)}
+    with _CycleLock("lock:ingest_order_book_task", ttl_seconds=120) as acquired:
+        if not acquired:
+            return {"skipped": "previous_run_still_in_progress"}
+        results = {}
+        for sym in crypto_symbols:
+            try:
+                results[sym] = asyncio.run(pipeline.ingest_order_book(sym))
+            except Exception as exc:
+                results[sym] = {"error": str(exc)}
 
     return {"ingested": results}
 
@@ -650,12 +675,15 @@ def ingest_candles_task() -> dict:
     crypto_symbols = [s for s in watchlist if looks_like_binance_pair(s)]
     pipeline = IngestionPipeline(BinanceAdapter())
 
-    results = {}
-    for sym in crypto_symbols:
-        try:
-            results[sym] = asyncio.run(pipeline.ingest_candles(sym, timeframe="1m", limit=100))
-        except Exception as exc:
-            results[sym] = {"error": str(exc)}
+    with _CycleLock("lock:ingest_candles_task", ttl_seconds=300) as acquired:
+        if not acquired:
+            return {"skipped": "previous_run_still_in_progress"}
+        results = {}
+        for sym in crypto_symbols:
+            try:
+                results[sym] = asyncio.run(pipeline.ingest_candles(sym, timeframe="1m", limit=100))
+            except Exception as exc:
+                results[sym] = {"error": str(exc)}
 
     return {"ingested": results}
 
@@ -728,7 +756,10 @@ def run_pairs_trading_task() -> dict:
     if _real_market_data_source_or_none() is None:
         return {"skipped": "non_binance_market_data_source"}
 
-    results = PairsTrader().check_and_trade_pairs()
+    with _CycleLock("lock:run_pairs_trading_task", ttl_seconds=600) as acquired:
+        if not acquired:
+            return {"skipped": "previous_cycle_still_running"}
+        results = PairsTrader().check_and_trade_pairs()
     return {"pairs": results}
 
 
@@ -835,7 +866,10 @@ def close_due_shadow_positions_task() -> dict:
     if _real_market_data_source_or_none() is None:
         return {"skipped": "non_binance_market_data_source"}
 
-    closed = close_due_positions()
+    with _CycleLock("lock:close_due_shadow_positions_task", ttl_seconds=300) as acquired:
+        if not acquired:
+            return {"skipped": "previous_run_still_in_progress"}
+        closed = close_due_positions()
     return {"closed_count": len(closed), "closed": closed}
 
 
@@ -849,7 +883,10 @@ def close_due_benched_shadow_positions_task() -> dict:
     if _real_market_data_source_or_none() is None:
         return {"skipped": "non_binance_market_data_source"}
 
-    closed = close_due_benched_positions()
+    with _CycleLock("lock:close_due_benched_shadow_positions_task", ttl_seconds=300) as acquired:
+        if not acquired:
+            return {"skipped": "previous_run_still_in_progress"}
+        closed = close_due_benched_positions()
     return {"closed_count": len(closed), "closed": closed}
 
 
@@ -868,11 +905,14 @@ def reconcile_execution_state_task() -> dict:
     from database.session_factory import SessionFactory
     from services.execution_reconciliation import reconcile_execution_state
 
-    with SessionFactory.get_session() as session:
-        result = reconcile_execution_state(
-            decision_repo=DecisionPersistor(session),
-            event_repo=EventLogRepository(session),
-        )
+    with _CycleLock("lock:reconcile_execution_state_task", ttl_seconds=600) as acquired:
+        if not acquired:
+            return {"skipped": "previous_run_still_in_progress"}
+        with SessionFactory.get_session() as session:
+            result = reconcile_execution_state(
+                decision_repo=DecisionPersistor(session),
+                event_repo=EventLogRepository(session),
+            )
     return result
 
 

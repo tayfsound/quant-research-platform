@@ -389,6 +389,9 @@ def _validate(key: str, value: str) -> None:
                 raise ValueError
         except ValueError:
             raise HTTPException(400, "belief_reversal_exit_min_confidence must be a number in (0, 1]")
+    elif key == "self_reliability_gate_enabled":
+        if value not in ("true", "false"):
+            raise HTTPException(400, "self_reliability_gate_enabled must be 'true' or 'false'")
     else:
         raise HTTPException(400, f"unknown setting key: {key}")
 

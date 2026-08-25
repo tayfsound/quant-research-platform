@@ -145,6 +145,7 @@ const HEALTH_CHECK_LABELS: Record<string, string> = {
   order_book_ingestion: "Order book verisi",
   trading_cycle: "Trading cycle",
   zombie_wait: "Yönlü karar üretimi",
+  position_opening: "Gerçek pozisyon açılışı",
 };
 
 // Faz 268ak — kullanıcı isteği: "Performance kısmı yanlış yerde, oradaki
@@ -472,6 +473,9 @@ export default function Dashboard() {
                   <span className="font-medium text-ink">{HEALTH_CHECK_LABELS[key] || key}</span>
                   {v.age_seconds != null && ` — son güncelleme ${Math.round(v.age_seconds / 60)} dakika önce`}
                   {key === "zombie_wait" && " — son 30 karar hiç yönlü (LONG/SHORT) değil, sadece WAIT"}
+                  {key === "position_opening" && v.age_seconds == null && " — hiç açılmış pozisyon kaydı yok"}
+                  {key === "position_opening" && v.age_seconds != null &&
+                    " — council karar üretiyor olabilir ama 3 saattir gerçek pozisyon açmadı (ör. bir güvenlik kapısı her şeyi WAIT'e çeviriyor olabilir)"}
                 </li>
               ))}
           </ul>

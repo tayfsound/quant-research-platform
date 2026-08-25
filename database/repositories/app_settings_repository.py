@@ -631,6 +631,16 @@ DEFAULTS: dict[str, str] = {
     "belief_reversal_exit_enabled": "true",
     "belief_reversal_exit_min_consistent_cycles": "6",
     "belief_reversal_exit_min_confidence": "0.65",
+
+    # Faz 362-devam — kullanıcı bulgusu (2026-08-25, gerçek olay): Faz
+    # 310'un self-reliability gate'i (recent_dsr < 0.3 -> her karar WAIT'e
+    # zorlanır) gerçek, geçerli bir ölçümle (son 500 kapanmış işlemin
+    # Sharpe'ı gerçekten negatif, -0.073, %75 win rate'e rağmen) tetiklendi
+    # ve sistemi SAATLERCE tamamen durdurdu. Mekanizma doğru çalışıyor —
+    # ama test modunda (henüz üretim/canlı sermaye değil) veri birikimini
+    # tamamen durdurmak istenmedi. Varsayılan AÇIK (canlı modda kasıtlı
+    # olarak açık kalmalı) — kullanıcı test modunda bilinçli olarak kapattı.
+    "self_reliability_gate_enabled": "true",
 }
 
 CANDLE_TIMEFRAMES = ("1m", "5m", "15m", "1h", "4h", "1d")
