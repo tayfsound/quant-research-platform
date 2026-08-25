@@ -777,10 +777,23 @@ class RiskTargetStage:
         # değişmez, mevcut davranış aynen korunur.
         try:
             from analytics.opportunity_quality import agreement_from_opinions
+            from services.decision_fusion import compute_fused_confidence
             from services.meta_label_model import meta_label_size_multiplier, predict_tp_probability
 
             features = dict(ctx.market.features or {})
-            features["confidence"] = ctx.decision.confidence or 0.0
+            # Faz 363 — kullanıcı bulgusu: burada DAHA ÖNCE ctx.decision.
+            # confidence doğrudan okunuyordu — pipeline'da bu aşama
+            # DecisionFusion'dan ÖNCE çalıştığı için (bkz. cognitive_
+            # engine.py::run sırası) bu HAM, kalibrasyon/opportunity-
+            # quality-indirimi/InnerCritic çarpanı UYGULANMAMIŞ bir
+            # değerdi. Ama modelin eğitim verisi (decisions.confidence,
+            # bkz. meta_label_model.py::_extract_meta_label_training_rows)
+            # DecisionFusion SONRASI, yani bu üçünü de görmüş NİHAİ
+            # değerdi — train/serve tutarsızlığı. Artık AYNI hesabı
+            # (compute_fused_confidence, yan etkisiz) burada da
+            # çalıştırıyoruz, eğitim ve çalışma zamanı artık aynı anlamdaki
+            # confidence'ı görüyor.
+            features["confidence"] = compute_fused_confidence(ctx, opinions=opinions)
             features["planned_rr_ratio"] = (target_pct / stop_pct) if stop_pct > 0 else 0.0
             agreement = agreement_from_opinions(opinions)
             features["agent_agreement"] = agreement if agreement is not None else 0.0

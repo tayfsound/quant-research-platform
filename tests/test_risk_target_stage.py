@@ -594,6 +594,45 @@ def test_risk_target_stage_passes_real_agent_agreement_from_opinions_to_meta_lab
     assert captured_features["agent_agreement"] == 1.0  # oybirliği
 
 
+def test_risk_target_stage_meta_label_confidence_feature_matches_decision_fusion_output(monkeypatch):
+    """Faz 363 — kullanıcı bulgusu: RiskTargetStage'in Meta-Label Model'e
+    verdiği "confidence" özelliği, pipeline'da DecisionFusion'dan ÖNCE
+    çalıştığı için HAM (kalibrasyon/opportunity-quality-indirimi/
+    InnerCritic çarpanı UYGULANMAMIŞ) değeri kullanıyordu — ama modelin
+    eğitim verisi (decisions.confidence) DecisionFusion SONRASI NİHAİ
+    değerdi (train/serve tutarsızlığı). Artık compute_fused_confidence()
+    ile AYNI hesabı kullanıyor — düşük ajan anlaşması (<0.34) varken
+    confidence İNDİRİLMİŞ olarak modele ulaşmalı, ham değil."""
+    monkeypatch.setattr("services.decision_fusion.calibrate_confidence", lambda raw_confidence, curve=None: raw_confidence)
+    from contracts.agent import AgentDomain, AgentOpinion
+
+    captured_features = {}
+
+    def _capture(features):
+        captured_features.update(features)
+        return 0.5
+
+    monkeypatch.setattr("services.meta_label_model.predict_tp_probability", _capture)
+
+    # Eşit LONG/SHORT/WAIT dağılımı -> agreement=0.0 (<0.34, düşük kova).
+    opinions = [
+        AgentOpinion(domain=AgentDomain.TECHNICAL, direction="LONG"),
+        AgentOpinion(domain=AgentDomain.MACRO, direction="SHORT"),
+        AgentOpinion(domain=AgentDomain.QUANT, direction="WAIT"),
+    ]
+    ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0, confidence=0.6)
+    ctx.decision.final_size = 0.3
+    RiskTargetStage().execute(ctx, opinions)
+
+    # Ham confidence 0.6 idi, opportunity-quality düşük-anlaşma indirimi
+    # (x0.6883) uygulanmış olmalı -> 0.6 * 0.6883.
+    assert abs(captured_features["confidence"] - 0.6 * 0.6883) < 1e-6
+    # ctx.decision.confidence (henüz DecisionFusion çalışmadı) HALA ham
+    # değer olmalı — sadece Meta-Label'e giden özellik önceden hesaplandı,
+    # ctx üzerinde kalıcı bir yan etki yaratılmadı.
+    assert ctx.decision.confidence == 0.6
+
+
 def test_risk_target_stage_defaults_agent_agreement_to_zero_without_opinions(monkeypatch):
     """opinions verilmeden çağrılırsa (ör. eski çağıranlar/testler) fail-
     closed 0.0 — hiçbir zaman icat edilmiş bir anlaşma skoru üretilmez."""

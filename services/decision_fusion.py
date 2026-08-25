@@ -22,6 +22,66 @@ from services.inner_critic import InnerCritic
 _OPPORTUNITY_QUALITY_LOW_AGREEMENT_DISCOUNT = 0.6883
 
 
+def compute_fused_confidence(
+    ctx: CognitiveCycleContext,
+    belief: Belief | None = None,
+    opinions: list | None = None,
+) -> float:
+    """DecisionFusion.evaluate()'in confidence hesaplama kısmının YAN
+    ETKİSİZ hali (ctx'i mutate etmez, relevant_knowledge'a yazmaz) —
+    kalibrasyon eğrisi + opportunity-quality düşük-anlaşma indirimi +
+    InnerCritic çarpanının BİRLEŞİK sonucu.
+
+    Faz 363 — kullanıcı bulgusu/isteği: RiskTargetStage, Meta-Label
+    Model'e "confidence" özelliği verirken bu fonksiyon YERİNE doğrudan
+    `ctx.decision.confidence`'ı okuyordu — pipeline'da DecisionFusion'dan
+    ÖNCE çalıştığı için (bkz. cognitive_engine.py::run sırası) bu ham,
+    henüz kalibre/indirim GÖRMEMİŞ bir değerdi. Ama modelin EĞİTİM verisi
+    (decisions.confidence sütunu) decision_fusion SONRASI, yani bu
+    fonksiyonun ürettiği NİHAİ değerdi — train/serve tutarsızlığı.
+    RiskTargetStage artık AYNI bu fonksiyonu çağırıyor, eğitim ve
+    çalışma zamanı artık aynı anlamdaki confidence'ı görüyor."""
+    raw_confidence = ctx.decision.confidence or (belief.strength if belief else 0.0)
+    # Faz 248: kritik bulgu — gerçek veriyle ölçüldü, beyan edilen
+    # confidence sistemli olarak şişirilmiş (%40-60 aralığında gerçek
+    # kazanma oranı 20-24 puan daha düşük). EV hesabı ham confidence
+    # yerine gerçek geçmiş kararlardan çıkarılan ampirik kalibrasyon
+    # eğrisinden geçirilmiş halini kullanıyor — yeterli veri yoksa
+    # (fail-closed) ham değer değişmeden kalıyor.
+    # Faz 325 — kullanıcı bulgusu: kripto içi büyük-cap/küçük-cap
+    # ayrımı gerçek veriyle ölçüldü (35 puanlık fark, bkz. services/
+    # confidence_calibration.py::compute_market_cap_tier_calibration_
+    # curves üstündeki not) — symbol verilirse önce o eğriye bakılır,
+    # yeterli veri yoksa (fail-closed) tek küresel eğriye düşülür.
+    curve = get_calibration_curve_for_symbol(ctx.market.symbol)
+    confidence = calibrate_confidence(raw_confidence, curve=curve)
+
+    # Faz 328 — bkz. _OPPORTUNITY_QUALITY_LOW_AGREEMENT_DISCOUNT
+    # üstündeki yorum. opinions verilmezse (ör. eski/izole testler)
+    # hiçbir şey değişmez — fail-closed.
+    if opinions:
+        from analytics.opportunity_quality import compute_agent_agreement
+
+        votes = {"LONG": 0, "SHORT": 0, "WAIT": 0}
+        for o in opinions:
+            direction = (getattr(o, "direction", "") or "").upper()
+            if direction in votes:
+                votes[direction] += 1
+        agreement = compute_agent_agreement(votes)
+        if agreement < 0.34:
+            confidence *= _OPPORTUNITY_QUALITY_LOW_AGREEMENT_DISCOUNT
+
+    # Faz 268-sonrası — kritik bulgu (üçüncü taraf inceleme + kod
+    # doğrulaması): InnerCritic instantiate ediliyordu ama .review()
+    # hiç çağrılmıyordu — ürettiği risk_flags/objections tamamen ölü
+    # koddu. Artık gerçekten çağrılıyor ve iki sayısal çıktısı
+    # (bkz. inner_critic.py) confidence/final_size'ı GERÇEKTEN
+    # etkiliyor, sadece açıklanabilirlik için loglanmıyor.
+    critique = InnerCritic().review(ctx)
+    confidence *= critique["confidence_multiplier"]
+    return confidence
+
+
 class DecisionFusion:
     def __init__(self):
         self.critic = InnerCritic()
@@ -32,24 +92,13 @@ class DecisionFusion:
         belief: Belief | None = None,
         opinions: list | None = None,
     ) -> CognitiveCycleContext:
-        raw_confidence = ctx.decision.confidence or (belief.strength if belief else 0.0)
-        # Faz 248: kritik bulgu — gerçek veriyle ölçüldü, beyan edilen
-        # confidence sistemli olarak şişirilmiş (%40-60 aralığında gerçek
-        # kazanma oranı 20-24 puan daha düşük). EV hesabı ham confidence
-        # yerine gerçek geçmiş kararlardan çıkarılan ampirik kalibrasyon
-        # eğrisinden geçirilmiş halini kullanıyor — yeterli veri yoksa
-        # (fail-closed) ham değer değişmeden kalıyor.
-        # Faz 325 — kullanıcı bulgusu: kripto içi büyük-cap/küçük-cap
-        # ayrımı gerçek veriyle ölçüldü (35 puanlık fark, bkz. services/
-        # confidence_calibration.py::compute_market_cap_tier_calibration_
-        # curves üstündeki not) — symbol verilirse önce o eğriye bakılır,
-        # yeterli veri yoksa (fail-closed) tek küresel eğriye düşülür.
-        curve = get_calibration_curve_for_symbol(ctx.market.symbol)
-        confidence = calibrate_confidence(raw_confidence, curve=curve)
+        confidence = compute_fused_confidence(ctx, belief, opinions)
 
-        # Faz 328 — bkz. _OPPORTUNITY_QUALITY_LOW_AGREEMENT_DISCOUNT
-        # üstündeki yorum. opinions verilmezse (ör. eski/izole testler)
-        # hiçbir şey değişmez — fail-closed.
+        # Aşağıdaki iki blok SADECE açıklanabilirlik/loglama için —
+        # compute_fused_confidence() zaten yukarıda bu hesabı yaptı, burada
+        # AYNI mantığı (agreement/critique) TEKRAR çalıştırıp
+        # relevant_knowledge'a kaydediyoruz (yan etkisiz, deterministik,
+        # tekrar hesaplamanın maliyeti önemsiz).
         if opinions:
             from analytics.opportunity_quality import compute_agent_agreement
 
@@ -60,7 +109,6 @@ class DecisionFusion:
                     votes[direction] += 1
             agreement = compute_agent_agreement(votes)
             if agreement < 0.34:
-                confidence *= _OPPORTUNITY_QUALITY_LOW_AGREEMENT_DISCOUNT
                 ctx.cognition.relevant_knowledge.append({
                     "type": "opportunity_quality",
                     "data": {
@@ -71,19 +119,12 @@ class DecisionFusion:
                     },
                 })
 
-        # Faz 268-sonrası — kritik bulgu (üçüncü taraf inceleme + kod
-        # doğrulaması): InnerCritic instantiate ediliyordu ama .review()
-        # hiç çağrılmıyordu — ürettiği risk_flags/objections tamamen ölü
-        # koddu. Artık gerçekten çağrılıyor ve iki sayısal çıktısı
-        # (bkz. inner_critic.py) confidence/final_size'ı GERÇEKTEN
-        # etkiliyor, sadece açıklanabilirlik için loglanmıyor.
         critique = self.critic.review(ctx)
         if critique["risk_flags"] or critique["objections"]:
             ctx.cognition.relevant_knowledge.append({
                 "type": "inner_critic",
                 "data": critique,
             })
-        confidence *= critique["confidence_multiplier"]
 
         # Kritik bulgu (Faz 328 sırasında bulundu): buraya kadar hesaplanan
         # confidence (kalibrasyon + cap-tier eğrisi + opportunity quality

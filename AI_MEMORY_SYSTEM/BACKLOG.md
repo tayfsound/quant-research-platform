@@ -374,6 +374,24 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
     çağıranı var — muhtemelen ayrı, daha eski bir RL taslağı). İkisi de
     ayrı bir onay/tur gerektirir.
 
+33. **Telegram üzerinden push bildirimi.** Kullanıcı isteği (2026-08-25):
+    mevcut sistem sessizlik/duruş alarmı tarayıcı sekmesi açıkken çalışıyor
+    (ses + masaüstü bildirimi + banner, bkz. observability/signal_health.py
+    + Dashboard.tsx). Bilgisayar kapalıyken/tarayıcı kapalıyken ulaşmıyor —
+    kullanıcı şimdilik bunu yeterli buluyor (test modu), ama Telegram gibi
+    harici bir push kanalı (bot token + chat id kurulumu gerektirir) ileride
+    istenirse ayrı bir tasarım turu olarak ele alınacak. Şimdilik SADECE not.
+
+34. **[YAPILDI — Faz 363, 2026-08-25] Settings'e sabit $ pozisyon
+    boyutlandırma alanı.** Kullanıcı isteği: değişken boyutlu pozisyonlardan
+    gelen PNL dalgalanmasını azaltmak ("%86 isabet oranı yakalıyor ama 2k
+    dolar zarar ediyor"). `fixed_position_size_usd` ayarı (varsayılan "0" =
+    kapalı) — pozitif değer girilirse dinamik `starting_capital*
+    max_capital_pct/max_concurrent_positions` formülünün YERİNE geçip HER
+    pozisyonu (sembol/yönden bağımsız) aynı $ notional'a sabitliyor.
+    `services/orchestrator.py::_build_context` + `services/risk_state.py` +
+    Settings.tsx'e yeni kart. 3 yeni test.
+
 ## Notlar
 
 - Kullanıcı `max_open_positions_per_symbol_direction`'a (1000) bilerek
