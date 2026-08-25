@@ -102,6 +102,11 @@ def load_position_risk_state(
         max_concurrent = max_concurrent_override if max_concurrent_override is not None else int(settings_repo.get("max_concurrent_positions"))
         max_capital_pct = capital_pct_override if capital_pct_override is not None else float(settings_repo.get("max_capital_pct"))
         starting_capital = float(settings_repo.get("starting_capital"))
+        # Faz 363 — kullanıcı isteği: "%86 isabet oranı yakalıyor ama 2k
+        # dolar zarar ediyor" — dinamik capital_per_trade formülünün
+        # (starting_capital*max_capital_pct/max_concurrent_positions)
+        # YERİNE geçen, opsiyonel sabit $ tutarı. 0/boş = devre dışı.
+        fixed_position_size_usd = float(settings_repo.get("fixed_position_size_usd") or "0")
         min_seconds_between_trades = int(settings_repo.get("min_seconds_between_trades"))
         ai_enabled = settings_repo.get("ai_enabled") == "true"
         kill_switch_consecutive_losses = int(settings_repo.get("kill_switch_consecutive_losses"))
@@ -235,4 +240,5 @@ def load_position_risk_state(
         "same_direction_open_notional": same_direction_open_notional,
         "max_same_symbol_direction_capital_pct": max_same_symbol_direction_capital_pct,
         "concept_drift_reason": concept_drift_reason,
+        "fixed_position_size_usd": fixed_position_size_usd,
     }

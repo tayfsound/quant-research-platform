@@ -27,6 +27,17 @@ DEFAULTS: dict[str, str] = {
     "max_concurrent_positions": "15",
     "max_capital_pct": "0.4",
     "starting_capital": "50000",
+    # Faz 363 — kullanıcı isteği: yukarıdaki dinamik formül (starting_capital
+    # * max_capital_pct / max_concurrent_positions) her sembol/işlem için
+    # AYNI $ tutarını hedeflese de, kaldıraç/take-profit/stop-loss farklı
+    # ajanlarca farklı belirlendiği için gerçekleşen PNL değişkenliği yüksek
+    # kalabiliyor ("%86 isabet oranı yakalıyor ama 2k dolar zarar ediyor").
+    # Bu ayar boşsa/"0" ise devre dışı — dinamik formül aynen çalışmaya
+    # devam eder (varsayılan, regresyon yok). Pozitif bir $ değeri girilirse
+    # o değer capital_per_trade'in YERİNE geçer — HER pozisyon (sembol/
+    # yönden bağımsız) tam olarak bu $ notional'ı hedefler. Bkz. services/
+    # orchestrator.py::_build_context.
+    "fixed_position_size_usd": "0",
     # Faz 189: "stopsuz işlem yapmasın test modunda bile olsa" — aynı sembol
     # için art arda iki işlem açılışı arasında zorunlu minimum bekleme.
     "min_seconds_between_trades": "60",

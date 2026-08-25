@@ -392,6 +392,15 @@ def _validate(key: str, value: str) -> None:
     elif key == "self_reliability_gate_enabled":
         if value not in ("true", "false"):
             raise HTTPException(400, "self_reliability_gate_enabled must be 'true' or 'false'")
+    elif key == "fixed_position_size_usd":
+        # Faz 363 — "0" = devre dışı (dinamik capital_per_trade formülü
+        # aynen çalışır), pozitif değer = tüm yeni pozisyonlar bu sabit $
+        # notional'ı hedefler (bkz. DEFAULTS'taki gerekçe).
+        try:
+            if float(value) < 0:
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "fixed_position_size_usd must be a non-negative number")
     else:
         raise HTTPException(400, f"unknown setting key: {key}")
 

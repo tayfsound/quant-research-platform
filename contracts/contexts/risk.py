@@ -107,3 +107,8 @@ class RiskContext(BaseModel):
     # ilgisiz testleri kırdı. None = ya yetersiz veri ya da gerçek bir
     # drift tespit edilmedi (fail-closed).
     concept_drift_reason: RiskReason | None = None
+    # Faz 363 — kullanıcı isteği: dinamik capital_per_trade formülünün
+    # (starting_capital*max_capital_pct/max_concurrent_positions) YERİNE
+    # geçen opsiyonel sabit $ tutarı. 0/None = devre dışı, dinamik formül
+    # aynen çalışır (bkz. services/orchestrator.py::_build_context).
+    fixed_position_size_usd: float | None = None

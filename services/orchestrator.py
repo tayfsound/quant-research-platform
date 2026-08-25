@@ -391,17 +391,28 @@ def build_cognitive_context(
     ctx.risk.same_direction_open_notional = risk_state["same_direction_open_notional"]
     ctx.risk.max_same_symbol_direction_capital_pct = risk_state["max_same_symbol_direction_capital_pct"]
     ctx.risk.concept_drift_reason = risk_state["concept_drift_reason"]
+    ctx.risk.fixed_position_size_usd = risk_state["fixed_position_size_usd"]
 
     # Faz 211: her işlem, sermayenin (starting_capital * max_capital_pct)
     # eşit dilimlere bölünmüş (max_concurrent_positions) GERÇEK bir $
     # notional bütçesi hedefliyor; birim sayısı bu bütçenin güncel fiyata
     # bölünmesiyle çıkıyor — pahalı/ucuz varlıklar artık aynı gerçek $
     # riskini taşıyor.
+    #
+    # Faz 363 — kullanıcı isteği: fixed_position_size_usd > 0 ise bu
+    # dinamik formülün YERİNE geçer — her pozisyon (hangi sembol/yön
+    # olursa olsun) tam olarak aynı sabit $ notional'ı hedefler. Amaç:
+    # PNL değişkenliğini azaltmak ("%86 isabet oranı yakalıyor ama 2k
+    # dolar zarar ediyor" — farklı boyutlardaki pozisyonların karışık
+    # etkisini ortadan kaldırmak).
     current_price = data[-1].close
-    capital_per_trade = (
-        risk_state["starting_capital"] * risk_state["max_capital_pct"]
-        / max(risk_state["max_concurrent_positions"], 1)
-    )
+    if risk_state["fixed_position_size_usd"] > 0:
+        capital_per_trade = risk_state["fixed_position_size_usd"]
+    else:
+        capital_per_trade = (
+            risk_state["starting_capital"] * risk_state["max_capital_pct"]
+            / max(risk_state["max_concurrent_positions"], 1)
+        )
     ctx.decision.proposed_size = capital_per_trade / current_price if current_price else 0.0
 
     return ctx

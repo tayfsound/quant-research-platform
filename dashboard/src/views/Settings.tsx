@@ -150,6 +150,11 @@ export default function Settings() {
   // olayın (üç ayar değişti, dördüncüsü fark edilmeden senkron dışı kaldı)
   // bir daha sessizce tekrarlanmaması için.
   const computedCapitalPerTrade = (() => {
+    // Faz 363 — fixed_position_size_usd > 0 ise dinamik formülün YERİNE
+    // geçer (bkz. services/orchestrator.py::_build_context) — önizleme
+    // burada da AYNI önceliği yansıtmalı, yoksa yanıltıcı olur.
+    const fixed = Number(draft.fixed_position_size_usd);
+    if (fixed > 0) return fixed;
     const capital = Number(draft.starting_capital);
     const pct = Number(draft.max_capital_pct);
     const concurrent = Number(draft.max_concurrent_positions);
@@ -335,6 +340,30 @@ export default function Settings() {
               onClick={() => save("starting_capital", draft.starting_capital)}
             >
               {saved === "starting_capital" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+        </Card>
+
+        <Card>
+          <h3 className="text-sm font-semibold text-ink mb-1">Sabit pozisyon boyutu ($)</h3>
+          <p className="text-xs text-ink-soft mb-3">
+            Varsayılan olarak her işlemin payı yukarıdaki kasa/yüzde/eşzamanlılık formülünden
+            (kasa × yüzde ÷ eşzamanlı işlem sayısı) hesaplanır. Burada pozitif bir $ tutarı
+            girersen formülün YERİNE geçer — HER pozisyon (sembol/yönden bağımsız) tam olarak
+            bu $ tutarını hedefler. Amaç: değişken boyutlardan gelen PNL dalgalanmasını azaltmak
+            (ör. yüksek isabet oranına rağmen büyük $ zarar). Boş/0 = kapalı, formül aynen çalışır.
+          </p>
+          <div className="flex gap-2">
+            <Input
+              type="number"
+              value={draft.fixed_position_size_usd ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, fixed_position_size_usd: v }))}
+            />
+            <Button
+              disabled={saving === "fixed_position_size_usd"}
+              onClick={() => save("fixed_position_size_usd", draft.fixed_position_size_usd || "0")}
+            >
+              {saved === "fixed_position_size_usd" ? "Kaydedildi ✓" : "Kaydet"}
             </Button>
           </div>
         </Card>
