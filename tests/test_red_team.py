@@ -83,8 +83,19 @@ def test_severe_whipsaw_eventually_trips_the_kill_switch(engine):
     """Gerçek olayla (2026-08-12, gecikmeli trend rejiminin aktif bir
     tersine dönüşü okuyamayıp 50 ardışık gerçek kayba yol açması) AYNI
     mekanizmayı sentetik olarak üretip, kill switch'in GERÇEKTEN
-    devreye girdiğini doğrular."""
-    bars = whipsaw_chop(n_bars=150, period_bars=15, amplitude_pct=0.06)
+    devreye girdiğini doğrular.
+
+    Faz 363 — kritik bulgu, gerçek ölçümle doğrulandı: amplitude_pct=0.06
+    ile üretilen serinin GERÇEK toplam salınımı (~%6.4) RiskTargetStage'in
+    ürettiği hedef mesafesinden (target_atr_mult_long=6.89 ile ~%19.7,
+    bkz. Faz 320) 3 KAT DAHA KÜÇÜK kalıyordu — hedefe hiçbir aday asla
+    ulaşamıyordu (max_forward_bars'ı büyütmenin bile hiçbir etkisi yoktu,
+    fiziksel olarak imkansızdı), trades_taken sonsuza dek 0 kalıyordu, kill
+    switch (hiç işlem alınmadığı için) hiç tetiklenemiyordu. amplitude_pct
+    0.30'a çıkarılınca (AYNI period_bars=15) gerçek ölçümle güvenilir
+    biçimde 4+ adaya ve kill switch'in tetiklenmesine yetiyor (tripped_at_
+    bar=82, 250'lik pencerenin başında — geniş bir marj var)."""
+    bars = whipsaw_chop(n_bars=250, period_bars=15, amplitude_pct=0.30)
     with patch("services.decision_fusion.calibrate_confidence", side_effect=lambda x, curve=None: x):
         result = run_red_team_scenario(
             bars, scenario_name="whipsaw", kill_switch_consecutive_losses=4,
@@ -100,8 +111,11 @@ def test_kill_switch_disabled_means_losses_keep_accumulating(engine):
     kuralı gereği (bkz. engines/risk_engine.py) hiçbir eşik aşılmışlık
     kontrolü yapılmaz, AYNI kötü senaryoda kayıplar sınırsız birikir.
     Kill switch'in GERÇEKTEN bir şey değiştirdiğini (aksi halde ne işe
-    yaradığı belirsiz kalırdı) kanıtlayan karşılaştırma testi."""
-    bars = whipsaw_chop(n_bars=150, period_bars=15, amplitude_pct=0.06)
+    yaradığı belirsiz kalırdı) kanıtlayan karşılaştırma testi.
+
+    Faz 363 — bkz. test_severe_whipsaw_eventually_trips_the_kill_switch'teki
+    AYNI amplitude_pct=0.06->0.30 düzeltmesinin gerekçesi."""
+    bars = whipsaw_chop(n_bars=250, period_bars=15, amplitude_pct=0.30)
     with patch("services.decision_fusion.calibrate_confidence", side_effect=lambda x, curve=None: x):
         disabled = run_red_team_scenario(
             bars, scenario_name="whipsaw_disabled", kill_switch_consecutive_losses=0,

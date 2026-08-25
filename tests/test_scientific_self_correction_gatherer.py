@@ -90,13 +90,29 @@ def test_gather_scientific_self_correction_excludes_mechanical_strategies():
         _cleanup()
 
 
-def test_gather_scientific_self_correction_fail_closed_below_min_sample():
-    now = datetime.now(UTC)
+def test_gather_scientific_self_correction_fail_closed_below_min_sample(monkeypatch):
+    """Faz 363 — kritik bulgu: bu test önceden GERÇEK, paylaşılan
+    quantdb_test'e SADECE 1 kayıt ekleyip result["segments"] == {}
+    bekliyordu — ama gather_scientific_self_correction() TÜM decisions
+    tablosunu tarıyor (kasıtlı, dashboard'un GERÇEK sistem sağlığını
+    görmesi için), sembole göre izole DEĞİL. Bu oturumda paylaşılan test
+    DB'sinde biriken binlerce kayıt zaten MIN_SAMPLE_SIZE'ı (20) çoktan
+    aştığı için test artık HİÇBİR ZAMAN geçemiyordu — paylaşılan DB
+    state'ine bağımlı, kırılgan bir izolasyon varsayımıydı.
 
-    try:
-        _persist_closed_trade("LONG", True, now - timedelta(hours=1))
+    Düzeltme: gerçek DB'ye hiç dokunmadan, _fetch_wins_and_totals'ı
+    kontrollü (MIN_SAMPLE_SIZE=20'nin altında) bir veri setiyle mock'layıp
+    gatherer'ın GERÇEKTEN fail-closed davrandığını (analytics/
+    scientific_self_correction.py::compute_hypothesis_retest'in kendi
+    saf-fonksiyon testi zaten bunu doğruluyor — burada SADECE gatherer'ın
+    o sonucu doğru ilettiğini/filtrelediğini test ediyoruz) izole olarak
+    kanıtlıyor."""
+    monkeypatch.setattr(
+        "services.scientific_self_correction_gatherer._fetch_wins_and_totals",
+        lambda recent_days: {
+            "overall": {"original_wins": 5, "original_n": 10, "recent_wins": 5, "recent_n": 10},
+        },
+    )
 
-        result = gather_scientific_self_correction(recent_days=7)
-        assert result["segments"] == {}
-    finally:
-        _cleanup()
+    result = gather_scientific_self_correction(recent_days=7)
+    assert result["segments"] == {}

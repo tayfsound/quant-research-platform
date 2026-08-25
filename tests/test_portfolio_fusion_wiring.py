@@ -437,13 +437,26 @@ def test_run_portfolio_aware_cycle_finalizes_every_symbol_and_applies_fusion_whe
                 # multi_timeframe_cascade_enabled'ı da okuyor (varsayılan
                 # "false" — propose() kullanılmaya devam etmeli, bu testin
                 # zaten mockladığı yol).
-                mock_get.side_effect = lambda key: {"max_confidence_mode_enabled": "false", 
+                #
+                # Faz 363 — kritik bulgu: bu test finalize_proposal() üzerinden
+                # gerçekten record_stage.execute() -> decision_recorder.record()
+                # kadar gidiyor, o da (Faz 361/362'de eklenen) signal_
+                # persistence_gate_enabled/pyramid_regime_gate_enabled gibi
+                # ayarları okuyor. Sabit bir dict'in exact-match [key] araması
+                # (KeyError fırlatan) HER yeni ayar eklendiğinde bu testi
+                # kırıyordu — DEFAULTS'a düşen bir fallback'e çevrildi, ileride
+                # eklenecek ayarlar bu testi bir daha kırmasın diye.
+                from database.repositories.app_settings_repository import DEFAULTS
+
+                overrides = {
+                    "max_confidence_mode_enabled": "false",
                     "starting_capital": "1000",
                     "max_portfolio_var_pct": "0.001",
                     "multi_timeframe_cascade_enabled": "false",
                     "multi_timeframe_cascade_ab_test_enabled": "false",
                     "act_threshold": "0.65",
-                }[key]
+                }
+                mock_get.side_effect = lambda key: overrides.get(key, DEFAULTS.get(key))
                 results = orch.run_portfolio_aware_cycle(["BTCUSDT", "ETHUSDT"])
 
         assert len(results) == 2
