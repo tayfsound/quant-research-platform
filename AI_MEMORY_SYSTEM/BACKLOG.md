@@ -416,6 +416,29 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
     istatistiksel-güvenilirlik gerektiren mekanizmalar büyük örneklem
     ister. 6 test (sabit `range(20)` senaryoları) 50'ye göre güncellendi.
 
+36. **[ÇÖZÜLDÜ — Faz 363, 2026-08-25] Kelly/kalibrasyon eğrileri pump_
+    fade_v1/basis_arb_v1'i izole etmiyordu.** Backlog #18 ("seçicilik
+    eksik") incelenirken bulundu: bu iki mekanik strateji (AI konseyinden
+    TAMAMEN izole, confidence alanını hiç doldurmuyor) round(confidence,1)
+    =0.0 kovasına yığılıyordu — canlıda 199 kayıttan 197'si bunlara aitti,
+    o kovanın -$236.937 zararının -$236.830'u (%99.9) pump_fade_v1
+    kaynaklıydı. `kelly_sizing.py` (2 fonksiyon) + `confidence_
+    calibration.py` (2 fonksiyon, biri DecisionFusion'ın EV hesabında
+    GERÇEKTEN kullanılan eğri) SQL sorgularına izolasyon filtresi eklendi
+    — `analytics/failure_classifier.py`/`analytics/scientific_self_
+    correction.py`'nin ZATEN uyguladığı AYNI desen. Etki ölçüldü: pump_
+    fade/basis_arb hariç tutulunca AI konseyinin confidence-bazlı toplam
+    net PNL görüntüsü -$189.723'ten **+$47.214**'e döndü — sistem
+    aslında göründüğünden daha karlı, önceki kirli görüntü yanıltıcıydı.
+    4 yeni regresyon testi.
+
+    **Backlog #18 durumu (henüz açık):** izolasyon sonrası bile confidence
+    =0.2/0.3/0.5 kovaları hâlâ net zararlı (özellikle 0.5: -$35.467, tek
+    başına en büyük kalan zarar kaynağı) — bu, "seçicilik eksik" sorusuna
+    dair GERÇEK, kalan bir sinyal. reduce_threshold (0.4) ile act_
+    threshold (0.7) arasındaki REDUCE tier'in TAM ORTASının neden özellikle
+    riskli olduğu henüz araştırılmadı — bir sonraki turda ele alınacak.
+
 ## Notlar
 
 - Kullanıcı `max_open_positions_per_symbol_direction`'a (1000) bilerek

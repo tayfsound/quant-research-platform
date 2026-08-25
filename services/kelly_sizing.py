@@ -41,19 +41,35 @@ def compute_confidence_bucket_payoff_stats() -> dict[float, dict]:
     ortalama kazanç/kayıp büyüklüğü. confidence_calibration.py::
     compute_calibration_curve() ile AYNI sorgu/kova mantığı, ek olarak
     kazanç/kayıp büyüklüklerini de topluyor (Kelly formülü ikisine de
-    ihtiyaç duyuyor, sadece win_rate'e değil)."""
+    ihtiyaç duyuyor, sadece win_rate'e değil).
+
+    Faz 363 — kritik bulgu (kullanıcı isteği, gerçek veriyle doğrulandı):
+    pump_fade_v1/basis_arb_v1 (AI konseyinden TAMAMEN izole, mekanik
+    stratejiler, bkz. analytics/failure_classifier.py'deki AYNI izolasyon
+    ilkesi) confidence alanını hiç doldurmuyor — round(confidence,1)=0.0
+    kovasına 197/199 kayıt olarak yığılıyorlardı, o kovanın -$236.937
+    zararının -$236.830'u (%99.9'u) TEK BAŞINA pump_fade_v1'e aitti. Bu
+    sorgu bu ikisini hariç tutmuyordu — Kelly'nin confidence=0.0 kovası
+    için hesapladığı istatistik AI konseyinin GERÇEK performansını değil,
+    ölçüm hatasıyla karışmış pump_fade zararını yansıtıyordu."""
     from sqlalchemy import text
 
     from database.session_factory import SessionFactory
+    from services.basis_arbitrage_strategy import EXPERIMENT_BUCKET as _BASIS_ARB_BUCKET
+    from services.pump_fade_strategy import EXPERIMENT_BUCKET as _PUMP_FADE_BUCKET
 
     buckets: dict[float, list[float]] = defaultdict(list)
     with SessionFactory.get_session() as session:
-        rows = session.execute(text(
-            """
-            SELECT confidence, pnl FROM decisions
-            WHERE status = 'closed' AND excluded_from_stats = false AND confidence IS NOT NULL
-            """
-        )).fetchall()
+        rows = session.execute(
+            text(
+                """
+                SELECT confidence, pnl FROM decisions
+                WHERE status = 'closed' AND excluded_from_stats = false AND confidence IS NOT NULL
+                  AND (experiment_bucket IS NULL OR experiment_bucket NOT IN (:pump_fade, :basis_arb))
+                """
+            ),
+            {"pump_fade": _PUMP_FADE_BUCKET, "basis_arb": _BASIS_ARB_BUCKET},
+        ).fetchall()
 
     for confidence, pnl in rows:
         if confidence is None:
@@ -110,16 +126,22 @@ def compute_regime_confidence_bucket_payoff_stats() -> dict[tuple[str, float], d
     from sqlalchemy import text
 
     from database.session_factory import SessionFactory
+    from services.basis_arbitrage_strategy import EXPERIMENT_BUCKET as _BASIS_ARB_BUCKET
+    from services.pump_fade_strategy import EXPERIMENT_BUCKET as _PUMP_FADE_BUCKET
 
     buckets: dict[tuple[str, float], list[float]] = defaultdict(list)
     with SessionFactory.get_session() as session:
-        rows = session.execute(text(
-            """
-            SELECT market_regime, confidence, pnl FROM decisions
-            WHERE status = 'closed' AND excluded_from_stats = false
-              AND confidence IS NOT NULL AND market_regime IS NOT NULL
-            """
-        )).fetchall()
+        rows = session.execute(
+            text(
+                """
+                SELECT market_regime, confidence, pnl FROM decisions
+                WHERE status = 'closed' AND excluded_from_stats = false
+                  AND confidence IS NOT NULL AND market_regime IS NOT NULL
+                  AND (experiment_bucket IS NULL OR experiment_bucket NOT IN (:pump_fade, :basis_arb))
+                """
+            ),
+            {"pump_fade": _PUMP_FADE_BUCKET, "basis_arb": _BASIS_ARB_BUCKET},
+        ).fetchall()
 
     for regime, confidence, pnl in rows:
         if confidence is None or not regime:

@@ -49,19 +49,31 @@ def compute_calibration_curve() -> list[tuple[float, float]]:
     Sadece yeterli örneklemi (>= _MIN_BUCKET_SAMPLES) olan kovalar
     dahil edilir. reliability_legacy_cutoff_at set edilmişse, bu
     tarihten ÖNCE kapanmış kararlar eğriye hiç girmez (satır silinmiyor,
-    sadece dışarıda bırakılıyor — bkz. yukarıdaki modül dokümanı)."""
+    sadece dışarıda bırakılıyor — bkz. yukarıdaki modül dokümanı).
+
+    Faz 363 — kritik bulgu (kullanıcı isteği, gerçek veriyle doğrulandı):
+    pump_fade_v1/basis_arb_v1 (AI konseyinden TAMAMEN izole, mekanik
+    stratejiler, confidence alanını hiç doldurmuyorlar) round(confidence,1)
+    =0.0 kovasına 197/199 kayıt olarak yığılıp o kovanın istatistiğini
+    (-$236.937 zararın -$236.830'u pump_fade_v1'e ait) DecisionFusion'ın
+    GERÇEKTEN kullandığı bu eğriye taşıyordu — bu sorgu bu ikisini hiç
+    hariç tutmuyordu. kelly_sizing.py::compute_confidence_bucket_payoff_
+    stats ile AYNI izolasyon eklendi."""
     from collections import defaultdict
 
     from sqlalchemy import text
 
     from database.session_factory import SessionFactory
+    from services.basis_arbitrage_strategy import EXPERIMENT_BUCKET as _BASIS_ARB_BUCKET
+    from services.pump_fade_strategy import EXPERIMENT_BUCKET as _PUMP_FADE_BUCKET
 
     cutoff = get_reliability_legacy_cutoff()
     query = (
         "SELECT confidence, pnl FROM decisions "
-        "WHERE status = 'closed' AND excluded_from_stats = false AND confidence IS NOT NULL"
+        "WHERE status = 'closed' AND excluded_from_stats = false AND confidence IS NOT NULL "
+        "AND (experiment_bucket IS NULL OR experiment_bucket NOT IN (:pump_fade, :basis_arb))"
     )
-    params: dict = {}
+    params: dict = {"pump_fade": _PUMP_FADE_BUCKET, "basis_arb": _BASIS_ARB_BUCKET}
     if cutoff is not None:
         query += " AND closed_at >= :cutoff"
         params["cutoff"] = cutoff
@@ -105,18 +117,23 @@ def get_calibration_curve(force_refresh: bool = False) -> list[tuple[float, floa
 # puanlık gerçek fark. compute_calibration_curve() ile AYNI SQL/kesim/
 # kova mantığı, ek olarak symbol'e göre tier'a ayrılıyor.
 def compute_market_cap_tier_calibration_curves() -> dict[str, list[tuple[float, float]]]:
+    """Faz 363 — bkz. compute_calibration_curve'deki AYNI pump_fade_v1/
+    basis_arb_v1 izolasyon gerekçesi."""
     from collections import defaultdict
 
     from sqlalchemy import text
 
     from database.session_factory import SessionFactory
+    from services.basis_arbitrage_strategy import EXPERIMENT_BUCKET as _BASIS_ARB_BUCKET
+    from services.pump_fade_strategy import EXPERIMENT_BUCKET as _PUMP_FADE_BUCKET
 
     cutoff = get_reliability_legacy_cutoff()
     query = (
         "SELECT symbol, confidence, pnl FROM decisions "
-        "WHERE status = 'closed' AND excluded_from_stats = false AND confidence IS NOT NULL"
+        "WHERE status = 'closed' AND excluded_from_stats = false AND confidence IS NOT NULL "
+        "AND (experiment_bucket IS NULL OR experiment_bucket NOT IN (:pump_fade, :basis_arb))"
     )
-    params: dict = {}
+    params: dict = {"pump_fade": _PUMP_FADE_BUCKET, "basis_arb": _BASIS_ARB_BUCKET}
     if cutoff is not None:
         query += " AND closed_at >= :cutoff"
         params["cutoff"] = cutoff

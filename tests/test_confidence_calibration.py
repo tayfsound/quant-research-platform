@@ -37,6 +37,50 @@ def test_calibrate_above_curve_range_clamps_to_last_observed_rate():
     assert calibrate_confidence(0.9, curve=curve) == 0.3
 
 
+def test_compute_calibration_curve_excludes_pump_fade_and_basis_arb(tmp_path):
+    """Faz 363 — bkz. tests/test_kelly_sizing.py::test_compute_confidence_
+    bucket_payoff_stats_excludes_pump_fade_and_basis_arb ile AYNI gerçek
+    veri bulgusu: bu eğri DecisionFusion'ın EV hesabında GERÇEKTEN
+    kullanıldığı için (calibrate_confidence), pump_fade_v1'in dev boyutlu
+    zararının HİÇ sızmadığını doğrulamak özellikle kritik."""
+    from datetime import UTC, datetime
+    from uuid import uuid4
+
+    from contracts.decision_event import DecisionEvent
+    from database.repositories.decision_persistor import DecisionPersistor
+    from database.session_factory import SessionFactory
+    from services import confidence_calibration
+
+    symbol = f"CALPUMPFADE{uuid4().hex[:6]}"
+    now = datetime.now(UTC)
+
+    before = dict(confidence_calibration.compute_calibration_curve())
+
+    for _ in range(30):
+        event = DecisionEvent(
+            id=uuid4(), symbol=symbol, proposed_direction="SHORT", final_action="SHORT",
+            final_size=1.0, confidence=0.9, status="open", entry_price=100.0, quantity=1.0,
+            experiment_bucket="pump_fade_v1",
+        )
+        with SessionFactory.get_session() as session:
+            repo = DecisionPersistor(session)
+            repo.persist(event)
+            # Tamamen kayıp — eğer izolasyon bozulursa 0.9 kovasının
+            # gözlenen kazanma oranını gözle görülür şekilde düşürürdü.
+            repo.close_position(decision_id=str(event.id), exit_price=100.0, pnl=-50000.0, closed_at=now)
+
+    after = dict(confidence_calibration.compute_calibration_curve())
+
+    before_rate = before.get(0.9)
+    after_rate = after.get(0.9)
+    assert after_rate is not None
+    if before_rate is not None:
+        # 30 tam-kayıp pump_fade_v1 kaydı gerçekten karışsaydı, gözlenen
+        # kazanma oranı anlamlı ölçüde düşerdi (paylaşılan DB'de zaten
+        # kayıtlı örneklem sayısına göre en az birkaç puan).
+        assert abs(after_rate - before_rate) < 0.05
+
+
 def test_compute_calibration_curve_ignores_buckets_below_min_samples():
     from services import confidence_calibration
 

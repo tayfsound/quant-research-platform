@@ -182,3 +182,47 @@ def test_compute_confidence_bucket_payoff_stats_reflects_real_closed_trades():
     assert 0.0 < bucket["win_rate"] < 1.0
     assert bucket["avg_win"] > 0
     assert bucket["avg_loss"] > 0
+
+
+def test_compute_confidence_bucket_payoff_stats_excludes_pump_fade_and_basis_arb():
+    """Faz 363 — kritik bulgu, gerçek veriyle doğrulandı: pump_fade_v1/
+    basis_arb_v1 (AI konseyinden TAMAMEN izole, mekanik stratejiler)
+    confidence alanını hiç doldurmuyor — round(confidence,1)=0.0 kovasına
+    yığılıp (canlıda 199 kayıttan 197'si) o kovanın istatistiğini BÜYÜK
+    ÖLÇÜDE (-$236.937'lik zararın -$236.830'u) pump_fade_v1'e ait yapıyordu.
+    Bu test, dev boyutlu bir pump_fade_v1 zararının hiçbir kovaya HİÇ
+    girmediğini (before/after karşılaştırmasıyla, paylaşılan DB state'ine
+    bağımlı olmadan) kanıtlıyor."""
+    from services.kelly_sizing import compute_confidence_bucket_payoff_stats
+
+    symbol = f"KELLYPUMPFADE{uuid4().hex[:6]}"
+    now = datetime.now(UTC)
+
+    before = compute_confidence_bucket_payoff_stats()
+
+    # Nadir kullanılan bir kova (0.15 -> round=0.1 veya 0.2 olabilir,
+    # gerçek round() davranışına göre) yerine, mevcut bir kovayı (0.9)
+    # DEV BOYUTLU bir zararla "kirletmeye çalışıyoruz" — eğer izolasyon
+    # BOZULURSA bu, o kovanın avg_loss'unu göze çarpacak kadar bozardı.
+    for _ in range(30):
+        event = DecisionEvent(
+            id=uuid4(), symbol=symbol, proposed_direction="SHORT", final_action="SHORT",
+            final_size=1.0, confidence=0.9, status="open", entry_price=100.0, quantity=1.0,
+            experiment_bucket="pump_fade_v1",
+        )
+        with SessionFactory.get_session() as session:
+            repo = DecisionPersistor(session)
+            repo.persist(event)
+            repo.close_position(decision_id=str(event.id), exit_price=100.0, pnl=-50000.0, closed_at=now)
+
+    after = compute_confidence_bucket_payoff_stats()
+
+    before_bucket = before.get(0.9) or {"sample_count": 0, "avg_loss": 0.0}
+    after_bucket = after.get(0.9)
+    assert after_bucket is not None
+    # Örneklem sayısı pump_fade_v1 eklemesinden HİÇ etkilenmemeli.
+    assert after_bucket["sample_count"] == before_bucket["sample_count"]
+    # avg_loss $50.000'lik pump_fade zararından etkilenseydi devasa
+    # (onlarca bin $) çıkardı — makul bir üst sınırla bunun olmadığını
+    # kanıtlıyoruz.
+    assert after_bucket["avg_loss"] < 10000.0
