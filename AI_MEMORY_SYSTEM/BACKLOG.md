@@ -128,10 +128,15 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
     örneği: "BTC LONG'da 100 pozisyon, 15'i stop olmuş, 13'ü yön hatası, 2'si
     stop süpürülüp sonra hedefe gitmiş"). Yeni bir analytics modülü + periyodik
     Celery görevi gerektirir — henüz hiçbir yerde yok, sıfırdan tasarım.
-15. Ayrıca kâr edip zarara dönen ("breakeven'dan çıkış") pozisyonların ne kadarının
-    stop yanlış yerleştirildiği için mi, yoksa gerçekten yön hatası mı olduğu
-    araştırılmalı; bu kaybın toplam zarardaki payı % olarak dashboard'a kart
-    olarak eklenmeli (SL/likidasyon/breakeven kırılımı).
+15. **[ÇÖZÜLDÜ — Faz 363, 2026-08-25] Kâr edip zarara dönen pozisyonların
+    stop yanlış yerleşimi mi yoksa gerçek yön hatası mı olduğu + zararın
+    toplam paydaki oranı.** `analytics/failure_classifier.py::
+    summarize_loss_breakdown()` (mevcut summarize_stop_loss_failures'ın
+    TÜM zarar-üreten exit_reason'lara genişletilmiş hali) + Genel Özet
+    panelinde yeni kart ("Zarar Kırılımı"). Gerçek sonuç: toplam zararın
+    %88.8'i stop_loss'tan, bunun %96.6'sı gerçek yön hatası — "stop çok
+    darmış" payı sadece %3.4. Kayıpların ezici çoğunluğu yerleşimden
+    değil, yön tahmininden kaynaklanıyor.
 16. **[ÇÖZÜLDÜ — 2026-08-24, A/B'den ÜRETİME terfi ettirildi] Settings'teki
     mum aralığı (candle timeframe) tek seçime zorluyor mu?** `candle_
     timeframe` (tekil) ÖLÜ DEĞİL — birincil karar zaman dilimi. "15dk/4s
