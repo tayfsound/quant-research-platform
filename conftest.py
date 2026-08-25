@@ -29,11 +29,34 @@ quantdb_test'i oluşturup migrate etmek için:
     DATABASE_URL_SYNC=postgresql+psycopg2://quant:quantpass@localhost:5432/quantdb_test python3 -m alembic upgrade head
 """
 import os
+import uuid
 
 os.environ["DATABASE_URL_SYNC"] = "postgresql+psycopg2://quant:quantpass@localhost:5432/quantdb_test"
 os.environ["DATABASE_URL"] = "postgresql+asyncpg://quant:quantpass@localhost:5432/quantdb_test"
 os.environ["TIMESCALE_URL"] = "postgresql+asyncpg://quant:quantpass@localhost:5432/quantdb_test"
-os.environ["AGENT_MEMORY_STORAGE_PATH"] = "tmp_test_memory/agent_memory_history"
+# Faz 363 — kritik bulgu: bu namespace SABİT bir string'di (her pytest
+# çalıştırmasında AYNI) — testler arasında değil, PYTEST SESSION'LARI
+# ARASINDA da paylaşılıyordu, DB'de kalıcı olduğu için haftalarca birikti
+# (gerçek ölçüm: quantdb_test'te 770 technical + 654 macro kaydı, en son
+# yazma bu oturumdaki bir test koşusuyla aynı ana denk geldi). Bu birikim
+# technical_agent'ın SourceReliabilityAgent'tan gelen performance_weight'ini
+# 0.0'a düşürüp council_orchestrator testlerini (tek ajanlı senaryoda
+# weight=1.0 bekleyen) kırdı. CANLI/ÜRETİM sistemi ETKİLENMEDİ — o namespace=''
+# kullanıyor (bkz. services/agent_memory.py), tamamen ayrı bir Postgres
+# veritabanında (quantdb_test vs quantdb) — ama test suite'in kendi
+# güvenilirliğini bozuyordu. Her pytest SÜRECİ artık kendi benzersiz
+# namespace'ini alıyor (uuid4) — session'lar arası birikim artık mümkün
+# değil. Aynı session İÇİNDEKİ testler arası paylaşım (bazı testlerin
+# KASITLI "was_correct=False" eklemesi) hâlâ mümkün ama bu ARTIK KALICI
+# DEĞİL, bir sonraki pytest çalıştırması temiz bir namespace'le başlıyor.
+os.environ["AGENT_MEMORY_STORAGE_PATH"] = f"tmp_test_memory/agent_memory_history_{uuid.uuid4().hex}"
+# AGENT_CONFIDENCE_MODEL_STORAGE_PATH KASITLI OLARAK sabit bırakıldı — bu,
+# agent_memory_history'nin aksine GERÇEK bir dosya sistemi yolu (Postgres'e
+# hiç taşınmadı, services/agent_confidence_model.py::ConfidenceModelRepository
+# hâlâ Path(storage_path).mkdir(exist_ok=True) kullanıyor) VE dosya isimleri
+# sabit ("{domain}_latest.json" — her yeni model ESKİSİNİN ÜZERİNE yazılıyor),
+# INSERT ile BİRİKEN bir tablo değil — session'lar arası kirlilik riski yok,
+# session-bazlı benzersizleştirmeye gerek yok.
 os.environ["AGENT_CONFIDENCE_MODEL_STORAGE_PATH"] = "tmp_test_memory/confidence_model_history"
 
 import pytest
