@@ -20,7 +20,15 @@ büyütemez, sadece küçültebilir."""
 import time
 from collections import defaultdict
 
-_MIN_BUCKET_SAMPLES = 20
+# Faz 363 — kullanıcı isteği: gerçek veriyle ölçüldü (3.302 kapanmış işlem,
+# 10 confidence kovası + 46 rejim×confidence kovası) — 20'den 50'ye
+# çıkarmak confidence-only kovada kapsamayı neredeyse hiç düşürmüyor
+# (%99.5→%99.5, sadece zaten istatistiksel olarak anlamsız uç kovalar
+# etkisiz kalıyor), rejim×confidence kovada %96.0→%85.8 (18/46 kova
+# hayatta, hâlâ sağlam bir denge). 100+'a çıkarmak rejim kovasının
+# ÇOĞUNU (100'de sadece 13/46) öldürüyordu — kademeli olarak (veri
+# arttıkça) 100/150/200'e çıkılacak, bkz. AI_MEMORY_SYSTEM/BACKLOG.md.
+_MIN_BUCKET_SAMPLES = 50
 _CACHE_TTL_SECONDS = 300
 _HALF_KELLY_FACTOR = 0.5
 _cache: dict = {"stats": None, "computed_at": 0.0}

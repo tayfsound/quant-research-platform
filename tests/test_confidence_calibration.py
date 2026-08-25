@@ -43,7 +43,7 @@ def test_compute_calibration_curve_ignores_buckets_below_min_samples():
     original = confidence_calibration._MIN_BUCKET_SAMPLES
     try:
         # Gerçek DB'ye bağlanmadan sadece eşik mantığını doğrula.
-        assert original == 20
+        assert original == 50
     finally:
         confidence_calibration._MIN_BUCKET_SAMPLES = original
 
@@ -73,7 +73,11 @@ def test_compute_calibration_curve_excludes_records_before_legacy_cutoff():
     try:
         with SessionFactory.get_session() as session:
             repo = DecisionPersistor(session)
-            for _ in range(25):
+            # Faz 363 — _MIN_BUCKET_SAMPLES 20'den 50'ye çıktı (gerçek
+            # veriyle kalibre edildi, bkz. confidence_calibration.py'deki
+            # gerekçe notu) — fresh grup TEK BAŞINA (cutoff sonrası sadece
+            # o kalıyor) eşiği geçmeli, 25'ten 55'e çıkarıldı.
+            for _ in range(55):
                 event = DecisionEvent(
                     id=uuid4(), symbol="CALTEST", proposed_direction="LONG", final_action="LONG",
                     final_size=1.0, confidence=bucket_confidence, status="open",
@@ -81,7 +85,7 @@ def test_compute_calibration_curve_excludes_records_before_legacy_cutoff():
                 )
                 repo.persist(event)
                 repo.close_position(decision_id=str(event.id), exit_price=90.0, pnl=-1.0, closed_at=old_ts)
-            for _ in range(25):
+            for _ in range(55):
                 event = DecisionEvent(
                     id=uuid4(), symbol="CALTEST", proposed_direction="LONG", final_action="LONG",
                     final_size=1.0, confidence=bucket_confidence, status="open",
@@ -125,14 +129,14 @@ def test_compute_domain_calibration_curves_builds_one_curve_per_domain(tmp_path)
 
     memory = AgentMemory(storage_path=str(tmp_path / "agent_memory"))
 
-    # technical: 0.7 kovasında 25 kayıt, gerçek doğruluk %80 (20/25) —
-    # eşiği (20) geçiyor, eğriye girmeli.
-    for i in range(25):
+    # technical: 0.7 kovasında 55 kayıt, gerçek doğruluk %80 (44/55) —
+    # eşiği (Faz 363'te 20'den 50'ye çıktı) geçiyor, eğriye girmeli.
+    for i in range(55):
         memory.record(AgentPerformanceRecord(
             agent_domain="technical", direction="LONG", confidence=0.7,
-            was_correct=(i < 20), pnl=1.0 if i < 20 else -1.0,
+            was_correct=(i < 44), pnl=1.0 if i < 44 else -1.0,
         ))
-    # quant: sadece 5 kayıt — eşiğin (20) altında, eğriye hiç girmemeli.
+    # quant: sadece 5 kayıt — eşiğin (50) altında, eğriye hiç girmemeli.
     for i in range(5):
         memory.record(AgentPerformanceRecord(
             agent_domain="quant", direction="SHORT", confidence=0.6,
@@ -225,23 +229,24 @@ def test_compute_asset_class_calibration_curves_separates_by_asset_class(tmp_pat
 
     memory = AgentMemory(storage_path=str(tmp_path / "agent_memory"))
 
-    # gold_backed (PAXGUSDT): 0.3 kovasında 25 kayıt, sadece %40 doğru.
-    for i in range(25):
+    # gold_backed (PAXGUSDT): 0.3 kovasında 60 kayıt (Faz 363'te eşik
+    # 20'den 50'ye çıktı), sadece %40 doğru.
+    for i in range(60):
         memory.record(AgentPerformanceRecord(
             agent_domain="technical", direction="SHORT", confidence=0.3,
-            was_correct=(i < 10), symbol="PAXGUSDT",
+            was_correct=(i < 24), symbol="PAXGUSDT",
         ))
-    # crypto (BTCUSDT): AYNI kova (0.3), 25 kayıt, %84 doğru.
-    for i in range(25):
+    # crypto (BTCUSDT): AYNI kova (0.3), 60 kayıt, %85 doğru.
+    for i in range(60):
         memory.record(AgentPerformanceRecord(
             agent_domain="technical", direction="SHORT", confidence=0.3,
-            was_correct=(i < 21), symbol="BTCUSDT",
+            was_correct=(i < 51), symbol="BTCUSDT",
         ))
 
     curves = compute_asset_class_calibration_curves(memory=memory)
 
     assert curves["technical:gold_backed"] == [(0.3, 0.4)]
-    assert curves["technical:crypto"] == [(0.3, 0.84)]
+    assert curves["technical:crypto"] == [(0.3, 0.85)]
 
 
 def test_compute_asset_class_calibration_curves_skips_thin_asset_class_samples(tmp_path):
@@ -397,10 +402,11 @@ def test_compute_market_cap_tier_calibration_curves_separates_large_and_small_ca
         def __exit__(self, *args):
             return False
 
-    # BTCUSDT (large_cap): 0.3 kovasında 20 kayıt, %90 kazandı.
-    # OBSCUREUSDT (small_cap): AYNI kova, 20 kayıt, %30 kazandı.
-    rows = [("BTCUSDT", 0.3, 1.0 if i < 18 else -1.0) for i in range(20)]
-    rows += [("OBSCUREUSDT", 0.3, 1.0 if i < 6 else -1.0) for i in range(20)]
+    # BTCUSDT (large_cap): 0.3 kovasında 60 kayıt (Faz 363'te eşik 20'den
+    # 50'ye çıktı), %90 kazandı. OBSCUREUSDT (small_cap): AYNI kova, 60
+    # kayıt, %30 kazandı.
+    rows = [("BTCUSDT", 0.3, 1.0 if i < 54 else -1.0) for i in range(60)]
+    rows += [("OBSCUREUSDT", 0.3, 1.0 if i < 18 else -1.0) for i in range(60)]
 
     from database.session_factory import SessionFactory
 

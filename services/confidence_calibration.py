@@ -31,7 +31,14 @@ from services.agent_memory import asset_class_of_symbol as _asset_class_of_symbo
 from services.agent_memory import crypto_cap_tier as _crypto_cap_tier
 from services.agent_memory import get_reliability_legacy_cutoff
 
-_MIN_BUCKET_SAMPLES = 20
+# Faz 363 — kullanıcı isteği: gerçek veriyle ölçüldü — bu (küresel) kova
+# kelly_sizing.py::compute_confidence_bucket_payoff_stats ile AYNI SQL/kova
+# mantığını paylaşıyor (bkz. o dosyadaki AYNI gerekçe notu), 50'ye
+# çıkarmak kapsamayı neredeyse hiç düşürmüyor. market_cap_tier kovası
+# (aşağıda) AYRICA ölçüldü: 18 kova, 50'de %96.4 kapsama — güvenli.
+# Kademeli olarak (veri arttıkça) 100/150/200'e çıkılacak, bkz.
+# AI_MEMORY_SYSTEM/BACKLOG.md.
+_MIN_BUCKET_SAMPLES = 50
 _CACHE_TTL_SECONDS = 300
 _cache: dict = {"curve": None, "computed_at": 0.0}
 
@@ -221,7 +228,12 @@ def calibrate_confidence(raw_confidence: float, curve: list[tuple[float, float]]
 # ile AYNI ampirik-kova + doğrusal enterpolasyon yöntemiyle (icat edilmiş
 # bir model/logistic regression değil — bu kod tabanının zaten kanıtlanmış
 # yaklaşımı, ek bir bağımlılık/overfit riski olmadan).
-_DOMAIN_MIN_BUCKET_SAMPLES = 20
+# Faz 363 — kullanıcı isteği: gerçek veriyle ölçüldü (56 domain×confidence
+# kovası, 34.902 AgentMemory kaydı) — 50'de %99.2 kapsama, veri hacmi
+# TOPLAM olarak çok yüksek olduğu için burada 20→50 geçişi neredeyse
+# maliyetsiz. Kademeli olarak (veri arttıkça) 100/150/200'e çıkılacak,
+# bkz. AI_MEMORY_SYSTEM/BACKLOG.md.
+_DOMAIN_MIN_BUCKET_SAMPLES = 50
 _domain_cache: dict = {"curves": None, "computed_at": 0.0}
 
 

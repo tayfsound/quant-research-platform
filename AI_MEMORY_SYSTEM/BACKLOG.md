@@ -397,6 +397,25 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
     `services/orchestrator.py::_build_context` + `services/risk_state.py` +
     Settings.tsx'e yeni kart. 3 yeni test.
 
+35. **[KISMEN YAPILDI — Faz 363, 2026-08-25] Kelly/kalibrasyon örneklem
+    eşiğinin kademeli artırımı.** Kullanıcı sorusu ("neden 3k yapmıyoruz")
+    gerçek veriyle ölçüldü: toplam 3.302 kapanmış işlem var ama kova
+    yapısı (confidence-only 10 kova, rejim×confidence 46 kova, market-cap-
+    tier 18 kova, domain-bazlı 56 kova) veriyi böldüğü için tek bir büyük
+    sayı TÜM mekanizmaları öldürür (ör. rejim×confidence'ta 100'de kova
+    sayısı 46'dan 13'e düşüyor, kapsama %96→%74). `_MIN_BUCKET_SAMPLES`/
+    `_DOMAIN_MIN_BUCKET_SAMPLES` (kelly_sizing.py + confidence_
+    calibration.py, 4 sabit) 20'den **50**'ye çıkarıldı — gerçek ölçümle
+    her kova tipinde kapsama %85.8-%99.9 arasında kaldı, güvenli. Kullanıcı
+    kararı: veri arttıkça KADEMELİ olarak 100 → 150 → 200'e çıkılacak —
+    her adımda AYNI ölçüm yöntemiyle (kova başına kapsama %) gerçek
+    veriyle tekrar doğrulanmalı, körü körüne büyütülmeyecek. `weight_
+    optimizer.py::MIN_SAMPLES_FOR_PROPOSAL=10`'a KASITLI dokunulmadı —
+    kullanıcının kendi ayrımı: piyasa yönü/ajan ağırlıkları TAZE veriye
+    (kısa pencere) duyarlı kalmalı, sadece boyutlandırma/kalibrasyon gibi
+    istatistiksel-güvenilirlik gerektiren mekanizmalar büyük örneklem
+    ister. 6 test (sabit `range(20)` senaryoları) 50'ye göre güncellendi.
+
 ## Notlar
 
 - Kullanıcı `max_open_positions_per_symbol_direction`'a (1000) bilerek

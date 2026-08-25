@@ -119,15 +119,15 @@ def test_kelly_size_multiplier_without_regime_argument_uses_confidence_only_path
 
 
 def test_compute_regime_confidence_bucket_payoff_stats_reflects_real_closed_trades():
-    """Gerçek DB'ye karşı: bir (rejim, confidence) kovasına yeterli (>=20)
-    gerçek kapanmış işlem eklenince, GERÇEK verilerden doğru
-    hesaplanmalı — ve market_regime=NULL olan kapanışlar bu kovaya hiç
-    karışmamalı."""
+    """Gerçek DB'ye karşı: bir (rejim, confidence) kovasına yeterli (>=50,
+    Faz 363'te 20'den çıkarıldı) gerçek kapanmış işlem eklenince, GERÇEK
+    verilerden doğru hesaplanmalı — ve market_regime=NULL olan kapanışlar
+    bu kovaya hiç karışmamalı."""
     from services.kelly_sizing import compute_regime_confidence_bucket_payoff_stats
 
     symbol = f"KELLYREGIME{uuid4().hex[:6]}"
     regime = f"bullish_high_{uuid4().hex[:6]}"  # başka testlerle çakışmasın diye benzersiz
-    pnls = [10.0] * 15 + [-5.0] * 10
+    pnls = [10.0] * 36 + [-5.0] * 24
 
     now = datetime.now(UTC)
     for pnl in pnls:
@@ -146,7 +146,7 @@ def test_compute_regime_confidence_bucket_payoff_stats_reflects_real_closed_trad
     stats = compute_regime_confidence_bucket_payoff_stats()
     bucket = stats.get((regime, 0.9))
     assert bucket is not None
-    assert bucket["sample_count"] == 25
+    assert bucket["sample_count"] == 60
     assert bucket["win_rate"] == 0.6
     assert bucket["avg_win"] == 10.0
     assert bucket["avg_loss"] == 5.0
