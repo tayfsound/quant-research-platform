@@ -42,6 +42,11 @@ _MODULES = [
     # SADECE "şu an veriye göre optimum ne olurdu" sorusuna cevap veriyor
     # — otomatik uygulanmıyor, kullanıcı isterse elle günceller.
     ("signal_persistence", "Sinyal Tutarlılığı Eşiği", "signal-persistence", "services.signal_persistence_gatherer", "gather_signal_persistence_analysis"),
+    # Faz 363 — backlog #15, kullanıcı isteği: "kâr edip zarara dönen
+    # pozisyonların ne kadarı stop yanlış yerleştirildiği için, ne kadarı
+    # gerçek yön hatası" + "bu kaybın toplam zarardaki payı % olarak
+    # dashboard'a kart olarak eklenmeli (SL/likidasyon/breakeven kırılımı)."
+    ("loss_breakdown", "Zarar Kırılımı (SL/Likidasyon/Breakeven)", "loss-breakdown", "services.loss_breakdown_gatherer", "gather_loss_breakdown"),
 ]
 
 

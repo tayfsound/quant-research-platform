@@ -1,6 +1,6 @@
 """Faz 268-sonrası — kullanıcının kendi getirdiği çerçeve: her SL işlemini
 GERÇEK MAE/MFE verisine göre direction_error/barrier_error diye ayırma."""
-from analytics.failure_classifier import classify_stop_loss_failure, summarize_stop_loss_failures
+from analytics.failure_classifier import classify_stop_loss_failure, summarize_loss_breakdown, summarize_stop_loss_failures
 
 
 def test_scenario_a_bad_prediction_is_direction_error():
@@ -140,3 +140,66 @@ def test_pump_fade_stop_losses_are_isolated_from_ai_council_top_level_counts():
     assert after["total_stop_loss_trades"] == before["total_stop_loss_trades"]
     assert after["pump_fade"]["total_stop_loss_trades"] == before["pump_fade"]["total_stop_loss_trades"] + 1
     assert after["pump_fade"]["direction_error_count"] == before["pump_fade"]["direction_error_count"] + 1
+
+
+def test_summarize_loss_breakdown_returns_real_shape_with_all_loss_reasons():
+    """Faz 363 — backlog #15: summarize_stop_loss_failures'ın (SADECE
+    stop_loss) genelleştirilmiş hali — stop_loss/breakeven_stop/
+    liquidation/reduced_loss_stop kategorilerinin HEPSİNİ kapsamalı,
+    her biri için toplam zarardaki payı toplamda 1.0'a yaklaşmalı."""
+    result = summarize_loss_breakdown(hours=None)
+    assert set(result["categories"].keys()) == {
+        "stop_loss", "breakeven_stop", "liquidation", "reduced_loss_stop",
+    }
+    if result["total_loss"] > 0:
+        total_pct = sum(
+            (c["loss_pct_of_total_loss"] or 0.0) for c in result["categories"].values()
+        )
+        assert abs(total_pct - 1.0) < 0.01
+
+
+def test_summarize_loss_breakdown_pct_reflects_a_dominant_category():
+    """Gerçek pozisyon ekleyip (büyük bir stop_loss zararı), bu kategorinin
+    payının GERÇEKTEN yükseldiğini kanıtlıyor — icat edilmiş bir sayı değil."""
+    from datetime import UTC, datetime
+    from uuid import uuid4
+
+    from contracts.decision_event import DecisionEvent
+    from database.repositories.decision_persistor import DecisionPersistor
+    from database.session_factory import SessionFactory
+
+    symbol = f"FAILBRK{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+
+    with SessionFactory.get_session() as session:
+        repo = DecisionPersistor(session)
+        event = DecisionEvent(
+            id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+            final_size=1.0, confidence=0.7, status="open",
+            entry_price=100.0, quantity=1.0, opened_at=now,
+            stop_loss_price=99.0, take_profit_price=102.0,
+        )
+        repo.persist(event)
+
+    before = summarize_loss_breakdown(hours=None)
+
+    with SessionFactory.get_session() as session:
+        repo = DecisionPersistor(session)
+        # Çok büyük bir stop_loss zararı — bu kategorinin payı gözle
+        # görülür şekilde artmalı.
+        repo.close_position(
+            decision_id=str(event.id), exit_price=99.0, pnl=-1_000_000.0, closed_at=now,
+            outcome={"exit_reason": "stop_loss", "mae_pct": -0.015, "mfe_pct": 0.008},
+        )
+
+    after = summarize_loss_breakdown(hours=None)
+
+    assert after["categories"]["stop_loss"]["total_stop_loss_trades"] == (
+        before["categories"]["stop_loss"]["total_stop_loss_trades"] + 1
+    )
+    assert after["categories"]["stop_loss"]["loss_pct_of_total_loss"] > (
+        before["categories"]["stop_loss"]["loss_pct_of_total_loss"] or 0.0
+    )
+    assert after["categories"]["stop_loss"]["direction_error_count"] == (
+        before["categories"]["stop_loss"]["direction_error_count"] + 1
+    )

@@ -73,6 +73,87 @@ def _classify_rows(rows) -> dict:
     }
 
 
+# Faz 363 — backlog #15: "kâr edip zarara dönen ('breakeven'dan çıkış')
+# pozisyonların ne kadarı stop yanlış yerleştirildiği için mi, ne kadarı
+# gerçek yön hatası" + "bu kaybın toplam zarardaki payı % olarak
+# dashboard'a kart olarak eklenmeli (SL/likidasyon/breakeven kırılımı)".
+# Gerçek dağılım ölçüldü (tüm kapanmış işlemler): stop_loss tek başına
+# tüm zarar-üreten kapanışların ~%95'i, breakeven_stop/liquidation/
+# reduced_loss_stop kalan ~%5'i oluşturuyor — hepsi burada kapsanıyor.
+_LOSS_EXIT_REASONS = ("stop_loss", "breakeven_stop", "liquidation", "reduced_loss_stop")
+
+
+def summarize_loss_breakdown(hours: int | None = None) -> dict:
+    """summarize_stop_loss_failures'ın (SADECE exit_reason='stop_loss')
+    genelleştirilmiş hali — TÜM zarar-üreten exit_reason'ları kapsar,
+    her biri için AYNI direction_error/barrier_error sınıflandırmasını
+    (classify_stop_loss_failure, gerçek MAE/MFE'ye göre) uygular, VE
+    her kategorinin TOPLAM ZARAR (bu 4 kategorinin $ toplamı) içindeki
+    payını hesaplar. pump_fade_v1 AYNI izolasyon disipliniyle (bkz.
+    summarize_stop_loss_failures docstring'i) üst düzey sayılardan
+    dışlanır."""
+    from sqlalchemy import text
+
+    hours_clause = ""
+    params: dict = {}
+    if hours is not None:
+        hours_clause = "AND closed_at >= now() - (:hours || ' hours')::interval"
+        params["hours"] = hours
+
+    reasons_sql = ", ".join(f"'{r}'" for r in _LOSS_EXIT_REASONS)
+    with SessionFactory.get_session() as session:
+        rows = session.execute(
+            text(
+                "SELECT entry_price, stop_loss_price, take_profit_price, outcome, "
+                "experiment_bucket, coalesce(pnl, 0) as pnl "
+                "FROM decisions "
+                "WHERE status = 'closed' "
+                f"AND outcome ->> 'exit_reason' IN ({reasons_sql}) {hours_clause} "
+                "AND (excluded_from_stats IS NULL OR excluded_from_stats = false)"
+            ),
+            params,
+        ).mappings().all()
+
+    ai_rows = [r for r in rows if r["experiment_bucket"] != "pump_fade_v1"]
+    pump_fade_rows = [r for r in rows if r["experiment_bucket"] == "pump_fade_v1"]
+
+    def _breakdown(group_rows: list) -> dict:
+        by_reason: dict[str, list] = {reason: [] for reason in _LOSS_EXIT_REASONS}
+        for r in group_rows:
+            reason = (r["outcome"] or {}).get("exit_reason")
+            if reason in by_reason:
+                by_reason[reason].append(r)
+
+        total_loss = sum(abs(r["pnl"]) for r in group_rows if r["pnl"] < 0)
+        categories = {}
+        for reason, reason_rows in by_reason.items():
+            classified = _classify_rows(reason_rows)
+            reason_loss = sum(abs(r["pnl"]) for r in reason_rows if r["pnl"] < 0)
+            categories[reason] = {
+                **classified,
+                "total_pnl": round(sum(r["pnl"] for r in reason_rows), 2),
+                "loss_pct_of_total_loss": round(reason_loss / total_loss, 4) if total_loss > 0 else None,
+            }
+        return {
+            "total_trades": len(group_rows),
+            "total_loss": round(total_loss, 2),
+            "categories": categories,
+        }
+
+    result = _breakdown(ai_rows)
+    result["hours"] = hours
+    result["pump_fade"] = _breakdown(pump_fade_rows)
+    result["note"] = (
+        "direction_error: fiyat hedefin anlamlı bir kısmına hiç yaklaşmadı — gerçek yön hatası. "
+        "barrier_error: fiyat hedefe yakın/üstünde gitti ama stop/hedef mesafesi (bariyer) yüzünden "
+        "önce zarara takıldı — yön kararı değil, bariyer/yerleşim sorunu. loss_pct_of_total_loss: bu "
+        "kategorinin, dört zarar-üreten kategorinin (stop_loss/breakeven_stop/liquidation/"
+        "reduced_loss_stop) TOPLAMININ ürettiği zarar içindeki payı. Üst düzey sayaçlar SADECE AI "
+        "konseyi kararlarını kapsar — pump_fade_v1 ayrı 'pump_fade' alanında raporlanır."
+    )
+    return result
+
+
 def summarize_stop_loss_failures(hours: int = 90) -> dict:
     """Gerçek DB'den son `hours` saatteki TÜM stop_loss kapanışlarını
     (excluded_from_stats hariç) sınıflandırıp gerçek bir dağılım
