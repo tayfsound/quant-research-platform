@@ -214,28 +214,37 @@ class DecisionRecorder:
         liquidation_price = None
         quantity = getattr(ctx.decision, "final_size", 0.0)
         if opens_position:
-            leverage = self._symbol_leverage(ctx.market.symbol)
-            if leverage > 1.0 and stop_loss_price and entry_price:
-                from simulator.margin import max_safe_leverage
-                stop_distance_pct = abs(entry_price - stop_loss_price) / entry_price
-                safe_leverage = max_safe_leverage(stop_distance_pct)
-                if safe_leverage is not None:
-                    leverage = max(1.0, min(leverage, safe_leverage))
+            leverage_override = getattr(ctx.decision, "leverage_override", None)
+            if leverage_override is not None:
+                # Faz 363 — bkz. contracts/contexts/decision.py::
+                # leverage_override gerekçesi. Sembol/piramit/güvenlik-
+                # tavanı hesaplarının HİÇBİRİ uygulanmaz — çağıran bu
+                # değeri KESİN olarak istiyor (ör. basis-arb'ın spot
+                # bacağı için leverage=1.0).
+                leverage = leverage_override
+            else:
+                leverage = self._symbol_leverage(ctx.market.symbol)
+                if leverage > 1.0 and stop_loss_price and entry_price:
+                    from simulator.margin import max_safe_leverage
+                    stop_distance_pct = abs(entry_price - stop_loss_price) / entry_price
+                    safe_leverage = max_safe_leverage(stop_distance_pct)
+                    if safe_leverage is not None:
+                        leverage = max(1.0, min(leverage, safe_leverage))
 
-            # Faz 361-devam — kullanıcı bulgusu: aynı sembol/yönde art
-            # arda 5x kaldıraçlı pozisyonlar (piramitleme) yön yanlış
-            # çıkınca leverage × yığın derinliği kadar büyüyen bir kayıp
-            # üretiyor (gerçek ZECUSDT örneği: ~$6.675 kayıp, 5x + 4-5
-            # kat yığılma). analytics/pyramid_regime_gate.py'nin
-            # (fiyat/rejim boyutu) TAMAMLAYICISI — bu, kaç tane zaten
-            # açık olduğuna göre kaldıracı orantılı düşürüyor.
-            # ctx.risk.same_direction_open_counts zaten RiskGateStage
-            # için bu cycle'da hesaplanmış (services/risk_state.py) —
-            # tekrar sorgu atmıyoruz.
-            if leverage > 1.0:
-                from simulator.margin import pyramid_dampened_leverage
-                existing_same_direction_count = ctx.risk.same_direction_open_counts.get(direction, 0)
-                leverage = pyramid_dampened_leverage(leverage, existing_same_direction_count)
+                # Faz 361-devam — kullanıcı bulgusu: aynı sembol/yönde art
+                # arda 5x kaldıraçlı pozisyonlar (piramitleme) yön yanlış
+                # çıkınca leverage × yığın derinliği kadar büyüyen bir kayıp
+                # üretiyor (gerçek ZECUSDT örneği: ~$6.675 kayıp, 5x + 4-5
+                # kat yığılma). analytics/pyramid_regime_gate.py'nin
+                # (fiyat/rejim boyutu) TAMAMLAYICISI — bu, kaç tane zaten
+                # açık olduğuna göre kaldıracı orantılı düşürüyor.
+                # ctx.risk.same_direction_open_counts zaten RiskGateStage
+                # için bu cycle'da hesaplanmış (services/risk_state.py) —
+                # tekrar sorgu atmıyoruz.
+                if leverage > 1.0:
+                    from simulator.margin import pyramid_dampened_leverage
+                    existing_same_direction_count = ctx.risk.same_direction_open_counts.get(direction, 0)
+                    leverage = pyramid_dampened_leverage(leverage, existing_same_direction_count)
 
             if leverage > 1.0:
                 quantity = quantity * leverage

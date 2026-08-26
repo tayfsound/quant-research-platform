@@ -155,6 +155,17 @@ class BasisArbitrageStrategy:
         # standart stop/hedef taramasından geçmiyor, sadece close_due_
         # basis_arb_pairs() tarafından (çift birlikte) kapatılıyor.
 
+        # Faz 363 — kritik bulgu: LONG (spot) bacağı, decision_recorder'ın
+        # sembol-bazlı GENEL kaldıraç ayarını (symbol_leverage) kullanıyordu
+        # — cash-and-carry arbitrajın "spot bacak likidasyon riski taşımaz"
+        # temel varsayımı ihlal ediliyordu (gerçek olay: SCRTUSDT'de hem
+        # LONG hem SHORT bacağı likide oldu, hedge amacın tam tersine
+        # döndü). SHORT (perp) bacağı KASITLI OLARAK dokunulmuyor — o zaten
+        # kaldıraçlı bir araç (perpetual futures), sembol ayarı geçerli
+        # kalmalı.
+        if direction == "LONG":
+            ctx.decision.leverage_override = 1.0
+
         ctx.risk.limits = load_active_limits()
         ctx.risk.trading_mode = risk_state["trading_mode"]
         ctx.risk.open_position_count = risk_state["open_position_count"]

@@ -288,6 +288,47 @@ def test_close_due_pairs_never_closes_a_lone_unhedged_leg(monkeypatch):
         _cleanup_symbol(symbol)
 
 
+def test_long_spot_leg_is_never_leveraged_even_when_symbol_leverage_configured(monkeypatch):
+    """Faz 363 — kritik bulgu: LONG (spot) bacağı decision_recorder'ın
+    sembol-bazlı GENEL kaldıraç ayarını kullanıyordu — cash-and-carry
+    arbitrajın "spot bacak likidasyon riski taşımaz" temel varsayımı
+    ihlal ediliyordu (gerçek olay: SCRTUSDT'de hem LONG hem SHORT bacağı
+    likide oldu). LONG bacağı artık her koşulda leverage=1.0 (liquidation
+    riski yok), SHORT (perp) bacağı ise sembolün kendi kaldıraç ayarını
+    (test için 5x) KULLANMAYA DEVAM ETMELİ — bu bilinçli bir farklılık,
+    regresyon değil."""
+    symbol = f"BASISARB{uuid4().hex[:8]}USDT"
+    try:
+        _set_basis_arb_settings(basis_arbitrage_enabled="true")
+        import json
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set(
+                "symbol_leverage", json.dumps({symbol: 5}), updated_by="test",
+            )
+        from services.risk_state import load_position_risk_state
+
+        strategy = BasisArbitrageStrategy(data_provider=_FakeProvider())
+        risk_state = load_position_risk_state(symbol=symbol)
+        strategy._open_leg(symbol, "LONG", 100.0, 100.0, _basis_data(), risk_state)
+        strategy._open_leg(symbol, "SHORT", 100.0, 100.0, _basis_data(), risk_state)
+
+        with SessionFactory.get_session() as session:
+            rows = DecisionPersistor(session).list_open_positions_for_experiment(EXPERIMENT_BUCKET)
+        symbol_rows = {r["direction"]: r for r in rows if r["symbol"] == symbol}
+
+        assert symbol_rows["LONG"]["leverage"] == 1.0
+        assert symbol_rows["LONG"]["liquidation_price"] is None
+        assert symbol_rows["SHORT"]["leverage"] == 5.0
+        assert symbol_rows["SHORT"]["liquidation_price"] is not None
+    finally:
+        _cleanup_symbol(symbol)
+        with SessionFactory.get_session() as session:
+            from database.repositories.app_settings_repository import DEFAULTS
+            AppSettingsRepository(session).set(
+                "symbol_leverage", DEFAULTS.get("symbol_leverage", "{}"), updated_by="test",
+            )
+
+
 def test_list_open_positions_for_experiment_scopes_to_bucket_and_status():
     symbol = f"BASISARB{uuid4().hex[:8]}USDT"
     try:

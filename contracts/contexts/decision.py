@@ -47,3 +47,16 @@ class Decision(BaseModel):
     take_profit_distance: float | None = None
     stop_loss_distance: float | None = None
     filled_price: float | None = None
+    # Faz 363 — kritik bulgu: services/decision_recorder.py'nin leverage
+    # hesabı (self._symbol_leverage) SADECE sembole bakıyor, yöne/bacak
+    # türüne (spot vs perpetual) hiç bakmıyordu — services/basis_
+    # arbitrage_strategy.py'nin "LONG spot" bacağı (cash-and-carry
+    # arbitrajın likidasyon riski TAŞIMAMASI gereken tarafı) sembolün
+    # GENEL kaldıraç ayarıyla açılıyor, likide olabiliyordu (gerçek olay:
+    # SCRTUSDT'de hem LONG hem SHORT bacağı likide oldu, hedge amacın
+    # tam tersine döndü). set edilmişse (None değilse) decision_recorder
+    # sembol/piramit/güvenlik-tavanı hesaplarının HİÇBİRİNİ uygulamadan
+    # DOĞRUDAN bu değeri kullanır — SADECE "bu bacak GERÇEKTEN kaldıraçsız
+    # olmalı" gibi kesin durumlar için (varsayılan None = mevcut davranış
+    # hiç değişmez).
+    leverage_override: float | None = None
