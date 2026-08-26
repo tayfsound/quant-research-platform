@@ -78,20 +78,19 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
    Faz 268g'den beri BİLEREK "düşük konviksiyonla KÜÇÜK aç" anlamına
    geliyor (`MetaStage`: `final_size = proposed_size * confidence`) —
    mevcut davranış tasarım gereği, bug değil.
-7. **[GERÇEK, KARAR BEKLİYOR]** Agent-agreement sinyali GERÇEKTEN iki ayrı
-   yoldan cezalandırılıyor: `DecisionFusion.evaluate()` agreement<0.34 ise
-   confidence'ı ×0.6883 çarpıyor (Faz 328) — bu confidence hem ACT/WAIT
-   eşiğini hem Kelly boyutlandırmayı etkiliyor. AYRICA `RiskTargetStage`
-   (`engines/cognitive_pipeline.py`) AYNI `agent_agreement` sinyalini
-   (aynı entropi formülü, `analytics/opportunity_quality.py`) bir ÖZELLİK
-   olarak Meta-Label Model'e veriyor (Faz 351), o da KENDİ öğrenilmiş
-   boyut çarpanını AYRICA uyguluyor. İki mekanizma da tek tek gerçek
-   veriyle doğrulanıp wire edilmişti ama BİRBİRİNDEN BAĞIMSIZ tasarlandı
-   — aynı düşük-agreement durumu şu an iki kez küçültülüyor olabilir.
-   **Karar gerekiyor**: kasıtlı katmanlı temkinlilik olarak mı bırakılsın,
-   yoksa biri kaldırılıp/zayıflatılıp mı tek kanala indirilsin? İkisini
-   birlikte vs ayrı ayrı çalıştırmanın gerçek kalibrasyon etkisini ölçmek
-   gerekiyor.
+7. **[ÇÖZÜLDÜ — Faz 363, 2026-08-25] Agent-agreement "iki kez cezalandırma"
+   şüphesi incelendi — teknik olarak doğrulanmadı, ama incelemeden DAHA
+   CİDDİ bir bulgu çıktı.** `DecisionFusion`'daki opportunity-quality
+   indirimi final_size'ı kademeli küçültmüyor (sadece EV kapısı: geçer/
+   geçmez) — gerçek kademeli küçültmeyi SADECE Meta-Label Model yapıyor,
+   "iki kez küçültme" yok. AMA: RiskTargetStage'in Meta-Label Model'e
+   verdiği "confidence" özelliği DecisionFusion'dan ÖNCE hesaplanıyordu
+   (ham, kalibrasyonsuz) — modelin EĞİTİM verisi ise decisions.confidence
+   (DecisionFusion SONRASI, kalibre edilmiş) idi. Train/serve tutarsızlığı.
+   Kanıt: agent_agreement'ın öğrenilmiş katsayısı beklenenin TERSİ yönde
+   (-0.24) çıkmıştı. Düzeltme: `services/decision_fusion.py::
+   compute_fused_confidence()` (yan etkisiz, ortak fonksiyon) — RiskTargetStage
+   artık DecisionFusion'ın üreteceği NİHAİ confidence'ı kullanıyor.
 8. **[ÇÖZÜLDÜ, 2026-08-24]** `services/cognitive_engine.py::_persist_and_
    learn` yorumu hâlâ Faz 284'te ("karar mekanizmasına hiç katkısı yoktu")
    TAMAMEN kaldırılmış `backtest/real_historical_backtest.py`'den ikinci
@@ -160,8 +159,10 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
     incelendi — ADX zayıfken bile hiçbir sert engel yok). Kullanıcı özellikle
     destek/direnç seviyesi bazlı bir filtre istiyor: kritik seviyeden %X'ten
     fazla uzaktaysa (örn. tepeden/dipten kovalıyorsa) giriş engellensin.
-18. Genel: sistem "her fırsatı alıyor," seçicilik eksik — giriş eşiği/kriterleri
-    gözden geçirilmeli.
+18. **[ÇÖZÜLDÜ — Faz 363, 2026-08-25/26] "Seçicilik eksik" incelendi —
+    bkz. madde 36 (pump_fade izolasyonu) ve confidence=0.5 kovası kök neden
+    analizi. Sonuç: yapısal bir seçicilik sorunu değil, geçmişte biriken
+    kirlilik/tek seferlik olayların izi.
 19. **[ÇÖZÜLDÜ — 2026-08-24, TAM olarak] "Pozisyon büyütme asla" ilkesi
     dokümante edildi, TÜM çarpanlar doğrulandı VE bulunan tek istisna
     kapatıldı.** `docs/index.md`'ye "Temel Prensipler"e eklendi.
@@ -314,20 +315,32 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
     seçim, varsayılan kapalı) — kontrollü açılıp gerçek ölçüm yapılabilir.
     Kullanıcı isteğiyle şimdilik ertelendi, todo'nun sonunda kalıyor.
 
-30. **Basis Arb: %75 kazanma oranı ama toplam PNL eksi.** Kullanıcı bulgusu
-    (2026-08-24): 8 kapanmış işlem, 6 kazanan/2 kaybeden, ama toplam
-    -$88.66. DB'den çekildi: STORJUSDT ve SCRTUSDT'nin SHORT bacakları
-    TAM AYNI tutarda (-$98.05, -$98.05 — şüpheli derecede özdeş) `reason=
-    liquidation` ile likide olmuş; karşılık gelen LONG bacakları
-    (muhtemelen spot/hedge tarafı) sorunsuz, ılımlı kârla (+$60.79,
-    +$42.74) `manual_full` ile kapanmış. Yani hedge'in SHORT/perp
-    tarafı, basis spread'i yakalamadan ÖNCE likide oluyor — muhtemelen
-    o bacağın kaldıraç/teminat boyutlandırması spread'in beklenen
-    büyüklüğüne göre çok dar. Kök neden henüz `services/basis_
-    arbitrage_strategy.py`'de incelenmedi — iki liquidation tutarının
-    özdeş olması (rastgele değil, sabit bir teminat/boyut formülüne
-    işaret ediyor) ilk bakılacak yer. Henüz ölçülmedi/kod incelemesi
-    yapılmadı.
+30. **[KÖK NEDEN BULUNDU — 2026-08-26, DÜZELTİLMEDİ] Basis Arb: kazanan
+    işlem var ama likidasyon oranı %21+, 108 açık pozisyon var.** Kullanıcı
+    sorusu ("buranın sisteme faydası nedir?") üzerine derinleşildi. Gerçek
+    veri (2026-08-26): 14 kapanmış işlem, toplam -$177.67, win_rate %64.3
+    ama 3/14 (%21.4) likidasyonla kapanmış. SCRTUSDT'de HEM LONG HEM SHORT
+    bacağı likide olmuş (önceki turda sadece SHORT sanılıyordu) — tutarlar
+    şüpheli derecede özdeş (-$97.95/-$98.05/-$98.05), hepsi ~%19.5 mesafede
+    (5x kaldıraçla standart likidasyon marjı).
+
+    KÖK NEDEN BULUNDU: `services/basis_arbitrage_strategy.py::_open_leg`
+    LONG (spot) bacağı için leverage'ı HİÇ zorlamıyor —
+    `services/decision_recorder.py:217`'deki `self._symbol_leverage(...)`
+    genel/sembol-bazlı kaldıraç ayarını kullanıyor, yöne (spot vs perp)
+    bakmıyor. Yani "LONG spot" diye adlandırılan bacak GERÇEKTE kaldıraçlı
+    açılıyor ve likide olabiliyor — cash-and-carry arbitrajın temel
+    varsayımı ("spot bacak likidasyon riski taşımaz") ihlal ediliyor. Bir
+    bacak erken likide olunca diğeri "piyasa-nötr" değil çıplak yönlü risk
+    taşımaya başlıyor — modülün kendi docstring'inin önlemeye çalıştığı
+    TAM O senaryo, likidasyon yoluyla gerçekleşiyor.
+
+    **Düzeltme (henüz uygulanmadı):** `_open_leg`'de direction=="LONG"
+    (spot bacağı) iken leverage'ı 1.0'a zorlamak — ya `ctx.decision`'a
+    doğrudan leverage=1.0 yazdırmak ya da decision_recorder'a "bu spot
+    bacağı, symbol_leverage'ı yok say" bilgisini iletecek bir yol
+    eklemek. 108 açık pozisyon olduğu için düzeltme ÖNCELİKLİ ele
+    alınmalı — mevcut açık spot bacakları da aynı riski taşıyor.
 
 31. **[ÇÖZÜLDÜ — Faz 362/362-devam, 2026-08-24] "Council'in fikir değiştirmesi"
     verisi — hem çıkış hem giriş tarafı ölçüldü, İKİSİ DE canlıya alındı.**
@@ -445,6 +458,47 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
     BİLİNEN ve DÜZELTİLMİŞ piramitleme sorununun geçmiş veride kalan izi.
     Ek bir müdahale (yeni gate, eşik değişikliği) GEREKMİYOR — zaman
     ilerledikçe/yeni veri biriktikçe kova kendiliğinden düzelecek.
+
+37. **[ÇÖZÜLDÜ — Faz 363, 2026-08-26] KRİTİK: regime_reversal_guardian'ın
+    streak hesabı liquidation'ı saymıyordu.** Kullanıcı bulgusu ("AI'nin
+    LONG tahmini %70'ten %23'e düştü, açık pozisyonların %99'u zararda,
+    geçişi iyi yönetemedi") araştırılırken bulundu. Gerçek durum: 244 açık
+    pozisyon -$272.775 unrealized zarardaydı, guardian'ın streak'i sadece
+    6/10 gösteriyordu (tetiklenmemiş) ama GERÇEK ardışık kayıp (liquidation
+    dahil) 20'ydi — `analytics/regime_reversal.py::consecutive_stop_streak()`
+    SADECE exit_reason=='stop_loss'ı sayıyordu, bir 'liquidation' streak'i
+    kırıp ondan ÖNCEKİ ardışık stop_loss'ları bile saymadan durduruyordu.
+    Düzeltildi: artık `analytics/failure_classifier.py::LOSS_EXIT_REASONS`
+    (stop_loss/breakeven_stop/liquidation/reduced_loss_stop) ile tutarlı.
+    Deploy sonrası HEMEN tetiklendi (streak=20, 1 kârdaki pozisyon
+    defansif kapatıldı). 4 yeni regresyon testi.
+
+    **Ek bulgu, backtest ile test edildi (2026-08-26): "açık pozisyonların
+    toplam unrealized zararına bakan ikinci bir tetikleyici" eklemek
+    KANITLANMADI.** Guardian'ın streak≥10 tetiklendiği anlarda açık olan
+    pozisyonların NİHAİ sonucu (win_rate %72.5, ort. mae_pct -1.594%)
+    genel LONG ortalamasından (win_rate %71.8, mae_pct -1.848%) KÖTÜ
+    değil — geçmişte streak yüksekken açık kalan pozisyonlar genelde
+    toparlanmış. Erken zorla kapatma karlılığı artıracağına dair kanıt
+    yok, tam tersi toparlanma potansiyelini feda edebilir. Kullanıcı
+    kararı: şimdilik EKLENMEYECEK, "bekleyip görelim." (Kısıt: backtest
+    sadece geçmişte KAPANMIŞ pozisyonlara dayanıyor, survivorship riski var.)
+
+38. **[ÇÖZÜLDÜ — Faz 363, 2026-08-26] "manual_full" etiketi yanıltıcıydı —
+    sistemin otomatik kararlarını kullanıcı eylemiyle karıştırıyordu.**
+    Kullanıcı bulgusu: "manuel kapanan pozisyon sayısı 700 küsür ama uzun
+    zamandır manuel kapatmıyoruz, en son 300 küsürdü." Gerçek sayı 1505
+    çıktı. Kök neden: `services/position_closer.py::close_partial()`
+    exit_reason'ı HARDCODED "manual_full" idi — bu fonksiyon Faz 268'de
+    SADECE gerçek kullanıcı eylemi için tasarlanmıştı ama SONRADAN (Faz
+    352/362-devam) regime_reversal_guardian VE belief_reversal_exit
+    (ikisi de TAMAMEN otomatik, celery görevi) tarafından da "zaten
+    üretimde kanıtlanmış primitif" gerekçesiyle yeniden kullanılmaya
+    başlanmıştı, hepsi AYNI etiketi üretiyordu. Düzeltildi: exit_reason
+    artık çağırana özel parametre — guardian "regime_reversal_guardian",
+    belief_reversal_exit "belief_reversal_exit" kullanıyor, gerçek
+    kullanıcı endpoint'leri (api/rest/positions.py) hiç değişmedi. NOT:
+    bu GEÇMİŞE dönük veriyi düzeltmiyor, sadece ileriye dönük kayıtları.
 
 ## Notlar
 
