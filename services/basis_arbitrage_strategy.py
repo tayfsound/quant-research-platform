@@ -215,10 +215,29 @@ class BasisArbitrageStrategy:
             if age_hours < max_hold_hours:
                 continue
 
-            try:
-                current_price = self.data_provider.get_ohlcv(symbol, "1m", limit=1)[-1].close
-            except Exception:
-                continue
+            # Faz 363 — kritik bulgu: giriş fiyatı (_try_open_pair) futures
+            # index_price'tan geliyor ama çıkış SADECE spot klines'tan
+            # (RoutingProvider.get_ohlcv) deneniyordu. Bu strateji sembolleri
+            # fetch_usdt_perpetual_symbols()'tan (futures evreni) geliyor —
+            # birçoğu (ör. 1000000MOGUSDT, PLAYUSDT, 4USDT) Binance SPOT'ta
+            # HİÇ yok, 400 Bad Request boş liste döndürüyor, [-1] IndexError
+            # atıyor, except Exception sessizce yutup pozisyonu SONSUZA DEK
+            # atlıyordu (gerçek olay: 52 çiftin 30'u max_hold_hours'ı 3+ gün
+            # geçmişti, hiçbiri kapanmamıştı). futures index_price artık
+            # birincil kaynak — hem her sembol için garanti var (strateji
+            # zaten futures evreninden seçiyor) hem giriş/çıkış metodolojisi
+            # tutarlı hale geliyor (aksi halde spot/futures fiyat farkı,
+            # piyasa-nötr olması gereken stratejiye sahte PNL gürültüsü
+            # katıyordu).
+            current_price = None
+            basis_now = fetch_perp_basis(symbol)
+            if basis_now and basis_now["index_price"] > 0:
+                current_price = basis_now["index_price"]
+            else:
+                try:
+                    current_price = self.data_provider.get_ohlcv(symbol, "1m", limit=1)[-1].close
+                except Exception:
+                    continue
             if not current_price or current_price <= 0:
                 continue
 

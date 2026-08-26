@@ -253,6 +253,46 @@ def test_close_due_pairs_closes_both_legs_together_after_max_hold(monkeypatch):
         _cleanup_symbol(symbol)
 
 
+def test_close_due_pairs_closes_via_futures_index_price_when_symbol_has_no_spot_listing(monkeypatch):
+    """Faz 363 — kritik bulgu: bu strateji sembolleri fetch_usdt_
+    perpetual_symbols()'tan (futures evreni) geliyor — birçoğu Binance
+    SPOT'ta hiç yok. close_due_pairs eskiden çıkış fiyatını SADECE spot
+    klines'tan (data_provider.get_ohlcv) deniyordu; spot'ta olmayan bir
+    sembol için bu her zaman patlar (gerçek olayda 400 Bad Request ->
+    boş liste -> IndexError -> sessizce yutulup pozisyon SONSUZA DEK
+    açık kalıyordu). Artık futures index_price birincil kaynak — spot
+    sağlayıcı hiç çağrılmasa bile çift kapanmalı."""
+    symbol = f"BASISARB{uuid4().hex[:8]}USDT"
+    try:
+        _set_basis_arb_settings(basis_arbitrage_enabled="true", basis_arbitrage_max_hold_hours="1")
+        monkeypatch.setattr(
+            "services.basis_arbitrage_strategy.fetch_perp_basis",
+            lambda s: _basis_data(basis_pct=0.005, funding_rate=0.0005),
+        )
+
+        class _SpotUnavailableProvider:
+            def get_ohlcv(self, symbol, timeframe, limit=100):
+                raise RuntimeError("400 Bad Request: sembol spot'ta yok")
+
+        strategy = BasisArbitrageStrategy(data_provider=_SpotUnavailableProvider())
+        strategy._try_open_pair(symbol, 0.002, 0.0003, 100.0, 1000)
+
+        with SessionFactory.get_session() as session:
+            session.execute(
+                text("UPDATE decisions SET opened_at = :opened_at WHERE symbol = :symbol"),
+                {"opened_at": datetime.now(UTC) - timedelta(hours=2), "symbol": symbol},
+            )
+            session.commit()
+
+        closed = strategy.close_due_pairs()
+
+        matching = [c for c in closed if c["symbol"] == symbol]
+        assert len(matching) == 1
+        assert matching[0]["legs_closed"] == 2
+    finally:
+        _cleanup_symbol(symbol)
+
+
 def test_close_due_pairs_never_closes_a_lone_unhedged_leg(monkeypatch):
     """Faz 344 — kritik güvenlik testi: sadece BİR bacak açıksa (hedge
     başarısız olmuş), close_due_pairs onu YALNIZ başına kapatmamalı —
