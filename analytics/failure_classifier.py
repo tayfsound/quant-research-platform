@@ -80,7 +80,12 @@ def _classify_rows(rows) -> dict:
 # Gerçek dağılım ölçüldü (tüm kapanmış işlemler): stop_loss tek başına
 # tüm zarar-üreten kapanışların ~%95'i, breakeven_stop/liquidation/
 # reduced_loss_stop kalan ~%5'i oluşturuyor — hepsi burada kapsanıyor.
-_LOSS_EXIT_REASONS = ("stop_loss", "breakeven_stop", "liquidation", "reduced_loss_stop")
+#
+# Faz 363 — public yapıldı (isim başındaki alt çizgi kaldırıldı):
+# analytics/regime_reversal.py::consecutive_stop_streak() de AYNI "gerçek
+# kayıp" tanımını kullanıyor (bkz. o dosyadaki gerekçe notu) — tek gerçek
+# kaynak, iki modülün AYRI/tutarsız kayıp tanımları olmasın diye.
+LOSS_EXIT_REASONS = ("stop_loss", "breakeven_stop", "liquidation", "reduced_loss_stop")
 
 
 def summarize_loss_breakdown(hours: int | None = None) -> dict:
@@ -100,7 +105,7 @@ def summarize_loss_breakdown(hours: int | None = None) -> dict:
         hours_clause = "AND closed_at >= now() - (:hours || ' hours')::interval"
         params["hours"] = hours
 
-    reasons_sql = ", ".join(f"'{r}'" for r in _LOSS_EXIT_REASONS)
+    reasons_sql = ", ".join(f"'{r}'" for r in LOSS_EXIT_REASONS)
     with SessionFactory.get_session() as session:
         rows = session.execute(
             text(
@@ -118,7 +123,7 @@ def summarize_loss_breakdown(hours: int | None = None) -> dict:
     pump_fade_rows = [r for r in rows if r["experiment_bucket"] == "pump_fade_v1"]
 
     def _breakdown(group_rows: list) -> dict:
-        by_reason: dict[str, list] = {reason: [] for reason in _LOSS_EXIT_REASONS}
+        by_reason: dict[str, list] = {reason: [] for reason in LOSS_EXIT_REASONS}
         for r in group_rows:
             reason = (r["outcome"] or {}).get("exit_reason")
             if reason in by_reason:
