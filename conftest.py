@@ -63,6 +63,43 @@ import pytest
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _purge_orphaned_test_decisions_at_session_start():
+    """Faz 363 — kritik bulgu: testlerin çoğu kendi ürettiği decisions
+    satırlarını try/finally ile temizliyor (bkz. tests/test_pump_fade_
+    strategy.py::_cleanup_symbol, tests/test_decision_recorder_execution_
+    mode.py) ama bu SADECE süreç normal bitince çalışır — pytest süreci
+    dıştan öldürülürse (Bash araç zaman aşımı, Ctrl+C) finally hiç
+    çalışmaz, satır paylaşımlı quantdb_test'te KALICI kalır. Gerçek olay:
+    8 günde (18-26 Ağustos) 548 satırlık pump_fade_v1 birikimi (-$3M
+    toplam), pump_fade'in gerçek devre kesicisini HER pytest oturumunda
+    yanlışlıkla tetikleyip 16 ilgisiz testi kırıyordu; ayrı bir birikim
+    (execution_mode='testnet' AND status='open') ise close_due_positions()
+    gibi TÜM açık pozisyonları tarayan testlerin gerçek Binance testnet
+    API'sine bağlanıp "Invalid symbol" ile patlamasına yol açıyordu
+    (tests/test_position_lifecycle.py + tests/test_pump_fade_strategy.py'de
+    46 ilgisiz test). Session BAŞINDA (henüz hiçbir test çalışmadan) bu
+    satırlar mantık gereği SADECE önceki, yarım kalmış oturumlardan
+    kalabilir — güvenle silinir. Session İÇİNDEKİ testlerin kendi
+    temizliği (normal bitişte) değişmeden çalışmaya devam eder."""
+    from sqlalchemy import text
+
+    from database.session_factory import SessionFactory
+
+    with SessionFactory.get_session() as session:
+        session.execute(
+            text("DELETE FROM decisions WHERE execution_mode = 'testnet' AND status = 'open'")
+        )
+        session.execute(
+            text(
+                "DELETE FROM decisions WHERE status = 'closed' "
+                "AND experiment_bucket IN ('pump_fade_v1', 'basis_arb_v1')"
+            )
+        )
+        session.commit()
+    yield
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _disable_signal_persistence_gate_by_default():
     """Faz 362 — signal_persistence_gate_enabled canlıda varsayılan AÇIK
     (gerçek veriyle doğrulanmış, koruyucu bir mekanizma) ama pyramid_

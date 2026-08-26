@@ -164,15 +164,28 @@ def test_close_due_positions_uses_exchange_state_for_testnet_positions_not_inter
             # ratchet gerçekten tetiklenir, gerçek borsa emrini günceller.
             return StopUpdateResult(new_stop_order_id="STOP2", achieved_stop_price=kwargs["new_stop_price"])
 
-    closer = PositionCloser(_FixedPriceProvider(200.0), execution_service=_FakeExecutionService())
-    with SessionFactory.get_session() as session:
-        closed = closer.close_due_positions(DecisionPersistor(session))
+    try:
+        closer = PositionCloser(_FixedPriceProvider(200.0), execution_service=_FakeExecutionService())
+        with SessionFactory.get_session() as session:
+            closed = closer.close_due_positions(DecisionPersistor(session))
 
-    assert str(event.id) not in {c["decision_id"] for c in closed}
+        assert str(event.id) not in {c["decision_id"] for c in closed}
 
-    with SessionFactory.get_session() as session:
-        row = DecisionPersistor(session).get_by_id(str(event.id))
-    assert row["status"] == "open"
+        with SessionFactory.get_session() as session:
+            row = DecisionPersistor(session).get_by_id(str(event.id))
+        assert row["status"] == "open"
+    finally:
+        # Faz 363 — bu test kasıtlı olarak pozisyonu 'open' bırakıyor (asıl
+        # amacı bu), bu yüzden temizlenmezse paylaşılan test DB'sinde kalıcı
+        # bir testnet/open yetim kayıt olarak kalıyor. close_due_positions()
+        # gibi TÜM açık pozisyonları tarayan başka testler buna rastlayınca
+        # gerçek Binance testnet API'sine bağlanmaya çalışıp "Invalid symbol"
+        # ile patlıyordu (bkz. tests/test_decision_recorder_execution_mode.py
+        # aynı desendeki düzeltme).
+        with SessionFactory.get_session() as session:
+            from sqlalchemy import text
+            session.execute(text("DELETE FROM decisions WHERE symbol = :symbol"), {"symbol": symbol})
+            session.commit()
 
 
 def test_close_due_positions_closes_testnet_position_using_real_exchange_fill_price():

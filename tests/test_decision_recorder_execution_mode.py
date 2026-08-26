@@ -67,38 +67,55 @@ def test_default_simulated_mode_never_calls_execution_service():
 
 
 def test_testnet_mode_uses_real_fill_price_and_quantity_from_execution_service():
-    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
-        from services.decision_recorder import DecisionRecorder
+    symbol = f"EXECTN{uuid.uuid4().hex[:8]}"
+    try:
+        with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+            from services.decision_recorder import DecisionRecorder
 
-        symbol = f"EXECTN{uuid.uuid4().hex[:8]}"
-        ctx = _make_ctx(symbol, filled_price=100.0)
+            ctx = _make_ctx(symbol, filled_price=100.0)
 
-        exec_result = OpenPositionResult(
-            entry_price=100.25, executed_qty=0.29,
-            exchange_order_id="1001", exchange_client_order_id="qrpe1",
-            exchange_stop_order_id="1002", exchange_tp_order_id="1003",
-        )
-        fake_service = _FakeExecutionServiceConfigured(exec_result)
+            exec_result = OpenPositionResult(
+                entry_price=100.25, executed_qty=0.29,
+                exchange_order_id="1001", exchange_client_order_id="qrpe1",
+                exchange_stop_order_id="1002", exchange_tp_order_id="1003",
+            )
+            fake_service = _FakeExecutionServiceConfigured(exec_result)
 
-        recorder = DecisionRecorder(execution_service=fake_service)
-        with patch.object(recorder, "_resolve_execution_mode", return_value="testnet"):
-            recorder.record(ctx)
+            recorder = DecisionRecorder(execution_service=fake_service)
+            with patch.object(recorder, "_resolve_execution_mode", return_value="testnet"):
+                recorder.record(ctx)
 
-    assert len(fake_service.open_position_calls) == 1
-    call = fake_service.open_position_calls[0]
-    assert call["symbol"] == symbol
-    assert call["direction"] == "LONG"
+        assert len(fake_service.open_position_calls) == 1
+        call = fake_service.open_position_calls[0]
+        assert call["symbol"] == symbol
+        assert call["direction"] == "LONG"
 
-    with SessionFactory.get_session() as session:
-        row = DecisionPersistor(session).get_by_id(str(ctx.cycle_id))
-    assert row["status"] == "open"
-    assert row["execution_mode"] == "testnet"
-    assert row["entry_price"] == 100.25
-    assert row["quantity"] == 0.29
-    assert row["exchange_order_id"] == "1001"
-    assert row["exchange_client_order_id"] == "qrpe1"
-    assert row["exchange_stop_order_id"] == "1002"
-    assert row["exchange_tp_order_id"] == "1003"
+        with SessionFactory.get_session() as session:
+            row = DecisionPersistor(session).get_by_id(str(ctx.cycle_id))
+        assert row["status"] == "open"
+        assert row["execution_mode"] == "testnet"
+        assert row["entry_price"] == 100.25
+        assert row["quantity"] == 0.29
+        assert row["exchange_order_id"] == "1001"
+        assert row["exchange_client_order_id"] == "qrpe1"
+        assert row["exchange_stop_order_id"] == "1002"
+        assert row["exchange_tp_order_id"] == "1003"
+    finally:
+        # Faz 363 — kritik bulgu: bu testin bıraktığı execution_mode=
+        # 'testnet', status='open' kaydı TEMİZLENMİYORDU — paylaşılan test
+        # DB'sinde kalıcı kalıyordu. close_due_positions() gibi TÜM açık
+        # pozisyonları tarayan (limit=None) başka testler bu "unutulmuş"
+        # sembole rastlayınca, execution_mode='testnet' olduğu için GERÇEK
+        # Binance testnet API'sine bağlanmaya çalışıyordu — sembol borsada
+        # hiç var olmadığı için "Invalid symbol" hatasıyla patlıyordu
+        # (canlıda yakalandı: tests/test_position_lifecycle.py +
+        # tests/test_pump_fade_strategy.py'de 46 ilgisiz test başarısız
+        # oluyordu). Diğer testlerde bu sorun yok çünkü onlar status=
+        # 'no_trade'/execution_mode='simulated' bırakıyor.
+        with SessionFactory.get_session() as session:
+            from sqlalchemy import text
+            session.execute(text("DELETE FROM decisions WHERE symbol = :symbol"), {"symbol": symbol})
+            session.commit()
 
 
 def test_testnet_mode_records_no_trade_when_execution_service_returns_none():
