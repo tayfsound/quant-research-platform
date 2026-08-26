@@ -432,12 +432,19 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
     aslında göründüğünden daha karlı, önceki kirli görüntü yanıltıcıydı.
     4 yeni regresyon testi.
 
-    **Backlog #18 durumu (henüz açık):** izolasyon sonrası bile confidence
-    =0.2/0.3/0.5 kovaları hâlâ net zararlı (özellikle 0.5: -$35.467, tek
-    başına en büyük kalan zarar kaynağı) — bu, "seçicilik eksik" sorusuna
-    dair GERÇEK, kalan bir sinyal. reduce_threshold (0.4) ile act_
-    threshold (0.7) arasındaki REDUCE tier'in TAM ORTASının neden özellikle
-    riskli olduğu henüz araştırılmadı — bir sonraki turda ele alınacak.
+    **Backlog #18 — confidence=0.5 kovası derinlemesine incelendi, KAPATILDI
+    (2026-08-26):** yapısal bir Kelly/kalibrasyon sorunu DEĞİLMİŞ. Kovanın
+    zararı (-$35.467) neredeyse tamamı TEK bir alt-gruba ait: LONG+15m
+    (-$37.236, diğer TÜM yön/zaman-dilimi kombinasyonları nötr/pozitif).
+    O grup içinde de neredeyse tamamı TEK bir güne (23 Ağustos açılışlı,
+    -$31.792) ait. O günün zararının kaynağı manual_full DEĞİL (o +$36.831
+    katkı sağlıyor) — gerçek kaynak stop_loss+breakeven_stop (103 kayıt,
+    -$68.623). 23 Ağustos, piramitleme rejim-kapısı düzeltmesinden (Faz
+    361, "kötü fiyattan piramitleme sadece bullish_low'da izinli",
+    2026-08-24 18:33'te canlıya alındı) ÖNCEKİ bir tarih — yani bu, ZATEN
+    BİLİNEN ve DÜZELTİLMİŞ piramitleme sorununun geçmiş veride kalan izi.
+    Ek bir müdahale (yeni gate, eşik değişikliği) GEREKMİYOR — zaman
+    ilerledikçe/yeni veri biriktikçe kova kendiliğinden düzelecek.
 
 ## Notlar
 
