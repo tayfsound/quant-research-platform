@@ -99,9 +99,10 @@ function Sidebar({
             <button
               onClick={onToggleCollapsed}
               title="Menüyü gizle"
-              className="shrink-0 w-6 h-6 rounded-md flex items-center justify-center text-ink-faint hover:bg-canvas-soft hover:text-ink"
+              aria-label="Menüyü gizle"
+              className="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center border border-line bg-canvas-soft/60 text-ink-soft text-2xl leading-none font-bold hover:bg-accent hover:text-white hover:border-accent transition-colors"
             >
-              ‹
+              <span className="-translate-y-[2px]">‹</span>
             </button>
           </div>
 
