@@ -62,3 +62,30 @@ def test_offset_skips_the_most_recent_n_and_returns_the_next_page():
             from sqlalchemy import text
             session.execute(text("DELETE FROM decisions WHERE symbol = :s"), {"s": symbol})
             session.commit()
+
+
+def test_limit_none_returns_every_matching_row_not_just_the_default_page():
+    """Faz 363 — kullanıcı bulgusu: services/opportunity_quality_gatherer.py
+    sabit limit=2000 kullanıyordu, nadir-olay (yüksek konsensüs) tespiti
+    için en eski %39'luk veriyi hiç görmüyordu. list_open_positions'ın
+    (Faz 269-sonrası) limit=None desenini list_closed_trades'e de taşıdık —
+    limit=None artık gerçekten SINIRSIZ (LIMIT yan tümcesi hiç eklenmiyor),
+    varsayılan limit=200'ün kırptığı satırlar dahil hepsi dönmeli."""
+    symbol = f"PGNONE{uuid4().hex[:8]}"
+    base = datetime.now(UTC) + timedelta(days=36600)
+    try:
+        ids = [_persist_closed(symbol, base - timedelta(minutes=i)) for i in range(3)]
+
+        with SessionFactory.get_session() as session:
+            unlimited = DecisionPersistor(session).list_closed_trades(limit=None)
+        unlimited_ids = {str(r["id"]) for r in unlimited}
+        assert set(ids).issubset(unlimited_ids)
+
+        with SessionFactory.get_session() as session:
+            capped = DecisionPersistor(session).list_closed_trades(limit=1)
+        assert len(capped) == 1
+    finally:
+        with SessionFactory.get_session() as session:
+            from sqlalchemy import text
+            session.execute(text("DELETE FROM decisions WHERE symbol = :s"), {"s": symbol})
+            session.commit()

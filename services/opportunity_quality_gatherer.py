@@ -25,8 +25,20 @@ def gather_opportunity_quality() -> dict:
     from database.session_factory import SessionFactory
 
     with SessionFactory.get_session() as session:
+        # Faz 363 — kullanıcı bulgusu: "high" (yüksek anlaşma) kovası
+        # sürekli boş görünüyordu. Kök neden: limit=2000, en yeni 2000
+        # kapanmış işlemle sınırlıyordu — gerçek toplam 3264 (excluded_
+        # from_stats=false, temiz veri), en eski 1264 işlem hiç
+        # görülmüyordu. Diğer gatherer'ların aksine (agent_ablation/
+        # agent_combination_reliability KASITLI son N pencereyle
+        # çalışıyor) burası nadir-olay (near-unanimous konsensüs)
+        # tespiti yapıyor — küçük bir kovanın örneklem büyüklüğü tam
+        # olarak toplam popülasyona duyarlı, recency-window burada
+        # yanlış araç. Kullanıcı isteği: "yapabildiğin kadar geniş yap" —
+        # limit=None (list_open_positions'ın Faz 269-sonrası desenindeki
+        # AYNI mekanizma) gerçekten sınırsız, tüm zamanların toplamı.
         closed_trades = DecisionPersistor(session).list_closed_trades(
-            limit=2000, exclude_experiment_bucket=PUMP_FADE_EXPERIMENT_BUCKET
+            limit=None, exclude_experiment_bucket=PUMP_FADE_EXPERIMENT_BUCKET
         )
 
     trades = []

@@ -585,7 +585,7 @@ class DecisionPersistor:
         }
 
     def list_closed_trades(
-        self, limit: int = 200, min_opened_at=None, exclude_experiment_bucket: str | None = None,
+        self, limit: int | None = 200, min_opened_at=None, exclude_experiment_bucket: str | None = None,
         direction: str | None = None, offset: int = 0,
     ):
         # Faz 238: kullanıcı isteği — "kirli geçmiş veriyi temizle."
@@ -610,6 +610,11 @@ class DecisionPersistor:
         # kirletir, mekanik bir strateji AI'ı sessizce durdurabilirdi.
         query = "SELECT * FROM decisions WHERE status = 'closed' AND excluded_from_stats = false"
         params: dict = {"limit": limit, "offset": offset}
+        # Faz 363 — kullanıcı bulgusu: opportunity_quality_gatherer.py'nin
+        # sabit limit=2000'i, nadir-olay (yüksek konsensüs) tespiti için
+        # en eski %39'luk veriyi (1264/3264 işlem) hiç görmüyordu — kullanıcı
+        # isteği "yapabildiğin kadar geniş yap" — list_open_positions'ın
+        # (Faz 269-sonrası) limit=None desenini burada da kullanıma açıyoruz.
         if min_opened_at is not None:
             query += " AND opened_at IS NOT NULL AND opened_at >= :min_opened_at"
             params["min_opened_at"] = min_opened_at
@@ -627,7 +632,12 @@ class DecisionPersistor:
         # inceleme yapamıyorum" (Transactions'ta kapanmış işlemler hep
         # ilk 100'le sabitliydi, offset yoktu) — list_open_positions'ın
         # Faz 268y'de aldığı offset desteğiyle AYNI desen.
-        query += " ORDER BY closed_at DESC LIMIT :limit OFFSET :offset"
+        query += " ORDER BY closed_at DESC"
+        if limit is not None:
+            query += " LIMIT :limit OFFSET :offset"
+        else:
+            params.pop("limit", None)
+            params.pop("offset", None)
 
         rows = self.session.execute(text(query), params).mappings().all()
 
