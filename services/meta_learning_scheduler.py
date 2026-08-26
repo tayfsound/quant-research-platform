@@ -8,13 +8,15 @@ walk-forward out-of-sample Sharpe'ı raporun kendi başarı kriterini
 onaylamalı (bkz. AgentTuningApprovalRepository). İkisi de sağlanmadan
 agents/registry.py hep mevcut sabit varsayılan katsayılara düşer
 (fail-closed)."""
-from datetime import datetime, timedelta
+import json
+from datetime import UTC, datetime, timedelta
 
 import structlog
 
 from agents.technical_agent import TechnicalAgentCoefficients
 from contracts.agent_tuning_approval import AgentTuningApproval
 from database.repositories.agent_tuning_approval_repository import AgentTuningApprovalRepository
+from database.repositories.app_settings_repository import AppSettingsRepository
 from database.session_factory import SessionFactory
 from meta_optimizer.agent_tuner import (
     MIN_RECORDS_TO_OPTIMIZE,
@@ -31,6 +33,35 @@ TECHNICAL_AGENT_ID = "technical_agent_v1"
 # (tuned - baseline) >= +0.4 olmadan bir θ insan onayına dahi sunulmuyor.
 MIN_SHARPE_IMPROVEMENT = 0.4
 
+_LAST_ATTEMPT_SETTINGS_KEY = "meta_learning_last_attempt"
+
+
+def _record_last_attempt(reason: str, sample_count: int, sharpe_improvement: float | None) -> None:
+    """Faz 363 — kullanıcı bulgusu: onaylı tur hiç yoksa dashboard
+    ("Meta-Learning Effectiveness") sessizce boş görünüyordu, kullanıcı
+    "neden hiç veri yok" diye tekrar tekrar soruyordu. propose_technical_
+    agent_tuning fail-closed olduğu için (haftalık walk-forward eşiği
+    geçilmezse hiçbir şey yazılmıyordu) sebep hiçbir yerde görünmüyordu.
+    Başarılı/başarısız HER denemenin son sonucunu app_settings'e yazıyoruz
+    (approvals tablosuna değil — o SADECE insana sunulan gerçek önerileri
+    temsil ediyor, semantiğini bozmayalım) ki panel "neden boş" sorusunu
+    dürüstçe cevaplayabilsin."""
+    try:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set(
+                _LAST_ATTEMPT_SETTINGS_KEY,
+                json.dumps({
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "reason": reason,
+                    "sample_count": sample_count,
+                    "sharpe_improvement": sharpe_improvement,
+                    "required_sharpe_improvement": MIN_SHARPE_IMPROVEMENT,
+                }),
+                updated_by="meta_learning_scheduler",
+            )
+    except Exception as exc:
+        logger.warning("meta_learning_last_attempt_record_failed", error=str(exc))
+
 
 def propose_technical_agent_tuning(agent_id: str = TECHNICAL_AGENT_ID) -> AgentTuningApproval | None:
     """Fail-closed: yetersiz veri, walk-forward'ın geçmemesi, ya da zaten
@@ -42,6 +73,7 @@ def propose_technical_agent_tuning(agent_id: str = TECHNICAL_AGENT_ID) -> AgentT
             "meta_learning_skip_insufficient_data",
             agent_id=agent_id, sample_count=len(records), required=MIN_RECORDS_TO_OPTIMIZE,
         )
+        _record_last_attempt("insufficient_data", len(records), None)
         return None
 
     with SessionFactory.get_session() as session:
@@ -56,6 +88,7 @@ def propose_technical_agent_tuning(agent_id: str = TECHNICAL_AGENT_ID) -> AgentT
                 "meta_learning_skip_walk_forward_not_passed",
                 agent_id=agent_id, sharpe_improvement=improvement,
             )
+            _record_last_attempt("walk_forward_not_passed", len(records), improvement)
             return None
 
         # Walk-forward sadece θ'nın GENELLEYİP genellemediğini kanıtlıyor
@@ -88,6 +121,7 @@ def propose_technical_agent_tuning(agent_id: str = TECHNICAL_AGENT_ID) -> AgentT
             "meta_learning_tuning_proposed",
             agent_id=agent_id, sharpe_improvement=improvement, sample_count=len(records),
         )
+        _record_last_attempt("proposed", len(records), improvement)
         return approval
 
 

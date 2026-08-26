@@ -16,13 +16,27 @@ type Trend = {
   avg_sharpe_improvement: number;
 };
 
-type Result = { trend: Trend | null; n_approved_rounds: number };
+type LastAttempt = {
+  timestamp: string;
+  reason: "insufficient_data" | "walk_forward_not_passed" | "proposed";
+  sample_count: number;
+  sharpe_improvement: number | null;
+  required_sharpe_improvement: number;
+};
+
+type Result = { trend: Trend | null; n_approved_rounds: number; last_attempt: LastAttempt | null };
 type Report = { id: string; created_at: string; result: Result };
 
 const TREND_LABEL: Record<string, string> = {
   improving: "İyileşiyor",
   degrading: "Kötüleşiyor",
   no_significant_trend: "Anlamlı trend yok",
+};
+
+const LAST_ATTEMPT_REASON_LABEL: Record<string, string> = {
+  insufficient_data: "Yetersiz veri",
+  walk_forward_not_passed: "Walk-forward eşiği geçilemedi",
+  proposed: "Öneri oluşturuldu (onay bekliyor)",
 };
 
 const TREND_TONE: Record<string, "rise" | "fall" | "neutral"> = {
@@ -72,7 +86,27 @@ export default function MetaLearningEffectiveness() {
         {loading ? (
           <Spinner />
         ) : !live || !live.trend ? (
-          <EmptyState label={`Henüz yeterli onaylı tuning turu yok (${live?.n_approved_rounds ?? 0} tur var).`} />
+          <div className="flex flex-col gap-2">
+            <EmptyState label={`Henüz yeterli onaylı tuning turu yok (${live?.n_approved_rounds ?? 0} tur var).`} />
+            {live?.last_attempt && (
+              <p className="text-xs text-ink-faint">
+                Son deneme ({new Date(live.last_attempt.timestamp).toLocaleString()}):{" "}
+                {LAST_ATTEMPT_REASON_LABEL[live.last_attempt.reason] ?? live.last_attempt.reason}
+                {live.last_attempt.reason === "walk_forward_not_passed" && (
+                  <>
+                    {" — Sharpe iyileşmesi "}
+                    <span className="font-mono">{live.last_attempt.sharpe_improvement?.toFixed(4)}</span>
+                    {", gereken "}
+                    <span className="font-mono">{live.last_attempt.required_sharpe_improvement.toFixed(2)}</span>
+                    {` (${live.last_attempt.sample_count} kayıt üzerinden)`}
+                  </>
+                )}
+                {live.last_attempt.reason === "insufficient_data" && (
+                  <> — {live.last_attempt.sample_count} kayıt var, yeterli sayıya ulaşınca tekrar denenecek.</>
+                )}
+              </p>
+            )}
+          </div>
         ) : (
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2">

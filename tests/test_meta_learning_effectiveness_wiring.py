@@ -25,6 +25,7 @@ def test_meta_learning_effectiveness_returns_real_shape():
     result = response.json()["result"]
     assert "trend" in result
     assert "n_approved_rounds" in result
+    assert "last_attempt" in result
 
 
 def test_meta_learning_effectiveness_reports_endpoint_requires_auth():
@@ -60,3 +61,4 @@ def test_gather_meta_learning_effectiveness_reads_real_approved_rounds():
     assert "trend" in result
     assert "n_approved_rounds" in result
     assert result["n_approved_rounds"] >= 0
+    assert "last_attempt" in result

@@ -600,8 +600,17 @@ export default function Dashboard() {
                 kapanışlarının bir ALT KÜMESİ (manual_full kendi sonucuna
                 göre zaten TP/SL'ye dahil edildi) — ayrı bir üçüncü kova
                 DEĞİL, sadece "kaç işlemi elle kapattım" sorusuna
-                bilgilendirici bir cevap. */}
-            <StatCard label="Manuel kapanan (toplam)" value={perf.all_time.manual_full_count} />
+                bilgilendirici bir cevap.
+                Faz 363 — kullanıcı bulgusu: "TP+SL+Manuel topladığımda
+                toplam kapanmış işlem sayısından fazla çıkıyor, imkansız"
+                — veri bozuk değildi, bu kart TP/SL'nin İÇİNDE zaten
+                sayılan bir sayıyı yan yana gösteriyordu, üstüne toplanırsa
+                çift sayım oluyordu. Açıklayıcı alt metin eklendi. */}
+            <StatCard
+              label="Manuel kapanan (toplam)"
+              value={perf.all_time.manual_full_count}
+              sub="TP/SL'ye zaten dahil — ayrıca toplama"
+            />
             <StatCard
               label={`Toplam PnL (${currency})`}
               value={format(perf.all_time.total_pnl)}
