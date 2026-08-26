@@ -55,21 +55,15 @@ def reconstruct_opinions(agent_contributions: list[dict]) -> list[AgentOpinion]:
     return opinions
 
 
-def compute_leave_one_out_impact(
-    agent_contributions: list[dict],
-    excluded_domain: str,
-    actual_direction: str,
-) -> str | None:
-    """Tek bir gerçek kapanmış kararı, excluded_domain'in oyu SIFIRLANMIŞ
-    halde yeniden sentezler (services/belief_engine.py::synthesize —
-    gerçek, canlıda kullanılan AYNI pure fonksiyon). excluded_domain bu
-    kararda hiç oy kullanmamışsa (ör. data_unavailable_domains'teydi)
-    None döner — ablation anlamsız, zorla bir sonuç üretilmez.
-
-    Döner: "caused_trade" (karşı-olgusal WAIT'e düştü — bu ajan
-    olmasaydı yönlü bir belief bile oluşmazdı), "flipped_direction"
-    (karşı-olgusal hâlâ yönlü ama GERÇEKLEŞENDEN farklı), "not_pivotal"
-    (karşı-olgusal gerçekleşenle AYNI)."""
+def _resynthesize_with_domain_excluded(agent_contributions: list[dict], excluded_domain: str):
+    """excluded_domain'in oyu SIFIRLANMIŞ halde belief-fusion'ı yeniden
+    çalıştırır (services/belief_engine.py::synthesize — gerçek, canlıda
+    kullanılan AYNI pure fonksiyon). excluded_domain bu kararda hiç oy
+    kullanmamışsa (ör. data_unavailable_domains'teydi) None döner —
+    ablation anlamsız, zorla bir sonuç üretilmez. compute_leave_one_out_
+    impact ve compute_leave_one_out_counterfactual_direction'ın PAYLAŞTIĞI
+    tek yeniden-sentezleme adımı — iki fonksiyon arasında sürüklenme
+    riski olmasın diye."""
     from services.belief_engine import BeliefEngine
 
     opinions = reconstruct_opinions(agent_contributions)
@@ -86,12 +80,79 @@ def compute_leave_one_out_impact(
             o.recalculate()
         adjusted.append(o)
 
-    counterfactual = BeliefEngine().synthesize(adjusted)
+    return BeliefEngine().synthesize(adjusted)
+
+
+def resynthesize_belief_and_opinions_with_domain_excluded(
+    agent_contributions: list[dict], excluded_domain: str,
+):
+    """Faz 363 — services/counterfactual_agent_impact_gatherer.py'nin
+    ihtiyacı: SADECE karşı-olgusal Belief değil, RiskTargetStage/
+    DecisionFusion'ın da girdi olarak istediği AYARLANMIŞ (excluded_
+    domain sıfırlanmış) opinions listesinin kendisi. _resynthesize_
+    with_domain_excluded ile AYNI hesap — sadece iki parçayı da (belief,
+    opinions) dışarı veriyor. excluded_domain hiç oy kullanmamışsa None."""
+    from services.belief_engine import BeliefEngine
+
+    opinions = reconstruct_opinions(agent_contributions)
+    if not opinions:
+        return None
+    if not any(o.domain.value == excluded_domain for o in opinions):
+        return None
+
+    adjusted = []
+    for o in opinions:
+        if o.domain.value == excluded_domain:
+            o = o.model_copy(deep=True)
+            o.performance_weight = 0.0
+            o.recalculate()
+        adjusted.append(o)
+
+    return BeliefEngine().synthesize(adjusted), adjusted
+
+
+def compute_leave_one_out_impact(
+    agent_contributions: list[dict],
+    excluded_domain: str,
+    actual_direction: str,
+) -> str | None:
+    """Tek bir gerçek kapanmış kararı, excluded_domain'in oyu SIFIRLANMIŞ
+    halde yeniden sentezler. Döner: "caused_trade" (karşı-olgusal WAIT'e
+    düştü — bu ajan olmasaydı yönlü bir belief bile oluşmazdı),
+    "flipped_direction" (karşı-olgusal hâlâ yönlü ama GERÇEKLEŞENDEN
+    farklı), "not_pivotal" (karşı-olgusal gerçekleşenle AYNI)."""
+    counterfactual = _resynthesize_with_domain_excluded(agent_contributions, excluded_domain)
+    if counterfactual is None:
+        return None
     if counterfactual.direction == "WAIT":
         return "caused_trade"
     if counterfactual.direction != actual_direction:
         return "flipped_direction"
     return "not_pivotal"
+
+
+def compute_leave_one_out_counterfactual_direction(
+    agent_contributions: list[dict],
+    excluded_domain: str,
+    actual_direction: str,
+) -> str | None:
+    """Faz 363 — kullanıcı isteği: compute_leave_one_out_impact SADECE bir
+    kategori ETİKETİ ("flipped_direction") döndürüyor, gerçek karşı-
+    olgusal YÖNÜ (LONG/SHORT) hiç dışarı vermiyordu — bu yüzden "bu ajan
+    olmasaydı hangi işlem açılırdı" sorusuna cevap veren bir karşı-
+    olgusal replay için kullanılamıyordu. Bu fonksiyon SADECE gerçek bir
+    yön-değişimi (flipped_direction) durumunda o YENİ yönü (LONG/SHORT)
+    döndürür; caused_trade (WAIT'e düştü, replay edilecek yönlü bir
+    işlem yok) ya da not_pivotal (zaten aynı) durumlarında None döner —
+    mevcut compute_leave_one_out_impact'in kategorizasyon mantığı
+    HİÇ DEĞİŞMEDİ, bu sadece onun ürettiği bilgiyi tam olarak açığa
+    çıkaran ince bir sarmalayıcı."""
+    counterfactual = _resynthesize_with_domain_excluded(agent_contributions, excluded_domain)
+    if counterfactual is None:
+        return None
+    if counterfactual.direction in ("WAIT", actual_direction):
+        return None
+    return counterfactual.direction
 
 
 MIN_SAMPLES_FOR_WIN_RATE = 10

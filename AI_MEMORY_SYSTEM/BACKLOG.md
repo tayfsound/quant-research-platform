@@ -315,7 +315,7 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
     seçim, varsayılan kapalı) — kontrollü açılıp gerçek ölçüm yapılabilir.
     Kullanıcı isteğiyle şimdilik ertelendi, todo'nun sonunda kalıyor.
 
-30. **[KÖK NEDEN BULUNDU — 2026-08-26, DÜZELTİLMEDİ] Basis Arb: kazanan
+30. **[ÇÖZÜLDÜ — Faz 363, 2026-08-26] Basis Arb: kazanan
     işlem var ama likidasyon oranı %21+, 108 açık pozisyon var.** Kullanıcı
     sorusu ("buranın sisteme faydası nedir?") üzerine derinleşildi. Gerçek
     veri (2026-08-26): 14 kapanmış işlem, toplam -$177.67, win_rate %64.3
@@ -335,12 +335,22 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
     taşımaya başlıyor — modülün kendi docstring'inin önlemeye çalıştığı
     TAM O senaryo, likidasyon yoluyla gerçekleşiyor.
 
-    **Düzeltme (henüz uygulanmadı):** `_open_leg`'de direction=="LONG"
-    (spot bacağı) iken leverage'ı 1.0'a zorlamak — ya `ctx.decision`'a
-    doğrudan leverage=1.0 yazdırmak ya da decision_recorder'a "bu spot
-    bacağı, symbol_leverage'ı yok say" bilgisini iletecek bir yol
-    eklemek. 108 açık pozisyon olduğu için düzeltme ÖNCELİKLİ ele
-    alınmalı — mevcut açık spot bacakları da aynı riski taşıyor.
+    **Düzeltme:** `contracts/contexts/decision.py::Decision.leverage_
+    override` yeni alanı eklendi — set edilmişse decision_recorder
+    sembol/piramit/güvenlik-tavanı hesaplarının hiçbirini uygulamadan
+    doğrudan kullanıyor. `_open_leg` artık LONG (spot) bacağı açarken
+    leverage_override=1.0 veriyor, SHORT (perp) bacağı etkilenmiyor.
+    1 yeni regresyon testi.
+
+    **Ek bulgu (aynı gün, ayrı bug):** `close_due_pairs()` çıkış fiyatını
+    SADECE Binance SPOT klines'tan deniyordu — strateji sembolleri
+    futures evreninden seçildiği için birçoğu (1000000MOGUSDT, PLAYUSDT,
+    4USDT vb.) spot'ta hiç yok, 400 hatası sessizce yutulup pozisyon
+    max_hold_hours'ı geçtikten sonra da SONSUZA DEK açık kalıyordu
+    (gerçek olay: 52 çiftten 30'u 72 saati 3+ gün aşmıştı). Çıkış fiyatı
+    artık giriş fiyatıyla AYNI kaynağı (futures index_price) kullanıyor
+    — hem sembol kapsamı garantili hem giriş/çıkış metodolojisi tutarlı.
+    Deploy sonrası doğrulandı: 30 kilitli çift gerçek P&L ile kapandı.
 
 31. **[ÇÖZÜLDÜ — Faz 362/362-devam, 2026-08-24] "Council'in fikir değiştirmesi"
     verisi — hem çıkış hem giriş tarafı ölçüldü, İKİSİ DE canlıya alındı.**
@@ -499,6 +509,74 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
     belief_reversal_exit "belief_reversal_exit" kullanıyor, gerçek
     kullanıcı endpoint'leri (api/rest/positions.py) hiç değişmedi. NOT:
     bu GEÇMİŞE dönük veriyi düzeltmiyor, sadece ileriye dönük kayıtları.
+
+39. **[ÇÖZÜLDÜ — Faz 363, 2026-08-26] Meta-Learning Effectiveness paneli
+    hep boş görünüyordu, kullanıcı nedenini bilmiyordu.** Fail-closed
+    tasarım gereği (walk-forward Sharpe iyileşmesi eşiği +0.4, gerçek son
+    ölçüm +0.002) hiç onaylı tur yoktu ama panel neden boş olduğunu hiç
+    söylemiyordu. `services/meta_learning_scheduler.py` artık HER
+    denemenin (başarılı/yetersiz veri/walk-forward geçemedi) son
+    sonucunu `app_settings`'e yazıyor, panel boş durumda nedenini
+    (son deneme tarihi, ulaşılan/gereken Sharpe iyileşmesi) gösteriyor.
+
+40. **[ÇÖZÜLDÜ — Faz 363, 2026-08-26] "TP+SL+Manuel toplamı toplam
+    işlem sayısından fazla, imkansız" — veri bozuk değil, çift sayım.**
+    Kullanıcı bulgusu doğrulandı: `manual_full_count`(783) zaten
+    `tp_count`/`sl_count` içine gömülü (sonucuna göre TP ya da SL
+    sayılıyor), üstüne toplanırsa (2367+782+783=3932) gerçek toplamı
+    (3452) aşıyor. Dashboard'daki "Manuel kapanan" kartına açıklayıcı
+    alt metin eklendi ("TP/SL'ye zaten dahil — ayrıca toplama").
+
+41. **[ÇÖZÜLDÜ — Faz 363, 2026-08-26] Opportunity Quality "high" (yüksek
+    anlaşma) kovası sürekli boş.** Kısmi kök neden: `gather_opportunity_
+    quality` sabit `limit=2000` kullanıyordu, `ORDER BY closed_at DESC`
+    yüzünden en eski 1264 işlem (toplam 3264'ün %39'u) hiç görülmüyordu.
+    `list_closed_trades` artık `list_open_positions` ile AYNI `limit=
+    None` desenini destekliyor. Ölçülen etki: high kovası 8'den 15'e
+    çıktı ama MIN_GROUP_SIZE=20'nin hâlâ altında — kalan boşluk yapısal
+    (~9 ajanlı konseyde bu seviyeye ulaşmak neredeyse oybirliği
+    gerektiriyor), veri arttıkça kendiliğinden dolacak.
+
+42. **[ÖLÇÜLDÜ — Faz 363, 2026-08-26] Karşı-Olgusal Ajan-Etki Ölçümü —
+    onchain_agent GERÇEKTEN yardımcı oluyor.** Kullanıcı sorusu:
+    onchain_agent 1427 oy vermiş, 145 kez son kararı çevirmiş ama
+    "caused_trade" hep 0 (~9 ajanlı konseyde tek ajanın kaldırılmasıyla
+    inancın SIFIRA düşmesi yapısal olarak nadir). `analytics/
+    counterfactual_trade_replay.py` + `services/counterfactual_agent_
+    impact_gatherer.py` — flip vakalarını risk kapılarından
+    (RiskEngine+RiskGateStage+DecisionFusion EV kapısı) geçirip
+    onaylananları GERÇEK tarihsel Binance verisiyle bar-bar simüle
+    ediyor (breakeven/trailing dahil). Kasıtlı basitleştirmeler
+    (kullanıcı onayıyla): pozisyon büyüklüğü Kelly/CPPI/drawdown yerine
+    gerçekleşen işlemin GERÇEK boyutu; risk-kapısı girdileri/kalibrasyon
+    o tarihsel an yerine ŞU ANKİ canlı durum (data_leakage_caveat ile
+    işaretli). Hiçbir celery task'ına bağlı değil, talep üzerine çalışır
+    (Faz 284'te kaldırılan sürekli-çalışan backtest sisteminden KASITLI
+    farklı). 15 yeni test.
+
+    **Gerçek sonuç (185 flip vakası, tam tarama, 168sn):** sadece 21'i
+    (%11.4) risk/EV kapılarını geçip gerçek bir işleme dönüşürdü — ham
+    "145 flip" istatistiği onchain'in pratikte ne sıklıkla belirleyici
+    olduğunu ciddi abartıyor. O 21 vakada: onchain OLMASAYDI win_rate
+    %52.4, toplam PNL +$0.62 (neredeyse sıfır). GERÇEKTE (onchain dahil)
+    aynı 21 kararın gerçek toplam PNL'i +$70.19. **Verdict: agent_helped**
+    — onchain_agent kaldırılsaydı sistem ölçülebilir şekilde daha kötü
+    olurdu. Örneklem küçük (n=21), veri sızıntısı çekincesi (yukarı bkz.)
+    ile birlikte yorumlanmalı ama yön net.
+
+43. **Bugünkü sabah incelemesinden kalan, hiç loglanmamış 3 açık madde
+    (2026-08-26) — henüz araştırılmadı.** Eski oturumda (kayıp/kurtarılamadı)
+    bulunmuş, BACKLOG.md'ye hiç işlenmemiş:
+    - SHORT scalp (%76.2, n=42) vs SHORT swing (%9.0, n=465) rejim bazlı
+      kırılım — backlog #23/#28 ile aynı yöntemle doğrulanmalı.
+    - Onchain (ve muhtemelen credit/volatility/relative_strength) ajanı
+      ölçüm modüllerinde ve Transactions "açıklama" panelinde eksik —
+      mimari bağlantı kontrolü gerekiyor (NOT: 22 Ağustos'ta BENZER ama
+      farklı bir sorun — `api/rest/agents.py`'deki açıklama sözlüğünde
+      Credit/Volatility eksikliği — bulunup düzeltilmişti, bu muhtemelen
+      ayrı/yeni bir şey).
+    - Technical dışındaki 5 domain'in (>100 örneklem olmasına rağmen)
+      hiç eğitilmiş kalibrasyon modeli olmaması — kök neden bulunmadı.
 
 ## Notlar
 

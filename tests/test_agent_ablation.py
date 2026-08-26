@@ -5,6 +5,7 @@ hiç cevap vermiyordu. Bu modül gerçek services/belief_engine.py::
 synthesize'ı (pure, deterministik) hedef ajan sıfırlanmış halde yeniden
 çalıştırıp GERÇEK bir leave-one-out rekonstrüksiyonu yapar."""
 from analytics.agent_ablation import (
+    compute_leave_one_out_counterfactual_direction,
     compute_leave_one_out_impact,
     reconstruct_opinions,
     summarize_ablation_by_domain,
@@ -70,6 +71,38 @@ def test_compute_leave_one_out_impact_detects_flipped_direction():
     ]
     result = compute_leave_one_out_impact(contributions, "technical", "LONG")
     assert result == "flipped_direction"
+
+
+def test_compute_leave_one_out_counterfactual_direction_returns_the_new_direction_on_flip():
+    """compute_leave_one_out_impact ile AYNI senaryo ("flipped_direction")
+    — ama bu sefer gerçek karşı-olgusal YÖNÜ (SHORT) bekliyoruz, sadece
+    kategori etiketini değil."""
+    contributions = [
+        _opinion_dict(AgentDomain.TECHNICAL, "LONG", 0.95),
+        _opinion_dict(AgentDomain.MACRO, "SHORT", 0.6),
+    ]
+    direction = compute_leave_one_out_counterfactual_direction(contributions, "technical", "LONG")
+    assert direction == "SHORT"
+
+
+def test_compute_leave_one_out_counterfactual_direction_none_when_not_pivotal():
+    contributions = [
+        _opinion_dict(AgentDomain.TECHNICAL, "LONG", 0.9),
+        _opinion_dict(AgentDomain.MACRO, "LONG", 0.9),
+    ]
+    direction = compute_leave_one_out_counterfactual_direction(contributions, "technical", "LONG")
+    assert direction is None
+
+
+def test_compute_leave_one_out_counterfactual_direction_none_when_caused_trade():
+    """WAIT'e düşen bir karşı-olgusalda replay edilecek yönlü bir işlem
+    yok -- None dönmeli, "WAIT" icat edilmemeli."""
+    contributions = [
+        _opinion_dict(AgentDomain.TECHNICAL, "LONG", 0.9),
+        _opinion_dict(AgentDomain.TIME, "WAIT", 0.5),
+    ]
+    direction = compute_leave_one_out_counterfactual_direction(contributions, "technical", "LONG")
+    assert direction is None
 
 
 def test_summarize_ablation_by_domain_aggregates_correctly():
