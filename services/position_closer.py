@@ -313,6 +313,7 @@ class PositionCloser:
         decision_id: str,
         fraction: float,
         timeframe: str = "1m",
+        exit_reason: str = "manual_full",
     ) -> dict:
         """Faz 268 — kullanıcı isteği: "pozisyonun yarısını/çeyreğini
         kademeli kapatabilen mekanizma." close_due_positions()'un aksine bu
@@ -321,7 +322,22 @@ class PositionCloser:
         pratikte tam kapanışla aynı (decision_repo.close_position), ama
         önceki kısmi kapanışlardan birikmiş realized_pnl varsa ona
         ekleniyor — closed_trades_summary()'nin toplam pnl'i hep doğru
-        kalsın diye."""
+        kalsın diye.
+
+        Faz 363 — kritik bulgu, kullanıcı yakaladı: exit_reason ÖNCEDEN
+        HARDCODED "manual_full" idi — ama bu fonksiyon SONRADAN (Faz 352/
+        362-devam) services/regime_reversal_guardian.py ve services/
+        belief_reversal_exit.py tarafından da (OTOMATİK, celery görevi,
+        kullanıcının HİÇ müdahalesi olmadan) çağrılmaya başlanmıştı, "zaten
+        üretimde kanıtlanmış primitif" gerekçesiyle. Bu üç çağıran da AYNI
+        "manual_full" etiketini üretiyordu — gerçek kullanıcı eylemlerini
+        (api/rest/positions.py'nin iki endpoint'i) sistemin kendi otomatik
+        kararlarından AYIRT ETMEK imkansız hale gelmişti (canlıda 1505
+        "manual_full" kaydı vardı, kullanıcının hatırladığı gerçek elle-
+        kapatma sayısından — ~300 — kat kat fazla). exit_reason artık
+        çağıran tarafından belirleniyor, varsayılan "manual_full" GERİYE
+        DÖNÜK UYUMLU (api/rest/positions.py'nin iki gerçek kullanıcı
+        endpoint'i hiç değişmedi)."""
         if not (0 < fraction <= 1):
             raise ValueError("fraction must be in (0, 1]")
 
@@ -393,21 +409,22 @@ class PositionCloser:
                     "entry_price": entry_price,
                     "exit_price": exit_price,
                     "quantity": quantity,
-                    "exit_reason": "manual_full",
+                    "exit_reason": exit_reason,
                 },
                 market_regime=self._extract_market_regime(pos),
             )
             self._record_agent_learning(pos, pnl)
-            self._record_episodic_memory(pos, realized_pnl, "manual_full")
+            self._record_episodic_memory(pos, realized_pnl, exit_reason)
             return {"fully_closed": True, "exit_price": exit_price, "pnl": pnl, "realized_pnl": realized_pnl}
 
+        partial_exit_reason = "manual_partial" if exit_reason == "manual_full" else exit_reason
         result = decision_repo.close_position_partial(
             decision_id=str(pos["id"]),
             close_qty=close_qty,
             exit_price=exit_price,
             pnl=pnl,
             fee=fee,
-            exit_reason="manual_partial",
+            exit_reason=partial_exit_reason,
             closed_at=now,
         )
         self._record_agent_learning(pos, pnl)

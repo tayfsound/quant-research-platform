@@ -89,7 +89,10 @@ def sweep_reversal_exits() -> dict:
     for pos in triggered:
         with SessionFactory.get_session() as session:
             try:
-                result = closer.close_partial(DecisionPersistor(session), str(pos["id"]), 1.0)
+                result = closer.close_partial(
+                    DecisionPersistor(session), str(pos["id"]), 1.0,
+                    exit_reason="belief_reversal_exit",
+                )
             except ValueError:
                 continue
         closed.append({

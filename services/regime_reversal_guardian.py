@@ -130,7 +130,10 @@ def sweep_close_profitable_positions(direction: str) -> dict:
             continue
         with SessionFactory.get_session() as session:
             try:
-                result = closer.close_partial(DecisionPersistor(session), str(pos["id"]), 1.0)
+                result = closer.close_partial(
+                    DecisionPersistor(session), str(pos["id"]), 1.0,
+                    exit_reason="regime_reversal_guardian",
+                )
             except ValueError:
                 continue
         closed.append({"symbol": pos["symbol"], "pnl": result["pnl"]})
