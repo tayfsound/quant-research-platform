@@ -172,6 +172,74 @@ class DecisionRecorder:
                 ):
                     opens_position = False
 
+        # Kullanıcı isteği (2026-08-27): "sistemin işlem aldığı rejimleri
+        # de aç kapa yapabilirsek süper olur." AI konseyi-özel (pyramid_
+        # regime_gate/strategy_gate ile AYNI experiment_bucket kısıtı) —
+        # pump_fade kendi rejim kavramını kullanmıyor, bu kapı onu
+        # etkilemiyor.
+        if opens_position and entry_price and experiment_bucket is None:
+            import json as _json
+
+            from analytics.regime_trading_gate import is_regime_trading_blocked
+            from database.repositories.app_settings_repository import AppSettingsRepository
+
+            raw_map = AppSettingsRepository(self.session).get("regime_trading_enabled")
+            try:
+                regime_enabled_map = _json.loads(raw_map) if raw_map else {}
+            except (ValueError, TypeError):
+                regime_enabled_map = {}
+            features = ctx.market.features or {}
+            trend = features.get("trend", "unknown")
+            market_regime = (
+                f"{trend}_{features.get('volatility_regime', 'normal')}" if trend != "unknown" else None
+            )
+            if is_regime_trading_blocked(market_regime, regime_enabled_map):
+                opens_position = False
+
+        # Backlog #17 — kullanıcı isteği: "tepeden/dipten kovalıyorsa"
+        # (kritik bir seviyeden çok uzaktaysa) giriş engellensin. Gerçek
+        # veriyle (450+ karar) kalibre edildi (bkz. analytics/pivot_
+        # distance_gate.py) — SADECE large-cap'te gerçek/monotonik bir
+        # ilişki bulundu (small-cap'te desen TERS çıktı, orada hiç
+        # uygulanmıyor). ctx.market.features["nearest_pivot_distance_pct"]
+        # orchestrator.py'de zaten fetch edilmiş daily_data'dan (ekstra
+        # ağ isteği yok) hesaplanıyor.
+        if opens_position and entry_price and experiment_bucket is None:
+            from analytics.pivot_distance_gate import DEFAULT_THRESHOLD_PCT, is_pivot_distance_entry_blocked
+            from database.repositories.app_settings_repository import AppSettingsRepository
+            from services.agent_memory import crypto_cap_tier
+
+            settings_repo = AppSettingsRepository(self.session)
+            if settings_repo.get("pivot_distance_gate_enabled") == "true":
+                threshold_raw = settings_repo.get("pivot_distance_gate_threshold_pct")
+                threshold_pct = float(threshold_raw) if threshold_raw else DEFAULT_THRESHOLD_PCT
+                is_large_cap = crypto_cap_tier(ctx.market.symbol) == "large_cap"
+                distance_pct = (ctx.market.features or {}).get("nearest_pivot_distance_pct")
+                if is_pivot_distance_entry_blocked(is_large_cap, distance_pct, threshold_pct=threshold_pct):
+                    opens_position = False
+
+        # Kullanıcı isteği (2026-08-27): "Emtia, Kripto, Hisse Senedi'ni
+        # aç kapa yapabileceğimiz modüller." AI konseyi/pump_fade AYRIMI
+        # YOK (experiment_bucket kontrolü yok) — "kripto'yu kapat" pump_
+        # fade'i de kapsamalı, o zaten sadece kripto işlem görüyor. Kontrol
+        # UI'ı Dashboard'daki asset-class kartında (Settings'te DEĞİL —
+        # bkz. proje hafızası "settings placement: contextual").
+        if opens_position:
+            import json as _json
+
+            from analytics.asset_class_trading_gate import is_asset_class_trading_blocked
+            from database.repositories.app_settings_repository import AppSettingsRepository
+            from services.agent_memory import asset_class_trading_category
+
+            raw_map = AppSettingsRepository(self.session).get("asset_class_trading_enabled")
+            try:
+                enabled_map = _json.loads(raw_map) if raw_map else {}
+            except (ValueError, TypeError):
+                enabled_map = {}
+            category = asset_class_trading_category(ctx.market.symbol)
+            if is_asset_class_trading_blocked(category, enabled_map):
+                opens_position = False
+
         # Faz 192: RiskTargetStage'in gerçek ATR'den kurduğu risk/ödül
         # magnitüdlerini (ctx.decision.stop_loss_distance/take_profit_
         # distance), pozisyon gerçekten açıldığı andaki entry_price'a göre
@@ -190,6 +258,40 @@ class DecisionRecorder:
                 else:
                     stop_loss_price = entry_price + risk_mag
                     take_profit_price = entry_price - reward_mag
+
+        # Faz 366 — kullanıcı isteği: "ürettiği strateji insan onayına
+        # sunulur böyle bir yapı ayarlamıştık" — analytics/strategy_
+        # hypothesis_scanner.py'nin (Faz 346) bulup services/strategy_
+        # gate_proposer.py'nin insan onayına sunduğu (strateji, rejim)
+        # adaylarından status="blocked" olanlar burada gerçekten
+        # engelliyor. Faz 366-devam — kullanıcı bulgusu: "onaylı" kelimesi
+        # yanlış okunuyordu ("onaylı strateji" = kazandıran strateji gibi
+        # algılanabiliyordu) — onaylanan şey stratejinin iyiliği değil,
+        # o rejimde ENGELLENMESİ, o yüzden durum "blocked"/"dismissed"
+        # (bkz. StrategyGateApprovalRepository). trade_type (scalp/swing)
+        # stop_loss_price'a bağlı olduğu için bu kapı stop_loss_price
+        # hesaplandıktan SONRA çalışıyor — pyramid_regime_gate'in (entry_
+        # price hesaplanır hesaplanmaz çalışan) AKSİNE, burada olmak
+        # zorunda. İlk engellenen aday (2026-08-26, bu oturumda insan
+        # kararıyla eklendi): ai_council_LONG_swing, bullish_high (win
+        # %64.6 vs geri kalan %90.7, p=0.0, OOS'ta tekrarlandı).
+        if opens_position and entry_price and experiment_bucket is None:
+            from analytics.strategy_regime_gate import is_strategy_regime_gated
+            from database.repositories.app_settings_repository import AppSettingsRepository
+            from database.repositories.strategy_gate_approval_repository import StrategyGateApprovalRepository
+            from services.strategy_regime_compatibility_gatherer import _strategy_label
+
+            settings_repo = AppSettingsRepository(self.session)
+            if settings_repo.get("strategy_gate_enabled") == "true":
+                features = ctx.market.features or {}
+                trend = features.get("trend", "unknown")
+                market_regime = (
+                    f"{trend}_{features.get('volatility_regime', 'normal')}" if trend != "unknown" else None
+                )
+                strategy_label = _strategy_label(experiment_bucket, direction, entry_price, stop_loss_price)
+                blocked_pairs = StrategyGateApprovalRepository(self.session).list_blocked_pairs()
+                if is_strategy_regime_gated(strategy_label, market_regime, blocked_pairs):
+                    opens_position = False
 
         # Faz 255: kullanıcı isteği — token bazlı kaldıraç. Aynı capital_
         # per_trade "teminatı" leverage kadar daha büyük bir notional

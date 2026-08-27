@@ -99,18 +99,29 @@ async def _fetch_historical_bars(symbol: str, since: datetime, max_hold_days: in
     ]
 
 
-def replay_flipped_decision(decision_row: dict, excluded_domain: str, breakeven_settings: BreakevenSettings) -> dict | None:
+def replay_flipped_decision(
+    decision_row: dict, excluded_domain: str, breakeven_settings: BreakevenSettings,
+    resynth: tuple | None = None,
+) -> dict | None:
     """Tek bir gerçek kapanmış karar için: excluded_domain'in oyu
     olmasaydı açılacak KARŞI-OLGUSAL işlemi risk kapılarından geçirip
     (onaylanırsa) GERÇEK tarihsel fiyat verisiyle bar-bar simüle eder.
     Flip yoksa (agent_ablation.py'nin "flipped_direction" DIŞI kategorileri)
-    None döner — zorla bir sonuç üretilmez."""
+    None döner — zorla bir sonuç üretilmez.
+
+    Faz 366-devam — kullanıcı isteği (backlog #51: "onchain'in BTC-özel
+    sinyalleri diğer sembollere açılsa ne olurdu"): bu senaryo "bir
+    domain'i çıkarma" değil "bir domain'in oyunu DEĞİŞTİRME" — resynth
+    verilirse (belief, adjusted_opinions) doğrudan kullanılır, DAHİLİ
+    exclude-tabanlı resynthesis atlanır. ~150 satırlık risk/execution
+    replay mantığı KOPYALANMADI — tek kaynak burada kalıyor."""
     contributions = decision_row.get("agent_contributions")
     actual_direction = (decision_row.get("direction") or "").upper()
     if not contributions or actual_direction not in ("LONG", "SHORT"):
         return None
 
-    resynth = resynthesize_belief_and_opinions_with_domain_excluded(contributions, excluded_domain)
+    if resynth is None:
+        resynth = resynthesize_belief_and_opinions_with_domain_excluded(contributions, excluded_domain)
     if resynth is None:
         return None
     belief, adjusted_opinions = resynth

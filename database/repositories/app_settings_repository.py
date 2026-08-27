@@ -413,6 +413,17 @@ DEFAULTS: dict[str, str] = {
     # tavanını genişletemez, sadece daraltabilir" ilkesiyle aynı desen,
     # burada "kendi kendini durdurabilir" olarak uygulanıyor.
     "pump_fade_max_loss_circuit_breaker_usd": "10000",
+    # Faz 364 — kill_switch_legacy_cutoff_at ile AYNI desen. Gerçek olay
+    # (2026-08-26): Faz 332 krizinin 20 Ağustos'ta (düzeltmeden ÖNCE, o
+    # zamanki tavansız formülle) açılmış ~82 legacy pozisyonu günler
+    # sonra teker teker kapanmaya devam edip toplam gerçekleşmiş zararı
+    # ($269K+) kalıcı olarak eşiğin üstünde bıraktı — düzeltmeden SONRA
+    # açılmış TEK bir yeni pozisyon bile yokken. Boş = devre dışı (mevcut
+    # davranış). ISO datetime string set edilirse, SADECE bu tarihten
+    # ÖNCE açılmış pozisyonlar devre kesicinin toplamına girmez —
+    # dashboard/istatistikler ETKİLENMEZ, o pozisyonlar hâlâ gerçek ve
+    # hâlâ sayılıyor.
+    "pump_fade_circuit_breaker_legacy_cutoff_at": "",
     # Faz 330 — kritik bulgu, kullanıcı isteği: "Pump Fade için kasanın ne
     # kadarını kullanabileceğini limitleyecek bir şey olsun." Artık her
     # yeni pump_fade işlemi açılmadan ÖNCE, o an açık TÜM pump_fade
@@ -512,6 +523,22 @@ DEFAULTS: dict[str, str] = {
     # (marjin kârı = bu % × gerçek leverage) değişir, o da salt bilgi
     # amaçlı raporlanır.
     "pump_fade_take_profit_pct": "0.25",
+    # Faz 364 — pump_fade Kademeli Giriş (kullanıcı fikri, 2026-08-26).
+    # Gerçek Binance verisiyle kalibre edildi (43 sembol, 250 gün, 15
+    # bağımsız +%50 pump olayı): entry'den sonra fiyat medyan +%36, p90
+    # +%82 DAHA yükseliyor — sabit stop'lu tek seferlik giriş bu ara
+    # dalgalanmada erken stop'a takılma riski taşıyor. Kademeli giriş:
+    # dip-bazlı %50'de hedefin sadece %25'i açılır (düşük kaldıraç, stop'a
+    # mesafe uzak); dip-bazlı %80'e ulaşırsa 3 katı büyüyüp %100'e
+    # tamamlanır (bu ikinci bacak, add-stop mesafesi çok yakın olduğu
+    # için yüksek kaldıraç kaldırabilir); ortak stop dip-bazlı %90'da —
+    # aynı örneklemde HİÇ ulaşılmayan (0/11) bir seviye. Varsayılan
+    # KAPALI — pump_fade_enabled ile AYNI anda açık olmalı, o kapalıyken
+    # bu ayar hiçbir şey yapmaz.
+    "pump_fade_staged_entry_enabled": "false",
+    "pump_fade_staged_entry_first_leg_pct": "0.25",
+    "pump_fade_staged_entry_add_trigger_gain_pct": "0.80",
+    "pump_fade_staged_entry_stop_gain_pct": "0.90",
     # Faz 268-sonrası — kullanıcı bulgusu: "15 hedge pozisyondan gelen
     # kayıp 400 dolardan fazla, scalp'te 1109 işlem sadece 16 dolar
     # kaybettirmiş — acayip bir dengesizlik." Kök neden: services/
@@ -529,37 +556,6 @@ DEFAULTS: dict[str, str] = {
     # pozisyonlar normal stop/hedefe göre kapanana kadar izlenmeye devam
     # eder (zorla kapatılmıyor), ama yeni bacak hiç açılmıyor.
     "pairs_trading_enabled": "false",
-    # Faz 344 — Cross-Asset Arbitrage Engine v1 (kullanıcı onayı, ikinci
-    # dalga ajan/motor planının parçası). Spot-perpetual basis arbitrajı
-    # (cash-and-carry): perpetual spot'a göre PRİMLİ işlem görürken VE
-    # funding pozitifken SHORT perpetual + LONG spot açılır (piyasa-nötr,
-    # kâr kaynağı funding tahsilatı + basis yakınsaması). pump_fade_
-    # strategy.py/pairs_trader.py ile AYNI desen — council'den tamamen
-    # izole, kendi deneysel etiketi (basis_arb_v1) ve ayrı risk/sermaye
-    # muhasebesiyle. Varsayılan kapalı.
-    "basis_arbitrage_enabled": "false",
-    # Gerçek Binance premiumIndex verisiyle ölçüldü (875 perpetual
-    # sembol): |basis| medyanı %0.058, p90 %0.267 — %0.2 eşiği gerçek
-    # bir mispricing'i gürültüden ayırt eden, p85-90 civarında kalibre
-    # edilmiş bir eşik.
-    "basis_arbitrage_min_basis_pct": "0.002",
-    # BTCUSDT'nin gözlenen normal funding'i %0.01 (8 saatlik) — bu eşik
-    # "normal"in üstünde, gerçekten yükselmiş bir funding gerektiriyor.
-    "basis_arbitrage_min_funding_rate": "0.0003",
-    "basis_arbitrage_leg_capital_usd": "100",
-    # pump_fade_max_open_positions ile AYNI çeşitlendirme mantığı — yeni,
-    # henüz kanıtlanmamış bir strateji için bilerek küçük tutuldu.
-    "basis_arbitrage_max_open_pairs": "5",
-    # Faz 344 — kritik tasarım kararı: bu strateji İKİ bacağı da AYNI
-    # varlıkta tutuyor (spot LONG + perpetual SHORT, pairs_trader'ın
-    # FARKLI varlıklarının aksine) — bacaklardan biri bağımsız bir ATR
-    # stop/hedefe göre kapanırsa, kalan bacak "piyasa-nötr" değil ÇIPLAK
-    # yönlü bir pozisyon haline gelir (asıl amacın tam tersi). Bu yüzden
-    # bacaklar AYRI AYRI değil, ikisi BİRLİKTE (bkz. close_due_basis_
-    # arb_pairs) sadece maksimum tutma süresi dolunca kapatılıyor —
-    # gerçek bir basis-yakınsama-farkında erken çıkış ayrı, daha büyük
-    # bir iş (pairs_trader'ın kendi, zaten kabul edilmiş sınırlaması).
-    "basis_arbitrage_max_hold_hours": "72",
     # Faz 282 — kritik bulgu (2026-08-19, kullanıcı: "her işlem kapandığında
     # değişiklik yapıyor sanırım... büyük örneklemlere göre hareket etmesi
     # lazım, her işlem kapandığında bunu yapamaz matematiksel olarak zırva").
@@ -579,8 +575,8 @@ DEFAULTS: dict[str, str] = {
     # gördüğüne yönelmeli." Varsayılan kapalı — açılana kadar BUGÜNKÜ
     # davranış (her risk-onaylı karar hemen açılır) birebir korunur.
     # Sadece council'ın normal (deneysel bucket'sız) yolunu etkiler —
-    # pump_fade/basis_arb/pairs_trading kendi izole akışlarında, bu
-    # ayardan habersiz devam eder (bkz. services/decision_recorder.py).
+    # pump_fade/pairs_trading kendi izole akışlarında, bu ayardan
+    # habersiz devam eder (bkz. services/decision_recorder.py).
     "max_confidence_mode_enabled": "false",
     "max_confidence_mode_pool_window_minutes": "15",
     "max_confidence_mode_top_k": "3",
@@ -598,6 +594,25 @@ DEFAULTS: dict[str, str] = {
     # streak'lerde tetiklenmiyor.
     "reversal_guardian_enabled": "true",
     "reversal_guardian_consecutive_stop_threshold": "5",
+    # Backlog #13 (2026-08-26) — Portfolio Stress Guardian. Kullanıcı
+    # örneği: "70 pozisyon +20k kârda, 30'u riskli, kötüye giderse -50k
+    # olabilir — şimdi hepsini kapatıp +2k'da kalmak -50k'dan iyidir."
+    # analytics/stress_testing.py (gerçek tarihsel en-kötü-N-günlük
+    # senaryo) MEVCUT TÜM açık pozisyonların notional'ına uygulanır — şu
+    # an net kârdaysak AMA stres senaryosu bunu net zarara çevirecekse
+    # TÜM pozisyonlar (yön/strateji fark etmeksizin) defansif kapatılır.
+    # Regime Reversal Guardian ile AYNI gerekçeyle varsayılan AÇIK —
+    # koruyucu bir mekanizma, alfa üreten değil.
+    "portfolio_stress_guardian_enabled": "true",
+    # Gerçek BTCUSDT verisiyle (2.75 yıl, 1000 gün) kalibre edildi
+    # (2026-08-26): 3 gün → 5 gün arası en kötü düşüş neredeyse hiç
+    # artmıyor (-%20.1 → -%20.1, aynı) — en sert/panik hareketler
+    # gerçekten ilk 2-3 günde tamamlanıyor, 7+ gün ani panikle yavaş
+    # sonraki-günler sızıntısını birbirine karıştırıyor. Kullanıcı
+    # sezgisi ("trend hızlı dönüyor") gerçek veriyle doğrulandı.
+    "portfolio_stress_guardian_window_days": "3",
+    "portfolio_stress_guardian_reference_symbol": "BTCUSDT",
+    "portfolio_stress_guardian_history_days": "365",
 
     # Faz 361 — kullanıcı bulgusu: aynı sembol/yönde açık pozisyon varken
     # daha kötü fiyattan üste eklemek (piramitleme + tepeden giriş) tüm-
@@ -613,6 +628,34 @@ DEFAULTS: dict[str, str] = {
     # modül değil.
     "pyramid_regime_gate_enabled": "true",
     "pyramid_worse_price_allowed_regime": "bullish_low",
+
+    # Faz 366 — kullanıcı isteği: strategy_hypothesis_scanner.py'nin
+    # bulduğu (strateji, rejim) adayları insan onayından geçince (bkz.
+    # strategy_gate_approvals tablosu, status='blocked') burası gerçek
+    # girişi engeller. Varsayılan AÇIK — pyramid_regime_gate_enabled ile
+    # AYNI ilke, koruyucu mekanizma.
+    "strategy_gate_enabled": "true",
+
+    # Backlog #17 — kullanıcı isteği: "tepeden/dipten kovalıyorsa" giriş
+    # engellensin. Gerçek veriyle (450+ karar) kalibre edildi, SADECE
+    # large-cap'te — bkz. analytics/pivot_distance_gate.py. Varsayılan
+    # AÇIK — pyramid_regime_gate_enabled ile AYNI ilke.
+    "pivot_distance_gate_enabled": "true",
+    "pivot_distance_gate_threshold_pct": "0.006",
+
+    # Kullanıcı isteği (2026-08-27): "Emtia, Kripto, Hisse Senedi'ni aç
+    # kapa yapabileceğimiz modüller" + "sistemin işlem aldığı rejimleri
+    # de aç kapa" — symbol_leverage ile AYNI JSON-map deseni. Kontrol
+    # UI'ı Settings'te DEĞİL, ilgili sayfada (Dashboard'daki asset-class
+    # kartı / rejim kartı) — bkz. proje hafızası "settings placement:
+    # contextual". Kayıtlı olmayan bir anahtar varsayılan AÇIK sayılır
+    # (fail-open — bu bir kullanıcı tercihi kapısı, güvenlik kapısı
+    # değil, bkz. analytics/asset_class_trading_gate.py).
+    "asset_class_trading_enabled": '{"crypto": true, "commodity": true, "equity": true}',
+    "regime_trading_enabled": (
+        '{"bullish_high": true, "bullish_normal": true, "bullish_low": true, '
+        '"bearish_high": true, "bearish_normal": true, "bearish_low": true}'
+    ),
 
     # Faz 362 — kullanıcı bulgusu: "council'in ara sıra bir cycle'da
     # tersine dönmesi çoğunlukla gürültü — bu gürültüye güvenerek yeni

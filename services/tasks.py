@@ -27,7 +27,7 @@ class _CycleLock:
     close_due_shadow_positions_task, close_due_benched_shadow_positions_
     task, regime_reversal_guardian_task, belief_reversal_exit_task,
     resolve_position_pool_task, run_pairs_trading_task,
-    reconcile_execution_state_task)."""
+    reconcile_execution_state_task, portfolio_stress_guardian_task)."""
 
     def __init__(self, key: str, ttl_seconds: int):
         self.key = key
@@ -230,38 +230,6 @@ def optimize_thresholds_task() -> dict:
     return suggestion
 
 
-@celery_app.task(name="refresh_llm_news_sentiment_task")
-def refresh_llm_news_sentiment_task() -> dict:
-    """Faz 268-sonrası — kullanıcı isteği: Reddit sentiment (Devvit
-    politikası nedeniyle) kapalıydı, yerine gerçek RSS başlıklarını
-    NVIDIA LLM'e özetleten/puanlayan yeni kaynak (bkz. market_data/
-    sentiment/llm_news_sentiment_provider.py). refresh() gerçek bir LLM
-    çağrısı yaptığı için (~90s'ye kadar) SADECE bu periyodik görevden
-    çağrılmalı, canlı karar döngüsünden değil — orası sadece get_cached()
-    okur."""
-    from market_data.sentiment.llm_news_sentiment_provider import refresh
-
-    score, summary = refresh()
-    if score is None:
-        return {"skipped": "no_score"}
-    return {"sentiment_score": score, "summary": summary}
-
-
-@celery_app.task(name="llm_system_audit_task")
-def llm_system_audit_task() -> dict:
-    """Faz 271 — kullanıcı isteği: "LLM'i her pozisyonda devreye sokmak
-    lazım... onay panelimi anlamlı kılmak için." Gerçek zamanlı bir
-    işlem kapısı DEĞİL (kullanıcının kendi tercihi: mekanik sistem daha
-    iyi kalibre edilirse daha iyi sonuç verir, LLM denetleyici rolünde
-    kalsın) — periyodik olarak son dönem karar geçmişini toplu gözden
-    geçirip, bulduğu somut sorunları code_change_proposals kuyruğuna
-    (insan onaylı) düşürür. Gerçek bir LLM çağrısı yaptığı için (~1-2dk)
-    SADECE bu periyodik görevden çağrılmalı, canlı karar döngüsünden değil."""
-    from services.llm_system_audit import run_system_audit
-
-    return run_system_audit()
-
-
 @celery_app.task(name="retrain_agent_confidence_models_task")
 def retrain_agent_confidence_models_task() -> dict:
     """Faz 264: kullanıcı isteği — ajan içi özellik ağırlıkları (RSI/trend/
@@ -337,6 +305,20 @@ def regime_reversal_guardian_task() -> dict:
         return run_guardian_sweep()
 
 
+@celery_app.task(name="portfolio_stress_guardian_task")
+def portfolio_stress_guardian_task() -> dict:
+    """Backlog #13 (2026-08-26) — Portfolio Stress Guardian.
+    portfolio_stress_guardian_enabled=false iken (varsayılan AÇIK) sıfır
+    maliyetli no-op. bkz. services/portfolio_stress_guardian.py::
+    run_portfolio_triage_sweep() docstring'i."""
+    from services.portfolio_stress_guardian import run_portfolio_triage_sweep
+
+    with _CycleLock("lock:portfolio_stress_guardian_task", ttl_seconds=300) as acquired:
+        if not acquired:
+            return {"skipped": "previous_run_still_in_progress"}
+        return run_portfolio_triage_sweep()
+
+
 @celery_app.task(name="belief_reversal_exit_task")
 def belief_reversal_exit_task() -> dict:
     """Faz 362-devam — Belief Reversal Exit. belief_reversal_exit_enabled=
@@ -402,6 +384,32 @@ def auto_reject_stale_weight_approvals_task(max_age_hours: float = 24) -> dict:
 
     with SessionFactory.get_session() as session:
         repo = WeightApprovalRepository(session)
+        rejected_count = repo.auto_reject_stale(max_age_seconds=max_age_hours * 3600)
+    return {"rejected_count": rejected_count, "max_age_hours": max_age_hours}
+
+
+@celery_app.task(name="propose_strategy_gate_candidates_task")
+def propose_strategy_gate_candidates_task() -> dict:
+    """Faz 366 — kullanıcı isteği: "ürettiği strateji insan onayına
+    sunulur böyle bir yapı ayarlamıştık." strategy_hypothesis_scanner.py
+    (Faz 346) pahalı bir tarama (FDR + OOS walk-forward) — propose_agent_
+    tuning_task ile AYNI gerekçeyle SEYREK (günlük) çalışıyor, her
+    pozisyon kapanışında DEĞİL."""
+    from services.strategy_gate_proposer import propose_strategy_gate_candidates
+
+    return propose_strategy_gate_candidates()
+
+
+@celery_app.task(name="auto_reject_stale_strategy_gate_approvals_task")
+def auto_reject_stale_strategy_gate_approvals_task(max_age_hours: float = 24) -> dict:
+    """auto_reject_stale_weight_approvals_task ile AYNI güvenlik ağı —
+    insan hiç karar vermeden süresi dolan strategy_gate_approvals
+    satırları otomatik reddedilir."""
+    from database.repositories.strategy_gate_approval_repository import StrategyGateApprovalRepository
+    from database.session_factory import SessionFactory
+
+    with SessionFactory.get_session() as session:
+        repo = StrategyGateApprovalRepository(session)
         rejected_count = repo.auto_reject_stale(max_age_seconds=max_age_hours * 3600)
     return {"rejected_count": rejected_count, "max_age_hours": max_age_hours}
 
@@ -710,39 +718,24 @@ def run_pump_fade_cycle_task() -> dict:
         return PumpFadeStrategy().run_cycle()
 
 
-@celery_app.task(name="run_basis_arbitrage_cycle_task")
-def run_basis_arbitrage_cycle_task() -> dict:
-    """Faz 344 — Cross-Asset Arbitrage Engine v1 (spot-perpetual basis
-    arbitrajı). run_pump_fade_cycle_task ile AYNI desen: council'den
-    tamamen izole, TÜM USDT perpetual'ları (300+) tarıyor — kendi
-    _CycleLock'u, run_trading_cycle_task'ın kuyruğuna asla girmiyor."""
-    from services.basis_arbitrage_strategy import BasisArbitrageStrategy
+@celery_app.task(name="apply_pump_fade_staged_adds_task")
+def apply_pump_fade_staged_adds_task() -> dict:
+    """Faz 364 — pump_fade Kademeli Giriş'in ekleme (add) taraması.
+    run_pump_fade_cycle_task ile AYNI izolasyon — kendi kilidi, TÜM
+    USDT perpetual'ları taramaz (sadece staged_entry_add_pending=True
+    olan AÇIK pozisyonları), bu yüzden çok daha sık çalışabilir.
+    pump_fade_staged_entry_enabled=false (varsayılan) iken PumpFadeStrategy.
+    try_apply_staged_adds() anında boş liste döner, sıfır maliyetli."""
+    from services.pump_fade_strategy import PumpFadeStrategy
 
     if _real_market_data_source_or_none() is None:
         return {"skipped": "non_binance_market_data_source"}
 
-    with _CycleLock("lock:run_basis_arbitrage_cycle_task", ttl_seconds=1500) as acquired:
-        if not acquired:
-            return {"skipped": "previous_cycle_still_running"}
-        return BasisArbitrageStrategy().run_cycle()
-
-
-@celery_app.task(name="close_due_basis_arbitrage_pairs_task")
-def close_due_basis_arbitrage_pairs_task() -> dict:
-    """Faz 344 — bkz. services/basis_arbitrage_strategy.py::close_due_
-    pairs'in üstündeki tasarım notu: bacaklar AYRI bir stop/hedef
-    taramasından GEÇMİYOR (kasıtlı), bu ayrı, hafif görev periyodik
-    olarak maksimum tutma süresi dolan çiftleri BİRLİKTE kapatıyor."""
-    from services.basis_arbitrage_strategy import BasisArbitrageStrategy
-
-    if _real_market_data_source_or_none() is None:
-        return {"skipped": "non_binance_market_data_source"}
-
-    with _CycleLock("lock:close_due_basis_arbitrage_pairs_task", ttl_seconds=600) as acquired:
+    with _CycleLock("lock:apply_pump_fade_staged_adds_task", ttl_seconds=300) as acquired:
         if not acquired:
             return {"skipped": "previous_run_still_in_progress"}
-        closed = BasisArbitrageStrategy().close_due_pairs()
-    return {"closed_pairs": closed}
+        added = PumpFadeStrategy().try_apply_staged_adds()
+    return {"added": added}
 
 
 @celery_app.task(name="run_pairs_trading_task")

@@ -370,7 +370,11 @@ class PumpFadeStrategy:
                 return {"skipped": "pump_fade_disabled"}
 
             max_loss_circuit_breaker_usd = float(settings_repo.get("pump_fade_max_loss_circuit_breaker_usd"))
-            realized_pnl = DecisionPersistor(session).total_pnl_for_experiment(EXPERIMENT_BUCKET)
+            legacy_cutoff_raw = settings_repo.get("pump_fade_circuit_breaker_legacy_cutoff_at")
+            legacy_cutoff_at = datetime.fromisoformat(legacy_cutoff_raw) if legacy_cutoff_raw else None
+            realized_pnl = DecisionPersistor(session).total_pnl_for_experiment(
+                EXPERIMENT_BUCKET, min_opened_at=legacy_cutoff_at
+            )
             if realized_pnl <= -max_loss_circuit_breaker_usd:
                 settings_repo.set("pump_fade_enabled", "false", updated_by="pump_fade_circuit_breaker")
                 from database.repositories.event_log_repository import EventLogRepository
@@ -400,6 +404,9 @@ class PumpFadeStrategy:
             momentum_confirmation_hours = int(settings_repo.get("pump_fade_momentum_confirmation_hours"))
             momentum_tolerance_pct = float(settings_repo.get("pump_fade_momentum_tolerance_pct"))
             reentry_min_gain_pct = float(settings_repo.get("pump_fade_reentry_min_gain_pct"))
+            staged_entry_enabled = settings_repo.get("pump_fade_staged_entry_enabled") == "true"
+            staged_first_leg_pct = float(settings_repo.get("pump_fade_staged_entry_first_leg_pct"))
+            staged_stop_gain_pct = float(settings_repo.get("pump_fade_staged_entry_stop_gain_pct"))
 
         symbols = fetch_usdt_perpetual_symbols()
         if not symbols:
@@ -434,11 +441,23 @@ class PumpFadeStrategy:
 
         opened = []
         for candidate in candidates:
-            result = self._try_open(
-                candidate, max_loss_per_trade_usd, target_leverage, stop_distance_pct, take_profit_pct,
-                starting_capital, lookback_hours, density_size_multiplier, regime_size_multiplier,
-                max_total_capital_pct, max_open_positions,
-            )
+            if staged_entry_enabled:
+                # Faz 364 — Kademeli Giriş: gerçek veriyle kalibre edildi
+                # (bkz. modülün en üstündeki not). Normal _try_open'ın
+                # YERİNE geçer — aynı candidate hem tek seferde hem
+                # kademeli açılmaz.
+                result = self._try_open_staged_first_leg(
+                    candidate, max_loss_per_trade_usd, target_leverage, take_profit_pct,
+                    staged_first_leg_pct, staged_stop_gain_pct,
+                    density_size_multiplier, regime_size_multiplier,
+                    max_total_capital_pct, max_open_positions, starting_capital,
+                )
+            else:
+                result = self._try_open(
+                    candidate, max_loss_per_trade_usd, target_leverage, stop_distance_pct, take_profit_pct,
+                    starting_capital, lookback_hours, density_size_multiplier, regime_size_multiplier,
+                    max_total_capital_pct, max_open_positions,
+                )
             if result is not None:
                 opened.append(result)
 
@@ -619,4 +638,284 @@ class PumpFadeStrategy:
             "leverage": leverage,
             "stop_loss_price": stop_loss_price,
             "take_profit_price": take_profit_price,
+        }
+
+    def _try_open_staged_first_leg(
+        self,
+        candidate: dict,
+        max_loss_per_trade_usd: float,
+        target_leverage: float,
+        take_profit_pct: float,
+        first_leg_pct: float,
+        stop_gain_pct: float,
+        density_size_multiplier: float,
+        regime_size_multiplier: float,
+        max_total_capital_pct: float,
+        max_open_positions: int,
+        starting_capital: float,
+    ) -> dict | None:
+        """Faz 364 — Kademeli Giriş'in ilk bacağı (hedef boyutun first_leg_
+        pct'i, ör. %25). Gerçek Binance verisiyle kalibre edildi (43 sembol,
+        250 gün): entry'den sonra fiyat medyan +%36, p90 +%82 DAHA
+        yükseliyor — sabit/dar bir stop bu ara dalgalanmada erken tetiklenme
+        riski taşıyordu. Stop, entry'ye göre DEĞİL dip fiyatına göre kurulur
+        (stop_gain_pct — örneklemde %90'a HİÇ ulaşılmadı, 0/11) — bu
+        bacağın entry'sinden o ortak stop'a olan mesafe, güvenli kaldıracı
+        (max_safe_leverage) belirler. Toplam risk bütçesi (max_loss_per_
+        trade_usd) first_leg_pct'e göre bölünür — ikinci bacak (bkz.
+        _try_open_staged_add_leg) kalanını alır, ikisi toplamda normal
+        (kademesiz) bir pump_fade işlemiyle AYNI $ risk tavanını taşır."""
+        symbol = candidate["symbol"]
+        entry_price = candidate["current_price"]
+        gain_pct = candidate["gain_pct"]
+        low = entry_price / (1 + gain_pct)
+        stop_price = low * (1 + stop_gain_pct)
+        if stop_price <= entry_price:
+            # dip-bazlı stop entry'nin altında/aynısı ise (gain_pct zaten
+            # stop_gain_pct'e ulaşmış/geçmiş gibi anormal bir durum)
+            # matematiksel olarak anlamsız — açma.
+            return None
+        stop_distance_pct = (stop_price - entry_price) / entry_price
+
+        with SessionFactory.get_session() as session:
+            persistor = DecisionPersistor(session)
+            if persistor.has_open_position_for_experiment(symbol, EXPERIMENT_BUCKET):
+                return None
+            if persistor.count_open_positions_for_experiment(EXPERIMENT_BUCKET) >= max_open_positions:
+                return None
+
+            leverage = target_leverage
+            safe_leverage = max_safe_leverage(stop_distance_pct)
+            if safe_leverage is not None:
+                leverage = max(1.0, min(target_leverage, safe_leverage))
+
+            risk_denominator = stop_distance_pct * leverage
+            if risk_denominator <= 0:
+                return None
+            leg_max_loss_usd = max_loss_per_trade_usd * first_leg_pct
+            margin = (leg_max_loss_usd / risk_denominator) * density_size_multiplier * regime_size_multiplier
+
+            already_committed = persistor.total_open_margin_for_experiment(EXPERIMENT_BUCKET)
+            if already_committed + margin > starting_capital * max_total_capital_pct:
+                return None
+
+            from database.repositories.risk_limit_repository import RiskLimitRepository
+            max_position_size = RiskLimitRepository(session).get_active("global", "max_position_size")
+            if max_position_size is not None:
+                if margin > max_position_size.value:
+                    return None
+                max_leverage_for_cap = max_position_size.value / margin
+                leverage = max(1.0, min(leverage, max_leverage_for_cap))
+
+            quantity = (margin * leverage) / entry_price
+            final_size = margin / entry_price
+            take_profit_price = entry_price * (1 - take_profit_pct)
+            liquidation_price = compute_liquidation_price(entry_price, "SHORT", leverage)
+
+            now = datetime.now(UTC)
+            event = DecisionEvent(
+                timestamp=now,
+                symbol=symbol,
+                proposed_direction="SHORT",
+                final_action="SHORT",
+                final_size=final_size,
+                confidence=0.0,
+                agent_opinions=[{
+                    "type": "pump_fade_staged_entry_first_leg",
+                    "data": {
+                        "gain_pct_at_detect": gain_pct,
+                        "low_price": low,
+                        "stop_gain_pct": stop_gain_pct,
+                        "first_leg_pct": first_leg_pct,
+                        "density_size_multiplier": density_size_multiplier,
+                        "regime_size_multiplier": regime_size_multiplier,
+                        "applied_leverage": leverage,
+                    },
+                }],
+                status="open",
+                entry_price=entry_price,
+                quantity=quantity,
+                opened_at=now,
+                stop_loss_price=stop_price,
+                take_profit_price=take_profit_price,
+                leverage=leverage,
+                liquidation_price=liquidation_price,
+                timeframe="1h",
+                experiment_bucket=EXPERIMENT_BUCKET,
+                staged_entry_add_pending=True,
+                staged_entry_low_price=low,
+            )
+            persistor.persist(event)
+
+        return {
+            "symbol": symbol,
+            "entry_price": entry_price,
+            "gain_pct": gain_pct,
+            "leverage": leverage,
+            "stop_loss_price": stop_price,
+            "take_profit_price": take_profit_price,
+            "staged": "first_leg",
+        }
+
+    def try_apply_staged_adds(self) -> list[dict]:
+        """Faz 364 — periyodik olarak çağrılır (bkz. services/tasks.py::
+        apply_pump_fade_staged_adds_task). staged_entry_add_pending=True
+        olan (ilk bacağı açık, henüz eklenmemiş) her pozisyon için GERÇEK
+        güncel fiyatla dip-bazlı kümülatif kazancı yeniden hesaplar; eşiği
+        (add_trigger_gain_pct) aşarsa ikinci, büyük bacağı açar."""
+        with SessionFactory.get_session() as session:
+            settings_repo = AppSettingsRepository(session)
+            if settings_repo.get("pump_fade_staged_entry_enabled") != "true":
+                return []
+            max_loss_per_trade_usd = float(settings_repo.get("pump_fade_max_loss_per_trade_usd"))
+            target_leverage = float(settings_repo.get("pump_fade_leverage"))
+            take_profit_pct = float(settings_repo.get("pump_fade_take_profit_pct"))
+            first_leg_pct = float(settings_repo.get("pump_fade_staged_entry_first_leg_pct"))
+            add_trigger_gain_pct = float(settings_repo.get("pump_fade_staged_entry_add_trigger_gain_pct"))
+            stop_gain_pct = float(settings_repo.get("pump_fade_staged_entry_stop_gain_pct"))
+            max_total_capital_pct = float(settings_repo.get("pump_fade_max_total_capital_pct"))
+            max_open_positions = int(settings_repo.get("pump_fade_max_open_positions"))
+            starting_capital = float(settings_repo.get("starting_capital"))
+
+            positions = DecisionPersistor(session).list_open_positions_for_experiment(EXPERIMENT_BUCKET)
+
+        pending = [p for p in positions if p.get("staged_entry_add_pending") and p.get("staged_entry_low_price")]
+        if not pending:
+            return []
+
+        with SessionFactory.get_session() as session:
+            density_size_multiplier = _compute_density_size_multiplier(session, len(pending))
+            regime_size_multiplier = _compute_regime_size_multiplier(session, self.data_provider)
+
+        added = []
+        for pos in pending:
+            symbol = pos["symbol"]
+            low = pos["staged_entry_low_price"]
+            try:
+                bars = self.data_provider.get_ohlcv(symbol, "1h", limit=1)
+            except Exception:
+                continue
+            if not bars:
+                continue
+            current_price = bars[-1].close
+            if not current_price or current_price <= 0 or not low or low <= 0:
+                continue
+            gain_pct_now = (current_price - low) / low
+            if gain_pct_now < add_trigger_gain_pct:
+                continue
+
+            result = self._try_open_staged_add_leg(
+                pos, current_price, low, max_loss_per_trade_usd, target_leverage, take_profit_pct,
+                first_leg_pct, stop_gain_pct, density_size_multiplier, regime_size_multiplier,
+                max_total_capital_pct, max_open_positions, starting_capital,
+            )
+            if result is not None:
+                added.append(result)
+        return added
+
+    def _try_open_staged_add_leg(
+        self,
+        first_leg: dict,
+        current_price: float,
+        low: float,
+        max_loss_per_trade_usd: float,
+        target_leverage: float,
+        take_profit_pct: float,
+        first_leg_pct: float,
+        stop_gain_pct: float,
+        density_size_multiplier: float,
+        regime_size_multiplier: float,
+        max_total_capital_pct: float,
+        max_open_positions: int,
+        starting_capital: float,
+    ) -> dict | None:
+        """Faz 364 — Kademeli Giriş'in ikinci (ekleme) bacağı. Ortak stop
+        (dip-bazlı) ile bu bacağın TAZE entry'si arasındaki mesafe çok yakın
+        olduğu için (gerçek veri: dip'ten %80→%90 sadece ~%5.6 fiyat farkı)
+        güvenli kaldıraç yüksek çıkar — kullanıcının orijinal "yüksek
+        kaldıraç" fikri burada, doğru mesafeyle, tutarlı."""
+        symbol = first_leg["symbol"]
+        stop_price = low * (1 + stop_gain_pct)
+        if stop_price <= current_price:
+            # Fiyat pencereler arası zıplayıp ortak stop seviyesini
+            # add-tetiğiyle AYNI anda/öncesinde geçmiş — eklemek yerine
+            # ilk bacağın kendi stop'una (PositionCloser) bırakılıyor.
+            with SessionFactory.get_session() as session:
+                DecisionPersistor(session).mark_staged_entry_added(str(first_leg["id"]))
+            return None
+        stop_distance_pct = (stop_price - current_price) / current_price
+
+        with SessionFactory.get_session() as session:
+            persistor = DecisionPersistor(session)
+            if persistor.count_open_positions_for_experiment(EXPERIMENT_BUCKET) >= max_open_positions:
+                return None
+
+            leverage = target_leverage
+            safe_leverage = max_safe_leverage(stop_distance_pct)
+            if safe_leverage is not None:
+                leverage = max(1.0, min(target_leverage, safe_leverage))
+
+            risk_denominator = stop_distance_pct * leverage
+            if risk_denominator <= 0:
+                return None
+            leg_max_loss_usd = max_loss_per_trade_usd * (1 - first_leg_pct)
+            margin = (leg_max_loss_usd / risk_denominator) * density_size_multiplier * regime_size_multiplier
+
+            already_committed = persistor.total_open_margin_for_experiment(EXPERIMENT_BUCKET)
+            if already_committed + margin > starting_capital * max_total_capital_pct:
+                return None
+
+            from database.repositories.risk_limit_repository import RiskLimitRepository
+            max_position_size = RiskLimitRepository(session).get_active("global", "max_position_size")
+            if max_position_size is not None:
+                if margin > max_position_size.value:
+                    return None
+                max_leverage_for_cap = max_position_size.value / margin
+                leverage = max(1.0, min(leverage, max_leverage_for_cap))
+
+            quantity = (margin * leverage) / current_price
+            final_size = margin / current_price
+            take_profit_price = current_price * (1 - take_profit_pct)
+            liquidation_price = compute_liquidation_price(current_price, "SHORT", leverage)
+
+            now = datetime.now(UTC)
+            event = DecisionEvent(
+                timestamp=now,
+                symbol=symbol,
+                proposed_direction="SHORT",
+                final_action="SHORT",
+                final_size=final_size,
+                confidence=0.0,
+                agent_opinions=[{
+                    "type": "pump_fade_staged_entry_add_leg",
+                    "data": {
+                        "low_price": low,
+                        "stop_gain_pct": stop_gain_pct,
+                        "add_entry_price": current_price,
+                        "density_size_multiplier": density_size_multiplier,
+                        "regime_size_multiplier": regime_size_multiplier,
+                        "applied_leverage": leverage,
+                    },
+                }],
+                status="open",
+                entry_price=current_price,
+                quantity=quantity,
+                opened_at=now,
+                stop_loss_price=stop_price,
+                take_profit_price=take_profit_price,
+                leverage=leverage,
+                liquidation_price=liquidation_price,
+                timeframe="1h",
+                experiment_bucket=EXPERIMENT_BUCKET,
+            )
+            persistor.persist(event)
+            persistor.mark_staged_entry_added(str(first_leg["id"]))
+
+        return {
+            "symbol": symbol,
+            "entry_price": current_price,
+            "leverage": leverage,
+            "stop_loss_price": stop_price,
+            "take_profit_price": take_profit_price,
+            "staged": "add_leg",
         }

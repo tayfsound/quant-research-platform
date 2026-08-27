@@ -32,8 +32,12 @@ ayrımı bilgi katmıyor) — o yüzden SADECE council etiketine ekleniyor.
 Ayrıca basis_arb_v1 artık kendi ayrı temel etiketini alıyor (önceden
 yanlışlıkla "ai_council"a düşüyordu — gerçek agent oyu olmayan mekanik
 bir strateji, council'le karıştırılmamalı)."""
-from services.basis_arbitrage_strategy import EXPERIMENT_BUCKET as BASIS_ARB_EXPERIMENT_BUCKET
 from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMENT_BUCKET
+
+# Faz 364 — basis_arb_v1 stratejisi tamamen kaldırıldı, ama geçmişte
+# kapanmış kararları hâlâ DB'de duruyor ve kendi etiketiyle kalmaya
+# devam etmeli — modülü tanımlayan dosya silindiği için sabit burada.
+BASIS_ARB_EXPERIMENT_BUCKET = "basis_arb_v1"
 
 MAX_DECISIONS = 5000
 

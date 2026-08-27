@@ -48,7 +48,13 @@ class OnChainAgent:
         if context.eth_gas_price_gwei is not None and context.eth_gas_price_gwei > 50:
             caveats.append(f"Yüksek ETH ağ tıkanıklığı (gas: {context.eth_gas_price_gwei:.1f} gwei)")
         if context.solana_tps is not None:
-            evidence.append(f"Solana ağ aktivitesi: {context.solana_tps:.0f} tx/s")
+            # Faz 364-devam — kullanıcı bulgusu: piyasa sakinken (MVRV/NUPL/
+            # SOPR nötr, hash_rate stable) bu satır TEK görünen evidence
+            # olabiliyor ve yön puanına hiç katkısı olmadığı halde kararı
+            # o belirliyormuş gibi yanıltıcı görünüyordu (bkz. yukarıdaki
+            # skorlama — solana_tps için hiçbir contributions[] girişi yok).
+            # Etiket ekleyerek bunu açıkça belirtiyoruz.
+            evidence.append(f"Solana ağ aktivitesi: {context.solana_tps:.0f} tx/s (bilgi amaçlı, yön puanına katılmıyor)")
 
         # Faz 215: gerçek ağ kullanım/madenci trendleri (blockchain.info,
         # Bitcoin'e özel). Aktif adres artışı = gerçek kullanım büyüyor

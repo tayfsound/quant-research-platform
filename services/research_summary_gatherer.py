@@ -47,6 +47,22 @@ _MODULES = [
     # gerçek yön hatası" + "bu kaybın toplam zarardaki payı % olarak
     # dashboard'a kart olarak eklenmeli (SL/likidasyon/breakeven kırılımı)."
     ("loss_breakdown", "Zarar Kırılımı (SL/Likidasyon/Breakeven)", "loss-breakdown", "services.loss_breakdown_gatherer", "gather_loss_breakdown"),
+    # Backlog #14 (2026-08-26) — kullanıcı örneği: "BTC LONG'da 100
+    # pozisyon, 15'i stop olmuş, 13'ü yön hatası, 2'si stop süpürülüp
+    # sonra hedefe gitmiş." loss_breakdown'ın (yukarıda) TEK genel toplamı
+    # yerine sembol×yön kırılımı — AYNI sınıflandırma, farklı kesim.
+    ("symbol_direction_loss_breakdown", "Zarar Kırılımı — Sembol × Yön", "symbol-direction-loss-breakdown", "services.symbol_direction_loss_breakdown_gatherer", "gather_symbol_direction_loss_breakdown"),
+    # Faz 364-devam — kullanıcı sorusu: "hangi ajan hangi rejimde isabetli,
+    # ölçmezsek bilemeyiz, belki şu an zayıf görünen bir ajan başka bir
+    # rejimde hayat kurtarıyordur." strategy_regime_compatibility'nin AYNI
+    # saf fonksiyonu, etiket "strateji" yerine "ajan domain'i" ile.
+    ("agent_domain_regime_reliability", "Ajan Güvenilirliği — Rejime Göre", "agent-domain-regime-reliability", "services.agent_domain_regime_reliability_gatherer", "gather_agent_domain_regime_reliability"),
+    # Faz 364-devam — kullanıcı hipotezi: bir rejimde SHORT başarısızsa,
+    # aynı rejimde LONG başarılı mı — sistematik bir ters ilişki var mı?
+    ("direction_regime_asymmetry", "Yön × Rejim Asimetrisi", "direction-regime-asymmetry", "services.direction_regime_asymmetry_gatherer", "gather_direction_regime_asymmetry"),
+    # Faz 364-devam — kullanıcı isteği: Feature IC ölçümleri rejime göre
+    # kırılmalı, "hangi rejimde hangi sinyal işe yarıyor" sorusu.
+    ("feature_ic_by_regime", "Feature IC × Rejim", "feature-ic-by-regime", "services.feature_ic_by_regime_gatherer", "gather_feature_ic_by_regime"),
 ]
 
 

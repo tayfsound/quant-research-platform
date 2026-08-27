@@ -1,6 +1,11 @@
 """Faz 268-sonrası — kullanıcının kendi getirdiği çerçeve: her SL işlemini
 GERÇEK MAE/MFE verisine göre direction_error/barrier_error diye ayırma."""
-from analytics.failure_classifier import classify_stop_loss_failure, summarize_loss_breakdown, summarize_stop_loss_failures
+from analytics.failure_classifier import (
+    classify_stop_loss_failure,
+    summarize_loss_breakdown,
+    summarize_loss_breakdown_by_symbol_direction,
+    summarize_stop_loss_failures,
+)
 
 
 def test_scenario_a_bad_prediction_is_direction_error():
@@ -203,3 +208,109 @@ def test_summarize_loss_breakdown_pct_reflects_a_dominant_category():
     assert after["categories"]["stop_loss"]["direction_error_count"] == (
         before["categories"]["stop_loss"]["direction_error_count"] + 1
     )
+
+
+def _persist_and_close_loss(symbol, direction, exit_reason, mae_pct, mfe_pct, pnl, experiment_bucket=None):
+    from datetime import UTC, datetime
+    from uuid import uuid4
+
+    from contracts.decision_event import DecisionEvent
+    from database.repositories.decision_persistor import DecisionPersistor
+    from database.session_factory import SessionFactory
+
+    now = datetime.now(UTC)
+    with SessionFactory.get_session() as session:
+        repo = DecisionPersistor(session)
+        event = DecisionEvent(
+            id=uuid4(), symbol=symbol, proposed_direction=direction, final_action=direction,
+            final_size=1.0, confidence=0.7, status="open",
+            entry_price=100.0, quantity=1.0, opened_at=now,
+            stop_loss_price=99.0 if direction == "LONG" else 101.0,
+            take_profit_price=102.0 if direction == "LONG" else 98.0,
+            experiment_bucket=experiment_bucket,
+        )
+        repo.persist(event)
+        repo.close_position(
+            decision_id=str(event.id), exit_price=99.0, pnl=pnl, closed_at=now,
+            outcome={"exit_reason": exit_reason, "mae_pct": mae_pct, "mfe_pct": mfe_pct},
+        )
+
+
+def test_summarize_loss_breakdown_by_symbol_direction_groups_correctly():
+    """Backlog #14 — kullanıcı örneği: sembol×yön kırılımı, AYNI
+    sınıflandırmayı hücre bazında tekrarlamalı. Bir sembolde 5 direction_
+    error (min_trades'e tam ulaşan) ekleyip o hücrenin GERÇEKTEN
+    göründüğünü ve doğru sınıflandığını doğruluyor."""
+    from uuid import uuid4
+
+    symbol = f"FAILSD{uuid4().hex[:8]}"
+    try:
+        for _ in range(5):
+            # planned_target_pct=0.02, mfe_pct=0.003 -> reachability=0.15 -> direction_error
+            _persist_and_close_loss(symbol, "LONG", "stop_loss", mae_pct=-0.01, mfe_pct=0.003, pnl=-5.0)
+
+        result = summarize_loss_breakdown_by_symbol_direction(hours=None, min_trades=5)
+        cell = result["cells"].get(f"{symbol}_LONG")
+        assert cell is not None
+        assert cell["total_stop_loss_trades"] == 5
+        assert cell["direction_error_count"] == 5
+        assert cell["total_pnl"] == -25.0
+    finally:
+        from sqlalchemy import text
+
+        from database.session_factory import SessionFactory
+        with SessionFactory.get_session() as session:
+            session.execute(text("DELETE FROM decisions WHERE symbol = :s"), {"s": symbol})
+            session.commit()
+
+
+def test_summarize_loss_breakdown_by_symbol_direction_excludes_cells_below_min_trades():
+    """Gürültü önleme: min_trades altındaki hücreler fail-closed
+    dışlanmalı — tek işlemlik bir sembolde '%100 yön hatası' demek
+    istatistiksel olarak anlamsız."""
+    from uuid import uuid4
+
+    symbol = f"FAILSD{uuid4().hex[:8]}"
+    try:
+        _persist_and_close_loss(symbol, "SHORT", "stop_loss", mae_pct=-0.01, mfe_pct=0.003, pnl=-5.0)
+
+        result = summarize_loss_breakdown_by_symbol_direction(hours=None, min_trades=5)
+        assert f"{symbol}_SHORT" not in result["cells"]
+    finally:
+        from sqlalchemy import text
+
+        from database.session_factory import SessionFactory
+        with SessionFactory.get_session() as session:
+            session.execute(text("DELETE FROM decisions WHERE symbol = :s"), {"s": symbol})
+            session.commit()
+
+
+def test_summarize_loss_breakdown_by_symbol_direction_excludes_pump_fade():
+    """pump_fade_v1 AYNI izolasyon disipliniyle hiçbir hücreye girmemeli."""
+    from uuid import uuid4
+
+    symbol = f"FAILSD{uuid4().hex[:8]}"
+    try:
+        for _ in range(5):
+            _persist_and_close_loss(
+                symbol, "SHORT", "stop_loss", mae_pct=-0.01, mfe_pct=0.003, pnl=-5.0,
+                experiment_bucket="pump_fade_v1",
+            )
+
+        result = summarize_loss_breakdown_by_symbol_direction(hours=None, min_trades=5)
+        assert f"{symbol}_SHORT" not in result["cells"]
+    finally:
+        from sqlalchemy import text
+
+        from database.session_factory import SessionFactory
+        with SessionFactory.get_session() as session:
+            session.execute(text("DELETE FROM decisions WHERE symbol = :s"), {"s": symbol})
+            session.commit()
+
+
+def test_summarize_loss_breakdown_by_symbol_direction_real_shape():
+    result = summarize_loss_breakdown_by_symbol_direction(hours=None)
+    assert "cells" in result
+    assert "min_trades" in result
+    for cell in result["cells"].values():
+        assert cell["total_stop_loss_trades"] >= result["min_trades"]

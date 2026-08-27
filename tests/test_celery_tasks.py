@@ -64,25 +64,6 @@ def test_run_trading_cycle_task_skips_when_previous_cycle_still_running():
         client.delete(lock_key)
 
 
-def test_slow_network_dependent_tasks_are_routed_to_the_slow_queue():
-    """Faz 268-sonrası — kritik bulgu: concurrency=1 tek worker'da yavaş/ağ
-    bağımlı görevler (LLM) güvenlik-kritik close_due_positions_task ile
-    aynı kuyrukta yarışıyordu — gerçek bir olayla (HF Hub donması, kuyrukta
-    8320+ görev birikmesi) aynı hata sınıfı. Bu görevler artık ayrı bir
-    kuyruğa yönlendiriliyor, varsayılan kuyruktaki hızlı/kritik görevleri
-    hiç bloklamıyorlar."""
-    from services.celery_app import celery_app
-
-    routes = celery_app.conf.task_routes
-    for task_name in ("llm_system_audit_task", "refresh_llm_news_sentiment_task"):
-        assert routes[task_name]["queue"] == "slow"
-
-    # Güvenlik-kritik/periyodik görevler VARSAYILAN kuyrukta kalmalı —
-    # "slow" kuyruğuna yanlışlıkla sürüklenmemiş olmalılar.
-    for task_name in ("close_due_positions_task", "run_trading_cycle_task", "run_pump_fade_cycle_task"):
-        assert task_name not in routes
-
-
 def test_run_pump_fade_cycle_task_is_in_beat_schedule():
     from services.celery_app import celery_app
 
@@ -198,65 +179,6 @@ def test_refresh_calibration_report_task_is_in_beat_schedule():
 
     entry = celery_app.conf.beat_schedule["refresh-calibration-report-weekly"]
     assert entry["task"] == "refresh_calibration_report_task"
-
-
-def test_refresh_llm_news_sentiment_task_runs_in_eager_mode_and_returns_score():
-    """Faz 268-sonrası: Reddit yerine LLM tabanlı gerçek haber sentiment'i
-    — gerçek RSS/LLM ağ çağrısı yapmadan (mock'lanmış refresh()) görevin
-    celery_app'e doğru kayıtlı olduğunu ve dönüş sözleşmesini doğrular."""
-    from services.celery_app import celery_app
-    from services.tasks import refresh_llm_news_sentiment_task
-
-    celery_app.conf.task_always_eager = True
-    celery_app.conf.task_eager_propagates = True
-    try:
-        with patch(
-            "market_data.sentiment.llm_news_sentiment_provider.refresh",
-            return_value=(0.25, "Piyasa hafif olumlu."),
-        ):
-            async_result = refresh_llm_news_sentiment_task.delay()
-            assert async_result.successful()
-            assert async_result.result == {"sentiment_score": 0.25, "summary": "Piyasa hafif olumlu."}
-    finally:
-        celery_app.conf.task_always_eager = False
-
-
-def test_refresh_llm_news_sentiment_task_is_in_beat_schedule():
-    from services.celery_app import celery_app
-
-    entry = celery_app.conf.beat_schedule["refresh-llm-news-sentiment"]
-    assert entry["task"] == "refresh_llm_news_sentiment_task"
-
-
-def test_llm_system_audit_task_runs_in_eager_mode_and_persists(tmp_path):
-    """Faz 271 — kullanıcı isteği: LLM'i periyodik olarak devreye sokan
-    görev. Gerçek NVIDIA çağrısı mock'lanıyor, sadece görevin celery_app'e
-    doğru kayıtlı olduğu ve services/llm_system_audit.py::run_system_audit
-    döngüsünü gerçekten çalıştırdığı doğrulanıyor."""
-    from unittest.mock import AsyncMock
-
-    from services.celery_app import celery_app
-    from services.tasks import llm_system_audit_task
-
-    celery_app.conf.task_always_eager = True
-    celery_app.conf.task_eager_propagates = True
-    try:
-        mock_result = {"response": "Sorun yok.", "tool_calls": []}
-        with patch("services.llm_system_audit.NvidiaDecisionCritic.ask_with_tools", new=AsyncMock(return_value=mock_result)):
-            async_result = llm_system_audit_task.delay()
-            assert async_result.successful()
-            body = async_result.result
-            assert body["response"] == "Sorun yok."
-            assert body["proposals_created"] == 0
-    finally:
-        celery_app.conf.task_always_eager = False
-
-
-def test_llm_system_audit_task_is_in_beat_schedule():
-    from services.celery_app import celery_app
-
-    entry = celery_app.conf.beat_schedule["llm-system-audit-every-6h"]
-    assert entry["task"] == "llm_system_audit_task"
 
 
 def test_refresh_barrier_table_task_runs_in_eager_mode_and_returns_skip_when_insufficient(tmp_path):

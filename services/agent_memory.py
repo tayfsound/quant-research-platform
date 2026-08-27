@@ -56,6 +56,27 @@ def asset_class_of_symbol(symbol: str) -> str:
     return "other"
 
 
+# Kullanıcı isteği (2026-08-27): "Emtia/Kripto/Hisse Senedi" aç-kapa
+# anahtarı için asset_class_of_symbol()'ün 4 alt-sınıfını (gold_backed/
+# precious_metal_future/equity/equity_index) 3 kaba KATEGORİYE indiren
+# TEK kaynak — hem analytics/asset_class_performance.py (Türkçe görünen
+# etiket) hem analytics/asset_class_trading_gate.py (İngilizce ayar
+# anahtarı) burayı kullanır, aynı eşlemeyi iki yerde tutmuyoruz.
+_ASSET_CLASS_TRADING_CATEGORIES = {
+    "crypto": "crypto",
+    "gold_backed": "commodity",
+    "precious_metal_future": "commodity",
+    "equity": "equity",
+    "equity_index": "equity",
+}
+
+
+def asset_class_trading_category(symbol: str) -> str | None:
+    """"crypto"/"commodity"/"equity" — "other" (hiçbir sınıfa girmeyen
+    semboller) için None, zorla bir kategoriye sokulmuyor."""
+    return _ASSET_CLASS_TRADING_CATEGORIES.get(asset_class_of_symbol(symbol))
+
+
 # Faz 325 — kullanıcı bulgusu (Grok/Kimi denetimi sonrası kendi
 # gündeminden): "kripto içi büyük-cap/küçük-cap ayrımı olsa daha güzel
 # olmaz mıydı?" Gerçek veriyle ölçüldü (1521 kapanmış karar, confidence

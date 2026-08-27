@@ -64,8 +64,14 @@ def compute_calibration_curve() -> list[tuple[float, float]]:
     from sqlalchemy import text
 
     from database.session_factory import SessionFactory
-    from services.basis_arbitrage_strategy import EXPERIMENT_BUCKET as _BASIS_ARB_BUCKET
     from services.pump_fade_strategy import EXPERIMENT_BUCKET as _PUMP_FADE_BUCKET
+
+    # Faz 364 — basis_arb_v1 stratejisi tamamen kaldırıldı (kalıcı zarar
+    # ürettiği için) — ama geçmişte kapanmış basis_arb_v1 kararları hâlâ
+    # DB'de duruyor, AI konseyinden izole kalmaya devam etmeli. Modülü
+    # tanımlayan services/basis_arbitrage_strategy.py silindiği için sabit
+    # doğrudan burada.
+    _BASIS_ARB_BUCKET = "basis_arb_v1"
 
     cutoff = get_reliability_legacy_cutoff()
     query = (
@@ -124,8 +130,14 @@ def compute_market_cap_tier_calibration_curves() -> dict[str, list[tuple[float, 
     from sqlalchemy import text
 
     from database.session_factory import SessionFactory
-    from services.basis_arbitrage_strategy import EXPERIMENT_BUCKET as _BASIS_ARB_BUCKET
     from services.pump_fade_strategy import EXPERIMENT_BUCKET as _PUMP_FADE_BUCKET
+
+    # Faz 364 — basis_arb_v1 stratejisi tamamen kaldırıldı (kalıcı zarar
+    # ürettiği için) — ama geçmişte kapanmış basis_arb_v1 kararları hâlâ
+    # DB'de duruyor, AI konseyinden izole kalmaya devam etmeli. Modülü
+    # tanımlayan services/basis_arbitrage_strategy.py silindiği için sabit
+    # doğrudan burada.
+    _BASIS_ARB_BUCKET = "basis_arb_v1"
 
     cutoff = get_reliability_legacy_cutoff()
     query = (

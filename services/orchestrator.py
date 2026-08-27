@@ -300,6 +300,24 @@ def build_cognitive_context(
         # notu için).
         ctx.market.features["higher_timeframe_trend"] = compute_higher_timeframe_trend(daily_data)
 
+        # Backlog #17 — kullanıcı isteği: "tepeden/dipten kovalıyorsa"
+        # giriş engellensin. AYNI zaten-fetch-edilmiş daily_data'dan
+        # (ekstra ağ isteği yok) günlük pivot seviyeleri hesaplanıp en
+        # yakınına mesafe saklanıyor — decision_recorder.py::record()
+        # bunu okuyup (SADECE large-cap'te) gate'e bağlıyor.
+        try:
+            from analytics.pivot_distance_gate import compute_nearest_pivot_distance_pct
+            from market_data.features.signal_engine import compute_pivot_points
+
+            pivots = compute_pivot_points(daily_data)
+            pivot_classic = pivots["pivot_classic"] if pivots else None
+            ctx.market.features["nearest_pivot_distance_pct"] = compute_nearest_pivot_distance_pct(
+                pivot_classic, data[-1].close
+            )
+        except Exception as exc:
+            structlog.get_logger().warning("pivot_distance_computation_failed", error=str(exc))
+            ctx.market.features["nearest_pivot_distance_pct"] = None
+
     # Faz 299-300 — kullanıcı isteği: TP/SL için çok-yöntemli confluence
     # ("zone of agreement" — S/R zone clustering, Volume Profile POC/VA,
     # Pivot Points, Donchian, Keltner). Ölçüm katmanında (services/

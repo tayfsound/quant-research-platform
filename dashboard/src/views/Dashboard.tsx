@@ -319,6 +319,19 @@ export default function Dashboard() {
     top_long_symbols: { symbol: string; confidence: number }[];
     top_short_symbols: { symbol: string; confidence: number }[];
   } | null>(null);
+  // Kullanıcı isteği (2026-08-27): "Bitcoin/Emtia/Hisse performansını
+  // dashboard bilgilendirme kartı olarak görmek istiyorum... hangi işlem
+  // türünde AI ne kadar başarılı."
+  const [assetClassPerf, setAssetClassPerf] = useState<{
+    by_category: Record<string, { win_rate: number; sample_size: number; win_rate_ci: { low: number; high: number } | null; total_pnl: number }>;
+    n_trades_analyzed: number;
+  } | null>(null);
+  // Kullanıcı isteği (2026-08-27): rejim butonlarına başarı oranı (ROI
+  // gibi) eklensin.
+  const [regimePerf, setRegimePerf] = useState<{
+    by_regime: Record<string, { win_rate: number; sample_size: number; win_rate_ci: { low: number; high: number } | null; total_pnl: number }>;
+    n_trades_analyzed: number;
+  } | null>(null);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | "unsupported">(
     typeof Notification === "undefined" ? "unsupported" : Notification.permission
   );
@@ -403,14 +416,28 @@ export default function Dashboard() {
       .then((r) => r.json())
       .then(handleSignalHealth)
       .catch(() => {});
+    // Faz 367-devam — kullanıcı bulgusu: bir route bayat bir uvicorn
+    // sürecinde 404 dönünce ({"detail": "Not Found"}), r.ok kontrolü
+    // olmadan bu gövde DOĞRUDAN state'e yazılıyordu — sonraki render
+    // "regimePerf.by_regime" gibi beklenen bir alanı bulamayıp beyaz
+    // sayfaya (uncaught TypeError) çöküyordu. Diğer fetch'lerin (ör.
+    // /performance) zaten kullandığı r.ok deseniyle hizalandı.
     fetch("/api/v1/dashboard/concept-drift-status", { headers: authHeaders() })
-      .then((r) => r.json())
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then(setConceptDrift)
       .catch(() => setConceptDrift(null));
     fetch("/api/v1/dashboard/market-direction-summary", { headers: authHeaders() })
-      .then((r) => r.json())
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then(setMarketDirection)
       .catch(() => setMarketDirection(null));
+    fetch("/api/v1/dashboard/asset-class-performance", { headers: authHeaders() })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(setAssetClassPerf)
+      .catch(() => setAssetClassPerf(null));
+    fetch("/api/v1/dashboard/regime-performance", { headers: authHeaders() })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(setRegimePerf)
+      .catch(() => setRegimePerf(null));
   };
 
   const requestNotifPermission = () => {
@@ -444,6 +471,42 @@ export default function Dashboard() {
 
   const isRunning = settings.ai_enabled !== "false";
   const isLive = settings.trading_mode === "live";
+
+  // Kullanıcı isteği (2026-08-27): "Emtia, Kripto, Hisse Senedi'ni aç
+  // kapa yapabileceğimiz modüller... dashboard'daki karta yerleştirelim."
+  // + "sistemin işlem aldığı rejimleri de aç kapa." Settings.tsx'e DEĞİL
+  // — bkz. proje hafızası "settings placement: contextual".
+  const parseJsonMap = (raw: string | undefined, fallback: Record<string, boolean>): Record<string, boolean> => {
+    if (!raw) return fallback;
+    try {
+      const parsed = JSON.parse(raw);
+      return typeof parsed === "object" && parsed !== null ? parsed : fallback;
+    } catch {
+      return fallback;
+    }
+  };
+  const assetClassEnabled = parseJsonMap(settings.asset_class_trading_enabled, {
+    crypto: true, commodity: true, equity: true,
+  });
+  const regimeEnabled = parseJsonMap(settings.regime_trading_enabled, {
+    bullish_high: true, bullish_normal: true, bullish_low: true,
+    bearish_high: true, bearish_normal: true, bearish_low: true,
+  });
+  const toggleAssetClass = (key: string) => {
+    save("asset_class_trading_enabled", JSON.stringify({ ...assetClassEnabled, [key]: !assetClassEnabled[key] }));
+  };
+  const toggleRegime = (key: string) => {
+    save("regime_trading_enabled", JSON.stringify({ ...regimeEnabled, [key]: !regimeEnabled[key] }));
+  };
+  const ASSET_CLASS_KEYS: Record<string, string> = { Kripto: "crypto", Emtia: "commodity", "Hisse Senedi": "equity" };
+  const REGIME_LABELS: [string, string][] = [
+    ["bullish_high", "Yükseliş — Yüksek Vol."],
+    ["bullish_normal", "Yükseliş — Normal Vol."],
+    ["bullish_low", "Yükseliş — Düşük Vol."],
+    ["bearish_high", "Düşüş — Yüksek Vol."],
+    ["bearish_normal", "Düşüş — Normal Vol."],
+    ["bearish_low", "Düşüş — Düşük Vol."],
+  ];
 
   return (
     <div>
@@ -697,6 +760,150 @@ export default function Dashboard() {
               </p>
             </Card>
           )}
+
+          {/* Kullanıcı isteği (2026-08-27): "Bitcoin/Emtia/Hisse
+              performansını dashboard bilgilendirme kartı olarak görmek
+              istiyorum... hangi işlem türünde AI ne kadar başarılı."
+              Kripto/Emtia/Hisse Senedi kırılımı — mekanik stratejiler
+              (pump_fade/basis_arb) hariç, sadece gerçek AI konseyi
+              kararları. */}
+          {assetClassPerf && Object.keys(assetClassPerf.by_category).length > 0 && (
+            <Card className="mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs uppercase tracking-wide text-ink-faint font-medium">
+                  Varlık Sınıfına Göre AI Başarı Oranı
+                </p>
+                <p className="text-xs text-ink-faint">aç/kapa: bu sınıfta yeni giriş alınsın mı</p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {["Kripto", "Emtia", "Hisse Senedi"].map((category) => {
+                  const stat = assetClassPerf.by_category[category];
+                  const categoryKey = ASSET_CLASS_KEYS[category];
+                  const enabled = assetClassEnabled[categoryKey] !== false;
+                  const tone = stat ? (stat.win_rate >= 0.5 ? "text-rise" : "text-fall") : "text-ink-faint";
+                  const pnlTone = stat ? (stat.total_pnl >= 0 ? "text-rise" : "text-fall") : "text-ink-faint";
+                  return (
+                    <div key={category}>
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        {stat ? (
+                          <p className={`text-2xl font-semibold ${tone}`}>%{(stat.win_rate * 100).toFixed(1)}</p>
+                        ) : (
+                          <p className="text-2xl font-semibold text-ink-faint">—</p>
+                        )}
+                        <button
+                          onClick={() => toggleAssetClass(categoryKey)}
+                          disabled={saving === "asset_class_trading_enabled"}
+                          className={`px-2 py-1 rounded-md text-xs font-medium border transition-colors shrink-0 ${
+                            enabled
+                              ? "bg-accent text-white border-accent"
+                              : "bg-canvas-soft text-ink-faint border-line hover:bg-surface-soft"
+                          }`}
+                        >
+                          {enabled ? "Açık" : "Kapalı"}
+                        </button>
+                      </div>
+                      {stat && (
+                        <p className={`text-sm font-mono font-medium ${pnlTone}`}>
+                          {stat.total_pnl >= 0 ? "+" : ""}{format(stat.total_pnl)}
+                        </p>
+                      )}
+                      <p className="text-xs text-ink-soft mt-0.5">
+                        {category}
+                        {stat && (
+                          <>
+                            {" "}({stat.sample_size} işlem)
+                            {stat.win_rate_ci && (
+                              <> — %95 GA: %{(stat.win_rate_ci.low * 100).toFixed(0)}–%{(stat.win_rate_ci.high * 100).toFixed(0)}</>
+                            )}
+                          </>
+                        )}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-ink-faint mt-3">
+                Toplam {assetClassPerf.n_trades_analyzed} kapanmış AI konseyi kararı üzerinden (Pump-Fade/Basis-Arb hariç). Kapalı bir sınıfta yeni pozisyon açılmaz, açık pozisyonlar etkilenmez.
+              </p>
+            </Card>
+          )}
+
+          {/* Kullanıcı isteği (2026-08-27): "sistemin işlem aldığı
+              rejimleri de aç kapa yapabilirsek süper olur... butonlara
+              hangi rejimin ne kadar başarılı olduğu bilgisini ekleyelim,
+              %50 üzeri mavi altı kırmızı." SADECE AI konseyi kararlarını
+              etkiler (pyramid_regime_gate/strategy_gate ile AYNI kapsam)
+              — pump_fade kendi rejim kavramını kullanmıyor. */}
+          <Card className="mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs uppercase tracking-wide text-ink-faint font-medium">
+                Rejime Göre AI Konseyi Girişleri
+              </p>
+              <p className="text-xs text-ink-faint">aç/kapa: bu rejimde yeni giriş alınsın mı</p>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {REGIME_LABELS.map(([key, label]) => {
+                const enabled = regimeEnabled[key] !== false;
+                const stat = regimePerf?.by_regime?.[key];
+                return (
+                  <button
+                    key={key}
+                    onClick={() => toggleRegime(key)}
+                    disabled={saving === "regime_trading_enabled"}
+                    className={`px-3 py-2 rounded-lg text-xs font-medium border transition-colors text-left ${
+                      enabled
+                        ? "bg-accent text-white border-accent"
+                        : "bg-canvas-soft text-ink-faint border-line hover:bg-surface-soft"
+                    }`}
+                  >
+                    <span className="block">{label}</span>
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-[10px] opacity-80">{enabled ? "Açık" : "Kapalı"}</span>
+                      {stat && (
+                        <span
+                          className={`text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded ${
+                            stat.win_rate >= 0.5 ? "bg-white/20 text-white" : "bg-fall text-white"
+                          }`}
+                        >
+                          %{(stat.win_rate * 100).toFixed(0)}
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            {regimePerf && (
+              <p className="text-xs text-ink-faint mt-3">
+                Yüzdeler son {regimePerf.n_trades_analyzed} AI konseyi kararı üzerinden gerçek kazanma oranı (Pump-Fade/Basis-Arb hariç).
+              </p>
+            )}
+          </Card>
+
+          {/* Kullanıcı isteği (2026-08-27): "Pump Fade aç kapa olsun
+              sadece onu da yine dashboard'da kart olarak atalım." Diğer
+              tüm pump_fade ayarları (min_gain_pct/lookback/leverage/
+              staged_entry_* vb.) kalibre edilmiş/sabit — Settings.tsx'ten
+              çıkarıldı, SADECE bu aç/kapa kaldı. */}
+          <Card className="mb-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-ink-faint font-medium mb-1">Pump Fade Stratejisi</p>
+                <p className="text-xs text-ink-faint">Mekanik, AI konseyinden izole strateji — parametreleri kalibre edilmiş/sabit.</p>
+              </div>
+              <button
+                onClick={() => save("pump_fade_enabled", settings.pump_fade_enabled === "true" ? "false" : "true")}
+                disabled={saving === "pump_fade_enabled"}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors shrink-0 ${
+                  settings.pump_fade_enabled === "true"
+                    ? "bg-accent text-white border-accent"
+                    : "bg-canvas-soft text-ink-faint border-line hover:bg-surface-soft"
+                }`}
+              >
+                {settings.pump_fade_enabled === "true" ? "Açık" : "Kapalı"}
+              </button>
+            </div>
+          </Card>
 
           <TradeTypeBreakdownTable
             title="İşlem türüne göre açık pozisyonlar"

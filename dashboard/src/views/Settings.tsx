@@ -647,295 +647,12 @@ export default function Settings() {
         </Card>
 
         <Card>
-          <h3 className="text-sm font-semibold text-ink mb-1">Pump-Fade stratejisi (test)</h3>
-          <p className="text-xs text-ink-soft mb-3">
-            AI'ın karar/confidence sisteminden tamamen yalıtık, mekanik bir strateji. Son{" "}
-            {draft.pump_fade_lookback_hours ?? "48"} saatte en az %{Math.round(Number(draft.pump_fade_min_gain_pct ?? 1) * 100)}{" "}
-            kazanmış tüm USDT perpetual'ları short'lar, pozisyon %100 kâr ettiğinde kapanır. Kapalıyken hiçbir etkisi yok.
-          </p>
-          <div className="flex gap-2 mb-4">
-            {[
-              { key: "true", label: "Açık" },
-              { key: "false", label: "Kapalı" },
-            ].map(({ key, label }) => (
-              <button
-                key={key}
-                onClick={() => save("pump_fade_enabled", key)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                  (settings.pump_fade_enabled ?? "false") === key
-                    ? "bg-accent text-white border-accent"
-                    : "bg-canvas-soft text-ink-soft border-line hover:bg-surface-soft"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <p className="text-xs text-ink-soft mb-2">
-            Maks. kayıp / işlem ($, ör. 500 — margin bu değerden GERİYE hesaplanır: stop'a takılırsa TAM
-            OLARAK bu kadar $ kaybedilecek şekilde. Stop mesafesi/kaldıraç ne kadar genişse margin o kadar küçülür.)
-          </p>
-          <div className="flex gap-2 mb-4">
-            <Input
-              decimal
-              value={draft.pump_fade_max_loss_per_trade_usd ?? ""}
-              onChange={(v) => setDraft((d) => ({ ...d, pump_fade_max_loss_per_trade_usd: v }))}
-            />
-            <Button
-              disabled={saving === "pump_fade_max_loss_per_trade_usd"}
-              onClick={() => save("pump_fade_max_loss_per_trade_usd", draft.pump_fade_max_loss_per_trade_usd)}
-            >
-              {saved === "pump_fade_max_loss_per_trade_usd" ? "Kaydedildi ✓" : "Kaydet"}
-            </Button>
-          </div>
-
-          <p className="text-xs text-ink-soft mb-2">
-            Maks. eşzamanlı açık pozisyon (ör. 20 — çeşitlendirme tavanı, marjin tavanından bağımsız)
-          </p>
-          <div className="flex gap-2 mb-4">
-            <Input
-              decimal
-              value={draft.pump_fade_max_open_positions ?? ""}
-              onChange={(v) => setDraft((d) => ({ ...d, pump_fade_max_open_positions: v }))}
-            />
-            <Button
-              disabled={saving === "pump_fade_max_open_positions"}
-              onClick={() => save("pump_fade_max_open_positions", draft.pump_fade_max_open_positions)}
-            >
-              {saved === "pump_fade_max_open_positions" ? "Kaydedildi ✓" : "Kaydet"}
-            </Button>
-          </div>
-
-          <p className="text-xs text-ink-soft mb-2">
-            Zarar-bazlı devre kesici ($, ör. 10000 — pump_fade'in TOPLAM gerçekleşmiş zararı bunu aşarsa
-            pump_fade_enabled otomatik kapatılır)
-          </p>
-          <div className="flex gap-2 mb-4">
-            <Input
-              decimal
-              value={draft.pump_fade_max_loss_circuit_breaker_usd ?? ""}
-              onChange={(v) => setDraft((d) => ({ ...d, pump_fade_max_loss_circuit_breaker_usd: v }))}
-            />
-            <Button
-              disabled={saving === "pump_fade_max_loss_circuit_breaker_usd"}
-              onClick={() => save("pump_fade_max_loss_circuit_breaker_usd", draft.pump_fade_max_loss_circuit_breaker_usd)}
-            >
-              {saved === "pump_fade_max_loss_circuit_breaker_usd" ? "Kaydedildi ✓" : "Kaydet"}
-            </Button>
-          </div>
-
-          <p className="text-xs text-ink-soft mb-2">
-            Toplam sermaye tavanı (0-1 arası, ör. 0.20 = kasanın %20'si — TÜM açık pump_fade pozisyonlarının
-            toplam gerçek marjini bunu aşarsa yeni işlem açılmaz; risk-bazlı boyutlandırmadan sonra ek bir
-            güvenlik katmanı, asıl işi artık yukarıdaki iki ayar yapıyor)
-          </p>
-          <div className="flex gap-2 mb-4">
-            <Input
-              decimal
-              value={draft.pump_fade_max_total_capital_pct ?? ""}
-              onChange={(v) => setDraft((d) => ({ ...d, pump_fade_max_total_capital_pct: v }))}
-            />
-            <Button
-              disabled={saving === "pump_fade_max_total_capital_pct"}
-              onClick={() => save("pump_fade_max_total_capital_pct", draft.pump_fade_max_total_capital_pct)}
-            >
-              {saved === "pump_fade_max_total_capital_pct" ? "Kaydedildi ✓" : "Kaydet"}
-            </Button>
-          </div>
-
-          <p className="text-xs text-ink-soft mb-2">Hedef kaldıraç (1-125, güvenlik kilidi daha düşüğe kırpabilir)</p>
-          <div className="flex gap-2 mb-4">
-            <Input
-              decimal
-              value={draft.pump_fade_leverage ?? ""}
-              onChange={(v) => setDraft((d) => ({ ...d, pump_fade_leverage: v }))}
-            />
-            <Button
-              disabled={saving === "pump_fade_leverage"}
-              onClick={() => save("pump_fade_leverage", draft.pump_fade_leverage)}
-            >
-              {saved === "pump_fade_leverage" ? "Kaydedildi ✓" : "Kaydet"}
-            </Button>
-          </div>
-
-          <p className="text-xs text-ink-soft mb-2">Minimum kazanç eşiği (1.0 = %100)</p>
-          <div className="flex gap-2 mb-4">
-            <Input
-              decimal
-              value={draft.pump_fade_min_gain_pct ?? ""}
-              onChange={(v) => setDraft((d) => ({ ...d, pump_fade_min_gain_pct: v }))}
-            />
-            <Button
-              disabled={saving === "pump_fade_min_gain_pct"}
-              onClick={() => save("pump_fade_min_gain_pct", draft.pump_fade_min_gain_pct)}
-            >
-              {saved === "pump_fade_min_gain_pct" ? "Kaydedildi ✓" : "Kaydet"}
-            </Button>
-          </div>
-
-          <p className="text-xs text-ink-soft mb-2">
-            Stop-sonrası tekrar giriş eşiği (1.0 = %100) — bir sembolde son pump_fade işlemi stop olduysa,
-            o sembolde tekrar giriş için normal eşik yerine bu daha sıkı eşik kullanılır.
-          </p>
-          <div className="flex gap-2 mb-4">
-            <Input
-              decimal
-              value={draft.pump_fade_reentry_min_gain_pct ?? ""}
-              onChange={(v) => setDraft((d) => ({ ...d, pump_fade_reentry_min_gain_pct: v }))}
-            />
-            <Button
-              disabled={saving === "pump_fade_reentry_min_gain_pct"}
-              onClick={() => save("pump_fade_reentry_min_gain_pct", draft.pump_fade_reentry_min_gain_pct)}
-            >
-              {saved === "pump_fade_reentry_min_gain_pct" ? "Kaydedildi ✓" : "Kaydet"}
-            </Button>
-          </div>
-
-          <p className="text-xs text-ink-soft mb-2">Tarama penceresi (saat)</p>
-          <div className="flex gap-2 mb-4">
-            <Input
-              type="number"
-              value={draft.pump_fade_lookback_hours ?? ""}
-              onChange={(v) => setDraft((d) => ({ ...d, pump_fade_lookback_hours: v }))}
-            />
-            <Button
-              disabled={saving === "pump_fade_lookback_hours"}
-              onClick={() => save("pump_fade_lookback_hours", draft.pump_fade_lookback_hours)}
-            >
-              {saved === "pump_fade_lookback_hours" ? "Kaydedildi ✓" : "Kaydet"}
-            </Button>
-          </div>
-
-          <p className="text-xs text-ink-soft mb-2">
-            Güvenlik stop mesafesi (0-1 arası, ör. 0.15 = fiyat %15 aleyhte hareket ederse kapanır)
-          </p>
-          <div className="flex gap-2">
-            <Input
-              decimal
-              value={draft.pump_fade_stop_distance_pct ?? ""}
-              onChange={(v) => setDraft((d) => ({ ...d, pump_fade_stop_distance_pct: v }))}
-            />
-            <Button
-              disabled={saving === "pump_fade_stop_distance_pct"}
-              onClick={() => save("pump_fade_stop_distance_pct", draft.pump_fade_stop_distance_pct)}
-            >
-              {saved === "pump_fade_stop_distance_pct" ? "Kaydedildi ✓" : "Kaydet"}
-            </Button>
-          </div>
-        </Card>
-
-        <Card>
-          <h3 className="text-sm font-semibold text-ink mb-1">Cross-Asset Arbitrage (basis, test)</h3>
-          <p className="text-xs text-ink-soft mb-3">
-            AI'ın karar/confidence sisteminden tamamen yalıtık, piyasa-nötr mekanik bir strateji. Perpetual
-            spot'a göre en az %{(Number(draft.basis_arbitrage_min_basis_pct ?? "0.002") * 100).toFixed(2)} primli
-            işlem görürken VE funding en az %{(Number(draft.basis_arbitrage_min_funding_rate ?? "0.0003") * 100).toFixed(3)} iken
-            spot LONG + perpetual SHORT açar (funding tahsilatı + basis yakınsaması). Bacaklar ayrı ayrı değil,
-            en fazla {draft.basis_arbitrage_max_hold_hours ?? "72"} saat sonra BİRLİKTE kapanır. Kapalıyken hiçbir etkisi yok.
-          </p>
-          <div className="flex gap-2 mb-4">
-            {[
-              { key: "true", label: "Açık" },
-              { key: "false", label: "Kapalı" },
-            ].map(({ key, label }) => (
-              <button
-                key={key}
-                onClick={() => save("basis_arbitrage_enabled", key)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                  (settings.basis_arbitrage_enabled ?? "false") === key
-                    ? "bg-accent text-white border-accent"
-                    : "bg-canvas-soft text-ink-soft border-line hover:bg-surface-soft"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <p className="text-xs text-ink-soft mb-2">Minimum basis (1.0 = %100, ör. 0.002 = %0.2)</p>
-          <div className="flex gap-2 mb-4">
-            <Input
-              decimal
-              value={draft.basis_arbitrage_min_basis_pct ?? ""}
-              onChange={(v) => setDraft((d) => ({ ...d, basis_arbitrage_min_basis_pct: v }))}
-            />
-            <Button
-              disabled={saving === "basis_arbitrage_min_basis_pct"}
-              onClick={() => save("basis_arbitrage_min_basis_pct", draft.basis_arbitrage_min_basis_pct)}
-            >
-              {saved === "basis_arbitrage_min_basis_pct" ? "Kaydedildi ✓" : "Kaydet"}
-            </Button>
-          </div>
-
-          <p className="text-xs text-ink-soft mb-2">Minimum funding rate (1.0 = %100, ör. 0.0003 = %0.03)</p>
-          <div className="flex gap-2 mb-4">
-            <Input
-              decimal
-              value={draft.basis_arbitrage_min_funding_rate ?? ""}
-              onChange={(v) => setDraft((d) => ({ ...d, basis_arbitrage_min_funding_rate: v }))}
-            />
-            <Button
-              disabled={saving === "basis_arbitrage_min_funding_rate"}
-              onClick={() => save("basis_arbitrage_min_funding_rate", draft.basis_arbitrage_min_funding_rate)}
-            >
-              {saved === "basis_arbitrage_min_funding_rate" ? "Kaydedildi ✓" : "Kaydet"}
-            </Button>
-          </div>
-
-          <p className="text-xs text-ink-soft mb-2">Bacak başına sermaye ($)</p>
-          <div className="flex gap-2 mb-4">
-            <Input
-              decimal
-              value={draft.basis_arbitrage_leg_capital_usd ?? ""}
-              onChange={(v) => setDraft((d) => ({ ...d, basis_arbitrage_leg_capital_usd: v }))}
-            />
-            <Button
-              disabled={saving === "basis_arbitrage_leg_capital_usd"}
-              onClick={() => save("basis_arbitrage_leg_capital_usd", draft.basis_arbitrage_leg_capital_usd)}
-            >
-              {saved === "basis_arbitrage_leg_capital_usd" ? "Kaydedildi ✓" : "Kaydet"}
-            </Button>
-          </div>
-
-          <p className="text-xs text-ink-soft mb-2">Maks. eşzamanlı açık çift (spot+perp bir çift sayılır)</p>
-          <div className="flex gap-2 mb-4">
-            <Input
-              decimal
-              value={draft.basis_arbitrage_max_open_pairs ?? ""}
-              onChange={(v) => setDraft((d) => ({ ...d, basis_arbitrage_max_open_pairs: v }))}
-            />
-            <Button
-              disabled={saving === "basis_arbitrage_max_open_pairs"}
-              onClick={() => save("basis_arbitrage_max_open_pairs", draft.basis_arbitrage_max_open_pairs)}
-            >
-              {saved === "basis_arbitrage_max_open_pairs" ? "Kaydedildi ✓" : "Kaydet"}
-            </Button>
-          </div>
-
-          <p className="text-xs text-ink-soft mb-2">Maks. tutma süresi (saat) — bu süre dolunca çift BİRLİKTE kapanır</p>
-          <div className="flex gap-2">
-            <Input
-              decimal
-              value={draft.basis_arbitrage_max_hold_hours ?? ""}
-              onChange={(v) => setDraft((d) => ({ ...d, basis_arbitrage_max_hold_hours: v }))}
-            />
-            <Button
-              disabled={saving === "basis_arbitrage_max_hold_hours"}
-              onClick={() => save("basis_arbitrage_max_hold_hours", draft.basis_arbitrage_max_hold_hours)}
-            >
-              {saved === "basis_arbitrage_max_hold_hours" ? "Kaydedildi ✓" : "Kaydet"}
-            </Button>
-          </div>
-        </Card>
-
-        <Card>
           <h3 className="text-sm font-semibold text-ink mb-1">Pozisyon Havuzu (Max Confidence Modu)</h3>
           <p className="text-xs text-ink-soft mb-3">
             Açık: council'ın risk-onaylı yönlü kararları hemen açılmaz, {draft.max_confidence_mode_pool_window_minutes ?? "15"} dakikalık
             bir havuzda toplanır; pencere kapanınca sadece en yüksek confidence'lı ilk {draft.max_confidence_mode_top_k ?? "3"} aday
-            TAZE fiyattan açılır, geri kalanı reddedilir. Sadece council'ın normal yolunu etkiler — pump_fade/basis_arb
-            kendi izole akışlarında bundan habersiz devam eder. Kapalıyken (varsayılan) bugünkü davranış birebir korunur.
+            TAZE fiyattan açılır, geri kalanı reddedilir. Sadece council'ın normal yolunu etkiler — pump_fade
+            kendi izole akışında bundan habersiz devam eder. Kapalıyken (varsayılan) bugünkü davranış birebir korunur.
           </p>
           <div className="flex gap-2 mb-4">
             {[
@@ -1026,6 +743,66 @@ export default function Settings() {
               onClick={() => save("reversal_guardian_consecutive_stop_threshold", draft.reversal_guardian_consecutive_stop_threshold)}
             >
               {saved === "reversal_guardian_consecutive_stop_threshold" ? "Kaydedildi ✓" : "Kaydet"}
+            </Button>
+          </div>
+        </Card>
+
+        <Card>
+          <h3 className="text-sm font-semibold text-ink mb-1">Portfolio Stress Guardian</h3>
+          <p className="text-xs text-ink-soft mb-3">
+            {draft.portfolio_stress_guardian_reference_symbol ?? "BTCUSDT"}'in gerçek geçmişindeki en kötü{" "}
+            {draft.portfolio_stress_guardian_window_days ?? "7"} günlük hareketi, mevcut TÜM açık pozisyonlara
+            uygulanır. Şu an net kârdaysak AMA bu senaryo net zarara çevirecekse — TÜM açık pozisyonlar (yön/strateji
+            fark etmeksizin) otomatik kapatılır, mevcut kâr kilitlenir. Zaten net zarardaysak devreye girmez.
+          </p>
+          <div className="flex gap-2 mb-4">
+            {[
+              { key: "true", label: "Açık" },
+              { key: "false", label: "Kapalı" },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => save("portfolio_stress_guardian_enabled", key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  (settings.portfolio_stress_guardian_enabled ?? "true") === key
+                    ? "bg-accent text-white border-accent"
+                    : "bg-canvas-soft text-ink-soft border-line hover:bg-surface-soft"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <p className="text-xs text-ink-soft mb-2">Referans sembol (gerçek geçmişi tarihsel senaryo için kullanılır — piyasa geneli için likit bir majör tercih edilmeli)</p>
+          <div className="flex gap-2 mb-4">
+            {["BTCUSDT", "ETHUSDT", "SOLUSDT"].map((sym) => (
+              <button
+                key={sym}
+                onClick={() => save("portfolio_stress_guardian_reference_symbol", sym)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  (settings.portfolio_stress_guardian_reference_symbol ?? "BTCUSDT") === sym
+                    ? "bg-accent text-white border-accent"
+                    : "bg-canvas-soft text-ink-soft border-line hover:bg-surface-soft"
+                }`}
+              >
+                {sym}
+              </button>
+            ))}
+          </div>
+
+          <p className="text-xs text-ink-soft mb-2">Senaryo penceresi (gün)</p>
+          <div className="flex gap-2">
+            <Input
+              decimal
+              value={draft.portfolio_stress_guardian_window_days ?? ""}
+              onChange={(v) => setDraft((d) => ({ ...d, portfolio_stress_guardian_window_days: v }))}
+            />
+            <Button
+              disabled={saving === "portfolio_stress_guardian_window_days"}
+              onClick={() => save("portfolio_stress_guardian_window_days", draft.portfolio_stress_guardian_window_days)}
+            >
+              {saved === "portfolio_stress_guardian_window_days" ? "Kaydedildi ✓" : "Kaydet"}
             </Button>
           </div>
         </Card>

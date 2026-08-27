@@ -88,29 +88,6 @@ def test_order_book_endpoint_reports_unavailable_when_no_data():
     assert resp.json()["available"] is False
 
 
-def test_news_sentiment_endpoint_reports_unavailable_when_cache_empty(monkeypatch):
-    import market_data.sentiment.llm_news_sentiment_provider as provider
-
-    monkeypatch.setattr(provider, "get_cached", lambda: (None, None))
-    resp = _client().get("/api/v1/market-data/news-sentiment", headers=make_authed_headers(Role.VIEWER))
-    assert resp.status_code == 200
-    assert resp.json() == {"available": False}
-
-
-def test_news_sentiment_endpoint_returns_cached_score_and_summary(monkeypatch):
-    import market_data.sentiment.llm_news_sentiment_provider as provider
-
-    monkeypatch.setattr(provider, "get_cached", lambda: (0.42, "Piyasa olumlu."))
-    resp = _client().get("/api/v1/market-data/news-sentiment", headers=make_authed_headers(Role.VIEWER))
-    assert resp.status_code == 200
-    assert resp.json() == {"available": True, "sentiment_score": 0.42, "summary": "Piyasa olumlu."}
-
-
-def test_news_sentiment_endpoint_requires_auth():
-    resp = _client().get("/api/v1/market-data/news-sentiment")
-    assert resp.status_code in (401, 403)
-
-
 def test_agents_endpoint_lists_real_registered_domains():
     resp = _client().get("/api/v1/agents/", headers=make_authed_headers(Role.VIEWER))
     assert resp.status_code == 200

@@ -171,8 +171,8 @@ def resolve_due_pool_windows() -> dict:
     bağımsız, tek havuz) confidence'a göre sırayla top-K'ya keser; geri
     kalanı "rejected" işaretler. Seçilenler TAZE fiyattan (o an gerçek
     piyasa fiyatı — pool anındaki DEĞİL) doğrudan DecisionPersistor ile
-    açılır, pump_fade_strategy.py/basis_arbitrage_strategy.py ile AYNI
-    "council pipeline'ını atlayan direkt persist" deseni."""
+    açılır, pump_fade_strategy.py ile AYNI "council pipeline'ını atlayan
+    direkt persist" deseni."""
     now = datetime.now(UTC)
     with SessionFactory.get_session() as session:
         settings_repo = AppSettingsRepository(session)

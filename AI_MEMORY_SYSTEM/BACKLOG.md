@@ -117,16 +117,32 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
     bir bozulma var** (%96.2→%80.6, p<0.0001). SHORT ve deney kovaları
     (control/treatment) değişmemiş. Kullanıcının sezgisi kısmen doğru
     çıktı — sistem genelinde değil, sadece LONG'da.
-13. **Portföy-seviyeli "triyaj" mantığı**: "100 pump_fade pozisyonum var, 70'i
-    +20k kârda, 30'u riskli — kötüye giderse -50k olabilir, şimdi hepsini kapatıp
-    +2k'da kalmak -50k'dan iyidir" tarzı senaryo-bazlı karar. Şu an sistemde
-    böyle bir mekanizma yok — `analytics/stress_testing.py` (yine bugün bulunan,
-    wire edilmemiş) buna yakın bir temel sağlayabilir (gerçek geçmiş en-kötü-N-
-    dönem senaryosunu mevcut pozisyona uygulama).
-14. **Otomatik, sürekli çalışan "stop kök-neden" analiz motoru** (kullanıcı
-    örneği: "BTC LONG'da 100 pozisyon, 15'i stop olmuş, 13'ü yön hatası, 2'si
-    stop süpürülüp sonra hedefe gitmiş"). Yeni bir analytics modülü + periyodik
-    Celery görevi gerektirir — henüz hiçbir yerde yok, sıfırdan tasarım.
+13. **[YAPILDI — Faz 364, 2026-08-26] Portöy-seviyeli "triyaj" mantığı.**
+    `analytics/stress_testing.py` (o gün bulunan, wire edilmemiş
+    `compute_worst_historical_drawdown`/`apply_stress_scenario_to_notional`)
+    yeni `services/portfolio_stress_guardian.py` ile bağlandı: MEVCUT TÜM
+    açık pozisyonların toplam notional'ına (yön bazlı LONG/SHORT), referans
+    sembolün (varsayılan BTCUSDT) gerçek tarihindeki en kötü N-günlük
+    (varsayılan 7) DÜŞÜŞ (LONG kitabı) ve YÜKSELİŞ (SHORT kitabı, negatize
+    edilmiş getirilerle AYNI fonksiyon) ayrı ayrı uygulanır (ikisi aynı anda
+    olamayacağı için toplanmaz, daha kötüsü alınır). Şu an net kârdaysak AMA
+    senaryo net zarara çevirecekse TÜM açık pozisyonlar (yön/strateji fark
+    etmeksizin — Regime Reversal Guardian'ın aksine sadece kârdakiler değil,
+    sistemik bir müdahale) `close_partial` ile kapatılır. Varsayılan AÇIK
+    (Regime Reversal Guardian ile aynı gerekçe — koruyucu, alfa üretmiyor).
+    Yeni Celery görevi (5dk'da bir, `_CycleLock` korumalı). 4 test.
+14. **[YAPILDI — Faz 364, 2026-08-26] Sembol×yön stop kök-neden kırılımı.**
+    Kullanıcı örneği: "BTC LONG'da 100 pozisyon, 15'i stop olmuş, 13'ü yön
+    hatası, 2'si stop süpürülüp sonra hedefe gitmiş." Sıfırdan yeni bir motor
+    yerine — `analytics/failure_classifier.py::summarize_loss_breakdown()`
+    (madde 15, dün yapıldı) zaten AYNI sınıflandırmayı (gerçek MAE/MFE,
+    direction_error/barrier_error) genel toplamda yapıyordu. Yeni
+    `summarize_loss_breakdown_by_symbol_direction()` AYNI sınıflandırmayı
+    (symbol, direction) hücrelerine böler (min_trades=5 altındaki hücreler
+    gürültü olarak dışlanır, pump_fade_v1 hariç). Genel Özet panelinin
+    (`services/research_summary_gatherer.py`) 17. modülü olarak eklendi —
+    yeni bir dashboard sayfası GEREKMEDİ, mevcut jenerik panel deseni
+    otomatik gösteriyor. 4 test.
 15. **[ÇÖZÜLDÜ — Faz 363, 2026-08-25] Kâr edip zarara dönen pozisyonların
     stop yanlış yerleşimi mi yoksa gerçek yön hatası mı olduğu + zararın
     toplam paydaki oranı.** `analytics/failure_classifier.py::
@@ -155,10 +171,27 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
     `multi_timeframe_cascade_enabled=true` (app_settings'te canlı
     olarak değiştirildi, restart gerekmiyor, bir sonraki cycle'dan
     itibaren TÜM sembollerde aktif).
-17. **"Tepeden giriş" hâlâ devam ediyor** (bugünkü XAUTUSDT örneği zaten
-    incelendi — ADX zayıfken bile hiçbir sert engel yok). Kullanıcı özellikle
-    destek/direnç seviyesi bazlı bir filtre istiyor: kritik seviyeden %X'ten
-    fazla uzaktaysa (örn. tepeden/dipten kovalıyorsa) giriş engellensin.
+17. **[YAPILDI — Faz 366-devam, 2026-08-27] "Tepeden giriş" — destek/
+    direnç seviyesi bazlı filtre, gate CANLIDA.** Kullanıcı isteği:
+    kritik seviyeden %X'ten fazla uzaktaysa giriş engellensin. Gerçek
+    veriyle (450+ karar) kalibre edildi, makro seviye tanımı günlük
+    klasik pivot noktaları (`compute_pivot_points`, koddaydı ama hiç
+    kullanılmıyordu). Büyük-cap (`crypto_cap_tier()`, 16 sembol) ve
+    küçük-cap AYRI test edildi — kullanıcının "her sembolde aynı
+    çalışmayabilir" uyarısı doğru çıktı: large-cap'te temiz/monotonik
+    desen (mesafe ≤%0.52'de win %95-98, %0.65'te %91.1, %2.20'de %84.4
+    — eşik **~%0.6**), small-cap'te desen YOK/TERS (en yakın grup en
+    kötü) — gate SADECE large-cap'e uygulanıyor.
+    **İnşa edildi**: `analytics/pivot_distance_gate.py` (saf) +
+    `services/orchestrator.py`'de zaten fetch edilmiş `daily_data`'dan
+    (ekstra ağ isteği YOK) `nearest_pivot_distance_pct` hesaplanıp
+    `ctx.market.features`'a yazılıyor + `decision_recorder.py`'ye wire
+    (pyramid_regime_gate ile aynı noktada, entry_price hesaplanır
+    hesaplanmaz). Yeni ayarlar: `pivot_distance_gate_enabled` (true),
+    `pivot_distance_gate_threshold_pct` (0.006). Gerçek canlı BTC
+    verisiyle uçtan uca doğrulandı (şu an mesafe %0.08, eşiğin altında,
+    engellenmiyor). 24 test. uvicorn+celery worker+beat yeniden
+    başlatıldı, temiz.
 18. **[ÇÖZÜLDÜ — Faz 363, 2026-08-25/26] "Seçicilik eksik" incelendi —
     bkz. madde 36 (pump_fade izolasyonu) ve confidence=0.5 kovası kök neden
     analizi. Sonuç: yapısal bir seçicilik sorunu değil, geçmişte biriken
@@ -178,32 +211,23 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
     güncellendi (`test_agent_confidence_model.py`, `test_council_
     orchestrator.py` — yukarı-yönlü senaryolar aşağı-yönlü senaryolara
     çevrildi, ilgili regresyon temiz).
-20. Arbitraj pozisyon detay kartı istek listesi: spot/futures bacak, entry/current
-    basis, funding earned, fees, unrealized/net PnL, exit condition — Dashboard'a
-    yeni bir detay görünümü.
-21. **[YAPILDI — kod hazır, COMMIT/WIRE EDİLMEDİ, 2026-08-24] Dashboard'a
-    "AI şu an piyasa yönünü nasıl görüyor" bilgi kartı.** `DecisionPersistor.
-    latest_direction_confidence_by_symbol()` (DISTINCT ON, tek sorgu, son
-    24 saatte taranmış her sembolün EN SON yön/confidence'ı) + yeni `GET
-    /dashboard/market-direction-summary` + Dashboard.tsx'e yeni kart
-    (LONG/SHORT/WAIT yüzdeleri, ortalama güven, en güvenli 5 LONG/SHORT
-    sembol). 2 yeni backend test + tsc temiz. Kullanıcı dönene kadar
-    commit edilmedi (talimatı gereği).
-22. **Pump-fade'de nadir/aşırı fırsatları (token 2x+ yapmış vb. "absürt"
-    hareketler) yakalayabilme.** Kullanıcı isteği (2026-08-24): şu anki
-    pump_fade eşikleri (min_gain_pct vb.) muhtemelen bu tür nadir, büyük
-    fırsatları normal aralığın dışında bıraktığı için hiç görmüyor —
-    bunları nasıl yakalayabileceğimiz üzerine ayrı bir araştırma/tasarım
-    turu gerekiyor. Henüz kod incelemesi yapılmadı, en sona bırakıldı.
-    **Birleştirildi (2026-08-24):** `pump_fade_lookback_hours` (şu an
-    varsayılan 48s) — 24s/72s/1 hafta gibi farklı pencereler daha mı iyi
-    performans gösterir? Kontrol edildi: yerel DB'de ham mum (OHLCV)
-    geçmişi YOK (`candles`/`ohlcv` tablosu yok, `ingest_candles_task`
-    hiç kalıcı yazmıyor) — bu yüzden bunu ölçmek için Binance'in genel
-    API'sinden GERÇEK geçmiş mumları taze çekip `find_pump_candidates`'i
-    farklı `lookback_hours` değerleriyle yeniden çalıştıran bir mini-
-    backtest kurmak gerekiyor. İkisi de `find_pump_candidates` mantığına
-    dokunduğu için AYNI turda ele alınacak — henüz başlanmadı.
+20. **[GEÇERSİZ — Basis Arb Faz 364'te (madde 46) tamamen kaldırıldı]**
+    Arbitraj pozisyon detay kartı istek listesi: spot/futures bacak,
+    entry/current basis, funding earned, fees, unrealized/net PnL, exit
+    condition — Dashboard'a yeni bir detay görünümü. Strateji artık
+    mimaride yok, madde konusu ortadan kalktı.
+21. **[YAPILDI, COMMIT EDİLDİ] Dashboard'a "AI şu an piyasa yönünü nasıl
+    görüyor" bilgi kartı.** `DecisionPersistor.latest_direction_confidence_
+    by_symbol()` (DISTINCT ON, tek sorgu) + `GET /dashboard/market-
+    direction-summary` + Dashboard.tsx kartı — canlı kodda doğrulandı
+    (2026-08-26), 2026-08-24'teki "commit edilmedi" notu artık geçersiz.
+22. **[YAPILDI — Faz 364, madde 47] Pump-fade'de nadir/aşırı fırsatları
+    yakalayabilme.** Kullanıcı sorusu tam olarak Staged Entry'nin
+    kalibrasyon turunda cevaplandı: 43 sembol/250 gün taraması, entry'den
+    sonra fiyat medyan +%36/p90 +%82 daha yükseliyor ama örneklemde HİÇ
+    +%90'a ulaşmıyor. `pump_fade_lookback_hours` alt-sorusu da AYNI turda
+    çözüldü — Binance'ten taze geçmiş mumlarla mini-backtest kuruldu
+    (yerel OHLCV geçmişi olmadığı için).
 23. **[ÇÖZÜLDÜ — Faz 361, 2026-08-24] Aynı sembolde kötü fiyattan
     piramitleme (madde 4'ün devamı).** İlk basit test (kötü/iyi fiyat,
     rejim ayrımı yapmadan) anlamlı fark göstermemişti — kullanıcı ikna
@@ -236,8 +260,8 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
     `list_closed_trades()`/`GET /trades`'e `offset` eklendi (`list_open_
     positions`'ın Faz 268y'deki AYNI deseni). Frontend: `TRADES_PAGE_SIZE`
     + `tradesPage` state, açık pozisyonlarla AYNI "← Önceki / Sonraki →"
-    sayfalama kontrolleri. 1 yeni backend testi + tsc temiz. Kullanıcı
-    dönene kadar commit edilmedi.
+    sayfalama kontrolleri. 1 yeni backend testi + tsc temiz. Canlı kodda
+    doğrulandı (2026-08-26) — commit edilmiş, eski not geçersiz.
 
 25. **[KISMEN ÇÖZÜLDÜ — Faz 359, (b) madde 26'ya taşındı] "Başabaş çekildi"
     etiketi yanıltıcı — gerçek veriyle doğrulandı, 2026-08-24.** Kullanıcı
@@ -293,15 +317,13 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
 
 ## 🆕 Yeni bulgular (henüz ölçülmedi)
 
-28. **SHORT swing isabet oranı çarpıcı derecede düşük.** Kullanıcı bulgusu
-    (2026-08-24, muhtemelen bir dashboard/research panelinden):
-    `ai_council_SHORT_swing` genel isabet %9.0 (n=465) vs `ai_council_
-    LONG_swing` %91.5 (n=823). Faz 342'nin zaten bulup gate'lediği
-    "SHORT + bearish + low volatility" kombinasyonuyla (n=424, %8.3)
-    çakışıyor olabilir — swing SHORT popülasyonunun çoğu o rejimde
-    birikmiş olabilir. Doğrulanması gerekiyor: madde 28'i madde 23'teki
-    gibi rejime göre kırıp, gerçekten SADECE bearish_low mu yoksa SHORT
-    swing'in TÜMÜ mü sorunlu olduğunu ayırt etmek lazım — henüz ölçülmedi.
+28. **[ÇÖZÜLDÜ — madde 43'te detaylı] SHORT swing isabet oranı çarpıcı
+    derecede düşük.** Kullanıcı bulgusu (2026-08-24): `ai_council_
+    SHORT_swing` genel isabet %9.0 (n=465). Rejime kırılınca: %88'i
+    (409/465) `bearish_low`'da (win_rate %5.4) — Faz 342'nin zaten
+    gate'lediği "SHORT + bearish + low volatility" havuzuyla (n=424,
+    %8.3) AYNI popülasyon, yeni bir sorun değil. Kalan `bearish_normal`
+    (n=35) %34.3 — daha iyi, izlemede kalsın.
 
 29. **[SONA ERTELENDİ, KULLANICI ONAYIYLA] Eşzamanlı açık pozisyon sayısı
     (test modu ~2.000 vs canlı hedef 5-10) ile kazanma oranı korelasyonu.**
@@ -525,7 +547,7 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
     `tp_count`/`sl_count` içine gömülü (sonucuna göre TP ya da SL
     sayılıyor), üstüne toplanırsa (2367+782+783=3932) gerçek toplamı
     (3452) aşıyor. Dashboard'daki "Manuel kapanan" kartına açıklayıcı
-    alt metin eklendi ("TP/SL'ye zaten dahil — ayrıca toplama").
+    alt metin eklendi ("TP/SL'ye zaten dahil.").
 
 41. **[ÇÖZÜLDÜ — Faz 363, 2026-08-26] Opportunity Quality "high" (yüksek
     anlaşma) kovası sürekli boş.** Kısmi kök neden: `gather_opportunity_
@@ -564,19 +586,432 @@ gerçek kodla doğrulanabilenler doğrulandı. Sırayla işlenecek.
     olurdu. Örneklem küçük (n=21), veri sızıntısı çekincesi (yukarı bkz.)
     ile birlikte yorumlanmalı ama yön net.
 
-43. **Bugünkü sabah incelemesinden kalan, hiç loglanmamış 3 açık madde
-    (2026-08-26) — henüz araştırılmadı.** Eski oturumda (kayıp/kurtarılamadı)
-    bulunmuş, BACKLOG.md'ye hiç işlenmemiş:
-    - SHORT scalp (%76.2, n=42) vs SHORT swing (%9.0, n=465) rejim bazlı
-      kırılım — backlog #23/#28 ile aynı yöntemle doğrulanmalı.
-    - Onchain (ve muhtemelen credit/volatility/relative_strength) ajanı
-      ölçüm modüllerinde ve Transactions "açıklama" panelinde eksik —
-      mimari bağlantı kontrolü gerekiyor (NOT: 22 Ağustos'ta BENZER ama
-      farklı bir sorun — `api/rest/agents.py`'deki açıklama sözlüğünde
-      Credit/Volatility eksikliği — bulunup düzeltilmişti, bu muhtemelen
-      ayrı/yeni bir şey).
-    - Technical dışındaki 5 domain'in (>100 örneklem olmasına rağmen)
-      hiç eğitilmiş kalibrasyon modeli olmaması — kök neden bulunmadı.
+43. **Bugünkü sabah incelemesinden kalan 3 açık madde (2026-08-26) —
+    ÜÇÜ DE ÇÖZÜLDÜ (Faz 364-devam).**
+    - **[ÇÖZÜLDÜ] SHORT scalp (%76.2, n=42) vs SHORT swing (%9.0, n=465)
+      rejim bazlı kırılım.** `strategy_regime_compatibility_gatherer`
+      zaten aynı veriyi üretiyordu, sadece rejime kırılmamıştı.
+      `ai_council_SHORT_swing`'in 465 örnekleminin 409'u (%88) `bearish_
+      low` rejiminde — win_rate %5.4, tam Faz 342'nin zaten bulup
+      gate'lediği "SHORT+bearish+low volatility" havuzu (n=424, %8.3),
+      YENİ bir sorun değil. Kalan `bearish_normal` (n=35) %34.3 — daha
+      iyi ama hâlâ zayıf, küçük örneklem (CI %20.8-%50.9), izlemede kalsın.
+    - **[ÇÖZÜLDÜ] Onchain/credit/volatility/relative_strength "mimari
+      bağlantı" kaygısı — gerçek bir sorun değildi.** `explain_position`
+      domain-agnostic, gerçek kararlarda tüm domain'ler mevcut, frontend
+      hardcoded filtre yok. İlk kontrolümdeki "hiç yok" görüntüsü kendi
+      ORDER BY'sız/LIMIT'li sorgumun örneklem hatasıydı.
+    - **[ÇÖZÜLDÜ — GERÇEK KÖK NEDEN BULUNDU] Technical dışındaki domain'lerin
+      kalibrasyon modeli eksikliği.** Aslında macro/onchain/order_flow/
+      pattern/quant/relative_strength/sentiment'ın HEPSİNDE artık gerçek
+      eğrisi var (veri o zamandan beri büyüdü) — sadece **credit** ve
+      **volatility** hâlâ yok. Gerçek kök neden: bu iki ajan, canlıya
+      alındıklarından (21 Ağustos) bugüne kadar ~38.000 kararın TAMAMINDA
+      WAIT oyu vermiş — TEK BİR KEZ bile LONG/SHORT dememişler (SQL ile
+      doğrulandı). Sebep: `volatility_agent.py`'nin DVOL eşiği (24 saatte
+      >%15 hareket) ve `credit_agent.py`'nin yield-curve-inversion/spread
+      eşiği kasıtlı olarak SADECE aşırı/nadir rejim değişimlerini
+      puanlıyor (onchain'in MVRV/NUPL/SOPR'daki AYNI "sadece aşırılık"
+      disiplini) — 5-6 günlük kısa canlı geçmişte bu eşikler hiç
+      aşılmamış. Madde 44'teki kullanıcı hipotezini doğruluyor: credit/
+      volatility'nin "sessizliği" ile kalibrasyon eksikliği AYNI kök
+      nedene bağlı. **Karar kullanıcıya bırakıldı** — eşikleri gevşetmek
+      (daha sık ama daha zayıf sinyal) mi, yoksa gerçek bir rejim
+      değişimi olana kadar beklemek mi (mevcut tasarım) tercih edilir,
+      henüz uygulanmadı.
+
+44. **Karşı-Olgusal Ajan-Etki Ölçümü — credit/volatility/relative_strength
+    turu (2026-08-26), henüz araştırılmadı.** Madde 42'nin AYNI aracıyla
+    (`analytics/counterfactual_trade_replay.py`) kullanıcı 3 ajanı daha
+    taradı, üçü de birbirinden çok farklı bir tablo çizdi:
+    - **credit ve volatility**: tüm geçmişte SADECE 1 kez (her biri)
+      council'in son yönünü çevirmiş, o tek vaka da risk kapılarını
+      geçmemiş — gerçek işleme hiç dönüşmemiş. Örneklem o kadar küçük ki
+      "inconclusive" (agent_helped/agent_hurt ölçülemez).
+    - **relative_strength**: 154 flip, 12'si gerçek işleme dönüşmüş.
+      Ajan OLMASAYDI o 12 kararın toplam PNL'i +$0.61 (sıfıra yakın),
+      GERÇEKTE (dahil) +$879.85 — madde 42'deki onchain bulgusundan
+      (+$0.62 → +$70.19) bile çok daha çarpıcı bir fark. **agent_helped**,
+      güçlü sinyal.
+    - Kullanıcının hipotezi: credit/volatility'nin bu kadar "sessiz"
+      kalması, madde 43'ün son alt maddesiyle (technical dışındaki 5
+      domain'in hiç kalibrasyon modeli olmaması) aynı kök nedene işaret
+      ediyor olabilir — bu iki ajan için kalibrasyon modeli eğitecek
+      anlamlı/yeterli sinyal baştan hiç oluşmuyor olabilir. Kullanıcı
+      kararı: şimdi değil, "bir ara" bakılacak.
+
+45. **[ÇÖZÜLDÜ — Faz 364, 2026-08-26] KRİTİK: pump_fade_enabled=true
+    ayarına rağmen sistem hiç pozisyon açmıyordu.** Kök neden: circuit
+    breaker (`pump_fade_max_loss_circuit_breaker_usd`, eşik $10K) her
+    `run_cycle()`'da kümülatif TÜM ZAMANLARIN gerçekleşmiş zararına
+    ($269K+) bakıyordu — bu zararın tamamı 20 Ağustos'ta (Faz 332
+    düzeltmesinden ÖNCE, o zamanki tavansız formülle) açılmış ~82 legacy
+    pozisyondan, 21 Ağustos'tan beri TEK bir yeni pozisyon yokken. Ayarı
+    `true` yapmak işe yaramıyordu çünkü her cycle kendini yeniden
+    `false`'a çekiyordu. Çözüm: `kill_switch_legacy_cutoff_at` ile AYNI
+    desen — yeni `pump_fade_circuit_breaker_legacy_cutoff_at` ayarı
+    (21 Ağustos'a set edildi), bu tarihten önceki pozisyonlar devre
+    kesici toplamına hiç girmiyor (dashboard/istatistikler etkilenmedi).
+    Canlıda doğrulandı: artık `candidates_found` ile gerçek tarama
+    yapıyor.
+46. **[YAPILDI — Faz 364, 2026-08-26] Basis Arbitrage stratejisi
+    tamamen kaldırıldı.** Kullanıcı bulgusu: 90 kapanmış işlem, toplam
+    gerçekleşmiş P&L -$196.52 (net zarar) — $100/bacak boyutunda
+    komisyonlar funding+basis kâr payını aşıyordu. AI konseyinden
+    tamamen izole mekanik bir strateji olduğu için (hiçbir kalibrasyon/
+    öğrenme döngüsüne veri beslemiyordu) "veri toplama" gerekçesi de
+    yoktu. Önce tüm açık pozisyonlar kapatıldı (23 eşleşmiş çift +
+    4 yetim bacak, gerçek güncel fiyattan), sonra kod tabanının her
+    yerinden silindi: `services/basis_arbitrage_strategy.py`,
+    `market_data/basis/`, `tests/test_basis_arbitrage_strategy.py`
+    kaldırıldı; celery task/beat girişleri, Settings ayarları+UI kartı,
+    API validasyonu kaldırıldı; `confidence_calibration.py`/
+    `kelly_sizing.py`/`strategy_regime_compatibility_gatherer.py`'deki
+    (artık silinmiş modülden) import'lar sabit string'e çevrildi (geçmiş
+    kapanmış basis_arb_v1 kararları hâlâ DB'de, izolasyon/etiketleme
+    hâlâ doğru çalışıyor). 1812 test hatasız collect ediliyor, tsc temiz.
+47. **[YAPILDI — Faz 364, 2026-08-26] pump_fade Kademeli Giriş (Staged
+    Entry).** Kullanıcı fikri, gerçek Binance verisiyle kalibre edildi
+    (43 sembol, 250 gün, 15 bağımsız +%50 pump olayı): entry'den sonra
+    fiyat medyan +%36, p90 +%82 DAHA yükseliyor, ama +%90'a örneklemde
+    HİÇ ulaşılmıyor (0/11). Dip-bazlı %50'de hedefin %25'i açılır (stop'a
+    mesafe uzak, güvenli kaldıraç ~2.5x); dip-bazlı %80'e ulaşırsa 3 katı
+    büyüyüp %100'e tamamlanır (bu ikinci bacak, ortak stop'a mesafesi çok
+    yakın olduğu için ~11x kaldıraç kaldırabilir — kullanıcının orijinal
+    "yüksek kaldıraç" fikri, doğru mesafeyle, tutarlı çıktı); ortak stop
+    dip-bazlı %90'da. Risk bütçesi (`max_loss_per_trade_usd`) iki bacak
+    arasında `first_leg_pct`'e göre bölünür, toplamda normal (kademesiz)
+    bir işlemle AYNI $ tavanı. Migration (2 yeni nullable kolon), yeni
+    Celery görevi (add-tetiği taraması, 60sn), Settings kartı. Kullanıcı
+    onayıyla canlıya alındı (`pump_fade_staged_entry_enabled=true`,
+    `pump_fade_enabled=true`). 7 test.
+
+    **Yan bulgu (canlı restart sırasında):** celery worker'lar 17:02'de
+    (nedeni belirsiz) yeniden başlamıştı ama celery beat Pazartesi'den
+    beri hiç başlamamıştı — beat hâlâ silinmiş `run_basis_arbitrage_
+    cycle_task`'ı kuyruğa koymaya devam ediyordu, eski worker'lar (17:02
+    öncesi) bunu son kez çalıştırıp 11 gerçek basis-arb çifti açtı
+    (ve `max_hold_hours=0` kalıntı ayarım yüzünden saniyeler içinde
+    kendilerini kapattı). Ayrıca AYNI eski worker, circuit breaker
+    düzeltmesi (madde 45) yüklenmeden ÖNCE bir kez daha tetiklenip
+    `pump_fade_enabled`'ı false'a çekmişti. Kullanıcı onayıyla celery
+    worker+beat TAMAMEN yeniden başlatıldı (iki kez — #13/#14 kodu da
+    dahil olsun diye) — artık hem basis-arb hem eski circuit breaker
+    sorunu kalıcı olarak temiz. **Ders:** kod değişikliği sonrası SADECE
+    worker değil, celery BEAT de yeniden başlatılmalı — schedule dict'i
+    sadece beat'in kendi başlangıcında yükleniyor, worker restart'ı
+    yetmiyor.
+
+48. **[YAPILDI — Faz 364, 2026-08-26] Ajan Güvenilirliği × Rejim ölçümü.**
+    Kullanıcı sorusu: "hangi ajan hangi rejimde isabetli, ölçmezsek şu an
+    zayıf görünen bir ajanı boşuna silebiliriz." Gerçek bir boşluktu —
+    `strategy_regime_compatibility` (strateji×rejim) ve `agent_combination_
+    reliability` (ajan-ikilisi×genel) vardı ama ajan-domain×rejim yoktu.
+    `services/agent_domain_regime_reliability_gatherer.py`, YENİ saf
+    fonksiyon YAZMADAN `compute_strategy_regime_compatibility`'yi "strategy"
+    etiketi yerine ajan domain'i ile besleyerek çözdü. Genel Özet'e 18.
+    modül olarak eklendi. Gerçek örnek: `relative_strength` genelde %52.7
+    (vasat) ama `bullish_low`'da %68.5, `bullish_high`'ta %39.5 — genel
+    ortalama rejim-özel değeri gizliyor.
+    **Doğal sonraki adım (henüz YAPILMADI, ayrı karar gerektirir):**
+    kullanıcının önerdiği gibi ajan ağırlıklarını rejime göre otomatik
+    ayarlayan bir mekanizma (`moe_regime_router.py`'nin hurst-bazlı tilt
+    deseniyle benzer ama bu ÖLÇÜLMÜŞ veriye dayanır) — "yeni karmaşıklık
+    kendi edge'ini kanıtlamalı" ilkesi gereği önce daha büyük örneklemle
+    (şu an bazı domain×rejim hücreleri 15-20 işlem civarında, ince) ve
+    gerçek OOS doğrulamayla desteklenmeli, hemen wire edilmedi.
+
+49. **[VERİ TOPLAMA KISMI YAPILDI — Faz 365, 2026-08-26] Liquidation
+    Agent (eski adı "MempoolAgent" — kullanıcı onayıyla değiştirildi,
+    gerçek veri kaynağı mempool değil).** Ham Ethereum gas verisi
+    (`fetch_eth_gas_price_gwei`) zayıf proxy'ydi. Kullanıcı kararı:
+    "veri toplayıp ölçebiliyorsak iyi, en önemli kısım orası — wire
+    etmesi kolay." Kurulan: `liquidation_events` tablosu (migration
+    faz365, TimescaleDB hypertable, hem quantdb hem quantdb_test'e
+    uygulandı) + `services/binance_liquidation_listener.py` (Binance'in
+    ücretsiz `!forceOrder@arr` akışı, `realtime_position_monitor.py`
+    ile AYNI kalıcı-süreç deseni, `service_watchdog.sh`'a eklendi) +
+    `market_data/liquidations/liquidation_provider.py` (okuma/toplama
+    katmanı, `fetch_liquidation_pressure(symbol, window_minutes)`).
+    9 test. Canlıda doğrulandı: watchdog yeniden başlatıldı, dinleyici
+    bağlandı, elle test satırıyla INSERT yolu doğrulandı (gerçek akışta
+    ilk ~50sn'de olay gelmedi — piyasa şu an sakin, credit/volatility
+    ajanlarının aynı dönemdeki sessizliğiyle tutarlı, alarm değil).
+    **Henüz YAPILMAYAN**: `LiquidationAgent` (oy veren ajan sınıfı) +
+    `AgentDomain` üyesi + council'e wire etme — kullanıcı isteğiyle ayrı
+    bir tur, önce veri birikmesi bekleniyor.
+
+50. **[AÇIK] "bearish_low" rejiminde LONG/SHORT arasında çarpıcı ters
+    ilişki — muhtemelen EMA20/50 lag artefaktı, kök neden HENÜZ
+    doğrulanmadı.** Kullanıcı hipotezi (2026-08-26): SHORT swing'in
+    çöküşü (madde 28/43) belki AYNI rejimde başarılı olan bir zıt-yön
+    ile bağlantılı. Gerçek veriyle doğrulandı — AYNI `bearish_low`
+    etiketinde: SHORT swing win_rate %5.4 (n=409) ama LONG swing %85.9
+    (n=142) VE LONG scalp %96.5 (n=342). Kod incelemesi (`market_data/
+    features/signal_engine.py:83`): trend etiketi `ema20 > ema50 ->
+    bullish, < -> bearish` klasik bir GECİKMELİ (lagging) crossover —
+    "bearish" tetiklendiğinde fiyat genelde zaten en sert düşüşünü
+    yapmış, dip'e yakın/geçmiş oluyor olabilir (LONG'un neden bu
+    etikette bu kadar iyi olduğunu, SHORT'un neden kötü olduğunu
+    mekanik olarak açıklayabilir). **Henüz doğrulanmadı** — gerçek
+    kontrol: `bearish_low` etiketlenen kararların EMA20/50 crossover'a
+    göre kaç bar/saat önce gerçekleştiğini gerçek fiyat verisiyle
+    ölçmek gerekiyor. Doğrulanırsa bu "yeni bir alpha" değil, mevcut
+    SHORT-blokaj kapısının (madde 23, Faz 361) NEDEN doğru olduğunun
+    mekanik açıklaması olur — kullanıcının "geniş bir rejim-korelasyon
+    modülü" fikri yerine, ÖNCE bu tek hipotez ucuz bir sorguyla test
+    edilmeli (yeni bir genel-amaçlı modül inşa etmeden önce).
+
+    **[ÇÖZÜLDÜ — ölçüm tarafı, Faz 364-devam] `direction_regime_asymmetry`
+    modülü kuruldu.** Dar EMA-lag hipotezi TEST EDİLDİ ve DOĞRULANMADI —
+    bearish_low'daki SHORT kararlarının 20-bar fiyat aralığındaki
+    konumuna bakıldı (dip'e yakınken daha kötü olması beklenirdi),
+    gerçek sonuç TERSİ çıktı (dip'e yakın %9 win, üst kısımlarda %0 win)
+    — SHORT bu rejimde aralığın HER YERİNDE çöküyor, salt gecikme
+    açıklamıyor. Bunun yerine kullanıcının "geniş korelasyon modülü"
+    fikri kuruldu: `analytics/direction_regime_asymmetry.py` (yeni DB
+    sorgusu YOK, `strategy_regime_compatibility`'nin çıktısını LONG/
+    SHORT çiftleri halinde eşleştiriyor) + Genel Özet'e 19. panel. Gerçek
+    sonuç: swing/bearish_low LONG %85.9 vs SHORT %5.4 (80 puan fark),
+    swing/bearish_normal 57 puan, scalp/bearish_low 22 puan. 8 test.
+    **Aksiyon tarafı KASITLI OLARAK YAPILMADI** — kullanıcı kararı
+    (2026-08-26): "örneklem büyüsün sonra karar verelim, bir ara tekrar
+    bakılacak." Madde 23'teki `pyramid_regime_gate.py` deseni (en
+    performanslı rejimde izin ver, dışında yasakla) burada da uygulanabilir
+    ama HENÜZ uygulanmadı — sadece ölçüm canlı.
+
+51. **[ÖLÇÜLDÜ — Faz 366-devam, 2026-08-27, ETKİ İHMAL EDİLEBİLİR
+    ÇIKTI] OnChain'in BTC-özel ağ sağlığı sinyalleri (network_activity_
+    trend/hash_rate_trend) diğer sembollerde de puana katılsaydı?**
+    Kullanıcı sorusu (2026-08-26). NOT: bu ZATEN bilinçli bir kısıtlama —
+    Faz 248 bulgusu bunun tam tersini bir hata olarak bulup düzeltmişti.
+    Test yöntemi: `counterfactual_trade_replay.py`'nin leave-one-out'undan
+    FARKLI bir "ne olurdu" simülasyonu kuruldu —
+    `analytics/onchain_extension_counterfactual.py` (saf, agents/onchain_
+    agent.py'nin BİREBİR AYNI eşikleriyle onchain oyunu hipotetik olarak
+    genişletiyor) + `services/onchain_extension_counterfactual_gatherer.py`
+    (her BTC-dışı kararı, en yakın zamanlı GERÇEK bir BTC kararının
+    saklı `feature_contributions`'ıyla besleyip `BeliefEngine().
+    synthesize()` ile council'i yeniden çalıştırıyor — yeni bir
+    tarihsel API çekme gerekmedi). `services/counterfactual_agent_
+    impact_gatherer.py::replay_flipped_decision`'a `resynth` parametresi
+    eklenerek (geriye dönük uyumlu) ~150 satırlık bar-bar risk/execution
+    replay TEKRARLANMADI.
+
+    **Gerçek sonuç: etki neredeyse yok.** 3140 BTC-dışı kararın SADECE
+    32'si (%1.0) yön değiştirirdi, o 32'nin de sadece 5'i risk/EV
+    kapılarından geçip gerçek bir işleme dönüşürdü (27'si reddedildi/
+    veri yetersiz) — n=5, anlamlı bir istatistik için gerekli eşiğin
+    (10) çok altında, **verdict=inconclusive** (fail-closed, zorla bir
+    sonuç üretilmedi). Pratik sonuç: kısıtı açmanın getirisi o kadar
+    nadir ki (ayda ~1 kararda 1) zahmete değmez — Faz 248'in kararı
+    doğru, yeniden açılmasına gerek yok. 4 test.
+
+52. **[AÇIK, ÇOĞU HENÜZ DOĞRULANMADI] Harici GPT incelemesi — "Research
+    Control Plane" raporu (2026-08-26).** Genel Özet panellerinin
+    canlı çıktısına bakarak yazılmış 20 maddelik bir rapor + öncelik
+    sırası. Rapor kendi önerdiği sırayla:
+
+    **P0 (önce):**
+    - **[DOĞRULANDI, GERÇEK BUG] Risk Simülatörü (`market_world_model`)
+      -1748% gibi imkansız görünen değerler üretiyor.** Kök neden
+      bulundu: `analytics/market_world_model.py` doğru compounding
+      yapıyor (toplama değil), AMA `services/market_world_model_
+      gatherer.py:39`'un beslediği `returns` ham VARLIK fiyat getirisi
+      (`sign * (exit-entry)/entry`) — leverage/margin'e göre ayarlanmış
+      gerçek pozisyon PnL%'i DEĞİL. Varlık %100'den fazla hareket eden
+      bir SHORT'ta bu -1.0'dan daha negatif bir "getiri" üretiyor,
+      compounding formülü `(1+r)>0` varsayımını kırıp işaret değiştiren
+      anlamsız kümülatif değerler veriyor.
+      **[DÜZELTİLDİ — Faz 366-devam, 2026-08-27]** Kullanıcı kararı:
+      taban/cap yerine gerçek margin-bazlı PnL%. İlk deneme (`pnl/margin`)
+      TEK BAŞINA yetersiz çıktı, iki AYRI ek sorun ortaya çıkardı: (1) bu
+      fonksiyon `pump_fade_v1`'i hariç tutuyordu ama `basis_arb_v1`'i HİÇ
+      tutmuyordu — basis_arb_v1 (Faz 364'te kaldırıldı, backlog #30'da
+      bilinen likidasyon-gecikmesi hataları var, gerçek örnek: BTRUSDT
+      SHORT margin=$100 ama pnl=-$1864, 18.6x) `confidence_calibration.py`/
+      `kelly_sizing.py`'nin (Faz 363, #36) zaten uyguladığı izolasyonu
+      kaçırmıştı, eklendi. (2) `pnl/margin` ile bile 50 işlemi ardışık
+      compound etmek anlamsız kaldı (ortalama %744 trilyon!) — her
+      seferinde TÜM bakiyenin yeniden 5-10x kaldıraçla yatırıldığını
+      varsayıyordu, sistemin gerçek boyutlandırmasıyla (capital_per_trade,
+      sermayenin küçük bir dilimi) uyuşmuyordu. Gerçek düzeltme: payda
+      `starting_capital` (`backtest/red_team.py`'nin AYNI "sabit taban
+      sermaye" ilkesi) — gerçek veriyle doğrulandı, artık ortalama
+      %0.0012, en kötü -%0.6 (önceden trilyonlarca/imkansız). 2 yeni
+      test (paylaşılan quantdb_test'in bilinen kirliliğinden izole,
+      monkeypatch'li). uvicorn+celery worker+beat yeniden başlatıldı.
+    - Stop execution audit — "810 stop-kapanışının %27'si (216) gerçek
+      stop seviyesini aşarak kapanmış, en kötü %12" iddiası — bu
+      oturumda DOĞRULANMADI (rapor bir dokümandan aldığını söylüyor,
+      koda bakılmadı). Gerçekse ciddi — her stop için intended_stop/
+      trigger/fill/slippage ayrıştırılmalı.
+    - Decision Transformation Ledger — her kararın raw→calibrated→
+      regime→Kelly→ENB→correlation→meta-label→final boyutlandırma
+      zincirini DB'ye kaydetmek. Fikir sağlam, henüz yok.
+    - Self-Model → risk governor (boyut çarpanı) — ÖNCE reliable/
+      degraded/unreliable gruplarının OOS PnL farkı ölçülmeli, kafadan
+      katsayı YASAK. `[[project_closed_loop_self_optimization_vision]]`
+      hafıza notuyla aynı vizyon.
+
+    **P1:** Quant Agent Ablation 2.0 (ON/OFF/ONLY + ΔPnL/ΔSharpe/Δdrawdown,
+    sadece accuracy değil), **Opportunity Quality edge decay testi**
+    (eskiden medium≫low idi, hâlâ öyle mi? — ucuz, Scientific Self-
+    Correction'a çok uygun, öncelikli), MAE/MFE `insufficient_data`
+    kök neden izi, TP/SL Confluence %0 uçtan uca 5 gerçek trade ile
+    elle izleme (geçmişte stop_loss_price distance/absolute karışıklığı
+    GERÇEKTEN yaşanmıştı — GPT bunu doğru hatırlıyor).
+
+    **P2:** Meta-learning objective'i Sharpe yerine robust_score (OOS
+    Sharpe - λ·drawdown - λ·tail_loss - λ·turnover) yapmak + "peak değil
+    plateau" stabilite testi, signal persistence N eşiği için de AYNI
+    plateau mantığı (N=6 tek nokta değil, 5-8 aralığı), conditional
+    edge map (`agent_domain_regime_reliability`/`direction_regime_
+    asymmetry` ZATEN bu yönde, rapor bunlardan habersiz paralel
+    düşünmüş), Direction Prediction V2 için kalibrasyon eğrisi (sadece
+    Brier değil).
+
+    **Rapor kendi kararıyla ERTELEDİĞİ şeyler** (kullanıcının `[[feedback_
+    no_new_agents_focus_on_hardening]]` prensibiyle bağımsız olarak
+    örtüşüyor — dikkat çekici): yeni ajan, yeni LLM/embedding, Quantum/
+    Adversarial ajan, otomatik CMA-ES onayı, Self-Model'in doğrudan yön
+    değiştirmesi.
+
+    **Genel değerlendirme:** raporun "gate interaction" endişesi (#13 —
+    çok fazla çarpımsal shrinkage bir trade'i fark edilmeden öldürüyor
+    olabilir) ilginç ama henüz ölçülmedi. "Research Control Plane"
+    mimari önerisi (#20) kavramsal olarak makul ama var olan modüllerin
+    çoğu ZATEN o diyagramın parçaları — yeniden mimarilemek yerine önce
+    modüller-arası etkileşimi ölçmek daha ucuz bir ilk adım olabilir.
+
+53. **[AÇIK, sonra bakılacak] İki paralel rejim taksonomisi.** Kodda
+    GERÇEKTEN iki ayrı rejim sınıflandırması var: `market_regime` (DB
+    sütunu, `signal_engine.py`'nin EMA20/50-benzeri hızlı `trend` +
+    `volatility_regime`'inden — bugün kurulan tüm yeni paneller
+    (`agent_domain_regime_reliability`, `direction_regime_asymmetry`,
+    `feature_ic_by_regime`) bunu kullanıyor) VE `long_term_trend_regime`
+    (200-EMA tabanlı, yavaş — `barrier_table_builder.py`/MAE-MFE
+    Confidence paneli, `meta_label_model.py`, `quant_agent.py` bunu
+    kullanıyor). GPT raporunun #7'deki "mimari smell" sezgisini kısmen
+    doğruluyor ama kök neden bir bug değil — bilinçli olarak iki farklı
+    zaman ölçeğinde iki ayrı sinyal. Yine de kafa karıştırıcı, aynı
+    kelime ("rejim") iki farklı şey ifade ediyor. Kullanıcı kararı:
+    "todoya not alalım sonra bakarız" — henüz araştırılmadı/birleştirilmedi.
+
+54. **[YAPILDI — Faz 366, 2026-08-26] Strategy Gate Approval — insan
+    onaylı strateji×rejim engelleme mekanizması.** Kullanıcı: "ürettiği
+    strateji insan onayına sunulur böyle bir yapı ayarlamıştık... veri
+    toplamanın mantığı yok kullanmıyorsak." Kontrol edildi: böyle bir
+    yapı YOKTU — `WeightApproval`/`PendingApprovals.tsx` SADECE ajan
+    ağırlıkları içindi, `strategy_hypothesis_scanner.py`'nin (Faz 346)
+    bulduğu adaylar için hiç onay kuyruğu yoktu. `weight_approvals` ile
+    AYNI propose→pending→approve/reject desenini kurduk:
+    - `strategy_gate_approvals` tablosu (migration faz366, hem quantdb
+      hem quantdb_test).
+    - `services/strategy_gate_proposer.py`: `scan_for_gate_candidates` +
+      `validate_candidate_out_of_sample`'ı çalıştırıp SADECE OOS'ta
+      tekrarlanan (`replicated_out_of_sample=True`) adayları pending
+      olarak kaydeder, dedup var (Faz 229 disiplini). Günlük Celery
+      görevi (`propose_strategy_gate_candidates_task`) + `auto_reject_
+      stale_strategy_gate_approvals_task` (24s).
+    - `analytics/strategy_regime_gate.py::is_strategy_regime_gated()` —
+      saf fonksiyon, engellenmiş (strateji, rejim) kümesinde eşleşirse
+      engeller.
+    - `decision_recorder.py`'ye wire edildi — `stop_loss_price`
+      hesaplandıktan SONRA (trade_type ona bağlı, `pyramid_regime_
+      gate`'in aksine daha geç bir noktada). Yeni ayar `strategy_gate_
+      enabled` (varsayılan true).
+    - `api/rest/strategy_gates.py` (pending/blocked/approve/reject) +
+      `PendingApprovals.tsx`'e ikinci bölüm eklendi ("Strateji Kapı
+      Adayları").
+    - **[DÜZELTME, aynı gün] İsimlendirme hatası bulundu ve düzeltildi:**
+      kullanıcı bulgusu — `status="approved"` yanlış okunuyordu ("onaylı
+      strateji" = "kazandıran strateji" gibi algılanabiliyordu, oysa
+      onaylanan şey stratejinin İYİLİĞİ değil, o rejimde ENGELLENMESİ).
+      Statü değerleri `approved`→`blocked`, `rejected`→`dismissed`
+      olarak değiştirildi (repository/API/testler/canlı DB satırı dahil
+      TÜM katmanlarda), approve()/reject() fiil olarak kaldı ama sonuç
+      durumu artık ters okunamıyor.
+    - **İlk gerçek aday, bu oturumda insan kararıyla (kullanıcı, canlı
+      konuşmada) engellendi ve şu an CANLI engelliyor:**
+      `ai_council_LONG_swing` × `bullish_high` (win %64.6 vs geri kalan
+      %90.7, p=0.0, OOS'ta tekrarlandı) — `strategy_hypothesis_scanner`
+      panelinin BULDUĞU, kimsenin daha önce fark etmediği bir bulguydu.
+    - 24 test (pure/repository/wiring), hepsi geçti. uvicorn+celery
+      worker+beat üçü de yeniden başlatıldı, temiz.
+
+55. **[YAPILDI — Faz 366-devam, 2026-08-27] Varlık Sınıfına Göre AI
+    Başarı Oranı — Dashboard bilgilendirme kartı.** Kullanıcı isteği:
+    "Bitcoin/Emtia/Hisse performansını... hangi işlem türünde AI ne
+    kadar başarılı, kısaca bakış atabilirim." `services/agent_memory.py::
+    asset_class_of_symbol()` (Faz 325'te market-cap kalibrasyonu için
+    kurulmuştu) 3 kaba kategoriye (Kripto/Emtia/Hisse Senedi) gruplanıp
+    win_rate + Wilson güven aralığı hesaplandı — yeni bir sınıflandırma
+    icat edilmedi. `analytics/asset_class_performance.py` (saf) +
+    `services/asset_class_performance_gatherer.py` (pump_fade_v1/
+    basis_arb_v1 hariç, agent_combination_reliability ile AYNI izolasyon)
+    + `GET /api/v1/dashboard/asset-class-performance` + Dashboard.tsx'e
+    "AI Şu An Piyasa Yönünü Nasıl Görüyor" kartının hemen altına yeni
+    kart. Gerçek veri çarpıcı: **Emtia %98.2** (n=282), **Kripto %68.5**
+    (n=2848), **Hisse Senedi %53.9** (n=65, geniş GA). 6 test + uçtan
+    uca gerçek HTTP isteğiyle doğrulandı, tsc temiz. Tarayıcıda görsel
+    doğrulama YAPILMADI (dev server başlatılmadı).
+
+56. **[YAPILDI — Faz 367, 2026-08-27] LLM sistemi mimariden tamamen
+    kaldırıldı.** Kullanıcı: "LLM'i kaldıracağız, 5 gündür zaten
+    çalışmıyor, çalışsa da işe yarar bir tavsiyede bulunduğu hiç olmadı.
+    Mimariyi şişiriyor gereksiz, bizim ajanlar daha iyisini yapabilir."
+    Gerçek doğrulama: `llm_audit_runs`'ta 30/30 çalıştırmada
+    `proposals_created=0`, son gerçek çalıştırma TAM 5 gün önce hata ile
+    durmuş (`[Errno 2] No such file or directory`), canlı test edilen
+    NVIDIA API çağrısı `ReadTimeout` ile başarısız oldu. sentiment_agent
+    zaten Faz 269-sonrası'nda 9 oy-veren ajan listesinden çıkarılmıştı —
+    `refresh_llm_news_sentiment_task`'ın ürettiği veriyi tüketen hiçbir
+    şey kalmamıştı (ölü kod).
+
+    Silinen: `llm_reasoner.py`, `llm_tools.py`, `services/llm_system_
+    audit.py`, `market_data/sentiment/llm_news_sentiment_provider.py`,
+    `contracts/llm_audit_run.py`, `contracts/code_change_proposal.py`,
+    `contracts/llm.py`, `database/repositories/llm_audit_run_repository.py`,
+    `database/repositories/code_change_proposal_repository.py`,
+    `api/rest/llm_critic.py`, `dashboard/src/views/LLMCritic.tsx`,
+    `meta_optimizer/orchestrator.py`/`analyzer.py` (doğrulanmış dead
+    code — hiçbir live servis import etmiyordu, sadece `contracts.llm`'e
+    bağımlıydı). `llm_system_audit_task`/`refresh_llm_news_sentiment_task`
+    (+ ilgili celery beat/queue routing girdileri, "slow" kuyruğu artık
+    boş ama ders yorumla korundu) + `/news-sentiment` endpoint'i +
+    MarketOverview.tsx'teki "Piyasa Haber Duyarlılığı" kartı + Sidebar/
+    App.tsx route'u temizlendi. Migration faz367: `llm_audit_runs` +
+    `code_change_proposals` tabloları drop edildi (hem quantdb hem
+    quantdb_test). 7 test dosyası silindi, 2 test dosyasında ilgili
+    testler çıkarıldı. 1832 test hatasız collect ediliyor, tsc temiz,
+    uvicorn+celery worker+beat yeniden başlatıldı, temiz.
+
+57. **[YAPILDI — Faz 367, 2026-08-27] Varlık Sınıfı + Rejim Aç/Kapa
+    Modülleri — Dashboard kartlarına yerleştirildi.** Kullanıcı isteği:
+    "Emtia, Token ve Hisse Senedi'ni aç kapa yapabileceğimiz modüller...
+    Settings yerine dashboard'daki karta yerleştirelim" + "sistemin
+    işlem aldığı rejimleri de aç kapa yapabilirsek süper olur." Settings
+    yerleşimi YERİNE kontekstüel (bkz. proje hafızası "settings
+    placement: contextual"):
+    - `services/agent_memory.py::asset_class_trading_category()` — TEK
+      kaynak (crypto/commodity/equity), `analytics/asset_class_
+      performance.py`'nin görünen etiketiyle (Kripto/Emtia/Hisse Senedi)
+      AYNI sınıflandırmayı paylaşıyor.
+    - `analytics/asset_class_trading_gate.py` + `analytics/regime_
+      trading_gate.py` (saf, fail-OPEN — bunlar güvenlik kapısı değil,
+      kullanıcı tercihi) + `decision_recorder.py`'ye wire (asset-class
+      pump_fade'i de kapsıyor, regime SADECE AI konseyi).
+    - Yeni ayarlar: `asset_class_trading_enabled`, `regime_trading_
+      enabled` (JSON map, `symbol_leverage` ile AYNI desen).
+    - Dashboard.tsx: asset-class kartına aç/kapa düğmeleri eklendi, YENİ
+      bir "Rejime Göre AI Konseyi Girişleri" kartı (6 rejim, aç/kapa).
+      Mevcut `save()`/settings fetch'i yeniden kullanıldı, yeni API
+      YAZILMADI (generic `/api/v1/settings/{key}` yeterliydi).
+    - 21 test, tsc temiz, uçtan uca gerçek HTTP isteğiyle doğrulandı
+      (bir ad-hoc doğrulama scripti yanlışlıkla üretime yazdı, hemen
+      fark edilip doğru varsayılana geri alındı — bkz. proje hafızası
+      "debug scripts must target test db").
 
 ## Notlar
 

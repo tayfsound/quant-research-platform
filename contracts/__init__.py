@@ -19,7 +19,6 @@ from contracts.decision_event import DecisionEvent
 from contracts.execution_mode import ExecutionMode
 from contracts.information_graph import InformationGraph, NodeType, SourceType
 from contracts.knowledge import KnowledgeCategory, KnowledgeEntry
-from contracts.llm import LLMExplainerPort, LLMExplanation
 from contracts.macro import MacroContext, MacroIndicator
 from contracts.memory import Episode, EpisodicMemory, SemanticMemory, WorkingMemory
 from contracts.observation import Observation, ObservationType

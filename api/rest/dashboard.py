@@ -98,3 +98,26 @@ def market_direction_summary(user: AuthContext = Depends(get_current_user)):
         "top_long_symbols": _top(long_rows),
         "top_short_symbols": _top(short_rows),
     }
+
+
+@router.get("/asset-class-performance")
+def asset_class_performance_summary(user: AuthContext = Depends(get_current_user)):
+    """Kullanıcı isteği (2026-08-27): "Bitcoin/Emtia/Hisse performansını
+    dashboard bilgilendirme kartı olarak görmek istiyorum... hangi işlem
+    türünde AI ne kadar başarılı." services/asset_class_performance_
+    gatherer.py'nin gerçek kapanmış işlemlerden hesapladığı sonucu
+    doğrudan döner."""
+    from services.asset_class_performance_gatherer import gather_asset_class_performance
+
+    return gather_asset_class_performance()
+
+
+@router.get("/regime-performance")
+def regime_performance_summary(user: AuthContext = Depends(get_current_user)):
+    """Kullanıcı isteği (2026-08-27): "REJİME GÖRE AI KONSEYİ GİRİŞLERİ
+    kartındaki butonlara hangi rejimin ne kadar başarılı olduğu
+    bilgisini ekleyelim." services/regime_performance_gatherer.py'nin
+    gerçek kapanmış işlemlerden hesapladığı sonucu doğrudan döner."""
+    from services.regime_performance_gatherer import gather_regime_performance
+
+    return gather_regime_performance()

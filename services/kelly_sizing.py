@@ -55,8 +55,12 @@ def compute_confidence_bucket_payoff_stats() -> dict[float, dict]:
     from sqlalchemy import text
 
     from database.session_factory import SessionFactory
-    from services.basis_arbitrage_strategy import EXPERIMENT_BUCKET as _BASIS_ARB_BUCKET
     from services.pump_fade_strategy import EXPERIMENT_BUCKET as _PUMP_FADE_BUCKET
+
+    # Faz 364 — basis_arb_v1 stratejisi tamamen kaldırıldı, ama geçmişte
+    # kapanmış kararları hâlâ DB'de duruyor ve izole kalmaya devam
+    # etmeli — modülü tanımlayan dosya silindiği için sabit burada.
+    _BASIS_ARB_BUCKET = "basis_arb_v1"
 
     buckets: dict[float, list[float]] = defaultdict(list)
     with SessionFactory.get_session() as session:
@@ -126,8 +130,12 @@ def compute_regime_confidence_bucket_payoff_stats() -> dict[tuple[str, float], d
     from sqlalchemy import text
 
     from database.session_factory import SessionFactory
-    from services.basis_arbitrage_strategy import EXPERIMENT_BUCKET as _BASIS_ARB_BUCKET
     from services.pump_fade_strategy import EXPERIMENT_BUCKET as _PUMP_FADE_BUCKET
+
+    # Faz 364 — basis_arb_v1 stratejisi tamamen kaldırıldı, ama geçmişte
+    # kapanmış kararları hâlâ DB'de duruyor ve izole kalmaya devam
+    # etmeli — modülü tanımlayan dosya silindiği için sabit burada.
+    _BASIS_ARB_BUCKET = "basis_arb_v1"
 
     buckets: dict[tuple[str, float], list[float]] = defaultdict(list)
     with SessionFactory.get_session() as session:

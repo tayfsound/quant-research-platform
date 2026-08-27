@@ -483,12 +483,20 @@ def test_run_portfolio_aware_cycle_tags_experiment_bucket_when_ab_test_enabled()
         with patch.object(orch, "propose", side_effect=lambda sym: proposals.get(sym)):
             with patch.object(orch, "propose_multi_timeframe", side_effect=lambda sym: proposals.get(sym)):
                 with patch("database.repositories.app_settings_repository.AppSettingsRepository.get") as mock_get:
-                    mock_get.side_effect = lambda key: {"max_confidence_mode_enabled": "false", 
+                    mock_get.side_effect = lambda key: {"max_confidence_mode_enabled": "false",
                         "starting_capital": "1000",
                         "max_portfolio_var_pct": "0.5",
                         "multi_timeframe_cascade_enabled": "false",
                         "multi_timeframe_cascade_ab_test_enabled": "true",
                         "act_threshold": "0.65",
+                        # Faz 367 — decision_recorder.py'nin finalize_proposal
+                        # yolunda okuduğu yeni asset-class/rejim aç-kapa
+                        # ayarları; test hiçbir sınıfı/rejimi kapatmıyor.
+                        "asset_class_trading_enabled": '{"crypto": true, "commodity": true, "equity": true}',
+                        "regime_trading_enabled": (
+                            '{"bullish_high": true, "bullish_normal": true, "bullish_low": true, '
+                            '"bearish_high": true, "bearish_normal": true, "bearish_low": true}'
+                        ),
                     }[key]
                     with patch("services.ab_testing.assign_bucket", return_value="treatment"):
                         orch.run_portfolio_aware_cycle(["BTCUSDT"])

@@ -69,7 +69,9 @@ class DecisionPersistor:
                     exchange_order_id,
                     exchange_client_order_id,
                     exchange_stop_order_id,
-                    exchange_tp_order_id
+                    exchange_tp_order_id,
+                    staged_entry_add_pending,
+                    staged_entry_low_price
                 )
                 VALUES (
                     :id,
@@ -97,7 +99,9 @@ class DecisionPersistor:
                     :exchange_order_id,
                     :exchange_client_order_id,
                     :exchange_stop_order_id,
-                    :exchange_tp_order_id
+                    :exchange_tp_order_id,
+                    :staged_entry_add_pending,
+                    :staged_entry_low_price
                 )
                 ON CONFLICT (id, timestamp) DO NOTHING
             """),
@@ -141,6 +145,8 @@ class DecisionPersistor:
                 "exchange_client_order_id": event.exchange_client_order_id,
                 "exchange_stop_order_id": event.exchange_stop_order_id,
                 "exchange_tp_order_id": event.exchange_tp_order_id,
+                "staged_entry_add_pending": event.staged_entry_add_pending,
+                "staged_entry_low_price": event.staged_entry_low_price,
             },
         )
 
@@ -448,6 +454,16 @@ class DecisionPersistor:
         ).scalar()
         return int(count or 0)
 
+    def mark_staged_entry_added(self, decision_id: str) -> None:
+        """Faz 364 — pump_fade Kademeli Giriş: ekleme (add) bacağı
+        başarıyla açıldıktan sonra ilk bacağın staged_entry_add_pending'i
+        False'a çekilir — aynı olay için bir daha asla eklenmesin diye."""
+        self.session.execute(
+            text("UPDATE decisions SET staged_entry_add_pending = false WHERE id = :id"),
+            {"id": decision_id},
+        )
+        self.session.commit()
+
     def list_open_positions_for_experiment(self, experiment_bucket: str) -> list[dict]:
         """Faz 344 — Cross-Asset Arbitrage Engine'in çift-bacaklı (aynı
         sembol, LONG spot + SHORT perpetual) pozisyonlarını BİRLİKTE
@@ -464,22 +480,36 @@ class DecisionPersistor:
         ).mappings().all()
         return [dict(r) for r in rows]
 
-    def total_pnl_for_experiment(self, experiment_bucket: str) -> float:
+    def total_pnl_for_experiment(self, experiment_bucket: str, min_opened_at=None) -> float:
         """Faz 332 — pump_fade'in zarar-bazlı devre kesicisi için: SADECE
         gerçekleşmiş (kapanmış, excluded_from_stats hariç) kâr/zarar.
         Gerçekleşmemiş (açık pozisyonların anlık mark-to-market) zarar
         BİLEREK buraya dahil değil — canlı fiyat sorgusu gerektirir,
         pahalı/yavaş olur ve run_cycle'ın her tetiklenişinde (dakikada
         bir) çalıştırmak gerçekçi değil; gerçekleşmiş zarar zaten
-        kalıcı/geri dönüşsüz bir sinyal, devre kesici için yeterli."""
-        total = self.session.execute(
-            text(
-                "SELECT COALESCE(SUM(pnl), 0) FROM decisions "
-                "WHERE status = 'closed' AND excluded_from_stats = false "
-                "AND experiment_bucket = :experiment_bucket"
-            ),
-            {"experiment_bucket": experiment_bucket},
-        ).scalar()
+        kalıcı/geri dönüşsüz bir sinyal, devre kesici için yeterli.
+
+        Faz 364 — min_opened_at: services/risk_state.py'nin kill_switch_
+        legacy_cutoff_at'ıyla AYNI desen. Gerçek olay (2026-08-26): Faz
+        332 krizinin 20 Ağustos'ta açılmış ~82 legacy pozisyonu (o zamanki
+        BOZUK, tavansız boyutlandırma formülüyle) günler sonra teker teker
+        kapanmaya devam edip devre kesiciyi (-$269K) kalıcı olarak
+        tetiklenmiş bıraktı — düzeltmeden SONRA açılan hiçbir yeni pozisyon
+        yokken bile. min_opened_at set edilirse, bu tarihten ÖNCE açılmış
+        pozisyonlar toplama HİÇ girmez — dashboard/istatistikler (bu
+        parametreyi hiç geçmeyen çağıranlar) etkilenmez, o pozisyonlar hâlâ
+        gerçek ve hâlâ sayılıyor, sadece devre kesici artık GÜNCEL
+        performansa bakıyor."""
+        query = (
+            "SELECT COALESCE(SUM(pnl), 0) FROM decisions "
+            "WHERE status = 'closed' AND excluded_from_stats = false "
+            "AND experiment_bucket = :experiment_bucket"
+        )
+        params: dict = {"experiment_bucket": experiment_bucket}
+        if min_opened_at is not None:
+            query += " AND opened_at IS NOT NULL AND opened_at >= :min_opened_at"
+            params["min_opened_at"] = min_opened_at
+        total = self.session.execute(text(query), params).scalar()
         return float(total or 0.0)
 
     def symbols_with_last_exit_reason_stop_loss(self, symbols: list[str], experiment_bucket: str) -> set[str]:

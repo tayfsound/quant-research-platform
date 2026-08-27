@@ -77,24 +77,20 @@ celery_app.conf.update(
 )
 
 # Faz 268-sonrası — kritik bulgu (mimari inceleme, gerçek koda karşı
-# doğrulandı): worker concurrency=1 ile TÜM task'lar (LLM denetimi, açık
-# pozisyon kontrolü) AYNI tek kuyrukta bekliyordu. Bu, GERÇEKTEN yaşanmış
-# bir olayla (HF Hub donması, embedding çağrısı celery worker'ı tamamen
-# dondurmuş, kuyrukta 8320+ görev birikmişti — bkz. AI_MEMORY_SYSTEM/
-# CURRENT_STATE.md) AYNI hata sınıfı: yavaş/ağ bağımlı bir görev
-# (llm_system_audit_task ~1-2dk gerçek LLM çağrısı, refresh_llm_news_
-# sentiment_task gerçek RSS/LLM çağrısı) çalışırken, GÜVENLİK KRİTİK
-# close_due_positions_task
-# (60sn'de bir açık pozisyonları stop/hedef/likidasyona göre kontrol
-# eden görev) sırasını bekliyor — açık pozisyonlar bu süre boyunca
-# kontrolsüz kalıyor. Yavaş/ağ-bağımlı görevler artık ayrı bir "slow"
-# kuyruğuna yönlendiriliyor; bu kuyruğu SADECE ayrı bir worker tüketiyor
-# (bkz. restart komutları), varsayılan kuyruktaki hızlı/kritik görevler
-# hiçbir zaman onları beklemiyor.
-celery_app.conf.task_routes = {
-    "llm_system_audit_task": {"queue": "slow"},
-    "refresh_llm_news_sentiment_task": {"queue": "slow"},
-}
+# doğrulandı): worker concurrency=1 ile TÜM task'lar AYNI tek kuyrukta
+# bekliyordu. Bu, GERÇEKTEN yaşanmış bir olayla (HF Hub donması, embedding
+# çağrısı celery worker'ı tamamen dondurmuş, kuyrukta 8320+ görev
+# birikmişti — bkz. AI_MEMORY_SYSTEM/CURRENT_STATE.md) AYNI hata sınıfı:
+# yavaş/ağ bağımlı bir görev çalışırken GÜVENLİK KRİTİK close_due_
+# positions_task (60sn'de bir açık pozisyonları stop/hedef/likidasyona
+# göre kontrol eden görev) sırasını bekliyor — açık pozisyonlar bu süre
+# boyunca kontrolsüz kalıyor. DERS (Faz 366-devam'da LLM tamamen
+# kaldırılınca "slow" kuyrusunun tek kullanıcısı gitti, task_routes boş
+# kaldı ama DERS geçerliliğini koruyor): gelecekte yavaş/ağ-bağımlı yeni
+# bir görev eklenirse AYNI şekilde ayrı bir kuyruğa (SADECE ayrı bir
+# worker'ın tükettiği) yönlendirilmeli, varsayılan kuyruktaki hızlı/
+# kritik görevlerle asla karıştırılmamalı.
+celery_app.conf.task_routes = {}
 
 celery_app.autodiscover_tasks(["services"], related_name="tasks")
 
@@ -163,6 +159,14 @@ celery_app.conf.beat_schedule = {
     "regime-reversal-guardian-every-60s": {
         "task": "regime_reversal_guardian_task",
         "schedule": 60.0,
+    },
+    # Backlog #13 (2026-08-26) — Portfolio Stress Guardian. Daha ağır bir
+    # hesaplama (TÜM açık pozisyonların taze fiyatı + 365 günlük referans
+    # sembol geçmişi) — günlük bir tarihsel dağılım dakikalar içinde
+    # anlamlı değişmez, 5 dakikada bir yeterli.
+    "portfolio-stress-guardian-every-5m": {
+        "task": "portfolio_stress_guardian_task",
+        "schedule": 300.0,
     },
     # Faz 362-devam — Belief Reversal Exit. regime_reversal_guardian ile
     # AYNI cadence — council'in bir sembolde tersine dönmesi de fiyat
@@ -240,6 +244,18 @@ celery_app.conf.beat_schedule = {
         "task": "propose_agent_tuning_task",
         "schedule": 604800.0,
     },
+    # Faz 366 — kullanıcı isteği: strategy_hypothesis_scanner.py'nin
+    # bulduğu adaylar insan onayına sunulsun. propose_agent_tuning_task
+    # ile AYNI gerekçeyle pahalı bir tarama (FDR + OOS walk-forward),
+    # günlük yeterli.
+    "propose-strategy-gate-candidates-daily": {
+        "task": "propose_strategy_gate_candidates_task",
+        "schedule": 86400.0,
+    },
+    "auto-reject-stale-strategy-gate-approvals-daily": {
+        "task": "auto_reject_stale_strategy_gate_approvals_task",
+        "schedule": 86400.0,
+    },
     # Faz 259: kullanıcı isteği — orta-vadeli pozisyon katmanı. Günlük/4h
     # sinyal kısa-vadeli katmandan (120sn) çok daha yavaş değişiyor —
     # 4 saatte bir kontrol yeterli (medium_term_enabled=false iken görev
@@ -247,26 +263,6 @@ celery_app.conf.beat_schedule = {
     "run-medium-term-cycle-every-4h": {
         "task": "run_medium_term_cycle_task",
         "schedule": 14400.0,
-    },
-    # Faz 268-sonrası: LLM tabanlı haber sentiment'i — provider'ın
-    # _CACHE_TTL_SECONDS'ı (1800s/30dk) ile senkron ama biraz daha sık
-    # (1500s/25dk) çalıştırılıyor ki önbellek süresi dolmadan bir sonraki
-    # tazeleme zaten tamamlanmış olsun — canlı karar döngüsü hiçbir zaman
-    # boş (None) bir önbellekle karşılaşmasın.
-    "refresh-llm-news-sentiment": {
-        "task": "refresh_llm_news_sentiment_task",
-        "schedule": 1500.0,
-    },
-    # Faz 271 — kullanıcı isteği: "LLM'i her pozisyonda devreye sokmak
-    # lazım... onay panelimi anlamlı kılmak için." Gerçek zamanlı bir
-    # işlem kapısı değil (kullanıcının kendi tercihi: mekanik sistem
-    # denetleyici LLM'den daha güvenilir bir karar verici) — periyodik
-    # toplu denetim. 6 saatte bir: her gün 4 kez, gerçek bir LLM
-    # çağrısı (~1-2dk, tool-calling ile 6 araca kadar) olduğu için
-    # refresh-llm-news-sentiment'ten (ucuz) çok daha seyrek.
-    "llm-system-audit-every-6h": {
-        "task": "llm_system_audit_task",
-        "schedule": 21600.0,
     },
     # Faz 268-sonrası — kullanıcı isteği: AI'dan tamamen yalıtık, test
     # amaçlı pump-fade stratejisi (bkz. services/pump_fade_strategy.py).
@@ -280,20 +276,14 @@ celery_app.conf.beat_schedule = {
         "task": "run_pump_fade_cycle_task",
         "schedule": 1800.0,
     },
-    # Faz 344 — Cross-Asset Arbitrage Engine v1. run_pump_fade_cycle_task
-    # ile AYNI cadence (300+ perpetual sembol tarıyor, sık çalıştırmaya
-    # gerek yok — basis/funding yavaş değişen bir sinyal). basis_
-    # arbitrage_enabled=false (varsayılan) iken anında çıkar, yük yok.
-    "run-basis-arbitrage-cycle-every-30m": {
-        "task": "run_basis_arbitrage_cycle_task",
-        "schedule": 1800.0,
-    },
-    # Bacaklar ayrı bir stop/hedef taramasından geçmediği için (bkz.
-    # basis_arbitrage_strategy.py), maksimum tutma süresi dolan çiftleri
-    # BİRLİKTE kapatmak için ayrı, hafif bir görev — close_due_positions_
-    # task ile AYNI cadence.
-    "close-due-basis-arbitrage-pairs-every-minute": {
-        "task": "close_due_basis_arbitrage_pairs_task",
+    # Faz 364 — pump_fade Kademeli Giriş'in ekleme taraması. close_due_
+    # positions_task/regime_reversal_guardian_task ile AYNI cadence —
+    # SADECE zaten açık, add bekleyen pozisyonları kontrol ediyor (300+
+    # sembollük ana tarama değil), sık çalışmanın maliyeti yok.
+    # pump_fade_staged_entry_enabled=false (varsayılan) iken anında boş
+    # liste döner.
+    "apply-pump-fade-staged-adds-every-60s": {
+        "task": "apply_pump_fade_staged_adds_task",
         "schedule": 60.0,
     },
     # Faz 268-sonrası — kullanıcı isteği: "Feature IC'yi karar hattına

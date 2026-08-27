@@ -71,3 +71,11 @@ class DecisionEvent(BaseModel):
     exchange_client_order_id: str | None = None
     exchange_stop_order_id: str | None = None
     exchange_tp_order_id: str | None = None
+    # Faz 364 — pump_fade Kademeli Giriş. staged_entry_add_pending=True
+    # SADECE ilk bacak (hedef boyutun %25'i) için — ikinci bacak (add)
+    # açılınca ilk bacağın bu alanı False'a çekilir (bkz. services/
+    # pump_fade_staged_entry.py). staged_entry_low_price, dip-bazlı
+    # ortak stop/add eşiklerinin hesaplanabilmesi için saklanan referans
+    # fiyat — normal (kademesiz) pozisyonlarda ikisi de None kalır.
+    staged_entry_add_pending: bool | None = None
+    staged_entry_low_price: float | None = None

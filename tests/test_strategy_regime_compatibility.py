@@ -66,9 +66,9 @@ def test_strategy_label_includes_direction_for_pump_fade():
 
 
 def test_strategy_label_includes_direction_for_basis_arb():
-    from services.basis_arbitrage_strategy import EXPERIMENT_BUCKET
-
-    assert _strategy_label(EXPERIMENT_BUCKET, "SHORT", None, None) == "basis_arb_SHORT"
+    # Faz 364 — basis_arb_v1 stratejisi kaldırıldı; sabit geçmiş
+    # kararların etiketi hâlâ doğru üretilmeli.
+    assert _strategy_label("basis_arb_v1", "SHORT", None, None) == "basis_arb_SHORT"
 
 
 def test_strategy_label_falls_back_without_direction():
@@ -89,11 +89,10 @@ def test_strategy_label_adds_trade_type_for_ai_council_only():
 def test_strategy_label_does_not_add_trade_type_for_pump_fade_or_basis_arb():
     """pump_fade/basis_arb kendi sabit stop-geometrisiyle mekanik —
     trade_type ayrımı bilgi katmıyor, bilerek eklenmiyor."""
-    from services.basis_arbitrage_strategy import EXPERIMENT_BUCKET as BASIS_ARB_BUCKET
     from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_BUCKET
 
     assert _strategy_label(PUMP_FADE_BUCKET, "SHORT", 100.0, 130.0) == "pump_fade_SHORT"
-    assert _strategy_label(BASIS_ARB_BUCKET, "SHORT", 100.0, 130.0) == "basis_arb_SHORT"
+    assert _strategy_label("basis_arb_v1", "SHORT", 100.0, 130.0) == "basis_arb_SHORT"
 
 
 def test_gather_strategy_regime_compatibility_splits_ai_council_by_direction():

@@ -39,6 +39,15 @@ is_realtime_monitor_alive() {
     pgrep -f "services.realtime_position_monitor" > /dev/null 2>&1
 }
 
+# Faz 365 — backlog #49 (kullanıcı isteği: "veri toplayıp ölçebiliyorsak
+# iyi, en önemli kısım orası"). Binance'in ücretsiz !forceOrder@arr
+# akışını dinleyip liquidation_events'e yazan, AYNI kalıcı-süreç
+# gerekçesiyle (asyncio event loop, Celery prefork'a uymuyor)
+# realtime_position_monitor ile birebir aynı desende izlenen süreç.
+is_liquidation_listener_alive() {
+    pgrep -f "services.binance_liquidation_listener" > /dev/null 2>&1
+}
+
 is_health_ok() {
     [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/health 2>/dev/null)" = "200" ]
 }
@@ -64,6 +73,13 @@ start_realtime_monitor() {
     disown
 }
 
+start_liquidation_listener() {
+    log "binance_liquidation_listener DOWN -- yeniden başlatılıyor"
+    cd "$REPO_DIR" || return
+    nohup .venv/bin/python -m services.binance_liquidation_listener > /tmp/liquidation_listener_watchdog.log 2>&1 &
+    disown
+}
+
 log "watchdog başladı (kontrol aralığı: ${CHECK_INTERVAL_SECONDS}sn, repo: ${REPO_DIR})"
 
 while true; do
@@ -75,6 +91,9 @@ while true; do
     fi
     if ! is_realtime_monitor_alive; then
         start_realtime_monitor
+    fi
+    if ! is_liquidation_listener_alive; then
+        start_liquidation_listener
     fi
     sleep "$CHECK_INTERVAL_SECONDS"
 done

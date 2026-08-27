@@ -144,6 +144,37 @@ def _validate(key: str, value: str) -> None:
             raise HTTPException(
                 400, "execution_mode_symbols must be a JSON object of {symbol: 'simulated'|'testnet'}"
             )
+    elif key == "asset_class_trading_enabled":
+        # Kullanıcı isteği (2026-08-27) — symbol_leverage ile AYNI desen,
+        # JSON dict {"crypto": true, "commodity": true, "equity": true}.
+        import json as _json
+        try:
+            mapping = _json.loads(value)
+            if not isinstance(mapping, dict):
+                raise ValueError
+            if not set(mapping.keys()) <= {"crypto", "commodity", "equity"}:
+                raise ValueError
+            for v in mapping.values():
+                if not isinstance(v, bool):
+                    raise ValueError
+        except (ValueError, TypeError):
+            raise HTTPException(
+                400, "asset_class_trading_enabled must be a JSON object of "
+                "{'crypto'|'commodity'|'equity': true|false}"
+            )
+    elif key == "regime_trading_enabled":
+        import json as _json
+        try:
+            mapping = _json.loads(value)
+            if not isinstance(mapping, dict):
+                raise ValueError
+            for v in mapping.values():
+                if not isinstance(v, bool):
+                    raise ValueError
+        except (ValueError, TypeError):
+            raise HTTPException(
+                400, "regime_trading_enabled must be a JSON object of {regime: true|false}"
+            )
     elif key == "medium_term_capital_pct":
         try:
             v = float(value)
@@ -247,44 +278,26 @@ def _validate(key: str, value: str) -> None:
                 raise ValueError
         except ValueError:
             raise HTTPException(400, "pump_fade_take_profit_pct must be a number in (0, 1)")
+    elif key == "pump_fade_staged_entry_enabled":
+        if value not in ("true", "false"):
+            raise HTTPException(400, "pump_fade_staged_entry_enabled must be 'true' or 'false'")
+    elif key in (
+        "pump_fade_staged_entry_first_leg_pct",
+        "pump_fade_staged_entry_add_trigger_gain_pct",
+        "pump_fade_staged_entry_stop_gain_pct",
+    ):
+        try:
+            v = float(value)
+            if not (0 < v < 5):
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, f"{key} must be a positive number (fraction, e.g. 0.8 = %80)")
     elif key == "pairs_trading_leg_capital_usd":
         try:
             if float(value) <= 0:
                 raise ValueError
         except ValueError:
             raise HTTPException(400, "pairs_trading_leg_capital_usd must be a positive number")
-    elif key == "basis_arbitrage_enabled":
-        if value not in ("true", "false"):
-            raise HTTPException(400, "basis_arbitrage_enabled must be 'true' or 'false'")
-    elif key == "basis_arbitrage_min_basis_pct":
-        try:
-            if float(value) <= 0:
-                raise ValueError
-        except ValueError:
-            raise HTTPException(400, "basis_arbitrage_min_basis_pct must be a positive number")
-    elif key == "basis_arbitrage_min_funding_rate":
-        try:
-            float(value)
-        except ValueError:
-            raise HTTPException(400, "basis_arbitrage_min_funding_rate must be a number")
-    elif key == "basis_arbitrage_leg_capital_usd":
-        try:
-            if float(value) <= 0:
-                raise ValueError
-        except ValueError:
-            raise HTTPException(400, "basis_arbitrage_leg_capital_usd must be a positive number")
-    elif key == "basis_arbitrage_max_open_pairs":
-        try:
-            if int(value) < 1:
-                raise ValueError
-        except ValueError:
-            raise HTTPException(400, "basis_arbitrage_max_open_pairs must be a positive integer")
-    elif key == "basis_arbitrage_max_hold_hours":
-        try:
-            if float(value) <= 0:
-                raise ValueError
-        except ValueError:
-            raise HTTPException(400, "basis_arbitrage_max_hold_hours must be a positive number")
     elif key == "max_confidence_mode_enabled":
         if value not in ("true", "false"):
             raise HTTPException(400, "max_confidence_mode_enabled must be 'true' or 'false'")
@@ -309,6 +322,18 @@ def _validate(key: str, value: str) -> None:
                 raise ValueError
         except ValueError:
             raise HTTPException(400, "reversal_guardian_consecutive_stop_threshold must be a positive integer")
+    elif key == "portfolio_stress_guardian_enabled":
+        if value not in ("true", "false"):
+            raise HTTPException(400, "portfolio_stress_guardian_enabled must be 'true' or 'false'")
+    elif key in ("portfolio_stress_guardian_window_days", "portfolio_stress_guardian_history_days"):
+        try:
+            if int(value) < 1:
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, f"{key} must be a positive integer")
+    elif key == "portfolio_stress_guardian_reference_symbol":
+        if not value or not value.strip():
+            raise HTTPException(400, "portfolio_stress_guardian_reference_symbol must be non-empty")
     elif key == "max_open_positions_per_symbol_direction":
         # Faz 268-sonrası: gerçek olaydan (54 XAUTUSDT SHORT aynı anda
         # açık bulundu) eklenen kontrol — kullanıcı Settings sayfasından
@@ -346,6 +371,19 @@ def _validate(key: str, value: str) -> None:
     elif key == "pyramid_regime_gate_enabled":
         if value not in ("true", "false"):
             raise HTTPException(400, "pyramid_regime_gate_enabled must be 'true' or 'false'")
+    elif key == "strategy_gate_enabled":
+        if value not in ("true", "false"):
+            raise HTTPException(400, "strategy_gate_enabled must be 'true' or 'false'")
+    elif key == "pivot_distance_gate_enabled":
+        if value not in ("true", "false"):
+            raise HTTPException(400, "pivot_distance_gate_enabled must be 'true' or 'false'")
+    elif key == "pivot_distance_gate_threshold_pct":
+        try:
+            v = float(value)
+            if not (0 < v < 1):
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "pivot_distance_gate_threshold_pct must be a number in (0, 1)")
     elif key == "pyramid_worse_price_allowed_regime":
         # Faz 361 — bkz. analytics/pyramid_regime_gate.py. Sadece gerçek
         # market_regime formatının ({trend}_{volatility}) üretebileceği

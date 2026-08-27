@@ -108,6 +108,11 @@ def _set_pump_fade_settings(**overrides) -> None:
         # deseni, test_pairs_trader.py'de de kullanılıyor) — kümülatif
         # tavanı özel olarak test eden testler kendi değerini verir.
         "pump_fade_max_total_capital_pct": "1000000",
+        # Faz 364 — test_pump_fade_staged_entry.py'nin AÇTIĞI ayar başka
+        # bir test dosyasından paylaşılan test DB'sine sızıp bu dosyanın
+        # (kademesiz akışı varsayan) testlerini bozabilir — her test kendi
+        # temiz "kapalı" durumuyla başlasın diye burada da açıkça sıfırlanıyor.
+        "pump_fade_staged_entry_enabled": "false",
     }
     defaults.update(overrides)
     with SessionFactory.get_session() as session:
@@ -823,6 +828,53 @@ def test_run_cycle_trips_circuit_breaker_and_disables_pump_fade(monkeypatch):
         _cleanup_symbol(symbol)
         _cleanup_symbol(loss_symbol)
         _set_pump_fade_settings(pump_fade_enabled="false")
+
+
+def test_run_cycle_ignores_pre_cutoff_losses_when_legacy_cutoff_set(monkeypatch):
+    """Faz 364 — kritik gerçek olay (2026-08-26): Faz 332 krizinin 20
+    Ağustos'ta (düzeltmeden ÖNCE) açılmış ~82 legacy pozisyonu günler
+    sonra teker teker kapanmaya devam edip devre kesiciyi ($269K+)
+    kalıcı olarak tetiklenmiş bıraktı — düzeltmeden SONRA açılmış TEK
+    bir yeni pozisyon bile yokken. kill_switch_legacy_cutoff_at ile AYNI
+    desen: cutoff'tan ÖNCE açılmış pozisyonlar devre kesici toplamına
+    hiç girmemeli."""
+    from contracts.decision_event import DecisionEvent
+
+    symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    legacy_loss_symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
+    try:
+        legacy_opened_at = datetime(2026, 8, 20, 12, 0, 0, tzinfo=UTC)
+        with SessionFactory.get_session() as session:
+            persistor = DecisionPersistor(session)
+            event = DecisionEvent(
+                id=uuid4(), symbol=legacy_loss_symbol, proposed_direction="SHORT", final_action="SHORT",
+                final_size=1.0, status="open", entry_price=100.0, quantity=1.0,
+                opened_at=legacy_opened_at, experiment_bucket=EXPERIMENT_BUCKET,
+            )
+            persistor.persist(event)
+            persistor.close_position(decision_id=str(event.id), exit_price=2691.0, pnl=-269378.27, closed_at=datetime.now(UTC))
+
+        _set_pump_fade_settings(
+            pump_fade_enabled="true",
+            pump_fade_max_loss_circuit_breaker_usd="10000",
+            pump_fade_circuit_breaker_legacy_cutoff_at="2026-08-21T00:00:00+00:00",
+        )
+        monkeypatch.setattr(
+            "services.pump_fade_strategy.fetch_usdt_perpetual_symbols", lambda: [symbol]
+        )
+        provider = _FakeProvider({symbol: _pump_then_settled_bars(10.0, 22.0)})
+
+        result = PumpFadeStrategy(data_provider=provider).run_cycle()
+
+        assert "skipped" not in result
+        assert len(result["opened"]) == 1
+        with SessionFactory.get_session() as session:
+            enabled = AppSettingsRepository(session).get("pump_fade_enabled")
+        assert enabled == "true"
+    finally:
+        _cleanup_symbol(symbol)
+        _cleanup_symbol(legacy_loss_symbol)
+        _set_pump_fade_settings(pump_fade_enabled="false", pump_fade_circuit_breaker_legacy_cutoff_at="")
 
 
 def test_run_cycle_does_not_trip_circuit_breaker_when_loss_below_threshold(monkeypatch):

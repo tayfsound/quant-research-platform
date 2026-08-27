@@ -9,7 +9,6 @@ import Settings from './views/Settings';
 import Transactions from './views/Transactions';
 import PendingApprovals from './views/PendingApprovals';
 import ResearchWorkspace from './views/ResearchWorkspace';
-import LLMCritic from './views/LLMCritic';
 import FeatureIC from './views/FeatureIC';
 import SelfModel from './views/SelfModel';
 import CausalInference from './views/CausalInference';
@@ -92,7 +91,6 @@ function App() {
           {view === 'settings' && <Settings />}
           {view === 'approvals' && <PendingApprovals />}
           {view === 'workspace' && <ResearchWorkspace />}
-          {view === 'llm-critic' && <LLMCritic />}
           {view === 'feature-ic' && <FeatureIC />}
           {view === 'self-model' && <SelfModel />}
           {view === 'causal-inference' && <CausalInference />}

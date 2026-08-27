@@ -24,7 +24,6 @@ from api.rest import (
     feature_ic,
     feature_registry,
     liquidity_var,
-    llm_critic,
     mae_mfe_confidence,
     market_data,
     market_world_model,
@@ -42,6 +41,7 @@ from api.rest import (
     settings,
     shadow,
     strategies,
+    strategy_gates,
     strategy_hypothesis_scanner,
     strategy_regime_compatibility,
     system_events,
@@ -116,6 +116,7 @@ async def metrics(user: AuthContext = Depends(get_current_user)):
     return Response(content=get_metrics(), media_type="text/plain")
 
 app.include_router(weights.router, prefix="/api/v1")
+app.include_router(strategy_gates.router, prefix="/api/v1")
 app.include_router(strategies.router, prefix="/api/v1")
 app.include_router(models.router, prefix="/api/v1")
 app.include_router(audit.router, prefix="/api/v1")
@@ -155,6 +156,5 @@ app.include_router(feature_registry.router, prefix="/api/v1")
 app.include_router(positions.router, prefix="/api/v1")
 app.include_router(settings.router, prefix="/api/v1")
 app.include_router(tokens.router, prefix="/api/v1")
-app.include_router(llm_critic.router, prefix="/api/v1")
 app.include_router(strategy_regime_compatibility.router, prefix="/api/v1")
 app.include_router(strategy_hypothesis_scanner.router, prefix="/api/v1")

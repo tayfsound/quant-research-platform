@@ -159,6 +159,74 @@ def summarize_loss_breakdown(hours: int | None = None) -> dict:
     return result
 
 
+# Backlog #14 (2026-08-26) — kullanıcı örneği: "BTC LONG'da 100 pozisyon,
+# 15'i stop olmuş, 13'ü yön hatası, 2'si stop süpürülüp sonra hedefe
+# gitmiş." summarize_loss_breakdown() SADECE tek bir genel toplam
+# veriyordu — bu, AYNI sınıflandırmayı (classify_stop_loss_failure,
+# LOSS_EXIT_REASONS) sembol×yön kırılımında tekrarlıyor. Gürültüyü
+# önlemek için min_trades altındaki (varsayılan 5) hücreler fail-closed
+# dışlanıyor — tek işlemlik bir sembolde "%100 yön hatası" demek
+# istatistiksel olarak anlamsız.
+DEFAULT_MIN_TRADES_PER_CELL = 5
+
+
+def summarize_loss_breakdown_by_symbol_direction(
+    hours: int | None = None, min_trades: int = DEFAULT_MIN_TRADES_PER_CELL,
+) -> dict:
+    """summarize_loss_breakdown() ile AYNI veri kaynağı/sınıflandırma,
+    (symbol, direction) hücrelerine bölünmüş. pump_fade_v1 AYNI
+    izolasyon disipliniyle üst düzeyden dışlanır (kendi ayrı 'pump_fade'
+    alanında)."""
+    from sqlalchemy import text
+
+    hours_clause = ""
+    params: dict = {}
+    if hours is not None:
+        hours_clause = "AND closed_at >= now() - (:hours || ' hours')::interval"
+        params["hours"] = hours
+
+    reasons_sql = ", ".join(f"'{r}'" for r in LOSS_EXIT_REASONS)
+    with SessionFactory.get_session() as session:
+        rows = session.execute(
+            text(
+                "SELECT symbol, direction, entry_price, stop_loss_price, take_profit_price, "
+                "outcome, experiment_bucket, coalesce(pnl, 0) as pnl "
+                "FROM decisions "
+                "WHERE status = 'closed' "
+                f"AND outcome ->> 'exit_reason' IN ({reasons_sql}) {hours_clause} "
+                "AND (excluded_from_stats IS NULL OR excluded_from_stats = false) "
+                "AND experiment_bucket IS DISTINCT FROM 'pump_fade_v1'"
+            ),
+            params,
+        ).mappings().all()
+
+    from collections import defaultdict
+
+    by_cell: dict[tuple[str, str], list] = defaultdict(list)
+    for r in rows:
+        by_cell[(r["symbol"], r["direction"])].append(r)
+
+    cells = {}
+    for (symbol, direction), cell_rows in by_cell.items():
+        if len(cell_rows) < min_trades:
+            continue
+        classified = _classify_rows(cell_rows)
+        classified["total_pnl"] = round(sum(r["pnl"] for r in cell_rows), 2)
+        cells[f"{symbol}_{direction}"] = classified
+
+    return {
+        "hours": hours,
+        "min_trades": min_trades,
+        "cells": cells,
+        "excluded_cell_count": len({k for k in by_cell if len(by_cell[k]) < min_trades}),
+        "note": (
+            "Her hücre en az min_trades kadar kapanmış stop/breakeven/likidasyon/reduced-loss "
+            "işlem içerir (altındakiler dışlandı, istatistiksel gürültü). direction_error/"
+            "barrier_error tanımları summarize_loss_breakdown ile AYNI. pump_fade_v1 hariç."
+        ),
+    }
+
+
 def summarize_stop_loss_failures(hours: int = 90) -> dict:
     """Gerçek DB'den son `hours` saatteki TÜM stop_loss kapanışlarını
     (excluded_from_stats hariç) sınıflandırıp gerçek bir dağılım

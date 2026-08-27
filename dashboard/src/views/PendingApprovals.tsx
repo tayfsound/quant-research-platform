@@ -65,8 +65,81 @@ function WeightDiffRows({ proposed, previous }: { proposed: Record<string, numbe
   );
 }
 
+// Faz 366 — kullanıcı isteği: "ürettiği strateji insan onayına sunulur
+// böyle bir yapı ayarlamıştık." strategy_hypothesis_scanner.py'nin
+// (Faz 346) bulduğu (strateji × rejim) adayları — WeightApproval ile
+// AYNI propose→pending→approve/reject döngüsü, ayrı bir bekleyen-onay
+// tipi.
+type StrategyGateCandidate = {
+  id: string;
+  timestamp: string | null;
+  strategy: string;
+  market_regime: string;
+  sample_size: number;
+  win_rate: number;
+  rest_win_rate: number;
+  delta_vs_rest: number;
+  p_value: number;
+  replicated_out_of_sample: boolean | null;
+  status: string;
+};
+
+function StrategyGateCard({
+  candidate, busy, onDecide,
+}: {
+  candidate: StrategyGateCandidate;
+  busy: boolean;
+  onDecide: (id: string, action: "approve" | "reject") => void;
+}) {
+  return (
+    <Card>
+      <div className="flex items-start justify-between gap-4 mb-3">
+        <div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-ink font-medium">{candidate.strategy}</span>
+            <Badge tone="accent">rejim: {candidate.market_regime}</Badge>
+            {candidate.replicated_out_of_sample && (
+              <Badge tone="rise">out-of-sample'da tekrarlandı</Badge>
+            )}
+          </div>
+          {candidate.timestamp && (
+            <p className="text-xs text-ink-faint mt-1">{new Date(candidate.timestamp).toLocaleString()}</p>
+          )}
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <Button variant="danger" disabled={busy} onClick={() => onDecide(candidate.id, "reject")}>
+            Reddet
+          </Button>
+          <Button disabled={busy} onClick={() => onDecide(candidate.id, "approve")}>
+            Onayla (bu rejimde bu stratejiyi engelle)
+          </Button>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+        <div>
+          <p className="text-xs text-ink-faint">Bu hücrede win rate</p>
+          <p className="text-fall font-mono">{(candidate.win_rate * 100).toFixed(1)}%</p>
+        </div>
+        <div>
+          <p className="text-xs text-ink-faint">Geri kalanında win rate</p>
+          <p className="text-rise font-mono">{(candidate.rest_win_rate * 100).toFixed(1)}%</p>
+        </div>
+        <div>
+          <p className="text-xs text-ink-faint">Fark</p>
+          <p className="font-mono">{(candidate.delta_vs_rest * 100).toFixed(1)} puan</p>
+        </div>
+        <div>
+          <p className="text-xs text-ink-faint">Örneklem / p-değeri</p>
+          <p className="font-mono">n={candidate.sample_size}, p={candidate.p_value.toFixed(4)}</p>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export default function PendingApprovals() {
   const [approvals, setApprovals] = useState<Approval[]>([]);
+  const [strategyGates, setStrategyGates] = useState<StrategyGateCandidate[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -74,6 +147,9 @@ export default function PendingApprovals() {
     fetch("/api/v1/weights/pending?limit=10")
       .then((r) => r.json())
       .then((data) => setApprovals(data.pending || []));
+    fetch("/api/v1/strategy-gates/pending?limit=10")
+      .then((r) => r.json())
+      .then((data) => setStrategyGates(data.pending || []));
   };
 
   useEffect(() => {
@@ -99,60 +175,97 @@ export default function PendingApprovals() {
       .finally(() => setBusyId(null));
   };
 
+  const decideStrategyGate = (id: string, action: "approve" | "reject") => {
+    setError(null);
+    setBusyId(id);
+    fetch(`/api/v1/strategy-gates/${id}/${action}`, { method: "POST", headers: authHeaders() })
+      .then(async (r) => {
+        if (!r.ok) {
+          const data = await r.json().catch(() => ({}));
+          throw new Error(data.detail || `HTTP ${r.status}`);
+        }
+        setStrategyGates((prev) => prev.filter((a) => a.id !== id));
+      })
+      .catch((e) => setError(String(e.message || e)))
+      .finally(() => setBusyId(null));
+  };
+
   return (
     <div>
       <PageHeader
         title="Pending Approvals"
-        description="Ajan ağırlık güncellemeleri — büyük bir değişiklik (max_delta'yı aşan) önerildiğinde otomatik uygulanmaz, insan onayı bekler."
+        description="Ajan ağırlık güncellemeleri ve strateji kapı adayları — büyük bir değişiklik ya da yeni bir engelleme önerildiğinde otomatik uygulanmaz, insan onayı bekler."
       />
       {error && <ErrorNote>{error}</ErrorNote>}
-      {approvals.length === 0 ? (
-        <EmptyState label="Bekleyen onay yok." />
-      ) : (
-        <div className="space-y-4">
-          {approvals.map((a) => (
-            <Card key={a.id}>
-              <div className="flex items-start justify-between gap-4 mb-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-ink font-medium font-mono text-xs">{a.id.slice(0, 8)}…</span>
-                    {/* Faz 268-sonrası kullanıcı bulgusu: bu SAYI bir tavan
-                        DEĞİL — propose_weights() önerilen değeri buna göre
-                        hiç kırpmıyor, sadece bunu AŞARSA onay isteniyor.
-                        Eski etiket ("izin verilen max değişim") tam tersini
-                        ima ediyordu; aşağıdaki tablodaki değişim bundan
-                        çok daha büyük olabilir. */}
-                    <Badge tone="neutral">onay eşiği (bunun üstünde olduğu için soruluyor): ±{a.max_delta.toFixed(2)}</Badge>
-                    {/* Faz 268b — Regime-Aware Learning: bu öneri global mi
-                        (rejimden bağımsız, tüm geçmiş) yoksa belirli bir
-                        piyasa rejimi için mi (ör. bullish_high) — insan
-                        onaylayıcının NE'yi onayladığını bilmesi lazım. */}
-                    <Badge tone={a.regime ? "accent" : "neutral"}>
-                      {a.regime ? `rejim: ${a.regime}` : "global"}
-                    </Badge>
+
+      <div className="mb-6">
+        <h2 className="text-sm font-semibold text-ink mb-3">Ajan Ağırlıkları</h2>
+        {approvals.length === 0 ? (
+          <EmptyState label="Bekleyen ağırlık onayı yok." />
+        ) : (
+          <div className="space-y-4">
+            {approvals.map((a) => (
+              <Card key={a.id}>
+                <div className="flex items-start justify-between gap-4 mb-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-ink font-medium font-mono text-xs">{a.id.slice(0, 8)}…</span>
+                      {/* Faz 268-sonrası kullanıcı bulgusu: bu SAYI bir tavan
+                          DEĞİL — propose_weights() önerilen değeri buna göre
+                          hiç kırpmıyor, sadece bunu AŞARSA onay isteniyor.
+                          Eski etiket ("izin verilen max değişim") tam tersini
+                          ima ediyordu; aşağıdaki tablodaki değişim bundan
+                          çok daha büyük olabilir. */}
+                      <Badge tone="neutral">onay eşiği (bunun üstünde olduğu için soruluyor): ±{a.max_delta.toFixed(2)}</Badge>
+                      {/* Faz 268b — Regime-Aware Learning: bu öneri global mi
+                          (rejimden bağımsız, tüm geçmiş) yoksa belirli bir
+                          piyasa rejimi için mi (ör. bullish_high) — insan
+                          onaylayıcının NE'yi onayladığını bilmesi lazım. */}
+                      <Badge tone={a.regime ? "accent" : "neutral"}>
+                        {a.regime ? `rejim: ${a.regime}` : "global"}
+                      </Badge>
+                    </div>
+                    {a.timestamp && (
+                      <p className="text-xs text-ink-faint mt-1">{new Date(a.timestamp).toLocaleString()}</p>
+                    )}
                   </div>
-                  {a.timestamp && (
-                    <p className="text-xs text-ink-faint mt-1">{new Date(a.timestamp).toLocaleString()}</p>
-                  )}
+                  <div className="flex gap-2 shrink-0">
+                    <Button
+                      variant="danger"
+                      disabled={busyId === a.id}
+                      onClick={() => decide(a.id, "reject")}
+                    >
+                      Reddet
+                    </Button>
+                    <Button disabled={busyId === a.id} onClick={() => decide(a.id, "approve")}>
+                      Onayla
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex gap-2 shrink-0">
-                  <Button
-                    variant="danger"
-                    disabled={busyId === a.id}
-                    onClick={() => decide(a.id, "reject")}
-                  >
-                    Reddet
-                  </Button>
-                  <Button disabled={busyId === a.id} onClick={() => decide(a.id, "approve")}>
-                    Onayla
-                  </Button>
-                </div>
-              </div>
-              <WeightDiffRows proposed={a.proposed} previous={a.previous} />
-            </Card>
-          ))}
-        </div>
-      )}
+                <WeightDiffRows proposed={a.proposed} previous={a.previous} />
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <h2 className="text-sm font-semibold text-ink mb-3">Strateji Kapı Adayları</h2>
+        {strategyGates.length === 0 ? (
+          <EmptyState label="Bekleyen strateji kapı adayı yok." />
+        ) : (
+          <div className="space-y-4">
+            {strategyGates.map((c) => (
+              <StrategyGateCard
+                key={c.id}
+                candidate={c}
+                busy={busyId === c.id}
+                onDecide={decideStrategyGate}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

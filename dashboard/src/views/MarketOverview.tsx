@@ -19,7 +19,6 @@ export default function MarketOverview({
   const [orderBook, setOrderBook] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [watchlist, setWatchlist] = useState<string[]>([]);
-  const [newsSentiment, setNewsSentiment] = useState<{ available: boolean; sentiment_score?: number; summary?: string } | null>(null);
   const { format } = useCurrency();
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -34,13 +33,6 @@ export default function MarketOverview({
         setWatchlist(raw.split(",").map((s: string) => s.trim()).filter(Boolean));
       })
       .catch(() => setWatchlist([]));
-
-    // Faz 268-sonrası: sembole özel değil, kripto geneli — sembol/çözünürlük
-    // değişince yeniden çekmeye gerek yok, sadece sayfa açılışında bir kez.
-    fetch("/api/v1/market-data/news-sentiment", { headers: authHeaders() })
-      .then((r) => r.json())
-      .then(setNewsSentiment)
-      .catch(() => setNewsSentiment(null));
   }, []);
 
   const load = (sym: string, res: string) => {
@@ -181,28 +173,6 @@ export default function MarketOverview({
           </div>
         </div>
       </Card>
-
-      {newsSentiment?.available && (
-        <Card className="mb-4" padded>
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-xs text-ink-faint mb-1">Piyasa Haber Duyarlılığı (LLM özeti)</p>
-              <p className="text-sm text-ink">{newsSentiment.summary}</p>
-            </div>
-            <Badge
-              tone={
-                (newsSentiment.sentiment_score ?? 0) > 0.1
-                  ? "rise"
-                  : (newsSentiment.sentiment_score ?? 0) < -0.1
-                  ? "fall"
-                  : "neutral"
-              }
-            >
-              {(newsSentiment.sentiment_score ?? 0).toFixed(2)}
-            </Badge>
-          </div>
-        </Card>
-      )}
 
       {error && <div className="text-fall text-sm mb-3">{error}</div>}
 
