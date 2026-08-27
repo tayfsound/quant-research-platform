@@ -30,11 +30,24 @@ def test_calibration_requires_auth():
 def test_calibration_reflects_real_closed_trades_confidence_and_outcome():
     """%80 güvenle açılan 15 gerçek kapanmış işlem, GERÇEKTEN %80'i
     kazanıyor (12 win + 3 loss) -> mükemmel kalibre (ECE~0), fail-closed
-    None DEĞİL (eşiği geçiyor)."""
+    None DEĞİL (eşiği geçiyor).
+
+    Faz 367-devam — kritik bulgu (2026-08-27): api/rest/calibration.py'nin
+    endpoint'i BİLEREK filtresiz (`list_closed_trades(limit=100_000)`,
+    "her istek gerçek kapanmış işlem geçmişinden taze hesaplanır") —
+    üretimde doğru davranış ama paylaşılan quantdb_test'te BAŞKA
+    yüzlerce testin bıraktığı gerçek (confidence, outcome) çiftleriyle
+    karışıp bu testin kendi 15 mükemmel-kalibre satırını eziyordu (ECE
+    zamanla 0'dan uzaklaşıp gerçek eşiği aşıyordu — shared test state
+    bloat, bkz. proje hafızası). list_closed_trades bu test için
+    izole ediliyor (SADECE bu testin kendi 15 satırı) — persist/
+    close_position/gerçek HTTP round-trip hâlâ gerçek, sadece ECE
+    hesabının GİRDİSİ izole."""
     with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
         symbol = f"CALAPI{uuid4().hex[:8]}"
         now = datetime.now(UTC)
 
+        isolated_trades = []
         with SessionFactory.get_session() as session:
             repo = DecisionPersistor(session)
             for i in range(15):
@@ -48,12 +61,17 @@ def test_calibration_reflects_real_closed_trades_confidence_and_outcome():
                     decision_id=str(event.id), exit_price=101.0, pnl=1.0, closed_at=now,
                     outcome={"win": i < 12},  # 12/15 = %80, confidence'la eşleşiyor
                 )
+                isolated_trades.append({"confidence": 0.8, "outcome": {"win": i < 12}})
 
         client = _client()
-        response = client.get("/api/v1/calibration/", headers=make_authed_headers(Role.VIEWER))
+        with patch(
+            "database.repositories.decision_persistor.DecisionPersistor.list_closed_trades",
+            return_value=isolated_trades,
+        ):
+            response = client.get("/api/v1/calibration/", headers=make_authed_headers(Role.VIEWER))
         assert response.status_code == 200
         body = response.json()
-        assert body["total_closed_trades"] >= 15
+        assert body["total_closed_trades"] == 15
         assert body["result"] is not None
         assert body["result"]["expected_calibration_error"] < 0.05
 

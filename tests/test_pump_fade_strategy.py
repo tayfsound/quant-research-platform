@@ -86,6 +86,19 @@ def _cleanup_density_events() -> None:
 def _set_pump_fade_settings(**overrides) -> None:
     defaults = {
         "pump_fade_enabled": "false",
+        # Faz 367-devam — kritik bulgu (2026-08-27): legacy_cutoff_at
+        # varsayılanı ("") boşken run_cycle()'ın circuit breaker kontrolü
+        # min_opened_at=None ile TÜM paylaşılan quantdb_test geçmişini
+        # topluyordu — bu dosyanın kendi zarar-senaryosu testlerinin (ve
+        # onlarca başka oturumun) biriktirdiği gerçek negatif pump_fade_v1
+        # PNL'i, tam paket çalışırken pump_fade_max_loss_circuit_breaker_
+        # usd (varsayılan $10000) eşiğini aşıp circuit breaker'ı sessizce
+        # tetikliyordu (izole çalışınca fark edilmiyordu — az veri, eşiğin
+        # çok altında). "Şimdi"ye sabitlemek, bu testin KENDİ ürettiği
+        # dışında hiçbir geçmiş satırı saymamasını garanti ediyor — gerçek
+        # üretimdeki AYNI ilke (bkz. services/pump_fade_strategy.py'nin
+        # kendi legacy_cutoff kullanımı), sadece test hijyeni için.
+        "pump_fade_circuit_breaker_legacy_cutoff_at": datetime.now(UTC).isoformat(),
         # Faz 332 — eski pump_fade_capital_pct (kasanın sabit %5'i, stop
         # mesafesinden bağımsız) risk-bazlı boyutlandırmayla değiştirildi:
         # margin artık max_loss_per_trade_usd/(stop_distance_pct×leverage)
@@ -793,12 +806,22 @@ def test_run_cycle_trips_circuit_breaker_and_disables_pump_fade(monkeypatch):
     symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
     loss_symbol = f"PUMPFADE{uuid4().hex[:8]}USDT"
     try:
+        # Faz 367-devam — _set_pump_fade_settings'in varsayılan cutoff'u
+        # ("şimdi") bu satırdan SONRA çağrıldığı için, buradaki loss
+        # satırının kendi cutoff'un ÖNCESİNDE kalmaması adına önce bir
+        # zaman damgası alınıp override olarak geçiriliyor (aksi halde bu
+        # testin KENDİ ürettiği kayıp da yanlışlıkla hariç tutulurdu).
+        # opened_at da AÇIKÇA set ediliyor — total_pnl_for_experiment'ın
+        # cutoff'lu sorgusu "opened_at IS NOT NULL AND opened_at >=
+        # cutoff" (fail-closed, bkz. kendi docstring'i), varsayılan
+        # opened_at=None bir cutoff aktifken satırı sessizce elerdi.
+        cutoff_before_loss = datetime.now(UTC).isoformat()
         with SessionFactory.get_session() as session:
             persistor = DecisionPersistor(session)
             event = DecisionEvent(
                 id=uuid4(), symbol=loss_symbol, proposed_direction="SHORT", final_action="SHORT",
                 final_size=1.0, status="open", entry_price=100.0, quantity=1.0,
-                experiment_bucket=EXPERIMENT_BUCKET,
+                opened_at=datetime.now(UTC), experiment_bucket=EXPERIMENT_BUCKET,
             )
             persistor.persist(event)
             persistor.close_position(decision_id=str(event.id), exit_price=200.0, pnl=-200.0, closed_at=datetime.now(UTC))
@@ -807,6 +830,7 @@ def test_run_cycle_trips_circuit_breaker_and_disables_pump_fade(monkeypatch):
         _set_pump_fade_settings(
             pump_fade_enabled="true",
             pump_fade_max_loss_circuit_breaker_usd="1",
+            pump_fade_circuit_breaker_legacy_cutoff_at=cutoff_before_loss,
         )
         monkeypatch.setattr(
             "services.pump_fade_strategy.fetch_usdt_perpetual_symbols", lambda: [symbol]

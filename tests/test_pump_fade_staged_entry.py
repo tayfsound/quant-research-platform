@@ -70,6 +70,11 @@ def _set_settings(**overrides) -> None:
         "pump_fade_staged_entry_first_leg_pct": "0.25",
         "pump_fade_staged_entry_add_trigger_gain_pct": "0.80",
         "pump_fade_staged_entry_stop_gain_pct": "0.90",
+        # Faz 367-devam — bkz. test_pump_fade_strategy.py::_set_pump_fade_
+        # settings'teki AYNI düzeltmenin gerekçesi: legacy_cutoff_at boşken
+        # circuit breaker paylaşılan quantdb_test'in TÜM geçmişini
+        # topluyordu, tam paket çalışırken sessizce tetikleniyordu.
+        "pump_fade_circuit_breaker_legacy_cutoff_at": datetime.now(UTC).isoformat(),
     }
     defaults.update(overrides)
     with SessionFactory.get_session() as session:

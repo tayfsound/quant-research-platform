@@ -73,9 +73,23 @@ def test_gather_scientific_self_correction_flags_real_degradation():
 def test_gather_scientific_self_correction_excludes_mechanical_strategies():
     """pump_fade/basis_arb kendi risk yönetimlerine sahip mekanik
     stratejiler — council'in isabetini yansıtmadıkları için hiçbir
-    segmente karışmamalı (kill switch/concept drift'le AYNI ilke)."""
+    segmente karışmamalı (kill switch/concept drift'le AYNI ilke).
+
+    Faz 367-devam — kritik bulgu (2026-08-27): "direction=SHORT hiç
+    segmentte olmamalı" iddiası paylaşılan quantdb_test'te YÜZLERCE
+    başka testin bıraktığı GERÇEK (mekanik olmayan) SHORT işlemleri
+    varsayarak yanlıştı — bu segment doğal olarak var olabilir, test
+    onun VARLIĞINI değil bu testin eklediği 50 pump_fade satırının ona
+    hiç KATKI vermediğini doğrulamalı. Önce/sonra karşılaştırması,
+    _fetch_wins_and_totals'ın gerçek SQL WHERE dışlamasını (bkz. kendi
+    docstring'i) hâlâ gerçekten test ederken paylaşılan DB durumundan
+    bağımsız hale getiriyor."""
     now = datetime.now(UTC)
     old = now - timedelta(days=30)
+
+    before = gather_scientific_self_correction(recent_days=7)["segments"]
+    before_short = before.get("direction=SHORT", {"original_wins": 0, "original_n": 0, "recent_wins": 0, "recent_n": 0})
+    before_overall = before.get("overall", {"original_wins": 0, "original_n": 0, "recent_wins": 0, "recent_n": 0})
 
     try:
         for _ in range(25):
@@ -85,7 +99,17 @@ def test_gather_scientific_self_correction_excludes_mechanical_strategies():
 
         result = gather_scientific_self_correction(recent_days=7)
         assert "experiment_bucket=pump_fade_v1" not in result["segments"]
-        assert "direction=SHORT" not in result["segments"]
+        after_short = result["segments"].get(
+            "direction=SHORT", {"original_wins": 0, "original_n": 0, "recent_wins": 0, "recent_n": 0}
+        )
+        after_overall = result["segments"].get(
+            "overall", {"original_wins": 0, "original_n": 0, "recent_wins": 0, "recent_n": 0}
+        )
+        # 50 pump_fade_v1 SHORT kaybı eklendi ama hiçbiri "direction=SHORT"
+        # ya da "overall"a sızmamalı — önce/sonra sayaçlar BİREBİR aynı
+        # kalmalı (mekanik strateji hiçbir gerçek segmente katkı vermiyor).
+        assert after_short == before_short
+        assert after_overall == before_overall
     finally:
         _cleanup()
 
