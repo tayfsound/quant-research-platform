@@ -2,10 +2,25 @@
 dürüst ölçülebilen metrikler. Proje sahibinin kendi sözleriyle: "zor
 olanları icat etmeyelim... en önemli şey metriklerin doğru çalışması."
 
-Bilinçli olarak YAPILMADI (indexer/etiketli adres listesi gerektirir,
-Infura/Alchemy/Helius'un ücretsiz RPC erişimiyle dürüstçe hesaplanamaz):
-exchange_inflow/outflow, whale accumulation/distribution. Bunlar
-contracts/onchain.py'de hâlâ varsayılan (0.0/False) — icat edilmedi.
+Faz 367-devam — kullanıcı isteği (2026-08-27, "onchain 13 gündür neden
+sessiz" araştırmasının devamı): exchange_inflow/outflow artık GERÇEK
+veriyle besleniyor — DefiLlama'nın ücretsiz, kimliksiz /protocol/{slug}
+API'si, büyük borsaların KENDİ AÇIKLADIKLARI/etiketlenmiş cüzdanlarının
+GERÇEK zincir-üstü toplam bakiyesini (TVL metodolojisi, "CEX Transparency")
+günlük seri olarak veriyor — icat edilmiş bir tahmin değil, gerçek,
+doğrulanabilir bir zincir-üstü ölçüm. Günlük bakiye DELTA'sı = net akış
+(artış = net giriş/bearish, azalış = net çıkış/bullish) — tam da
+agents/onchain_agent.py'nin zaten beklediği anlam. Aşağıda fetch_exchange_
+net_flow_24h_usd() — bkz. kendi docstring'i.
+
+whale_accumulation/whale_distribution HÂLÂ bilinçli olarak YAPILMADI —
+DefiLlama'nın verisi BORSA cüzdanları için (etiketli, kamuya açık), ama
+bireysel "balina" cüzdanlarını (borsa dışı büyük tutucular) etiketlemek
+GERÇEK bir indexer/etiketli-adres veritabanı gerektirir (Nansen/Glassnode/
+Whale Alert'in ücretli katmanları, ya da Whale Alert'in ücretsiz katmanı
+— ayrı bir API key + hesap gerektiriyor, bu oturumda kullanıcıyla
+konuşulmadı). contracts/onchain.py'de hâlâ varsayılan (False) — dürüstçe
+icat edilmedi.
 
 Faz 308 — kullanıcı isteği: Glassnode tarzı ileri düzey bir metrik listesi
 (MVRV bantları, STH/LTH davranış kohortları, cost basis dağılım heatmap'i,
@@ -76,8 +91,97 @@ _COINGECKO_GLOBAL_URL = "https://api.coingecko.com/api/v3/global"
 # Faz 268v: bitcoin-data.com'un ücretsiz katmanı 8 istek/saat, 15 istek/gün
 # ile sınırlı — MVRV zaten günlük değişen bir metrik, agresif bir önbellek
 # hem bu limiti aşmamak hem de gereksiz ağ trafiğini önlemek için ZORUNLU.
-_MVRV_CACHE: dict[str, tuple[float, float | None]] = {}
-_MVRV_CACHE_TTL_SECONDS = 3600
+#
+# Faz 367-devam — kritik bulgu (2026-08-27, kullanıcı sorusu: "onchain 13
+# gündür neden sessiz"): eski _MVRV_CACHE saf bir Python dict'ti — HER
+# ayrı süreç (uvicorn, celery worker, celery beat) kendi belleğinde AYRI
+# bir kopyasını tutuyordu. 5 metrik (mvrv_zscore/mvrv_ratio/nupl/sopr/
+# realized_price) × birden çok süreç, "her biri saatte 1 kez tazeliyor"
+# sanılırken gerçekte saatte 8'lik PAYLAŞILAN limiti çok aşıyordu (canlı
+# doğrulandı: 429 Too Many Requests). Redis'e taşındı — kim sorarsa
+# sorsun AYNI taze/bayat veriyi okuyor, gerçek ağ isteğini sadece süreçlerin
+# İLKİ yapıyor (mevcut services/tasks.py::_CycleLock ile AYNI redis.from_
+# url(get_settings().REDIS_URL) deseni). Başarısızlık da (None) önbelleğe
+# alınıyor — art arda hatalı isteklerle limiti tüketmemek için, eskisiyle
+# AYNI ilke.
+#
+# Faz 367-devam — ikinci, daha temel bulgu (Redis düzeltmesinden HEMEN
+# sonra, kullanıcı: "her şey tıkır tıkır çalışmalı"): süreçler-arası
+# paylaşım tek başına YETERSİZ — asıl darboğaz GÜNLÜK 15 istek limiti.
+# Canlıda GERÇEKTEN çağrılan 3 metrik var (mvrv_zscore/nupl/sopr — ikisi
+# de agents/onchain_agent.py'de skorlamaya giriyor, bkz. kendi kodu;
+# mvrv_ratio/realized_price hiçbir yerden çağrılmıyor, canlı bütçeyi hiç
+# etkilemiyor). 1 saatlik TTL ile 3 metrik × 24 saat = günde 72 gerçek
+# istek — günlük 15 limitini SAAT 5'TE bile aşar, günün geri kalanı
+# kilitli kalırdı (paylaşılan önbellek bunu ÖNLEMEZ, sadece "kaç ayrı
+# sürecin" istek attığını düzeltir, "ne sıklıkta" istek atıldığını değil).
+# TTL 6 saate çıkarıldı: 3 metrik × (24/6=4) tazeleme/gün = günde 12
+# gerçek istek — 15 limitinin güvenle altında, ~3 isteklik marj (soğuk
+# önbellek/yeniden başlatma sonrası ilk tazeleme için).
+_MVRV_CACHE_TTL_SECONDS = 6 * 3600
+_MVRV_REDIS_KEY_PREFIX = "onchain:bitcoin_data:"
+_MVRV_REDIS_MISSING_SENTINEL = "__none__"
+
+
+def _redis_client():
+    import redis
+
+    return redis.from_url(get_settings().REDIS_URL)
+
+
+def _fetch_bitcoin_data_metric(cache_key: str, url: str, json_field: str) -> float | None:
+    """5 bitcoin-data.com fonksiyonunun (mvrv_zscore/mvrv_ratio/nupl/sopr/
+    realized_price) PAYLAŞTIĞI tek gerçek fetch+önbellek mantığı — kod
+    tekrarını önlemek ve Redis anahtarlarının tutarlı kalmasını garanti
+    etmek için. Redis'e erişilemezse (ör. servis geçici olarak kapalı)
+    fail-closed: önbellek atlanır, doğrudan (önbelleksiz) bir deneme
+    yapılır — sistemin geri kalanı bundan etkilenmesin diye asla
+    çökmez."""
+    redis_key = _MVRV_REDIS_KEY_PREFIX + cache_key
+    try:
+        client = _redis_client()
+        cached = client.get(redis_key)
+    except Exception as exc:
+        logger.warning("onchain Redis cache okunamadı (%s): %s", cache_key, exc)
+        client = None
+        cached = None
+
+    if cached is not None:
+        raw = cached.decode() if isinstance(cached, bytes) else cached
+        return None if raw == _MVRV_REDIS_MISSING_SENTINEL else float(raw)
+
+    try:
+        response = httpx.get(url, timeout=10)
+        response.raise_for_status()
+        value = float(response.json()[json_field])
+        to_store = str(value)
+    except Exception as exc:
+        logger.warning("bitcoin-data.com %s fetch failed: %s", cache_key, exc)
+        value = None
+        to_store = _MVRV_REDIS_MISSING_SENTINEL
+
+    if client is not None:
+        try:
+            client.set(redis_key, to_store, ex=_MVRV_CACHE_TTL_SECONDS)
+        except Exception as exc:
+            logger.warning("onchain Redis cache yazılamadı (%s): %s", cache_key, exc)
+
+    return value
+
+
+_BITCOIN_DATA_CACHE_KEYS = ("mvrv_zscore", "mvrv_ratio", "nupl", "sopr", "realized_price")
+
+
+def clear_bitcoin_data_cache_for_tests() -> None:
+    """Testlerin eski _MVRV_CACHE.clear() yerine kullandığı yardımcı —
+    Redis'teki 5 bilinen anahtarı siler. Sadece testler için (canlıda
+    çağrılmaz, TTL kendiliğinden dolar)."""
+    try:
+        client = _redis_client()
+        client.delete(*(_MVRV_REDIS_KEY_PREFIX + k for k in _BITCOIN_DATA_CACHE_KEYS))
+    except Exception as exc:
+        logger.warning("onchain Redis test-cache temizlenemedi: %s", exc)
+
 
 # Faz 268j — gerçek olay: bir walk-forward backtest'te (15 sembol, 5m,
 # 1000 bar) HER TEK bar için bu modüldeki 5 fonksiyon (yalnızca MVRV hariç)
@@ -240,22 +344,7 @@ def fetch_mvrv_zscore() -> float | None:
     diğer network sağlığı göstergeleri (network_activity_trend/
     hash_rate_trend) gibi tüm kripto sembollerine "genel piyasa koşulu"
     olarak uygulanıyor (bkz. services/context_adapter.py)."""
-    cached = _MVRV_CACHE.get("mvrv_zscore")
-    if cached and (time.monotonic() - cached[0]) < _MVRV_CACHE_TTL_SECONDS:
-        return cached[1]
-
-    try:
-        response = httpx.get(_BITCOIN_DATA_MVRV_ZSCORE_URL, timeout=10)
-        response.raise_for_status()
-        value = float(response.json()["mvrvZscore"])
-        _MVRV_CACHE["mvrv_zscore"] = (time.monotonic(), value)
-        return value
-    except Exception as exc:
-        logger.warning("bitcoin-data.com MVRV Z-Score fetch failed: %s", exc)
-        # Başarısızlığı da önbelleğe alıyoruz — art arda hatalı isteklerle
-        # zaten sıkı olan 8/saat limitini tüketmeyelim.
-        _MVRV_CACHE["mvrv_zscore"] = (time.monotonic(), None)
-        return None
+    return _fetch_bitcoin_data_metric("mvrv_zscore", _BITCOIN_DATA_MVRV_ZSCORE_URL, "mvrvZscore")
 
 
 def fetch_mvrv_ratio() -> float | None:
@@ -265,20 +354,7 @@ def fetch_mvrv_ratio() -> float | None:
     zararda). MVRV Z-Score'un (fetch_mvrv_zscore) AYNI ücretsiz kaynağı,
     AYNI önbellek disiplini (_MVRV_CACHE, 1 saat TTL — bitcoin-data.com'un
     sıkı 10/saat limitini aşmamak için ZORUNLU)."""
-    cached = _MVRV_CACHE.get("mvrv_ratio")
-    if cached and (time.monotonic() - cached[0]) < _MVRV_CACHE_TTL_SECONDS:
-        return cached[1]
-
-    try:
-        response = httpx.get(_BITCOIN_DATA_MVRV_URL, timeout=10)
-        response.raise_for_status()
-        value = float(response.json()["mvrv"])
-        _MVRV_CACHE["mvrv_ratio"] = (time.monotonic(), value)
-        return value
-    except Exception as exc:
-        logger.warning("bitcoin-data.com MVRV ratio fetch failed: %s", exc)
-        _MVRV_CACHE["mvrv_ratio"] = (time.monotonic(), None)
-        return None
+    return _fetch_bitcoin_data_metric("mvrv_ratio", _BITCOIN_DATA_MVRV_URL, "mvrv")
 
 
 def fetch_nupl() -> float | None:
@@ -290,20 +366,7 @@ def fetch_nupl() -> float | None:
     sıkı saatlik limitini aşmamak için ZORUNLU). Henüz hiçbir ajana
     bağlanmadı — MVRV ratio/Mayer Multiple gibi (bkz. o alanların kendi
     yorumları) sadece gözlem/gelecekteki kalibrasyon için."""
-    cached = _MVRV_CACHE.get("nupl")
-    if cached and (time.monotonic() - cached[0]) < _MVRV_CACHE_TTL_SECONDS:
-        return cached[1]
-
-    try:
-        response = httpx.get(_BITCOIN_DATA_NUPL_URL, timeout=10)
-        response.raise_for_status()
-        value = float(response.json()["nupl"])
-        _MVRV_CACHE["nupl"] = (time.monotonic(), value)
-        return value
-    except Exception as exc:
-        logger.warning("bitcoin-data.com NUPL fetch failed: %s", exc)
-        _MVRV_CACHE["nupl"] = (time.monotonic(), None)
-        return None
+    return _fetch_bitcoin_data_metric("nupl", _BITCOIN_DATA_NUPL_URL, "nupl")
 
 
 def fetch_sopr() -> float | None:
@@ -311,20 +374,7 @@ def fetch_sopr() -> float | None:
     coinlerin ortalama olarak kârla mı zararla mı satıldığı (>1 kâr, <1
     zarar, ~1 "SOPR reset" — genelde yerel destek/direnç). Henüz hiçbir
     ajana bağlanmadı, sadece gözlem."""
-    cached = _MVRV_CACHE.get("sopr")
-    if cached and (time.monotonic() - cached[0]) < _MVRV_CACHE_TTL_SECONDS:
-        return cached[1]
-
-    try:
-        response = httpx.get(_BITCOIN_DATA_SOPR_URL, timeout=10)
-        response.raise_for_status()
-        value = float(response.json()["sopr"])
-        _MVRV_CACHE["sopr"] = (time.monotonic(), value)
-        return value
-    except Exception as exc:
-        logger.warning("bitcoin-data.com SOPR fetch failed: %s", exc)
-        _MVRV_CACHE["sopr"] = (time.monotonic(), None)
-        return None
+    return _fetch_bitcoin_data_metric("sopr", _BITCOIN_DATA_SOPR_URL, "sopr")
 
 
 def fetch_realized_price() -> float | None:
@@ -334,20 +384,149 @@ def fetch_realized_price() -> float | None:
     bilgiyi verir ama mutlak bir "ortalama maliyet tabanı" seviyesi
     olarak da tek başına anlamlı. Henüz hiçbir ajana bağlanmadı, sadece
     gözlem."""
-    cached = _MVRV_CACHE.get("realized_price")
-    if cached and (time.monotonic() - cached[0]) < _MVRV_CACHE_TTL_SECONDS:
-        return cached[1]
+    return _fetch_bitcoin_data_metric("realized_price", _BITCOIN_DATA_REALIZED_PRICE_URL, "realizedPrice")
 
+
+# Faz 367-devam — DefiLlama'nın TVL büyüklüğüne göre en büyük, gerçekten
+# etiketli/açıklanmış zincir-üstü cüzdanları olan borsalar (Coinbase
+# DefiLlama'da CEX olarak listelenmiyor — kendi rezerv adreslerini bu
+# formatta açıklamıyor, dürüstçe dışarıda bırakıldı). 4 borsanın toplam
+# günlük bakiye deltası, tek bir borsadan daha temsili bir "piyasa geneli"
+# akış sinyali veriyor.
+_DEFILLAMA_PROTOCOL_URL = "https://api.llama.fi/protocol/{slug}"
+_EXCHANGE_FLOW_SLUGS = ("binance-cex", "okx", "bitfinex", "bybit")
+_EXCHANGE_FLOW_CACHE_TTL_SECONDS = 3600
+_EXCHANGE_FLOW_REDIS_KEY = "onchain:exchange_deltas_24h"
+
+
+def _fetch_exchange_deltas() -> list[tuple[str, float]] | None:
+    """fetch_exchange_net_flow_24h_usd() (piyasa geneli toplam) VE
+    fetch_whale_like_exchange_flow()'un (tek borsadaki aykırı/yoğun
+    hareket) PAYLAŞTIĞI tek gerçek fetch+önbellek — aynı ham veriyi iki
+    kez ağdan çekmemek için. Her borsa için (slug, delta_usd) döner; bir
+    borsa başarısız olursa SESSİZCE atlanır (icat edilmiş bir sayı asla
+    üretilmez), en az 1 borsa başarılı olmalı, hiçbiri olmazsa None."""
     try:
-        response = httpx.get(_BITCOIN_DATA_REALIZED_PRICE_URL, timeout=10)
-        response.raise_for_status()
-        value = float(response.json()["realizedPrice"])
-        _MVRV_CACHE["realized_price"] = (time.monotonic(), value)
-        return value
+        client = _redis_client()
+        cached = client.get(_EXCHANGE_FLOW_REDIS_KEY)
     except Exception as exc:
-        logger.warning("bitcoin-data.com Realized Price fetch failed: %s", exc)
-        _MVRV_CACHE["realized_price"] = (time.monotonic(), None)
+        logger.warning("onchain Redis cache okunamadı (exchange_deltas): %s", exc)
+        client = None
+        cached = None
+
+    if cached is not None:
+        raw = cached.decode() if isinstance(cached, bytes) else cached
+        if raw == _MVRV_REDIS_MISSING_SENTINEL:
+            return None
+        import json as _json
+
+        return [(slug, delta) for slug, delta in _json.loads(raw)]
+
+    deltas: list[tuple[str, float]] = []
+    for slug in _EXCHANGE_FLOW_SLUGS:
+        try:
+            response = httpx.get(_DEFILLAMA_PROTOCOL_URL.format(slug=slug), timeout=15)
+            response.raise_for_status()
+            tvl_series = response.json().get("tvl") or []
+            if len(tvl_series) < 2:
+                continue
+            today = tvl_series[-1]["totalLiquidityUSD"]
+            yesterday = tvl_series[-2]["totalLiquidityUSD"]
+            deltas.append((slug, today - yesterday))
+        except Exception as exc:
+            logger.warning("DefiLlama %s exchange balance fetch failed: %s", slug, exc)
+            continue
+
+    if client is not None:
+        import json as _json
+
+        to_store = _json.dumps(deltas) if deltas else _MVRV_REDIS_MISSING_SENTINEL
+        try:
+            client.set(_EXCHANGE_FLOW_REDIS_KEY, to_store, ex=_EXCHANGE_FLOW_CACHE_TTL_SECONDS)
+        except Exception as exc:
+            logger.warning("onchain Redis cache yazılamadı (exchange_deltas): %s", exc)
+
+    return deltas or None
+
+
+def fetch_exchange_net_flow_24h_usd() -> float | None:
+    """Faz 367-devam — kullanıcı isteği (2026-08-27): agents/onchain_
+    agent.py'nin exchange_inflow_24h/exchange_outflow_24h'i baştan beri
+    hiç gerçek veriyle beslenmiyordu (bkz. bu modülün üst docstring'i).
+    DefiLlama'nın ücretsiz, kimliksiz /protocol/{slug} API'si büyük
+    borsaların KENDİ açıkladıkları zincir-üstü cüzdanlarının GERÇEK
+    toplam bakiyesini günlük seri olarak veriyor (TVL metodolojisi,
+    "CEX Transparency" — icat edilmiş bir tahmin değil). Son 2 günün
+    bakiye deltası = net akış: pozitif (bakiye arttı) = net GİRİŞ
+    (bearish, satış baskısı riski), negatif = net ÇIKIŞ (bullish).
+    _EXCHANGE_FLOW_SLUGS'taki 4 büyük borsanın TOPLAMI — "piyasa geneli"
+    yön sinyali (tek bir borsadan daha temsili).
+
+    Dönen değer İŞARETLİ (pozitif=net giriş, negatif=net çıkış) — agents/
+    onchain_agent.py'nin exchange_inflow_24h/exchange_outflow_24h çift-
+    alan karşılaştırmasına services/context_adapter.py'de dönüştürülür."""
+    deltas = _fetch_exchange_deltas()
+    if not deltas:
         return None
+    return sum(delta for _, delta in deltas)
+
+
+# Faz 367-devam — kullanıcı isteği (2026-08-27): "balina birikimi/dağıtımı
+# hâlâ yok" — gerçek bireysel balina cüzdan takibi (Whale Alert/Nansen/
+# Arkham) araştırıldı, HİÇBİRİNİN ücretsiz katmanı yok (bkz. konuşma —
+# Whale Alert $15-30/ay, Nansen kullanım-başına, Arkham kredi-bazlı,
+# CryptoQuant $99/ay'dan başlıyor). Kullanıcı kararı: GEÇİCİ çözüm olarak
+# borsa akışı verisinden dolaylı bir yaklaşım. Bu GERÇEK bir balina
+# cüzdan takibi DEĞİL — 4 borsanın günlük bakiye deltalarından biri,
+# DİĞERLERİNE göre orantısız derecede büyükse ("tek borsada yoğunlaşmış,
+# piyasa geneli değil") bunu "muhtemelen tek, büyük bir işlem" (balina
+# benzeri) olarak yorumluyoruz. fetch_exchange_net_flow_24h_usd (TOPLAM
+# yön) ile ÇİFT SAYIM riskini azaltmak için kasıtlı olarak FARKLI bir
+# soru soruyor: "toplam ne kadar" değil "TEK bir borsada anormal
+# yoğunlaşma var mı" — ikisi aynı ham veriden türese de farklı bir
+# özelliği (yön vs. yoğunlaşma) ölçüyor.
+_WHALE_LIKE_MIN_ABS_USD = 300_000_000
+_WHALE_LIKE_MIN_DOMINANCE_SHARE = 0.70
+
+
+def fetch_whale_like_exchange_flow() -> tuple[str, float] | None:
+    """DÜRÜST UYARI: gerçek bir balina cüzdan takibi değil, borsa akışı
+    verisinden türetilmiş bir YAKLAŞIM (bkz. yukarıdaki modül notu) —
+    services/context_adapter.py ve agents/onchain_agent.py'nin ürettiği
+    caveat/evidence metinlerinde bu açıkça belirtiliyor, kullanıcı asla
+    "gerçek balina verisi" sanmasın diye.
+
+    En büyük |delta|'lı borsayı bulur; sadece HEM mutlak büyüklük
+    ($300M+) HEM DE toplam mutlak hareketin baskın payı (%70+) sağlanırsa
+    "anormal yoğunlaşma" (whale-like) olarak döner — (slug, signed_delta).
+    Aksi halde (dağınık, piyasa-geneli bir hareket — zaten exchange_flow
+    sinyaliyle kapsanıyor) None döner, çift sayım önlenir."""
+    deltas = _fetch_exchange_deltas()
+    if not deltas:
+        return None
+
+    total_abs = sum(abs(delta) for _, delta in deltas)
+    if total_abs == 0:
+        return None
+
+    dominant_slug, dominant_delta = max(deltas, key=lambda pair: abs(pair[1]))
+    if abs(dominant_delta) < _WHALE_LIKE_MIN_ABS_USD:
+        return None
+    if abs(dominant_delta) / total_abs < _WHALE_LIKE_MIN_DOMINANCE_SHARE:
+        return None
+
+    return dominant_slug, dominant_delta
+
+
+def clear_exchange_flow_cache_for_tests() -> None:
+    """clear_bitcoin_data_cache_for_tests() ile AYNI amaç — sadece testler
+    için, fetch_exchange_net_flow_24h_usd()'nin ayrı Redis anahtarını
+    siler."""
+    try:
+        client = _redis_client()
+        client.delete(_EXCHANGE_FLOW_REDIS_KEY)
+    except Exception as exc:
+        logger.warning("onchain Redis test-cache temizlenemedi (exchange_flow): %s", exc)
 
 
 def _fetch_global_market_data() -> dict | None:

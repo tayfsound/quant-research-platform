@@ -66,14 +66,14 @@ def test_to_onchain_populates_real_mvrv_zscore_for_crypto_symbol():
     None/0.0 durumunu geçerli kabul ediyor, sadece gerçekten bir değer
     geldiyse makul bir aralıkta olduğunu doğruluyor."""
     import market_data.onchain.onchain_provider as onchain_provider
-    onchain_provider._MVRV_CACHE.clear()
+    onchain_provider.clear_bitcoin_data_cache_for_tests()
 
     ctx = CognitiveCycleContext(market={"symbol": "ETHUSDT"})
     result = ContextAdapter().to_onchain(ctx)
 
     if result.mvrv_zscore != 0.0:
         assert -2.0 < result.mvrv_zscore < 10.0
-    onchain_provider._MVRV_CACHE.clear()
+    onchain_provider.clear_bitcoin_data_cache_for_tests()
 
 
 def test_to_onchain_explicit_mvrv_override_still_wins_over_real_fetch():
@@ -83,3 +83,114 @@ def test_to_onchain_explicit_mvrv_override_still_wins_over_real_fetch():
     })
     result = ContextAdapter().to_onchain(ctx)
     assert result.mvrv_zscore == 5.5
+
+
+def test_to_onchain_populates_real_exchange_inflow_when_net_flow_is_material(monkeypatch):
+    """Faz 367-devam — kritik bulgu: fetch_exchange_net_flow_24h_usd()
+    _real_onchain_metrics()'te hesaplanıyordu ama to_onchain()'in kendisi
+    onu HİÇ okumuyordu (exchange_outflow_24h/exchange_inflow_24h hep
+    sabit 0.0'a düşüyordu, mvrv_zscore/stablecoin_mint_24h ile AYNI
+    real_metrics.get(...) düşme deseni eksikti) — düzeltildi."""
+    import market_data.onchain.onchain_provider as onchain_provider
+    monkeypatch.setattr(onchain_provider, "fetch_exchange_net_flow_24h_usd", lambda: 200_000_000.0)
+
+    ctx = CognitiveCycleContext(market={"symbol": "BTCUSDT"})
+    result = ContextAdapter().to_onchain(ctx)
+
+    assert result.exchange_inflow_24h == 200_000_000.0
+    assert result.exchange_outflow_24h == 0.0
+
+
+def test_to_onchain_populates_real_exchange_outflow_when_net_flow_is_negative(monkeypatch):
+    import market_data.onchain.onchain_provider as onchain_provider
+    monkeypatch.setattr(onchain_provider, "fetch_exchange_net_flow_24h_usd", lambda: -300_000_000.0)
+
+    ctx = CognitiveCycleContext(market={"symbol": "BTCUSDT"})
+    result = ContextAdapter().to_onchain(ctx)
+
+    assert result.exchange_outflow_24h == 300_000_000.0
+    assert result.exchange_inflow_24h == 0.0
+
+
+def test_to_onchain_ignores_immaterial_exchange_net_flow(monkeypatch):
+    """$100M maddiyet eşiğinin altındaki bir net akış (ör. borsa bakiyesi
+    1 dolar bile değişse tetiklenen anlamsız bir sinyal olmasın diye)
+    sessizce 0.0'da kalmalı — bkz. context_adapter.py'nin kendi notu."""
+    import market_data.onchain.onchain_provider as onchain_provider
+    monkeypatch.setattr(onchain_provider, "fetch_exchange_net_flow_24h_usd", lambda: 50_000_000.0)
+
+    ctx = CognitiveCycleContext(market={"symbol": "BTCUSDT"})
+    result = ContextAdapter().to_onchain(ctx)
+
+    assert result.exchange_inflow_24h == 0.0
+    assert result.exchange_outflow_24h == 0.0
+
+
+def test_to_onchain_explicit_exchange_flow_override_still_wins_over_real_fetch(monkeypatch):
+    import market_data.onchain.onchain_provider as onchain_provider
+    monkeypatch.setattr(onchain_provider, "fetch_exchange_net_flow_24h_usd", lambda: 500_000_000.0)
+
+    ctx = CognitiveCycleContext(market={
+        "symbol": "BTCUSDT",
+        "raw_snapshot": {"exchange_inflow_24h": 42.0},
+    })
+    result = ContextAdapter().to_onchain(ctx)
+    assert result.exchange_inflow_24h == 42.0
+
+
+def test_to_onchain_sets_whale_distribution_when_dominant_exchange_balance_rises(monkeypatch):
+    """Faz 367-devam — kullanıcı kararı: gerçek balina cüzdan takibi yok,
+    GEÇİCİ çözüm olarak tek bir borsadaki orantısız yoğunlaşmış hareket
+    kullanılıyor. Pozitif delta (bakiye ARTTI) = varlıklar borsaya
+    taşınıyor = dağıtım/satış niyeti."""
+    import market_data.onchain.onchain_provider as onchain_provider
+    monkeypatch.setattr(
+        onchain_provider, "fetch_whale_like_exchange_flow", lambda: ("binance-cex", 900_000_000.0)
+    )
+
+    ctx = CognitiveCycleContext(market={"symbol": "BTCUSDT"})
+    result = ContextAdapter().to_onchain(ctx)
+
+    assert result.whale_distribution is True
+    assert result.whale_accumulation is False
+
+
+def test_to_onchain_sets_whale_accumulation_when_dominant_exchange_balance_falls(monkeypatch):
+    """Negatif delta (bakiye AZALDI) = borsadan soğuk cüzdana çekiliyor =
+    klasik biriktirme sinyali."""
+    import market_data.onchain.onchain_provider as onchain_provider
+    monkeypatch.setattr(
+        onchain_provider, "fetch_whale_like_exchange_flow", lambda: ("okx", -700_000_000.0)
+    )
+
+    ctx = CognitiveCycleContext(market={"symbol": "BTCUSDT"})
+    result = ContextAdapter().to_onchain(ctx)
+
+    assert result.whale_accumulation is True
+    assert result.whale_distribution is False
+
+
+def test_to_onchain_leaves_whale_flags_false_when_no_dominant_move(monkeypatch):
+    import market_data.onchain.onchain_provider as onchain_provider
+    monkeypatch.setattr(onchain_provider, "fetch_whale_like_exchange_flow", lambda: None)
+
+    ctx = CognitiveCycleContext(market={"symbol": "BTCUSDT"})
+    result = ContextAdapter().to_onchain(ctx)
+
+    assert result.whale_accumulation is False
+    assert result.whale_distribution is False
+
+
+def test_to_onchain_explicit_whale_override_still_wins_over_real_fetch(monkeypatch):
+    import market_data.onchain.onchain_provider as onchain_provider
+    monkeypatch.setattr(
+        onchain_provider, "fetch_whale_like_exchange_flow", lambda: ("binance-cex", 900_000_000.0)
+    )
+
+    ctx = CognitiveCycleContext(market={
+        "symbol": "BTCUSDT",
+        "raw_snapshot": {"whale_distribution": False, "whale_accumulation": True},
+    })
+    result = ContextAdapter().to_onchain(ctx)
+    assert result.whale_accumulation is True
+    assert result.whale_distribution is False

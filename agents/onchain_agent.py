@@ -22,15 +22,27 @@ class OnChainAgent:
             contributions["exchange_flow"] = -1.5
             evidence.append("Güçlü borsa girişi — olası satış baskısı")
 
-        # Balina aktivitesi
+        # Balina aktivitesi — Faz 367-devam: kullanıcı onayıyla GEÇİCİ bir
+        # yaklaşım (bkz. services/context_adapter.py::_real_onchain_metrics
+        # ve onchain_provider.py::fetch_whale_like_exchange_flow) — gerçek
+        # bireysel balina cüzdan takibi DEĞİL, tek bir borsadaki orantısız
+        # yoğunlaşmış bakiye hareketinden türetilmiş bir tahmin. Evidence
+        # metni bunu açıkça belirtiyor, kullanıcı gerçek bir balina
+        # cüzdanı izlendiğini sanmasın diye.
         if context.whale_accumulation and context.whale_distribution:
             caveats.append("Çelişkili balina sinyalleri — aynı anda hem biriktirme hem dağıtım")
         elif context.whale_accumulation:
             contributions["whale_activity"] = 1.5
-            evidence.append("Balina biriktirmesi tespit edildi")
+            evidence.append(
+                "Balina benzeri biriktirme tespit edildi (borsa akışından türetilmiş yaklaşık sinyal, "
+                "gerçek cüzdan takibi değil)"
+            )
         elif context.whale_distribution:
             contributions["whale_activity"] = -1.5
-            evidence.append("Balina dağıtımı tespit edildi")
+            evidence.append(
+                "Balina benzeri dağıtım tespit edildi (borsa akışından türetilmiş yaklaşık sinyal, "
+                "gerçek cüzdan takibi değil)"
+            )
 
         # Stablecoin arzı
         if context.stablecoin_mint_24h > 100_000_000:

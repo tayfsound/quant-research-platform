@@ -73,13 +73,34 @@ class ContextAdapter:
             dvol_trend=self._get(ctx, "dvol_trend", fetch_dvol_trend() or ""),
         )
 
+    # Faz 367-devam — kullanıcı isteği: agents/onchain_agent.py'nin
+    # exchange_outflow_24h > exchange_inflow_24h * 1.5 (ve tersi) karşılaştırması
+    # İKİ AYRI (gross giriş, gross çıkış) büyüklük bekliyor ama DefiLlama
+    # sadece NET bakiye deltasını verebiliyor (bkz. onchain_provider.py::
+    # fetch_exchange_net_flow_24h_usd). Net'i "diğer taraf sıfır" olarak
+    # dağıtmak, HER gün (bakiye $1 bile değişse) tetiklenen anlamsız bir
+    # sinyale yol açardı — bu yüzden aynı büyüklük mertebesindeki
+    # stablecoin_mint_24h eşiğiyle (>$100M) AYNI ilkeyle bir maddiyet
+    # eşiği uygulanıyor: sadece gerçekten büyük bir net akışta (izlenen
+    # borsaların toplam ~$230B tvl'sine göre anlamlı bir pay) alan
+    # dolduruluyor, aksi halde 0.0 varsayılanı (sessiz) korunuyor.
+    _EXCHANGE_FLOW_MATERIALITY_THRESHOLD_USD = 100_000_000
+
     def _real_onchain_metrics(self, symbol: str) -> dict:
-        """Faz 196/268v: SADECE gerçekten kolay/dürüst ölçülen metrikler —
-        exchange akışı/whale kasıtlı olarak burada yok (indexer gerektirir,
-        icat edilmedi). MVRV Z-Score Faz 268v'de eklendi (bitcoin-data.com,
-        API key gerektirmiyor, gerçek veri). Sadece kripto sembolleri için;
-        ağ hatası olursa (provider zaten None döner) sessizce atlanır,
-        hiçbir sayı uydurulmaz."""
+        """Faz 196/268v/367-devam: gerçekten ölçülebilen metrikler.
+        exchange_inflow/outflow artık GERÇEK veriyle besleniyor (bkz.
+        onchain_provider.py::fetch_exchange_net_flow_24h_usd — DefiLlama'nın
+        ücretsiz, kimliksiz CEX Transparency API'si). whale_accumulation/
+        whale_distribution GEÇİCİ bir yaklaşımla besleniyor (bkz. onchain_
+        provider.py::fetch_whale_like_exchange_flow — gerçek bireysel
+        balina cüzdan takibi DEĞİL, ücretsiz katmanı olan bir sağlayıcı
+        bulunamadı; TEK bir borsada orantısız yoğunlaşmış bir bakiye
+        hareketi "balina benzeri" olarak yorumlanıyor, kullanıcı onayıyla).
+        MVRV Z-Score
+        Faz 268v'de eklendi (bitcoin-data.com, API key gerektirmiyor,
+        gerçek veri). Sadece kripto sembolleri için; ağ hatası olursa
+        (provider zaten None döner) sessizce atlanır, hiçbir sayı
+        uydurulmaz."""
         if not symbol.upper().endswith(("USDT", "BUSD", "USDC", "FDUSD")):
             return {}
 
@@ -87,6 +108,7 @@ class ContextAdapter:
         from database.session_factory import SessionFactory
         from market_data.onchain.onchain_provider import (
             fetch_eth_gas_price_gwei,
+            fetch_exchange_net_flow_24h_usd,
             fetch_hash_rate_trend,
             fetch_mvrv_zscore,
             fetch_network_activity_trend,
@@ -94,9 +116,35 @@ class ContextAdapter:
             fetch_solana_tps,
             fetch_sopr,
             fetch_usdt_total_supply,
+            fetch_whale_like_exchange_flow,
         )
 
         result: dict = {}
+
+        # Faz 367-devam — kullanıcı kararı (2026-08-27): "balina" alanları
+        # için gerçek bir cüzdan-takip API'si yok (bkz. onchain_provider.py'
+        # nin fetch_whale_like_exchange_flow docstring'i — ücretsiz katmanı
+        # olan hiçbir sağlayıcı bulunamadı), GEÇİCİ bir yaklaşım olarak
+        # onaylandı: TEK bir borsada, diğerlerinden orantısız derecede
+        # büyük/yoğunlaşmış bir bakiye hareketi. Pozitif delta (bakiye
+        # ARTTI) = varlıklar borsaya taşınıyor = olası dağıtım/satış
+        # niyeti; negatif (bakiye AZALDI) = borsadan soğuk cüzdana
+        # çekiliyor = klasik biriktirme sinyali — agents/onchain_agent.py'
+        # nin zaten beklediği AYNI anlam (bkz. kendi evidence metinleri).
+        whale_like = fetch_whale_like_exchange_flow()
+        if whale_like is not None:
+            _, dominant_delta = whale_like
+            if dominant_delta > 0:
+                result["whale_distribution"] = True
+            else:
+                result["whale_accumulation"] = True
+
+        net_flow = fetch_exchange_net_flow_24h_usd()
+        if net_flow is not None and abs(net_flow) > self._EXCHANGE_FLOW_MATERIALITY_THRESHOLD_USD:
+            if net_flow > 0:
+                result["exchange_inflow_24h"] = net_flow
+            else:
+                result["exchange_outflow_24h"] = -net_flow
 
         gas_price = fetch_eth_gas_price_gwei()
         if gas_price is not None:
@@ -164,10 +212,18 @@ class ContextAdapter:
         for key, value in real_metrics.items():
             ctx.market.features[f"onchain_{key}"] = value
         return OnChainContext(
-            exchange_outflow_24h=self._get(ctx, "exchange_outflow_24h", 0.0),
-            exchange_inflow_24h=self._get(ctx, "exchange_inflow_24h", 0.0),
-            whale_accumulation=self._get(ctx, "whale_accumulation", False),
-            whale_distribution=self._get(ctx, "whale_distribution", False),
+            exchange_outflow_24h=self._get(
+                ctx, "exchange_outflow_24h", real_metrics.get("exchange_outflow_24h", 0.0)
+            ),
+            exchange_inflow_24h=self._get(
+                ctx, "exchange_inflow_24h", real_metrics.get("exchange_inflow_24h", 0.0)
+            ),
+            whale_accumulation=self._get(
+                ctx, "whale_accumulation", real_metrics.get("whale_accumulation", False)
+            ),
+            whale_distribution=self._get(
+                ctx, "whale_distribution", real_metrics.get("whale_distribution", False)
+            ),
             stablecoin_mint_24h=self._get(
                 ctx, "stablecoin_mint_24h", real_metrics.get("stablecoin_mint_24h", 0.0)
             ),
