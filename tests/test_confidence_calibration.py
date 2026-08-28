@@ -256,9 +256,9 @@ def test_asset_class_of_symbol_groups_gold_backed_tokens_together():
     assert _asset_class_of_symbol("PAXGUSDT") == "gold_backed"
     assert _asset_class_of_symbol("XAUTUSDT") == "gold_backed"
     assert _asset_class_of_symbol("BTCUSDT") == "crypto"
-    assert _asset_class_of_symbol("AAPL") == "equity"
-    assert _asset_class_of_symbol("^IXIC") == "equity_index"
-    assert _asset_class_of_symbol("GC=F") == "precious_metal_future"
+    assert _asset_class_of_symbol("NVDAUSDT") == "equity"
+    assert _asset_class_of_symbol("QQQUSDT") == "equity_index"
+    assert _asset_class_of_symbol("XAGUSDT") == "precious_metal_future"
     assert _asset_class_of_symbol("SOMETHING_UNKNOWN") == "other"
 
 
@@ -368,8 +368,8 @@ def test_crypto_cap_tier_is_none_for_non_crypto():
     from services.agent_memory import crypto_cap_tier
 
     assert crypto_cap_tier("XAUTUSDT") is None
-    assert crypto_cap_tier("AAPL") is None
-    assert crypto_cap_tier("GC=F") is None
+    assert crypto_cap_tier("NVDAUSDT") is None
+    assert crypto_cap_tier("XAGUSDT") is None
     assert crypto_cap_tier(None) is None
 
 

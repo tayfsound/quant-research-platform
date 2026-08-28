@@ -39,9 +39,18 @@ _DEFAULT_NAMESPACE = os.environ.get("AGENT_MEMORY_STORAGE_PATH", "")
 # kullanmalı, iki ayrı/uyuşmaz tanım olmasın.
 _ASSET_CLASS_SYMBOLS: dict[str, tuple[str, ...]] = {
     "gold_backed": ("PAXGUSDT", "XAUTUSDT"),
-    "precious_metal_future": ("GC=F", "SI=F"),
-    "equity_index": ("^IXIC", "^GSPC"),
-    "equity": ("AAPL", "NVDA", "MSFT"),
+    # Faz 368 — kullanıcı isteği: watchlist artık Yahoo formatlı (GC=F/
+    # SI=F/^IXIC/^GSPC/AAPL/NVDA/MSFT) yerine gerçek Binance-native
+    # tokenize sözleşme isimlerini kullanıyor (exchange_gateway/binance/
+    # adapter.py::fetch_ohlcv artık futures'a otomatik düşebiliyor).
+    # GC=F tamamen kaldırıldı — XAUTUSDT zaten aynı varlığı (altın)
+    # kapsıyor, iki ayrı isimle aynı sınıfı tekrarlamıyoruz. AAPL/MSFT
+    # kaldırıldı — Binance Futures TESTNET'te (gerçek testle doğrulandı)
+    # yok, sadece mainnet'te var; testnet'te asla gerçek emir alamayan
+    # bir sembolü izlemenin anlamı yok.
+    "precious_metal_future": ("XAGUSDT",),
+    "equity_index": ("QQQUSDT", "SPXUSDT"),
+    "equity": ("NVDAUSDT",),
 }
 _CRYPTO_QUOTE_SUFFIXES = ("USDT", "BUSD", "USDC", "FDUSD")
 

@@ -119,12 +119,42 @@ class BinanceAdapter(BaseExchangeAdapter):
         davranış birebir eskisiyle aynı (regresyon yok). limit>1000 için
         `endTime`'ı geriye doğru kaydırarak art arda 1000'er mumluk istekler
         atıp birleştiriyoruz (pagination) — borsa daha eski veri kalmayınca
-        (batch, istenenden az mum dönerse) duruyoruz."""
+        (batch, istenenden az mum dönerse) duruyoruz.
+
+        Faz 368 — kullanıcı isteği: NVDAUSDT/XAGUSDT/QQQUSDT/SPXUSDT gibi
+        tokenize hisse/emtia/endeks sözleşmeleri Binance'te SADECE futures'ta
+        var, spot'ta 400 Bad Request dönüyor (doğrulandı: gerçek exchangeInfo
+        taraması). Spot-önce-sonra-futures-yedek: önce spot denenir (ucuz,
+        basit — XAUTUSDT gibi hem spot HEM futures'ta olan semboller için
+        değişmeyen, hızlı yol), spot 400 (geçersiz sembol) dönerse AYNI
+        pagination mantığıyla futures uç noktasına (fapi.binance.com)
+        düşülür. Diğer hata kodları (429/5xx gibi) yeniden fırlatılır —
+        SADECE 'bu sembol spot'ta hiç yok' durumu futures'a düşüyor."""
+        try:
+            return await self._fetch_klines_paginated(symbol, timeframe, since, limit, use_futures=False)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 400:
+                raise
+            return await self._fetch_klines_paginated(symbol, timeframe, since, limit, use_futures=True)
+
+    async def _fetch_klines_paginated(
+        self, symbol: str, timeframe: str, since: datetime | None, limit: int, use_futures: bool,
+    ) -> list[dict[str, Any]]:
+        path = f"{FUTURES_BASE_URL}/fapi/v1/klines" if use_futures else "/api/v3/klines"
+
+        async def _get_klines(params: dict[str, Any]) -> list:
+            if use_futures:
+                await _throttle_binance_request()
+                resp = await self._client.get(path, params=params)
+                resp.raise_for_status()
+                return resp.json()
+            return await self._get(path, params)
+
         if limit <= 1000:
             params: dict[str, Any] = {"symbol": symbol, "interval": timeframe, "limit": limit}
             if since:
                 params["startTime"] = int(since.timestamp() * 1000)
-            data = await self._get("/api/v3/klines", params)
+            data = await _get_klines(params)
             return self._parse_klines(data)
 
         all_bars: list[dict[str, Any]] = []
@@ -137,7 +167,7 @@ class BinanceAdapter(BaseExchangeAdapter):
                 params["endTime"] = end_time
             if since:
                 params["startTime"] = int(since.timestamp() * 1000)
-            data = await self._get("/api/v3/klines", params)
+            data = await _get_klines(params)
             if not data:
                 break
             all_bars = self._parse_klines(data) + all_bars

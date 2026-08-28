@@ -12,8 +12,12 @@ from statsmodels.tsa.stattools import coint
 
 PAIR_CANDIDATES: list[tuple[str, str]] = [
     ("BTCUSDT", "ETHUSDT"),  # majör kripto çifti
-    ("GC=F", "SI=F"),        # altın/gümüş — klasik pairs trading çifti
-    ("NVDA", "MSFT"),        # mega-cap teknoloji
+    # Faz 368 — GC=F/SI=F (Yahoo) yerine gerçek Binance-native karşılıkları
+    # (watchlist'te zaten var, tokenize futures sözleşmeleri). ("NVDA",
+    # "MSFT") çifti kaldırıldı — MSFT testnet'te yok (watchlist'ten
+    # tamamen çıkarıldı), NVDA'nın (artık NVDAUSDT) tek başına eşleşecek
+    # bir ikinci mega-cap teknoloji bacağı kalmadı.
+    ("XAUTUSDT", "XAGUSDT"),  # altın/gümüş — klasik pairs trading çifti
 ]
 
 COINTEGRATION_P_VALUE_THRESHOLD = 0.05

@@ -11,7 +11,7 @@ def test_groups_symbols_into_three_broad_categories():
     trades = (
         [_trade("BTCUSDT", 1.0) for _ in range(5)]
         + [_trade("PAXGUSDT", 1.0) for _ in range(5)]
-        + [_trade("AAPL", -1.0) for _ in range(5)]
+        + [_trade("NVDAUSDT", -1.0) for _ in range(5)]
     )
     result = compute_asset_class_performance(trades, min_sample_size=5)
     assert set(result.keys()) == {"Kripto", "Emtia", "Hisse Senedi"}
@@ -21,13 +21,13 @@ def test_groups_symbols_into_three_broad_categories():
 
 
 def test_gold_backed_and_precious_metal_future_merge_into_emtia():
-    trades = [_trade("PAXGUSDT", 1.0) for _ in range(3)] + [_trade("GC=F", 1.0) for _ in range(3)]
+    trades = [_trade("PAXGUSDT", 1.0) for _ in range(3)] + [_trade("XAGUSDT", 1.0) for _ in range(3)]
     result = compute_asset_class_performance(trades, min_sample_size=5)
     assert result["Emtia"]["sample_size"] == 6
 
 
 def test_equity_and_equity_index_merge_into_hisse_senedi():
-    trades = [_trade("AAPL", 1.0) for _ in range(3)] + [_trade("^GSPC", 1.0) for _ in range(3)]
+    trades = [_trade("NVDAUSDT", 1.0) for _ in range(3)] + [_trade("SPXUSDT", 1.0) for _ in range(3)]
     result = compute_asset_class_performance(trades, min_sample_size=5)
     assert result["Hisse Senedi"]["sample_size"] == 6
 

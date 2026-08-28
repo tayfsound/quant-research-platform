@@ -122,7 +122,10 @@ def test_crypto_and_equity_trades_in_the_same_regime_get_separate_barrier_entrie
     repo = BarrierTableRepository(storage_path=str(tmp_path / "barrier_tables"))
     base_time = datetime.now(UTC) + timedelta(days=3654)
     crypto_symbol = f"BARRIER{uuid4().hex[:8]}USDT"
-    equity_symbol = "MSFT"
+    # Faz 368 — MSFT watchlist'ten (ve equity sınıflandırmasından)
+    # tamamen çıkarıldı (Binance Futures testnet'te yok). Şimdi equity
+    # sınıfını temsil eden gerçek Binance-native sembol NVDAUSDT.
+    equity_symbol = "NVDAUSDT"
 
     try:
         half = MIN_TOTAL_SAMPLES // 2

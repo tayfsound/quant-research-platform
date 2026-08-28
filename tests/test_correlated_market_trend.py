@@ -22,8 +22,8 @@ def _persist_index_decision(symbol: str, trend: str):
 
 
 def test_correlated_market_trend_is_bullish_when_both_indices_agree():
-    _persist_index_decision("^IXIC", "bullish")
-    _persist_index_decision("^GSPC", "bullish")
+    _persist_index_decision("QQQUSDT", "bullish")
+    _persist_index_decision("SPXUSDT", "bullish")
 
     ctx = CognitiveCycleContext(market={"symbol": "BTCUSDT"})
     result = ContextAdapter().to_technical(ctx)
@@ -32,8 +32,8 @@ def test_correlated_market_trend_is_bullish_when_both_indices_agree():
 
 
 def test_correlated_market_trend_is_none_when_indices_disagree():
-    _persist_index_decision("^IXIC", "bullish")
-    _persist_index_decision("^GSPC", "bearish")
+    _persist_index_decision("QQQUSDT", "bullish")
+    _persist_index_decision("SPXUSDT", "bearish")
 
     ctx = CognitiveCycleContext(market={"symbol": "BTCUSDT"})
     result = ContextAdapter().to_technical(ctx)
@@ -42,8 +42,8 @@ def test_correlated_market_trend_is_none_when_indices_disagree():
 
 
 def test_correlated_market_trend_is_none_for_non_crypto_symbols():
-    _persist_index_decision("^IXIC", "bullish")
-    _persist_index_decision("^GSPC", "bullish")
+    _persist_index_decision("QQQUSDT", "bullish")
+    _persist_index_decision("SPXUSDT", "bullish")
 
     ctx = CognitiveCycleContext(market={"symbol": "AAPL"})
     result = ContextAdapter().to_technical(ctx)

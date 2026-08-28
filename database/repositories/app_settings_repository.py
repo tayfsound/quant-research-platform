@@ -255,13 +255,34 @@ DEFAULTS: dict[str, str] = {
     # Bad Request, gerçek testle doğrulandı) — sadece futures'ta işlem
     # görüyorlar. XAUTUSDT (zaten listede) rastlantısal olarak HEM
     # spot'ta HEM futures'ta var, o yüzden bugüne kadar sorun çıkmamıştı.
-    # Gerçek düzeltme için BinanceProvider'ın futures klines'a (fapi.
-    # binance.com) da düşebilmesi (ya da spot'ta yoksa futures'a fallback)
-    # gerekiyor — bu, OHLCVProvider soyutlamasını etkileyen daha büyük bir
-    # iş, ayrı bir turda ele alınacak. Şimdilik watchlist eski (Yahoo
-    # formatlı, sinyal üretilebilir ama testnet'te doğrudan işlem
-    # açılamaz) haline döndürüldü.
-    "watchlist": "BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,ADAUSDT,XAUTUSDT,DOGEUSDT,TRXUSDT,LINKUSDT,UNIUSDT,NEARUSDT,ZECUSDT,AVAXUSDT,DOTUSDT,LTCUSDT,ATOMUSDT,APTUSDT,ARBUSDT,OPUSDT,SUIUSDT,INJUSDT,FILUSDT,ETCUSDT,ICPUSDT,BCHUSDT,WLDUSDT,TIAUSDT,SEIUSDT,RENDERUSDT,AAVEUSDT,ONDOUSDT,LDOUSDT,CRVUSDT,GALAUSDT,SANDUSDT,AXSUSDT,CHZUSDT,CAKEUSDT,ALGOUSDT,XLMUSDT,VETUSDT,JUPUSDT,AAPL,NVDA,MSFT,GC=F,SI=F,^IXIC,^GSPC",
+    #
+    # Faz 368 — kullanıcı isteği: "Yahoo'dan gelen veriyi ölçmenin anlamı
+    # yok, boş boş işlem yapmadıktan sonra amaçsız." Gerçek düzeltme
+    # yapıldı: exchange_gateway/binance/adapter.py::fetch_ohlcv artık
+    # spot 400 dönerse OTOMATİK futures'a (fapi.binance.com) düşüyor —
+    # NVDAUSDT/XAGUSDT/QQQUSDT/SPXUSDT gerçek, canlı Binance futures
+    # sözleşmeleri (doğrulandı, TRADING durumda). Ama testnet.
+    # binancefuture.com'un enstrüman evreni MAINNET'ten DAHA KÜÇÜK —
+    # gerçek testle doğrulandı: NVDAUSDT/XAGUSDT/QQQUSDT/SPXUSDT testnet'te
+    # VAR, ama AAPLUSDT/MSFTUSDT YOK. Kullanıcının kendi ilkesiyle
+    # ("işlem alamayacağımız semboller neden watchlistte duruyor"): AAPL/
+    # MSFT watchlist'ten TAMAMEN çıkarıldı (testnet'te asla gerçek emir
+    # alamazlar); GC=F çıkarıldı (XAUTUSDT zaten aynı varlığı — altını —
+    # kapsıyor, tekrar); NVDA/SI=F/^IXIC/^GSPC gerçek Binance-native
+    # isimlerine (NVDAUSDT/XAGUSDT/QQQUSDT/SPXUSDT) geçirildi — artık hem
+    # veri hem (testnet'te doğrulanmış) gerçek emir aynı sembol kimliğini
+    # kullanıyor, iki ayrı isimlendirme uzayı arasında çeviri gerekmiyor.
+    #
+    # Faz 368-devam — kullanıcı isteği: "token sayısını artıralım, elimizdeki
+    # semboller çok az." Gerçek Binance Futures 24sa hacim verisinden
+    # (mainnet), HEM mainnet HEM testnet'te (gerçek testle doğrulandı)
+    # işlem gören 34 yeni sembol eklendi — 25 tanınmış/likit alt-coin
+    # (HYPE/ENA/TAO/XMR/FET/JTO/DASH/AERO/PYTH/COMP/STRK/MINA/SNX/KAVA/
+    # DYDX/GRT/IOTA/BAT/EGLD/ZIL/ARKM/MANA/NEO/ENJ/XTZ) + kullanıcının
+    # bilerek istediği 9 spekülatif/meme coin (TRUMP/FARTCOIN/1000PEPE/
+    # PENGU/MOVR/WIF/1000SHIB/1000BONK/1000FLOKI — PUMPUSDT hariç
+    # tutuldu, testnet'te yok).
+    "watchlist": "BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,ADAUSDT,XAUTUSDT,DOGEUSDT,TRXUSDT,LINKUSDT,UNIUSDT,NEARUSDT,ZECUSDT,AVAXUSDT,DOTUSDT,LTCUSDT,ATOMUSDT,APTUSDT,ARBUSDT,OPUSDT,SUIUSDT,INJUSDT,FILUSDT,ETCUSDT,ICPUSDT,BCHUSDT,WLDUSDT,TIAUSDT,SEIUSDT,RENDERUSDT,AAVEUSDT,ONDOUSDT,LDOUSDT,CRVUSDT,GALAUSDT,SANDUSDT,AXSUSDT,CHZUSDT,CAKEUSDT,ALGOUSDT,XLMUSDT,VETUSDT,JUPUSDT,HYPEUSDT,ENAUSDT,TAOUSDT,XMRUSDT,FETUSDT,JTOUSDT,DASHUSDT,AEROUSDT,PYTHUSDT,COMPUSDT,STRKUSDT,MINAUSDT,SNXUSDT,KAVAUSDT,DYDXUSDT,GRTUSDT,IOTAUSDT,BATUSDT,EGLDUSDT,ZILUSDT,ARKMUSDT,MANAUSDT,NEOUSDT,ENJUSDT,XTZUSDT,TRUMPUSDT,FARTCOINUSDT,1000PEPEUSDT,PENGUUSDT,MOVRUSDT,WIFUSDT,1000SHIBUSDT,1000BONKUSDT,1000FLOKIUSDT,NVDAUSDT,XAGUSDT,QQQUSDT,SPXUSDT",
     # Faz 199: portfolio_fusion.py'nin gerçekten bağlanması — aynı cycle'da
     # birden fazla sembol eşzamanlı yönlü öneri üretirse, gerçek kovaryans
     # matrisiyle hesaplanan portföy VaR'ı bu yüzdeyi (sermayenin) aşarsa

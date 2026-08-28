@@ -50,3 +50,50 @@ async def test_fetch_funding_rate_uses_the_futures_domain_not_spot():
         assert isinstance(rate, float)
     finally:
         await adapter.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_fetch_ohlcv_falls_back_to_futures_for_a_futures_only_symbol():
+    """Faz 368 — kullanıcı isteği: NVDAUSDT gibi tokenize hisse
+    sözleşmeleri Binance'te SADECE futures'ta var (doğrulandı: gerçek
+    exchangeInfo taraması), spot'ta 400 Bad Request dönüyor. fetch_ohlcv
+    artık spot'ta 400 alınca otomatik futures'a düşüyor — bu, hiç
+    mock'lanmadan, GERÇEK Binance futures verisiyle doğrulanıyor."""
+    adapter = BinanceAdapter()
+    await adapter.connect()
+    try:
+        bars = await adapter.fetch_ohlcv("NVDAUSDT", "1m", limit=5)
+    finally:
+        await adapter.disconnect()
+
+    assert len(bars) == 5
+    assert all(b["close"] > 0 for b in bars)
+
+
+@pytest.mark.asyncio
+async def test_fetch_ohlcv_still_uses_spot_for_a_real_spot_symbol():
+    """Regresyon: XAUTUSDT hem spot HEM futures'ta var — spot yolu
+    (ucuz/hızlı, ilk deneme) hâlâ çalışmalı, futures'a hiç düşülmemeli."""
+    adapter = BinanceAdapter()
+    await adapter.connect()
+    try:
+        bars = await adapter.fetch_ohlcv("XAUTUSDT", "1m", limit=5)
+    finally:
+        await adapter.disconnect()
+
+    assert len(bars) == 5
+    assert all(b["close"] > 0 for b in bars)
+
+
+@pytest.mark.asyncio
+async def test_fetch_ohlcv_raises_for_a_symbol_that_exists_nowhere():
+    """Spot 400 -> futures'a düşer, futures'ta da yoksa (tamamen geçersiz
+    bir sembol) hata GERÇEKTEN fırlatılmalı — sessizce boş liste dönüp
+    'veri yok'u 'sembol geçersiz'den ayırt edilemez hale getirmemeli."""
+    adapter = BinanceAdapter()
+    await adapter.connect()
+    try:
+        with pytest.raises(Exception):
+            await adapter.fetch_ohlcv("THISSYMBOLDOESNOTEXISTUSDT", "1m", limit=5)
+    finally:
+        await adapter.disconnect()

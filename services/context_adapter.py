@@ -347,7 +347,9 @@ class ContextAdapter:
         trends = []
         with SessionFactory.get_session() as session:
             repo = DecisionPersistor(session)
-            for index_symbol in ("^IXIC", "^GSPC"):
+            # Faz 368 — ^IXIC/^GSPC (Yahoo) watchlist'ten çıkarıldı, gerçek
+            # Binance-native karşılıkları (QQQUSDT/SPXUSDT) kullanılıyor.
+            for index_symbol in ("QQQUSDT", "SPXUSDT"):
                 rows = repo.get_by_symbol(index_symbol, limit=1)
                 if not rows:
                     continue
