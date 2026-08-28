@@ -95,14 +95,6 @@ function Sidebar({
               </div>
               <div className="text-[11px] text-ink-faint mt-0.5 pl-4.5">Cognitive Core</div>
             </div>
-            <button
-              onClick={onToggleCollapsed}
-              title="Menüyü gizle"
-              aria-label="Menüyü gizle"
-              className="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center border border-line bg-canvas-soft/60 text-ink-soft text-2xl leading-none font-bold hover:bg-accent hover:text-white hover:border-accent transition-colors"
-            >
-              <span className="-translate-y-[2px]">‹</span>
-            </button>
           </div>
 
           <div className="flex-1 overflow-y-auto py-3 px-3">
@@ -144,20 +136,29 @@ function Sidebar({
         </div>
       </nav>
 
-      {collapsed && (
-        // Köşede duran küçük, "şirin" sekme — tıklanınca menü kalıcı
-        // olarak açılır (sadece hover değil). Menü zaten (hover ile)
-        // görünürken görünmez olur, tekrar üst üste binmesin diye.
-        <button
-          onClick={onToggleCollapsed}
-          title="Menüyü göster"
-          className={`fixed top-1/2 left-0 -translate-y-1/2 z-50 w-5 h-14 rounded-r-full flex items-center justify-center bg-accent text-white shadow-layer-2 transition-opacity duration-200 ${
-            visible ? "opacity-0 pointer-events-none" : "opacity-60 hover:opacity-100"
-          }`}
-        >
-          ›
-        </button>
-      )}
+      {/* Kullanıcı isteği (2026-08-28, ekran görüntüsüyle doğrulandı):
+          gizle/göster için TEK buton — eski "göster" sekmesinin (sol
+          kenar, dikey orta, dar dikdörtgen/pill) AYNI görünümü/konumu,
+          artık her iki durumda da (nav'ın translate'inden bağımsız,
+          sabit ekran konumunda) görünür — sadece ok yönü değişiyor. */}
+      {/* Kullanıcı isteği: menü açıldığında buton da onunla birlikte sağa
+          kayıp nav'ın (w-64=256px) sağ kenarına aynı hizada otursun —
+          nav'ın kendi geçişiyle (duration-200 ease-out) AYNI zamanlama. */}
+      <button
+        onClick={onToggleCollapsed}
+        title={visible ? "Menüyü gizle" : "Menüyü göster"}
+        aria-label={visible ? "Menüyü gizle" : "Menüyü göster"}
+        className={`fixed top-1/2 -translate-y-1/2 z-50 w-5 h-14 rounded-r-full flex items-center justify-center bg-accent text-white shadow-layer-2 opacity-60 hover:opacity-100 transition-[left,opacity] duration-200 ease-out ${
+          // nav w-64(256px) kendi p-4(16px) iç boşluğuna sahip — görünen
+          // cam panelin GERÇEK sağ kenarı 256-16=240px'te (left-60),
+          // 256px'te (left-64) DEĞİL. Kullanıcı bulgusu: ilk denemede
+          // nav'ın dış kutusunu baz almıştım, panelle buton arasında
+          // görünür bir boşluk kalmıştı.
+          visible ? "left-60" : "left-0"
+        }`}
+      >
+        {visible ? "‹" : "›"}
+      </button>
     </>
   );
 }

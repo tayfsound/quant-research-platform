@@ -592,6 +592,13 @@ type OutcomeFilter = "all" | "profit" | "loss";
 // "testnet" rozeti, aşağıda), sadece filtre eksikti.
 type ExecutionModeFilter = "all" | "testnet" | "simulated";
 
+// Kullanıcı isteği (2026-08-28): "kapanan ve açık işlemler aynı anda
+// görüntülenmese, hangisini açacağımızı seçebileceğimiz bir kart gibi bir
+// şey olsa." Önceden iki liste alt alta hep açık duruyordu — kapanmışlara
+// gitmek için çok kaydırma gerekiyordu. Artık tek seferde SADECE seçili
+// sekme render ediliyor.
+type PositionTab = "open" | "closed";
+
 const TYPE_FILTER_OPTIONS: { value: TypeFilter; label: string }[] = [
   { value: "all", label: "Tüm türler" },
   { value: "pump_fade", label: "Pump-Fade" },
@@ -666,6 +673,14 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
   const [closingProfitable, setClosingProfitable] = useState(false);
   const [closeProfitableResult, setCloseProfitableResult] = useState<string | null>(null);
   const [explainId, setExplainId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<PositionTab>("open");
+  // Kullanıcı isteği (2026-08-28): "Kârdakileri Toplu Kapat" butonuna
+  // basmadan önce ne kadar PnL realize edileceğini görmek istiyorum.
+  // Backend'in GET /positions/close-profitable/preview'ı, POST'un
+  // gerçekten kapatırken kullandığı AYNI tahmin döngüsünü read-only
+  // çalıştırıyor — burada gösterilen sayı, butona basınca gerçekleşecek
+  // olanla birebir aynı kaynaktan geliyor.
+  const [profitPreview, setProfitPreview] = useState<{ count: number; total_pnl: number } | null>(null);
   const { format, currency } = useCurrency();
 
   // Faz 268y — kullanıcı bulgusu: "ilk 98 işleme baktım... diğerlerini
@@ -746,6 +761,10 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
         setTrades(data.trades || []);
         setSummary(data.summary || null);
       });
+    fetch(`/api/v1/positions/close-profitable/preview`, { headers: authHeaders() })
+      .then((r) => r.json())
+      .then((data) => setProfitPreview({ count: data.count ?? 0, total_pnl: data.total_pnl ?? 0 }))
+      .catch(() => setProfitPreview(null));
   };
 
   useEffect(() => {
@@ -887,152 +906,200 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
         </div>
       </Card>
 
-      <div className="flex items-center justify-between gap-4 mb-1">
-        <h2 className="text-sm font-semibold text-ink-soft uppercase tracking-wide">Açık Pozisyonlar</h2>
-        {open.length > 0 && (
-          <Button
-            variant="secondary"
-            disabled={closingProfitable}
-            onClick={closeProfitablePositions}
-            className="!px-3 !py-1.5 text-xs"
-          >
-            {closingProfitable ? "Kapatılıyor…" : "Kârdakileri Toplu Kapat"}
-          </Button>
-        )}
+      {/* Kullanıcı isteği (2026-08-28): açık/kapalı listeleri aynı anda alt
+          alta göstermek yerine, tıklanan kartın açıldığı bir sekme çifti. */}
+      <div className="grid grid-cols-2 gap-3 mb-6">
+        <button
+          onClick={() => setActiveTab("open")}
+          aria-pressed={activeTab === "open"}
+          className={`flex items-center justify-between gap-2 rounded-lg border px-4 py-2.5 shadow-layer-1 hover:shadow-layer-2 transition-colors ${
+            activeTab === "open"
+              ? "bg-accent border-accent text-white"
+              : "glass-panel border-line text-ink hover:border-accent/40"
+          }`}
+        >
+          <span className={`text-xs uppercase tracking-wide font-medium ${activeTab === "open" ? "text-white/80" : "text-ink-faint"}`}>
+            Açık Pozisyonlar
+          </span>
+          <span className="text-lg font-semibold">{openSummary?.open_count ?? open.length}</span>
+        </button>
+        <button
+          onClick={() => setActiveTab("closed")}
+          aria-pressed={activeTab === "closed"}
+          className={`flex items-center justify-between gap-2 rounded-lg border px-4 py-2.5 shadow-layer-1 hover:shadow-layer-2 transition-colors ${
+            activeTab === "closed"
+              ? "bg-accent border-accent text-white"
+              : "glass-panel border-line text-ink hover:border-accent/40"
+          }`}
+        >
+          <span className={`text-xs uppercase tracking-wide font-medium ${activeTab === "closed" ? "text-white/80" : "text-ink-faint"}`}>
+            Kapanmış İşlemler
+          </span>
+          <span className="text-lg font-semibold">{summary?.count ?? 0}</span>
+        </button>
       </div>
-      {closeError && (
-        <p className="text-xs text-fall mb-3">{closeError}</p>
-      )}
-      {closeProfitableResult && (
-        <p className="text-xs text-ink-soft mb-3">{closeProfitableResult}</p>
-      )}
-      {openSummary && openSummary.open_count > OPEN_PAGE_SIZE && (
-        <p className="text-xs text-ink-faint mb-3">
-          {openPage * OPEN_PAGE_SIZE + 1}-{openPage * OPEN_PAGE_SIZE + open.length} / {openSummary.open_count}{" "}
-          pozisyon gösteriliyor — altta sayfalarla gezebilirsiniz.
-        </p>
-      )}
-      {filteredOpen.length === 0 ? (
-        <EmptyState label={hasActiveFilters ? "Filtreye uyan açık pozisyon yok." : "Şu an açık pozisyon yok."} />
-      ) : (
-        <div className="flex flex-col gap-1.5 mb-8">
-          {filteredOpen.map((p) => (
-            <OpenPositionRow
-              key={p.id}
-              p={p}
-              format={format}
-              onSelectSymbol={onSelectSymbol}
-              closingId={closingId}
-              onPartialClose={partialClose}
-              onExplain={() => setExplainId(p.id)}
-            />
-          ))}
-        </div>
+
+      {activeTab === "open" && (
+        <>
+          <div className="flex items-center justify-between gap-4 mb-1">
+            <h2 className="text-sm font-semibold text-ink-soft uppercase tracking-wide">Açık Pozisyonlar</h2>
+            {open.length > 0 && (
+              <div className="flex items-center gap-3">
+                {profitPreview && profitPreview.count > 0 && (
+                  <span className="text-xs font-mono text-rise whitespace-nowrap">
+                    +{format(profitPreview.total_pnl)} realize edilecek ({profitPreview.count} pozisyon)
+                  </span>
+                )}
+                <Button
+                  variant="secondary"
+                  disabled={closingProfitable}
+                  onClick={closeProfitablePositions}
+                  className="!px-3 !py-1.5 text-xs"
+                >
+                  {closingProfitable ? "Kapatılıyor…" : "Kârdakileri Toplu Kapat"}
+                </Button>
+              </div>
+            )}
+          </div>
+          {closeError && (
+            <p className="text-xs text-fall mb-3">{closeError}</p>
+          )}
+          {closeProfitableResult && (
+            <p className="text-xs text-ink-soft mb-3">{closeProfitableResult}</p>
+          )}
+          {openSummary && openSummary.open_count > OPEN_PAGE_SIZE && (
+            <p className="text-xs text-ink-faint mb-3">
+              {openPage * OPEN_PAGE_SIZE + 1}-{openPage * OPEN_PAGE_SIZE + open.length} / {openSummary.open_count}{" "}
+              pozisyon gösteriliyor — altta sayfalarla gezebilirsiniz.
+            </p>
+          )}
+          {filteredOpen.length === 0 ? (
+            <EmptyState label={hasActiveFilters ? "Filtreye uyan açık pozisyon yok." : "Şu an açık pozisyon yok."} />
+          ) : (
+            <div className="flex flex-col gap-1.5 mb-8">
+              {filteredOpen.map((p) => (
+                <OpenPositionRow
+                  key={p.id}
+                  p={p}
+                  format={format}
+                  onSelectSymbol={onSelectSymbol}
+                  closingId={closingId}
+                  onPartialClose={partialClose}
+                  onExplain={() => setExplainId(p.id)}
+                />
+              ))}
+            </div>
+          )}
+
+          {openSummary && openSummary.open_count > OPEN_PAGE_SIZE && (
+            <div className="flex items-center justify-center gap-3 mb-8 -mt-4">
+              <Button
+                variant="secondary"
+                disabled={openPage === 0}
+                onClick={() => setOpenPage((p) => Math.max(0, p - 1))}
+                className="!px-3 !py-1.5 text-xs"
+              >
+                ← Önceki
+              </Button>
+              <span className="text-xs text-ink-faint">
+                Sayfa {openPage + 1} / {Math.ceil(openSummary.open_count / OPEN_PAGE_SIZE)}
+              </span>
+              <Button
+                variant="secondary"
+                disabled={(openPage + 1) * OPEN_PAGE_SIZE >= openSummary.open_count}
+                onClick={() => setOpenPage((p) => p + 1)}
+                className="!px-3 !py-1.5 text-xs"
+              >
+                Sonraki →
+              </Button>
+            </div>
+          )}
+        </>
       )}
 
-      {openSummary && openSummary.open_count > OPEN_PAGE_SIZE && (
-        <div className="flex items-center justify-center gap-3 mb-8 -mt-4">
-          <Button
-            variant="secondary"
-            disabled={openPage === 0}
-            onClick={() => setOpenPage((p) => Math.max(0, p - 1))}
-            className="!px-3 !py-1.5 text-xs"
-          >
-            ← Önceki
-          </Button>
-          <span className="text-xs text-ink-faint">
-            Sayfa {openPage + 1} / {Math.ceil(openSummary.open_count / OPEN_PAGE_SIZE)}
-          </span>
-          <Button
-            variant="secondary"
-            disabled={(openPage + 1) * OPEN_PAGE_SIZE >= openSummary.open_count}
-            onClick={() => setOpenPage((p) => p + 1)}
-            className="!px-3 !py-1.5 text-xs"
-          >
-            Sonraki →
-          </Button>
-        </div>
-      )}
+      {activeTab === "closed" && (
+        <>
+          <h2 className="text-sm font-semibold text-ink-soft uppercase tracking-wide mb-1">Kapanmış İşlemler</h2>
+          {summary && summary.count > TRADES_PAGE_SIZE && !hasActiveFilters && (
+            <p className="text-xs text-ink-faint mb-3">
+              {tradesPage * TRADES_PAGE_SIZE + 1}-{tradesPage * TRADES_PAGE_SIZE + trades.length} / {summary.count}{" "}
+              işlem gösteriliyor — altta sayfalarla gezebilirsiniz (üstteki özet kutuları her zaman gerçek
+              toplamı yansıtır).
+            </p>
+          )}
 
-      <h2 className="text-sm font-semibold text-ink-soft uppercase tracking-wide mb-1">Kapanmış İşlemler</h2>
-      {summary && summary.count > TRADES_PAGE_SIZE && !hasActiveFilters && (
-        <p className="text-xs text-ink-faint mb-3">
-          {tradesPage * TRADES_PAGE_SIZE + 1}-{tradesPage * TRADES_PAGE_SIZE + trades.length} / {summary.count}{" "}
-          işlem gösteriliyor — altta sayfalarla gezebilirsiniz (üstteki özet kutuları her zaman gerçek
-          toplamı yansıtır).
-        </p>
-      )}
+          {/* Faz 268-sonrası — kullanıcı geri bildirimi: bu bölüm "sönük,
+              sanki orada yokmuş gibi" görünüyordu (gri-gri üstüne gri) —
+              diğer kartlarla (Card/.glass-panel) AYNI yüzen-panel deseni
+              içine alındı, seçili olmayan pillerin de gerçek bir yüzeyi
+              (bg-surface) var artık, arka planla karışmıyor. Tasarım
+              bütünlüğü kullanıcının en öncelikli isteği. */}
+          <Card className="mb-3">
+            <div className="flex flex-wrap items-center gap-2">
+              {SINCE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.label}
+                  onClick={() => setSinceMinutes(opt.minutes)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                    sinceMinutes === opt.minutes
+                      ? "bg-accent text-white border-accent shadow-layer-1"
+                      : "bg-surface text-ink border-line shadow-sm hover:bg-surface-soft hover:border-accent/40"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </Card>
 
-      {/* Faz 268-sonrası — kullanıcı geri bildirimi: bu bölüm "sönük,
-          sanki orada yokmuş gibi" görünüyordu (gri-gri üstüne gri) —
-          diğer kartlarla (Card/.glass-panel) AYNI yüzen-panel deseni
-          içine alındı, seçili olmayan pillerin de gerçek bir yüzeyi
-          (bg-surface) var artık, arka planla karışmıyor. Tasarım
-          bütünlüğü kullanıcının en öncelikli isteği. */}
-      <Card className="mb-3">
-        <div className="flex flex-wrap items-center gap-2">
-          {SINCE_OPTIONS.map((opt) => (
-            <button
-              key={opt.label}
-              onClick={() => setSinceMinutes(opt.minutes)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                sinceMinutes === opt.minutes
-                  ? "bg-accent text-white border-accent shadow-layer-1"
-                  : "bg-surface text-ink border-line shadow-sm hover:bg-surface-soft hover:border-accent/40"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      </Card>
+          {filteredSummary && (
+            <p className="text-xs text-ink-faint mb-3">
+              {filteredSummary.count === 0
+                ? "Bu aralıkta henüz kapanmış işlem yok — yukarıdaki genel özet daha eski işlemleri yansıtıyor."
+                : `Bu aralıkta ${filteredSummary.count} işlem kapandı — %${(filteredSummary.win_rate * 100).toFixed(0)} kazanma oranı, ${format(filteredSummary.total_pnl)} toplam PnL.`}
+            </p>
+          )}
 
-      {filteredSummary && (
-        <p className="text-xs text-ink-faint mb-3">
-          {filteredSummary.count === 0
-            ? "Bu aralıkta henüz kapanmış işlem yok — yukarıdaki genel özet daha eski işlemleri yansıtıyor."
-            : `Bu aralıkta ${filteredSummary.count} işlem kapandı — %${(filteredSummary.win_rate * 100).toFixed(0)} kazanma oranı, ${format(filteredSummary.total_pnl)} toplam PnL.`}
-        </p>
-      )}
+          {filteredTrades.length === 0 ? (
+            <EmptyState label={sinceMinutes === null ? "Henüz kapanmış işlem yok." : "Bu aralıkta kapanmış işlem yok."} />
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {filteredTrades.map((t) => (
+                <ClosedTradeRow
+                  key={t.id}
+                  t={t}
+                  format={format}
+                  onSelectSymbol={onSelectSymbol}
+                  onExplain={() => setExplainId(t.id)}
+                />
+              ))}
+            </div>
+          )}
 
-      {filteredTrades.length === 0 ? (
-        <EmptyState label={sinceMinutes === null ? "Henüz kapanmış işlem yok." : "Bu aralıkta kapanmış işlem yok."} />
-      ) : (
-        <div className="flex flex-col gap-1.5">
-          {filteredTrades.map((t) => (
-            <ClosedTradeRow
-              key={t.id}
-              t={t}
-              format={format}
-              onSelectSymbol={onSelectSymbol}
-              onExplain={() => setExplainId(t.id)}
-            />
-          ))}
-        </div>
-      )}
-
-      {summary && summary.count > TRADES_PAGE_SIZE && !hasActiveFilters && (
-        <div className="flex items-center justify-center gap-3 mt-4 mb-8">
-          <Button
-            variant="secondary"
-            disabled={tradesPage === 0}
-            onClick={() => setTradesPage((p) => Math.max(0, p - 1))}
-            className="!px-3 !py-1.5 text-xs"
-          >
-            ← Önceki
-          </Button>
-          <span className="text-xs text-ink-faint">
-            Sayfa {tradesPage + 1} / {Math.ceil(summary.count / TRADES_PAGE_SIZE)}
-          </span>
-          <Button
-            variant="secondary"
-            disabled={(tradesPage + 1) * TRADES_PAGE_SIZE >= summary.count}
-            onClick={() => setTradesPage((p) => p + 1)}
-            className="!px-3 !py-1.5 text-xs"
-          >
-            Sonraki →
-          </Button>
-        </div>
+          {summary && summary.count > TRADES_PAGE_SIZE && !hasActiveFilters && (
+            <div className="flex items-center justify-center gap-3 mt-4 mb-8">
+              <Button
+                variant="secondary"
+                disabled={tradesPage === 0}
+                onClick={() => setTradesPage((p) => Math.max(0, p - 1))}
+                className="!px-3 !py-1.5 text-xs"
+              >
+                ← Önceki
+              </Button>
+              <span className="text-xs text-ink-faint">
+                Sayfa {tradesPage + 1} / {Math.ceil(summary.count / TRADES_PAGE_SIZE)}
+              </span>
+              <Button
+                variant="secondary"
+                disabled={(tradesPage + 1) * TRADES_PAGE_SIZE >= summary.count}
+                onClick={() => setTradesPage((p) => p + 1)}
+                className="!px-3 !py-1.5 text-xs"
+              >
+                Sonraki →
+              </Button>
+            </div>
+          )}
+        </>
       )}
 
       {explainId && <ExplainModal decisionId={explainId} onClose={() => setExplainId(null)} />}

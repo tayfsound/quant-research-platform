@@ -481,27 +481,20 @@ def partial_close_position(
     return result
 
 
-@router.post("/positions/close-profitable")
-def close_profitable_positions(
-    user: AuthContext = Depends(require_role(Role.OPERATOR)),
-):
-    """Faz 268p — kullanıcı isteği: "kârda olan pozisyonları toplu kapatma
-    butonu... komisyona ezilmeyecek şekilde karda ise kapansınlar."
-    Kapatmadan ÖNCE her pozisyon için güncel fiyatla net (komisyon
-    düşülmüş) kâr tahmini hesaplanır — SADECE pozitif çıkanlar gerçekten
-    kapatılır. Kapanış işlemi geri alınamaz olduğu için (services/
-    position_closer.py::close_partial fraction=1.0 çağrısı DB'yi hemen
-    günceller), önce filtrelemek zorunlu — "kapat, zarardaysa geri al"
-    diye bir şey yok. Görünen sayfa (limit=100) ile sınırlı DEĞİL — TÜM
-    açık pozisyonlar taranır."""
-    closer = PositionCloser(RoutingProvider())
+def _scan_profitable_positions(closer: PositionCloser) -> dict:
+    """Faz 367-devam — kullanıcı isteği: "toplu kapat" butonuna basmadan
+    ÖNCE ne kadar net PnL realize edileceğini görmek istiyorum. Hem
+    önizleme (GET, hiçbir şey kapatmaz) hem gerçek kapatma (POST) AYNI
+    tarama/tahmin döngüsünü paylaşıyor — ikisi arasında sessizce sapan
+    iki ayrı hesap olmasın diye. Görünen sayfa (limit=100) ile sınırlı
+    DEĞİL — TÜM açık pozisyonlar taranır (Faz 268p'nin orijinal notu)."""
     with SessionFactory.get_session() as session:
         persistor = DecisionPersistor(session)
         positions = persistor.list_open_positions(limit=100_000)
 
     prices = _fetch_current_prices({p["symbol"] for p in positions})
 
-    closed = []
+    profitable = []
     skipped_unprofitable = 0
     skipped_no_price = 0
     for pos in positions:
@@ -513,17 +506,56 @@ def close_profitable_positions(
         if estimated_net_pnl <= 0:
             skipped_unprofitable += 1
             continue
+        profitable.append({"decision_id": str(pos["id"]), "symbol": pos["symbol"], "estimated_pnl": estimated_net_pnl})
 
+    return {"profitable": profitable, "skipped_unprofitable": skipped_unprofitable, "skipped_no_price": skipped_no_price}
+
+
+@router.get("/positions/close-profitable/preview")
+def preview_close_profitable_positions(
+    user: AuthContext = Depends(require_role(Role.OPERATOR)),
+):
+    """Kullanıcı isteği (2026-08-28): "Kârdakileri Toplu Kapat" butonuna
+    basmadan önce ne kadar PnL realize edileceğini göster." Read-only —
+    hiçbir pozisyon kapatılmaz, sadece POST'un kullanacağı AYNI tahmini
+    döndürür."""
+    closer = PositionCloser(RoutingProvider())
+    scan = _scan_profitable_positions(closer)
+    return {
+        "count": len(scan["profitable"]),
+        "total_pnl": sum(p["estimated_pnl"] for p in scan["profitable"]),
+        "skipped_unprofitable": scan["skipped_unprofitable"],
+        "skipped_no_price": scan["skipped_no_price"],
+    }
+
+
+@router.post("/positions/close-profitable")
+def close_profitable_positions(
+    user: AuthContext = Depends(require_role(Role.OPERATOR)),
+):
+    """Faz 268p — kullanıcı isteği: "kârda olan pozisyonları toplu kapatma
+    butonu... komisyona ezilmeyecek şekilde karda ise kapansınlar."
+    Kapatmadan ÖNCE her pozisyon için güncel fiyatla net (komisyon
+    düşülmüş) kâr tahmini hesaplanır — SADECE pozitif çıkanlar gerçekten
+    kapatılır. Kapanış işlemi geri alınamaz olduğu için (services/
+    position_closer.py::close_partial fraction=1.0 çağrısı DB'yi hemen
+    günceller), önce filtrelemek zorunlu — "kapat, zarardaysa geri al"
+    diye bir şey yok."""
+    closer = PositionCloser(RoutingProvider())
+    scan = _scan_profitable_positions(closer)
+
+    closed = []
+    for pos in scan["profitable"]:
         with SessionFactory.get_session() as session:
             try:
-                result = closer.close_partial(DecisionPersistor(session), str(pos["id"]), 1.0)
+                result = closer.close_partial(DecisionPersistor(session), pos["decision_id"], 1.0)
             except ValueError:
                 continue
-        closed.append({"decision_id": str(pos["id"]), "symbol": pos["symbol"], "pnl": result["pnl"]})
+        closed.append({"decision_id": pos["decision_id"], "symbol": pos["symbol"], "pnl": result["pnl"]})
 
     return {
         "closed_count": len(closed),
         "closed": closed,
-        "skipped_unprofitable": skipped_unprofitable,
-        "skipped_no_price": skipped_no_price,
+        "skipped_unprofitable": scan["skipped_unprofitable"],
+        "skipped_no_price": scan["skipped_no_price"],
     }

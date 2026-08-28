@@ -136,6 +136,54 @@ def test_close_profitable_closes_only_net_positive_positions(client, monkeypatch
     assert losing_row["status"] == "open"  # zarardaki pozisyona DOKUNULMADI
 
 
+def test_preview_close_profitable_reports_same_total_without_closing_anything(client, monkeypatch):
+    """Kullanıcı isteği (2026-08-28): "Kârdakileri Toplu Kapat" butonuna
+    basmadan önce ne kadar PnL realize edileceğini görmek istiyorum."
+    GET /positions/close-profitable/preview, POST'un kullandığı AYNI
+    tahmin fonksiyonunu (_scan_profitable_positions) paylaşıyor — read-
+    only, hiçbir şeyi kapatmıyor. Paylaşılan quantdb_test'te (bkz.
+    AGENT_MEMORY) başka testlerden kalan pozisyonlar olabildiği için
+    toplam üzerinden BİREBİR eşitlik yerine SADECE bu testin kendi
+    sembolünü (üyelik + doğru işaret) doğruluyoruz — sibling testin
+    (test_close_profitable_closes_only_net_positive_positions) izlediği
+    aynı, kanıtlanmış desen."""
+    profitable_symbol = f"PREVWPROFIT{uuid4().hex[:8]}"
+    losing_symbol = f"PREVIEWLOSS{uuid4().hex[:8]}"
+    profitable = _open_position(profitable_symbol, direction="LONG", quantity=1.0, entry_price=100.0)
+    losing = _open_position(losing_symbol, direction="LONG", quantity=1.0, entry_price=100.0)
+
+    from market_data.ingestion import data_provider as dp_module
+    from market_data.ingestion.ohlcv import OHLCV
+
+    def fake_get_ohlcv(self, symbol, timeframe, limit=1):
+        now = datetime.now(UTC)
+        price = 130.0 if symbol == profitable_symbol else 95.0
+        return [OHLCV(timestamp=now, open=price, high=price, low=price, close=price, volume=1.0)]
+
+    monkeypatch.setattr(dp_module.RoutingProvider, "get_ohlcv", fake_get_ohlcv)
+
+    preview_res = client.get("/api/v1/positions/close-profitable/preview", headers=make_authed_headers(Role.OPERATOR))
+    assert preview_res.status_code == 200
+    preview_body = preview_res.json()
+    assert preview_body["count"] >= 1
+    assert preview_body["total_pnl"] > 0
+
+    # Pozisyon HİÇ kapatılmadı — preview read-only.
+    with SessionFactory.get_session() as session:
+        profitable_row = DecisionPersistor(session).get_by_id(str(profitable.id))
+        losing_row = DecisionPersistor(session).get_by_id(str(losing.id))
+    assert profitable_row["status"] == "open"
+    assert losing_row["status"] == "open"
+
+    close_res = client.post("/api/v1/positions/close-profitable", headers=make_authed_headers(Role.OPERATOR))
+    closed = close_res.json()["closed"]
+    closed_ids = {c["decision_id"] for c in closed}
+    assert str(profitable.id) in closed_ids
+    assert str(losing.id) not in closed_ids
+    own_pnl = next(c["pnl"] for c in closed if c["decision_id"] == str(profitable.id))
+    assert own_pnl == pytest.approx(29.885, rel=1e-3)
+
+
 def test_close_profitable_does_not_close_a_gain_too_small_to_cover_commission(client, monkeypatch):
     """Kullanıcının tam olarak istediği: "komisyona ezilmeyecek şekilde."""
     symbol = f"TINYGAIN{uuid4().hex[:8]}"
