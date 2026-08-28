@@ -280,6 +280,24 @@ def test_optimal_barrier_excludes_a_bucket_whose_best_candidate_is_still_negativ
     assert result == {}
 
 
+def test_optimal_barrier_excludes_a_positive_ev_bucket_with_an_unreachable_reward_risk_ratio():
+    """Kullanıcı isteği (2026-08-28, devam): EV>0 tek başına yeterli değil
+    — tp_pct/sl_pct oranı çok küçükse (ör. %1 hedef / %8-25 stop) breakeven
+    confidence pratikte ulaşılamaz kalır (>%85), teknik olarak EV pozitif
+    çıksa bile. MFE her zaman küçük (%1) ve HIZLI (time_to_mfe küçük), MAE
+    büyük ama YAVAŞ (time_to_mae büyük) — TP her zaman zamanlama avantajıyla
+    kazanıyor (gerçek EV pozitif), ama sl_pct adayları hep büyük kalıp
+    oran hep MIN_REWARD_RISK_RATIO'nun altında kalıyor."""
+    trades = []
+    for mae in (-0.08, -0.10, -0.12, -0.15, -0.20, -0.25):
+        trades += [
+            _barrier_trade(mae_pct=mae, mfe_pct=0.01, time_to_mae=1000.0, time_to_mfe=10.0, regime="bear_trend")
+            for _ in range(5)
+        ]
+    result = compute_optimal_barrier(trades, group_by=("regime",), min_group_size=20, min_decisive_count=20)
+    assert "regime=bear_trend" not in result
+
+
 def _decomp_trade(exit_reason: str, mfe_pct: float, confidence=0.7, direction="LONG",
                    regime="bull_trend", volatility_regime="normal") -> dict:
     return {

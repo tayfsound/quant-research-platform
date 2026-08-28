@@ -584,7 +584,14 @@ function sinceCutoffMs(minutes: number): number {
 // zaten hem açık hem kapalı pozisyonlar için AYNI sınıflandırmayı
 // üretiyor — filtre seçenekleri onunla BİREBİR aynı, ayrı bir taksonomi
 // icat edilmedi.
-type TypeFilter = "all" | "pump_fade" | "basis_arb" | "hedge" | "scalp" | "swing";
+//
+// Kullanıcı isteği (2026-08-28): "basis arbitraj, hedge gibi sistemden
+// kaldırdığımız şeyleri filtre listesinden temizleyelim." basis_arb kodu
+// tamamen silindi (artık hiç yeni işlem açmıyor); hedge (pairs_trading)
+// KAPALI (pairs_trading_enabled=false, kodu duruyor, istenirse yeniden
+// açılabilir) — ikisi de dropdown'dan çıkarıldı. Rozet (tradeTypeBadge)
+// hâlâ eski işlemlerde görünür kalıyor, SADECE filtre seçeneği kalktı.
+type TypeFilter = "all" | "pump_fade" | "scalp" | "swing";
 type DirectionFilter = "all" | "LONG" | "SHORT";
 type OutcomeFilter = "all" | "profit" | "loss";
 // Kullanıcı isteği (2026-08-28): "canlıdan gelen işlemler etiketlenecek
@@ -602,8 +609,6 @@ type PositionTab = "open" | "closed";
 const TYPE_FILTER_OPTIONS: { value: TypeFilter; label: string }[] = [
   { value: "all", label: "Tüm türler" },
   { value: "pump_fade", label: "Pump-Fade" },
-  { value: "basis_arb", label: "Basis Arb" },
-  { value: "hedge", label: "Hedge" },
   { value: "scalp", label: "Scalp" },
   { value: "swing", label: "Swing" },
 ];
@@ -612,8 +617,6 @@ function matchesTypeFilter(p: Position, filter: TypeFilter): boolean {
   if (filter === "all") return true;
   const badge = tradeTypeBadge(p);
   const badgeKey = badge?.label === "Pump-Fade" ? "pump_fade"
-    : badge?.label === "Basis Arb" ? "basis_arb"
-    : badge?.label === "hedge" ? "hedge"
     : badge?.label === "scalp" ? "scalp"
     : badge?.label === "swing" ? "swing"
     : null;

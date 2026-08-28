@@ -226,6 +226,13 @@ ENTRY_FEE_PCT = 0.0005   # taker (giriş her zaman taker — market emri)
 TP_EXIT_FEE_PCT = 0.0002  # maker
 SL_EXIT_FEE_PCT = 0.0005  # taker
 _BARRIER_QUANTILE_LEVELS = (0.5, 0.6, 0.7, 0.8, 0.9)
+# Kullanıcı isteği (2026-08-28): EV>0 tek başına yetmiyor — teknik olarak
+# pozitif ama tp_pct/sl_pct oranı çok küçükse (breakeven confidence
+# pratikte ulaşılamaz seviyede yüksek) öneri yine anlamsız. 0.15 ≈
+# breakeven confidence'ı ~%87'nin altında tutar (statik SHORT oranı olan
+# 1.4/2.5=0.56'nın çok altında — sadece GERÇEKTEN dejenere durumları eler,
+# normal muhafazakâr önerilere dokunmaz).
+MIN_REWARD_RISK_RATIO = 0.15
 
 
 def _counterfactual_barrier_outcome(trade: dict, sl_pct: float, tp_pct: float) -> str:
@@ -338,7 +345,18 @@ def compute_optimal_barrier(
         # bir kova için hiç sonuç döndürmüyor — çağıran (RiskTargetStage)
         # None alıp zaten var olan, her zaman geçilebilir statik ATR
         # oranına (2.5/1.4) düşüyor.
-        if best is not None and best["expected_value_pct"] > 0:
+        #
+        # Kullanıcı isteği (2026-08-28, devam): EV>0 kontrolü tek başına
+        # yeterli değil — EV'i az önce kırdığımız kovalar bile TEKNİK
+        # olarak pozitif ama anlamsızca küçük bir tp/sl oranıyla (ör.
+        # %0.04 hedef / %13.5 stop) çok yüksek bir breakeven confidence
+        # (>%90) üretebilirdi, pratikte yine ulaşılamaz kalırdı. MIN_
+        # REWARD_RISK_RATIO, min_stop_pct'in stop tarafında yaptığı AYNI
+        # işi hedef/stop ORANI için yapıyor — breakeven confidence'ı
+        # ~%87'nin (0.15/(0.15+1)) üstüne çıkaran bir öneri hiç
+        # döndürülmüyor, statik orana düşülüyor.
+        reward_risk_ratio = (best["tp_pct"] / best["sl_pct"]) if best is not None and best["sl_pct"] > 0 else 0.0
+        if best is not None and best["expected_value_pct"] > 0 and reward_risk_ratio >= MIN_REWARD_RISK_RATIO:
             label = "|".join(f"{field}={value}" for field, value in zip(group_by, key))
             best["total_sample_size"] = len(group_trades)
             results[label] = best
