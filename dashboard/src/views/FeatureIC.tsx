@@ -25,14 +25,38 @@ type FeatureICReport = {
   total_closed_trades: number;
 };
 
+// Faz 368 — Feature Intelligence Layer Faz A. Gerçek veriyle doğrulandı:
+// trend/ema_alignment/momentum/vwap_confirm/adx_strong_confirm birbirleriyle
+// r=1.000 — yukarıdaki tablo bu 5 feature'ı 5 AYRI, bağımsız sinyal gibi
+// gösteriyor ama aslında TEK bir ikili sinyalin 5 farklı ismi. Bu bölüm bu
+// çakışmayı (redundancy matrisi) ve "b zaten biliniyorken a'nın kattığı EK
+// bilgi" (koşullu IC) sorusunu görünür kılıyor.
+type RedundancyEntry = { correlation: number; sample_size: number };
+type ConditionalICEntry = { raw_ic: number; conditional_ic_given: Record<string, number | null> };
+
+function redundancyTone(correlation: number): "fall" | "rise" | "neutral" {
+  const abs = Math.abs(correlation);
+  if (abs >= 0.9) return "fall"; // neredeyse birebir çakışma — kırmızı, dikkat
+  if (abs >= 0.7) return "rise"; // eşik üstü, koşullu IC hesaplanıyor
+  return "neutral";
+}
+
 function icTone(ic: number, pValue: number): "rise" | "fall" | "neutral" {
   if (pValue >= 0.05) return "neutral";
   return ic >= 0 ? "rise" : "fall";
 }
 
+// Koşullu IC için p-değeri hesaplanmıyor (Faz A kapalı-form kısmi
+// korelasyon, anlamlılık testi Faz B'ye bırakıldı) — sadece işaret.
+function partialIcTone(partial: number): "rise" | "fall" {
+  return partial >= 0 ? "rise" : "fall";
+}
+
 export default function FeatureIC() {
   const [features, setFeatures] = useState<Record<string, FeatureICEntry>>({});
   const [reports, setReports] = useState<FeatureICReport[]>([]);
+  const [redundancy, setRedundancy] = useState<Record<string, RedundancyEntry>>({});
+  const [conditionalIC, setConditionalIC] = useState<Record<string, ConditionalICEntry>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,10 +66,13 @@ export default function FeatureIC() {
     Promise.all([
       fetch("/api/v1/feature-ic/", { headers: authHeaders() }).then((r) => r.json()),
       fetch("/api/v1/feature-ic/reports?limit=20", { headers: authHeaders() }).then((r) => r.json()),
+      fetch("/api/v1/feature-relationship/", { headers: authHeaders() }).then((r) => r.json()),
     ])
-      .then(([live, history]) => {
+      .then(([live, history, relationship]) => {
         setFeatures(live.features || {});
         setReports(history.reports || []);
+        setRedundancy(relationship.redundancy || {});
+        setConditionalIC(relationship.conditional_ic || {});
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
@@ -54,12 +81,15 @@ export default function FeatureIC() {
   useEffect(load, []);
 
   const sortedFeatures = Object.entries(features).sort((a, b) => a[1].ic - b[1].ic);
+  const sortedRedundancy = Object.entries(redundancy).sort(
+    (a, b) => Math.abs(b[1].correlation) - Math.abs(a[1].correlation)
+  );
 
   return (
     <div>
       <PageHeader
         title="Feature IC"
-        description="Her ajan sinyalinin GERÇEK kapanmış işlemlerdeki ileri getiriyle korelasyonu (Information Coefficient) — sadece ölçüm/izleme, hiçbir feature otomatik pasifleştirilmiyor."
+        description="Her ajan sinyalinin GERÇEK kapanmış işlemlerdeki ileri getiriyle korelasyonu (Information Coefficient) + feature'ların birbirleriyle çakışması (redundancy) ve koşullu IC — sadece ölçüm/izleme, hiçbir feature otomatik pasifleştirilmiyor."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}
@@ -107,6 +137,93 @@ export default function FeatureIC() {
                     </td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <Card className="mb-6">
+        <h3 className="text-sm font-semibold text-ink mb-1">Redundancy matrisi</h3>
+        <p className="text-xs text-ink-soft mb-3">
+          Aynı işlemde BİRLİKTE ateşlenen feature çiftlerinin birbirleriyle (getiriyle değil) korelasyonu.
+          |korelasyon| ≥ 0.9 neredeyse birebir çakışma demek — council'e ayrı ayrı oy gibi giriyorlar ama
+          matematiksel olarak aynı sinyal.
+        </p>
+        {loading ? (
+          <Spinner />
+        ) : sortedRedundancy.length === 0 ? (
+          <EmptyState label="Henüz hiçbir feature çifti için yeterli ortak örneklem birikmedi." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-ink-faint border-b border-line-soft">
+                  <th className="py-2 pr-4">Feature A</th>
+                  <th className="py-2 pr-4">Feature B</th>
+                  <th className="py-2 pr-4">Korelasyon</th>
+                  <th className="py-2 pr-4">Örneklem</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedRedundancy.map(([pairKey, entry]) => {
+                  const [a, b] = pairKey.split("|");
+                  return (
+                    <tr key={pairKey} className="border-b border-line-soft/50">
+                      <td className="py-2 pr-4 font-mono text-ink">{a}</td>
+                      <td className="py-2 pr-4 font-mono text-ink">{b}</td>
+                      <td className="py-2 pr-4">
+                        <Badge tone={redundancyTone(entry.correlation)}>{entry.correlation.toFixed(4)}</Badge>
+                      </td>
+                      <td className="py-2 pr-4 text-ink-soft">{entry.sample_size}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <Card className="mb-6">
+        <h3 className="text-sm font-semibold text-ink mb-1">Koşullu IC</h3>
+        <p className="text-xs text-ink-soft mb-3">
+          Yukarıdaki tabloda ≥0.7 redundant çıkan çiftler için: "diğer feature zaten biliniyorken bu
+          feature'ın getiriye kattığı EK bilgi ne kadar" (kısmi korelasyon). Boş/"—" değer, çiftin neredeyse
+          birebir aynı bilgiyi taşıdığı (payda sıfıra yaklaştığı) anlamına gelir.
+        </p>
+        {loading ? (
+          <Spinner />
+        ) : Object.keys(conditionalIC).length === 0 ? (
+          <EmptyState label="≥0.7 redundant hiçbir çift yok — koşullu IC hesaplanacak bir şey bulunmadı." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-ink-faint border-b border-line-soft">
+                  <th className="py-2 pr-4">Feature</th>
+                  <th className="py-2 pr-4">Ham IC</th>
+                  <th className="py-2 pr-4">Koşullandırıldığı feature</th>
+                  <th className="py-2 pr-4">Koşullu IC</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(conditionalIC).flatMap(([feature, entry]) =>
+                  Object.entries(entry.conditional_ic_given).map(([other, partial]) => (
+                    <tr key={`${feature}|${other}`} className="border-b border-line-soft/50">
+                      <td className="py-2 pr-4 font-mono text-ink">{feature}</td>
+                      <td className="py-2 pr-4 text-ink-soft">{entry.raw_ic.toFixed(4)}</td>
+                      <td className="py-2 pr-4 font-mono text-ink-soft">{other}</td>
+                      <td className="py-2 pr-4">
+                        {partial === null ? (
+                          <span className="text-ink-faint">—</span>
+                        ) : (
+                          <Badge tone={partialIcTone(partial)}>{partial.toFixed(4)}</Badge>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

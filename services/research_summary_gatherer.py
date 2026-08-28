@@ -63,6 +63,13 @@ _MODULES = [
     # Faz 364-devam — kullanıcı isteği: Feature IC ölçümleri rejime göre
     # kırılmalı, "hangi rejimde hangi sinyal işe yarıyor" sorusu.
     ("feature_ic_by_regime", "Feature IC × Rejim", "feature-ic-by-regime", "services.feature_ic_by_regime_gatherer", "gather_feature_ic_by_regime"),
+    # Faz 368 — Feature Intelligence Layer Faz A. Gerçek veriyle doğrulandı:
+    # trend/ema_alignment/momentum/vwap_confirm/adx_strong_confirm
+    # birbirleriyle r=1.000 — council'e 5 ayrı oy gibi giriyorlar ama
+    # matematiksel olarak TEK bir sinyalin 5 farklı ismi. Bu modül bu
+    # çakışmayı (redundancy matrisi) ve koşullu IC'yi (b bilinirken a'nın
+    # kattığı EK bilgi) ölçüyor.
+    ("feature_relationship", "Feature Relationship", "feature-relationship", "services.feature_relationship_gatherer", "gather_feature_relationship"),
 ]
 
 

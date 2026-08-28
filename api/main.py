@@ -23,6 +23,7 @@ from api.rest import (
     experiments,
     feature_ic,
     feature_registry,
+    feature_relationship,
     liquidity_var,
     mae_mfe_confidence,
     market_data,
@@ -132,6 +133,7 @@ app.include_router(market_data.router, prefix="/api/v1")
 app.include_router(agents.router, prefix="/api/v1")
 app.include_router(experiments.router, prefix="/api/v1")
 app.include_router(feature_ic.router, prefix="/api/v1")
+app.include_router(feature_relationship.router, prefix="/api/v1")
 app.include_router(calibration.router, prefix="/api/v1")
 app.include_router(self_model.router, prefix="/api/v1")
 app.include_router(causal_inference.router, prefix="/api/v1")

@@ -494,6 +494,37 @@ def refresh_feature_ic_report_task() -> dict:
     return {"id": str(report.id), "feature_count": len(features), "total_closed_trades": len(closed_trades)}
 
 
+@celery_app.task(name="refresh_feature_relationship_report_task")
+def refresh_feature_relationship_report_task() -> dict:
+    """Faz 368 — Feature Intelligence Layer'ın Faz A'sı. analytics/feature_
+    relationship.py zaten gerçek zamanlı çalışıyordu (GET /feature-
+    relationship/) ama hiçbir GEÇMİŞİ yoktu. Bu görev periyodik (haftalık,
+    refresh_feature_ic_report_task ile AYNI ritim) bir anlık görüntüyü
+    contracts/feature_relationship_report.py::FeatureRelationshipReport
+    olarak kaydediyor. SADECE ölçüm/kayıt — karar hattına bağlanmıyor."""
+    from contracts.feature_relationship_report import FeatureRelationshipReport
+    from database.repositories.feature_relationship_report_repository import (
+        FeatureRelationshipReportRepository,
+    )
+    from database.session_factory import SessionFactory
+    from services.feature_relationship_gatherer import gather_feature_relationship
+
+    with SessionFactory.get_session() as session:
+        result = gather_feature_relationship()
+        report = FeatureRelationshipReport(
+            redundancy=result["redundancy"],
+            conditional_ic=result["conditional_ic"],
+            total_closed_trades=result["n_decisions_analyzed"],
+        )
+        FeatureRelationshipReportRepository(session).save(report)
+
+    return {
+        "id": str(report.id),
+        "pair_count": len(result["redundancy"]),
+        "total_closed_trades": result["n_decisions_analyzed"],
+    }
+
+
 @celery_app.task(name="refresh_calibration_report_task")
 def refresh_calibration_report_task() -> dict:
     """Cognitive Core 2.0 / M4 — kullanıcı isteği: council'i hiç etkilemeyen,

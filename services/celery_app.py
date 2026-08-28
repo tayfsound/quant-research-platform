@@ -309,6 +309,14 @@ celery_app.conf.beat_schedule = {
         "task": "refresh_feature_ic_report_task",
         "schedule": 604800.0,
     },
+    # Faz 368 — Feature Intelligence Layer Faz A. refresh-feature-ic-report
+    # -weekly ile AYNI ritim/maliyet profili (AYNI 100.000 satırlık kapanmış
+    # işlem geçmişini tekrar tarayıp bu sefer feature'ları BİRBİRİYLE
+    # karşılaştırıyor).
+    "refresh-feature-relationship-report-weekly": {
+        "task": "refresh_feature_relationship_report_task",
+        "schedule": 604800.0,
+    },
     # Cognitive Core 2.0 / M4 — council'i hiç etkilemeyen ölçüm-only
     # roadmap modüllerinin canlıya alınan ilk adayı (ECE).
     "refresh-calibration-report-weekly": {

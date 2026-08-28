@@ -148,6 +148,41 @@ def test_refresh_feature_ic_report_task_is_in_beat_schedule():
     assert entry["task"] == "refresh_feature_ic_report_task"
 
 
+def test_refresh_feature_relationship_report_task_runs_in_eager_mode_and_persists():
+    """Faz 368 — Feature Intelligence Layer Faz A. Görevin gerçekten
+    çalışıp bir FeatureRelationshipReport kaydettiğini doğrular."""
+    from database.repositories.feature_relationship_report_repository import (
+        FeatureRelationshipReportRepository,
+    )
+    from database.session_factory import SessionFactory
+    from services.celery_app import celery_app
+    from services.tasks import refresh_feature_relationship_report_task
+
+    celery_app.conf.task_always_eager = True
+    celery_app.conf.task_eager_propagates = True
+    try:
+        async_result = refresh_feature_relationship_report_task.delay()
+        assert async_result.successful()
+        result = async_result.result
+        assert "id" in result
+        assert "pair_count" in result
+        assert "total_closed_trades" in result
+
+        with SessionFactory.get_session() as session:
+            saved = FeatureRelationshipReportRepository(session).get_latest()
+        assert saved is not None
+        assert saved["id"] == result["id"]
+    finally:
+        celery_app.conf.task_always_eager = False
+
+
+def test_refresh_feature_relationship_report_task_is_in_beat_schedule():
+    from services.celery_app import celery_app
+
+    entry = celery_app.conf.beat_schedule["refresh-feature-relationship-report-weekly"]
+    assert entry["task"] == "refresh_feature_relationship_report_task"
+
+
 def test_refresh_calibration_report_task_runs_in_eager_mode_and_persists():
     """Cognitive Core 2.0 / M4 — council'i hiç etkilemeyen ölçüm-only ilk
     aday (ECE). Görevin gerçekten çalışıp bir CalibrationReport kaydettiğini
@@ -334,7 +369,7 @@ def test_run_pairs_trading_task_runs_and_returns_pair_results():
             assert async_result.successful()
             body = async_result.result
             assert "pairs" in body
-            assert len(body["pairs"]) == 3  # PAIR_CANDIDATES'teki 3 çift
+            assert len(body["pairs"]) == 2  # PAIR_CANDIDATES'teki 2 çift (Faz 368 — NVDA/MSFT çifti kaldırıldı)
         finally:
             celery_app.conf.task_always_eager = False
             with SessionFactory.get_session() as session:
