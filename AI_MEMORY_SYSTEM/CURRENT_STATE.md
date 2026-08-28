@@ -1,9 +1,48 @@
-# Mevcut Durum -- v1.110.0 (Faz 368: Feature Intelligence Layer Faz A + Adaptive Barrier asset_class segmentasyonu + LONG/SHORT manuel anahtar + Grok raporu doğrulaması + kolektif zeka n=20 bug'ı)
+# Mevcut Durum -- v1.110.0 (Faz 369: Agent Interaction pairwise ablation + Faz 368: Feature Intelligence Layer Faz A + Adaptive Barrier asset_class segmentasyonu + LONG/SHORT manuel anahtar + Grok raporu doğrulaması + kolektif zeka n=20 bug'ı)
 
-**Tarih:** 2026-08-28
+**Tarih:** 2026-08-29
 **Branch:** main
-**Son commit (HEAD):** `8b7e819` — bu turun işleri (aşağıdaki Faz 368 maddeleri, FIL Faz A dahil) HENÜZ commit edilmedi, kullanıcı onayı bekleniyor.
-**Servis durumu:** uvicorn + celery worker + celery beat FIL Faz A ile yeniden başlatıldı, hatasız (yeni haftalık `refresh-feature-relationship-report-weekly` beat girişi doğrulandı). Migration faz368 hem quantdb hem quantdb_test'e uygulandı. tsc temiz.
+**Son commit (HEAD):** `c73c813` (Faz 368 seti pushlandı) — bu dosyadaki Faz 369 bölümü (Agent Interaction pairwise ablation) HENÜZ commit edilmedi, kullanıcı onayı bekleniyor.
+**Servis durumu:** uvicorn + celery worker + celery beat Faz 369 ile yeniden başlatılacak (aşağıya bkz.). Migration faz369 hem quantdb hem quantdb_test'e uygulandı. tsc temiz.
+
+## Faz 369 — Agent Interaction: pairwise ablation ("A+B birlikte yokken ne olur?") (2026-08-29)
+
+GPT'nin Agent Ablation için önerdiği "bir sonraki ciddi mimari adım"
+("Agent Interaction & Incremental Information Layer") — kullanıcı kararıyla
+üç parçaya bölündü: (1) ajan-seviyesi redundancy matrisi → FIL Faz B'ye
+(sonra), (2) pairwise "A+B birlikte" nedensel etkileşim analizi → BU FAZ,
+ilk sırada, (3) "Technical'ı decision agent'tan evidence agent'a indir"
+role reclassification → HAYIR/todo'da kalıyor ([[feedback_new_complexity_
+must_prove_its_edge]], rafa kaldırılmadı — kullanıcı: "Rafa kaldırmıyoruz
+tamamen").
+
+analytics/agent_ablation.py'ye: `synthesize_with_domains_excluded` (tek-
+domain sürümün genelleştirilmiş hali, çoklu domain sıfırlar),
+`compute_pairwise_ablation_interaction` (AYNI gerçek kapanmış kararı A
+tek başına çıkarılmış / B tek başına çıkarılmış / İKİSİ BİRDEN çıkarılmış
+olarak 3 karşı-olgusal sentezler), `classify_pairwise_relationship` (5
+kategori: redundant_substitutes/both_independently_pivotal/a_dominates/
+b_dominates/jointly_irrelevant), `summarize_pairwise_ablation_by_domain_
+pair`. Yeni services/agent_pairwise_ablation_gatherer.py (VOTING_AGENT_
+DOMAINS'ten C(12,2)=66 çift, her kararda GERÇEKTEN oy kullanan alt-kümeye
+gate'lenmiş), contract+repository+migration (agent_ablation_snapshots ile
+AYNI generic desen), haftalık Celery task, API route, dashboard'da mevcut
+Agent Ablation sayfasına yeni bölüm, research_summary kaydı. 4 yeni pure-
+fonksiyon testi (tüm 5 kategori gerçek AgentOpinion senaryolarıyla ampirik
+doğrulandı) + 4 wiring testi.
+
+Gerçek veriyle (3000 kapanmış karar) doğrulandı: `macro|technical` çifti
+en yüksek "birbirinin yerini tutma oranı"na sahip (%14.6 — ikinci sıradaki
+`pattern|technical`in [%4.6] ~3 katı), ve bu çiftte macro technical'e karşı
+2.3× daha sık baskın çıkıyor (607 vs 262) — GPT'nin "Macro ve Technical
+aynı trend bilgisini taşıyor olabilir" hipotezini nedensel (sadece
+korelasyonel değil) olarak destekliyor. Karar hattına bağlanmadı, sadece
+ölçüm.
+
+**Sırada:** Risk Simülatörü (block-size duyarlılığı + drawdown/loss-streak
+/CVaR) → Direction Prediction v2 (Brier ayrıştırma + kalibrasyon revizyonu)
+→ quantdb_test/tmp_test_memory kalıcı temizliği (kullanıcı: "kırık test
+kabul etmiyorum," bkz. [[project_shared_test_state_bloat]]).
 
 ## Faz 368 — Feature Intelligence Layer, Faz A: Redundancy Matrix + Koşullu IC (2026-08-28)
 
