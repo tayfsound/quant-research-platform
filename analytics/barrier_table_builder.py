@@ -29,7 +29,7 @@ def _extract_real_trades_for_barrier_table(window: int = DEFAULT_WINDOW) -> list
     with SessionFactory.get_session() as session:
         rows = session.execute(
             text(
-                "SELECT direction, confidence, agent_contributions, outcome "
+                "SELECT direction, confidence, agent_contributions, outcome, experiment_bucket "
                 "FROM decisions "
                 "WHERE status = 'closed' AND excluded_from_stats = false "
                 "AND outcome ->> 'mae_pct' IS NOT NULL AND outcome ->> 'mfe_pct' IS NOT NULL "
@@ -68,6 +68,11 @@ def _extract_real_trades_for_barrier_table(window: int = DEFAULT_WINDOW) -> list
             # gatherer.py) win_rate için gerektiriyor — tek gerçek veri
             # kaynağı, iki tüketici.
             "win": outcome.get("win"),
+            # Faz 367-devam — sadece EKLENDİ (compute_optimal_barrier/
+            # Adaptive Barrier Engine bu alanı hiç okumuyor, davranışı
+            # değişmiyor): services/mae_mfe_confidence_gatherer.py'nin
+            # pump_fade_v1/basis_arb_v1'i hariç tutabilmesi için.
+            "experiment_bucket": row["experiment_bucket"],
         })
 
     return trades

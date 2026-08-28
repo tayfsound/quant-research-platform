@@ -35,6 +35,12 @@ export default function MaeMfeConfidence() {
   const [reports, setReports] = useState<MaeMfeReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Kullanıcı isteği (2026-08-28): canlıya kademeli geçiş için, kovaları
+  // tek tek aç-kapa yapabilmek — Settings'e DEĞİL, burada (bkz. proje
+  // hafızası "settings placement: contextual"), Dashboard.tsx'teki
+  // generic save() deseniyle AYNI.
+  const [settings, setSettings] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -42,16 +48,54 @@ export default function MaeMfeConfidence() {
     Promise.all([
       fetch("/api/v1/mae-mfe-confidence/", { headers: authHeaders() }).then((r) => r.json()),
       fetch("/api/v1/mae-mfe-confidence/reports?limit=20", { headers: authHeaders() }).then((r) => r.json()),
+      fetch("/api/v1/settings/", { headers: authHeaders() }).then((r) => r.json()),
     ])
-      .then(([liveData, history]) => {
+      .then(([liveData, history, settingsData]) => {
         setLive(liveData.result || null);
         setReports(history.reports || []);
+        setSettings(settingsData.settings || {});
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   };
 
   useEffect(load, []);
+
+  const save = (key: string, value: string) => {
+    setSaving(key);
+    setError(null);
+    fetch(`/api/v1/settings/${key}?value=${encodeURIComponent(value)}`, {
+      method: "POST",
+      headers: authHeaders(),
+    })
+      .then(async (r) => {
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          throw new Error(body.detail || `${r.status}`);
+        }
+        setSettings((s) => ({ ...s, [key]: value }));
+      })
+      .catch((e) => setError(`${key}: ${e.message || e}`))
+      .finally(() => setSaving(null));
+  };
+
+  const parseBucketMap = (raw: string | undefined): Record<string, boolean> => {
+    if (!raw) return {};
+    try {
+      const parsed = JSON.parse(raw);
+      return typeof parsed === "object" && parsed !== null ? parsed : {};
+    } catch {
+      return {};
+    }
+  };
+  const bucketEnabledMap = parseBucketMap(settings.mae_mfe_bucket_trading_enabled);
+  const isBucketEnabled = (label: string) => bucketEnabledMap[label] !== false;
+  const toggleBucket = (label: string) => {
+    save(
+      "mae_mfe_bucket_trading_enabled",
+      JSON.stringify({ ...bucketEnabledMap, [label]: !isBucketEnabled(label) })
+    );
+  };
 
   const groups = live ? Object.entries(live.confidence_intervals) : [];
 
@@ -70,6 +114,10 @@ export default function MaeMfeConfidence() {
           Kova başına (direction|regime|volatility_regime) p{live ? Math.round(live.quantile * 100) : 90} MAE nokta
           tahmini + %95 bootstrap güven aralığı — en az 10 örneklem gerektirir, altındaki kovalar hiç dönmez.
         </p>
+        <p className="text-xs text-ink-faint mb-3">
+          Aç/kapa: bu kovada (canlı) yeni giriş alınsın mı — kanıtlanmış kovaları açık bırakıp diğerlerini
+          kapatarak kademeli canlıya geçiş için.
+        </p>
 
         {loading ? (
           <Spinner />
@@ -84,10 +132,13 @@ export default function MaeMfeConfidence() {
                   <th className="py-2 pr-4">Nokta tahmini</th>
                   <th className="py-2 pr-4">%95 Güven Aralığı</th>
                   <th className="py-2 pr-4">Örneklem</th>
+                  <th className="py-2 pr-4">Canlı</th>
                 </tr>
               </thead>
               <tbody>
-                {groups.map(([label, ci]) => (
+                {groups.map(([label, ci]) => {
+                  const enabled = isBucketEnabled(label);
+                  return (
                   <tr key={label} className="border-b border-line-soft/50">
                     <td className="py-2 pr-4 text-ink font-medium">{label}</td>
                     <td className="py-2 pr-4 font-mono">{(ci.point_estimate * 100).toFixed(2)}%</td>
@@ -97,8 +148,22 @@ export default function MaeMfeConfidence() {
                     <td className="py-2 pr-4">
                       <Badge tone={ci.sample_size >= 30 ? "rise" : "neutral"}>{ci.sample_size}</Badge>
                     </td>
+                    <td className="py-2 pr-4">
+                      <button
+                        onClick={() => toggleBucket(label)}
+                        disabled={saving === "mae_mfe_bucket_trading_enabled"}
+                        className={`px-2 py-1 rounded-md text-xs font-medium border transition-colors shrink-0 ${
+                          enabled
+                            ? "bg-accent text-white border-accent"
+                            : "bg-canvas-soft text-ink-faint border-line hover:bg-surface-soft"
+                        }`}
+                      >
+                        {enabled ? "Açık" : "Kapalı"}
+                      </button>
+                    </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

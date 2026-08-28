@@ -175,6 +175,22 @@ def _validate(key: str, value: str) -> None:
             raise HTTPException(
                 400, "regime_trading_enabled must be a JSON object of {regime: true|false}"
             )
+    elif key == "mae_mfe_bucket_trading_enabled":
+        # Kullanıcı isteği (2026-08-28) — regime_trading_enabled ile AYNI
+        # desen (sabit bir anahtar kümesi YOK, kova sayısı zamanla
+        # değişebilir), sadece JSON dict {bucket_key: true|false}.
+        import json as _json
+        try:
+            mapping = _json.loads(value)
+            if not isinstance(mapping, dict):
+                raise ValueError
+            for v in mapping.values():
+                if not isinstance(v, bool):
+                    raise ValueError
+        except (ValueError, TypeError):
+            raise HTTPException(
+                400, "mae_mfe_bucket_trading_enabled must be a JSON object of {bucket_key: true|false}"
+            )
     elif key == "medium_term_capital_pct":
         try:
             v = float(value)

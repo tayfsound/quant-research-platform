@@ -1,9 +1,51 @@
-# Mevcut Durum -- v1.107.1 (Faz 367-devam: kirli deney verisi (multi_timeframe_cascade_v1) 3 gatherer'dan hariç tutuldu)
+# Mevcut Durum -- v1.108.0 (Faz 367-devam: MAE/MFE kova aç-kapa + onchain gerçek veri + execution layer zaten hazır bulundu)
 
-**Tarih:** 2026-08-27
+**Tarih:** 2026-08-28
 **Branch:** main
-**Son commit (HEAD):** `ad58901` (Faz 363 — Karşı-Olgusal Ajan-Etki Ölçümü). Bu turun TÜM Faz 364-367 işi (aşağıda) henüz commit edilmedi.
-**Servis durumu:** celery worker + celery beat + uvicorn ÜÇÜ DE Faz 367 sonunda tam yeniden başlatıldı (LLM kaldırma + asset-class/regime gate'leri dahil) — canlı süreç kod ile senkron, temiz (hata yok). 1832+ test hatasız collect ediliyor, tsc temiz. **Vite dev sunucusu (dashboard) yeniden başlatıldı ama kullanıcı sert yenileme sonrası da "beyaz sayfa" bildirdi — kök neden HENÜZ bulunamadı, tarayıcı konsol hatası bekleniyor (statik inceleme: tsc/eslint temiz, Dashboard.tsx/App.tsx'te hook-sırası veya syntax hatası yok).**
+**Son commit (HEAD):** `d7a170d` (onchain borsa akışı + balina sinyali). Bu turun MAE/MFE kova aç-kapa işi (aşağıda) henüz commit edilmedi.
+**Servis durumu:** celery worker + celery beat + uvicorn + vite ÜÇÜ DE temiz yeniden başlatıldı, hatasız. tsc temiz.
+
+## Faz 367-devam — MAE/MFE Kova Bazlı Aç-Kapa + 2 yan düzeltme (2026-08-28)
+
+Kullanıcının gerçek hedefi netleşti: canlıya geçerken TÜM sistemi birden
+açmak yerine sadece kanıtlanmış (strateji×rejim) kombinasyonlarını açık
+bırakmak. Dünkü Varlık Sınıfı/6-Rejim aç-kapa'dan DAHA GRANÜLER: MAE/MFE
+Güven Aralığı sayfasının (`direction|regime|volatility_regime`) kovaları
+artık tek tek aç-kapa yapılabiliyor. Kritik mimari bulgu: bu kovalar
+dünkü rejim kapısından FARKLI bir sınıflandırıcı kullanıyor (yavaş
+200-EMA `long_term_trend_regime`, hızlı EMA20/50 `trend` değil) — ikisi
+de zaten `ctx.market.features`'ta, yeni sınıflandırıcı çağrısı gerekmedi.
+Yeni: `analytics/mae_mfe_bucket_trading_gate.py`, `mae_mfe_bucket_
+trading_enabled` ayarı, `decision_recorder.py`'ye wiring, `MaeMfeConfidence.tsx`'e
+satır başına aç-kapa butonu. 11 yeni test.
+
+**Yol boyunca bulunan gerçek veri kirliliği**: `mae_mfe_confidence_
+gatherer.py`'nin altındaki işlem havuzu pump_fade_v1/basis_arb_v1/
+multi_timeframe_cascade_v1'i hiç hariç tutmuyordu — 1859 işlemin
+**1268'i (%68!)** mekanik/deney verisiydi. `_is_production_ai_council`
+yeniden kullanılarak düzeltildi, gerçek AI-konseyi havuzu 590 işlem/10
+kovaya düştü — kova tabloları artık tamamen farklı (ve doğru) sayılar
+gösteriyor.
+
+**Execution Layer (testnet emir gönderimi) zaten yapılmış bulundu** —
+kullanıcı "Binance testi zamanı geldi" deyince plan modunda kontrol
+edildi: `services/execution_service.py`, `futures_execution_adapter.py`,
+`execution_mode`/`execution_mode_symbols` ayarları, decision_recorder.py/
+position_closer.py wiring'i (breakeven-stop dahil) hepsi Faz 315'te
+yazılmış, kodda duruyor — sadece `execution_mode="simulated"`
+varsayılanında. Kullanıcı testnet API key almaya başladı (Google ile
+giriş, GitHub artık yok), key gelince tek ayar değişikliğiyle devreye
+girecek.
+
+**Yan düzeltme**: Risk Simülatörü'nün (`MarketWorldModel.tsx`) açıklama
+metni bayattı — hâlâ "ham fiyat hareketi" diyordu, dünkü starting_
+capital düzeltmesinden beri gerçek PnL/sabit taban kullanılıyor. Sayılar
+zaten doğruydu (kullanıcının "astronomik olmalı" endişesi yanlış
+anlamaydı — düzeltmenin TAM amacı küçük/sınırlı değerler üretmekti),
+sadece metin yanıltıcıydı, düzeltildi.
+
+**Açık**: MVRV/NUPL/SOPR hâlâ bitcoin-data.com 429 veriyor (kendiliğinden
+açılmasını bekliyoruz), Telegram bildirimleri hâlâ askıda.
 
 ## Faz 367-devam — multi_timeframe_cascade_v1 kirliliği 3 gatherer'dan hariç tutuldu (2026-08-27)
 

@@ -656,6 +656,14 @@ DEFAULTS: dict[str, str] = {
         '{"bullish_high": true, "bullish_normal": true, "bullish_low": true, '
         '"bearish_high": true, "bearish_normal": true, "bearish_low": true}'
     ),
+    # Kullanıcı isteği (2026-08-28): yukarıdakinden DAHA GRANÜLER —
+    # MAE/MFE Güven Aralığı sayfasının (direction|regime|volatility_regime)
+    # kovaları, bkz. analytics/mae_mfe_bucket_trading_gate.py. Boş harita
+    # = fail-open zaten her şeyi açık tutuyor (regime_trading_enabled'ın
+    # aksine, kova sayısı zamanla değişebildiği için TÜMÜNÜ önceden
+    # numaralandırmaya gerek yok — kullanıcı sadece kapatmak istediğini
+    # ekler).
+    "mae_mfe_bucket_trading_enabled": "{}",
 
     # Faz 362 — kullanıcı bulgusu: "council'in ara sıra bir cycle'da
     # tersine dönmesi çoğunlukla gürültü — bu gürültüye güvenerek yeni

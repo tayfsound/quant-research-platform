@@ -196,6 +196,38 @@ class DecisionRecorder:
             if is_regime_trading_blocked(market_regime, regime_enabled_map):
                 opens_position = False
 
+        # Kullanıcı isteği (2026-08-28): canlıya kademeli geçiş için,
+        # yukarıdaki rejim kapısından DAHA GRANÜLER bir kontrol — MAE/MFE
+        # Güven Aralığı sayfasının (direction|regime|volatility_regime)
+        # kovaları. Yukarıdaki market_regime'den (hızlı EMA20/50 trend)
+        # FARKLI bir sınıflandırıcı: long_term_trend_regime (yavaş
+        # 200-EMA, bkz. market_data/features/signal_engine.py::_long_
+        # term_trend_regime) — MAE/MFE'nin kendi ürettiği etiketle
+        # birebir eşleşsin diye icat edilmiyor, orchestrator.py'nin zaten
+        # doldurduğu ctx.market.features'tan okunuyor.
+        if opens_position and experiment_bucket is None:
+            import json as _json
+
+            from analytics.mae_mfe_bucket_trading_gate import (
+                build_bucket_key,
+                is_mae_mfe_bucket_trading_blocked,
+            )
+            from database.repositories.app_settings_repository import AppSettingsRepository
+
+            raw_map = AppSettingsRepository(self.session).get("mae_mfe_bucket_trading_enabled")
+            try:
+                bucket_enabled_map = _json.loads(raw_map) if raw_map else {}
+            except (ValueError, TypeError):
+                bucket_enabled_map = {}
+            features = ctx.market.features or {}
+            bucket_key = build_bucket_key(
+                direction,
+                features.get("long_term_trend_regime", "unknown"),
+                features.get("volatility_regime", "unknown"),
+            )
+            if is_mae_mfe_bucket_trading_blocked(bucket_key, bucket_enabled_map):
+                opens_position = False
+
         # Backlog #17 — kullanıcı isteği: "tepeden/dipten kovalıyorsa"
         # (kritik bir seviyeden çok uzaktaysa) giriş engellensin. Gerçek
         # veriyle (450+ karar) kalibre edildi (bkz. analytics/pivot_

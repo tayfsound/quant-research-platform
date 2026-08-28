@@ -68,8 +68,9 @@ export default function MarketWorldModel() {
         <h3 className="text-sm font-semibold text-ink mb-1">Canlı ölçüm</h3>
         <p className="text-xs text-ink-soft mb-3">
           Blok uzunluğu {live?.block_size ?? "—"}, yol uzunluğu {live?.path_length ?? "—"} ardışık işlem — {live?.n_returns ?? 0} gerçek
-          işlem getirisi üzerinden 1000 yeniden-örneklenmiş yol. Pozisyon boyutu/kaldıraç dahil değil — ham fiyat hareketlerinin
-          bileşimi, gerçek kasa büyüklüğü DEĞİL.
+          işlem getirisi üzerinden 1000 yeniden-örneklenmiş yol. Her işlemin GERÇEK (kaldıraçlı) dolar PnL'i, sabit bir taban
+          sermayeye (starting_capital) göre ölçülüyor — ham fiyat hareketi değil; ama "bileşik faiz" gibi her işlemde TÜM
+          bakiyenin yeniden yatırıldığı da varsayılmıyor (gerçek sabit-oranlı pozisyon boyutlandırmasıyla tutarlı).
         </p>
 
         {loading ? (
