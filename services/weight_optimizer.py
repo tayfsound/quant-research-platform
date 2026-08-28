@@ -13,6 +13,18 @@ from services.agent_memory import AgentMemory, get_reliability_legacy_cutoff
 from services.weight_repository import WeightRepository
 
 MAX_WEIGHT_DELTA = 0.10
+# Kullanıcı isteği (2026-08-28): "ajan kombinasyon kısmındaki gate
+# değerinin üzerinde bir kombinasyon gelirse, bu kombinasyondaki ajanları
+# güçlendirsin." SADECE güçlendirme yönü — kapı (analytics/agent_
+# combination_reliability_gate.py) zaten "başarısızları yok say" tarafını
+# decision-time'da hallediyor, burada tekrar cezalandırmaya gerek yok.
+# SYNERGY_SCALE, (win_rate - eşik) farkını küçük bir ağırlık düzeltmesine
+# ölçekliyor; MAX_SYNERGY_ADJUSTMENT tek bir grubun ağırlığı domine
+# etmesini engelliyor (MAX_WEIGHT_DELTA onay kuyruğu tavanının altında
+# kalacak şekilde, üstündeyse zaten mevcut insan-onay mekanizması devreye
+# girer).
+SYNERGY_SCALE = 0.5
+MAX_SYNERGY_ADJUSTMENT = 0.15
 # Faz 268-sonrası — kullanıcı bulgusu, gerçek olay: reliability_legacy_
 # cutoff_at eklendiğinde (kullanıcı isteği: "her ajanın kararda eşit
 # ağırlığı olsun") bu, sadece agents/source_reliability_agent.py'ye
@@ -49,6 +61,67 @@ class WeightOptimizer:
         )
 
         self.prior_strength = prior_strength
+
+    @staticmethod
+    def _compute_synergy_adjustments(domains: list[str]) -> dict[str, float]:
+        """Faz 367-devam — kullanıcı isteği: "ajan kombinasyon kısmındaki
+        gate değerinin üzerinde bir kombinasyon gelirse, bu kombinasyondaki
+        ajanları güçlendirsin." Solo doğruluk (yukarıdaki Bayesian hesap)
+        bir ajanın TEK BAŞINA ne kadar isabetli olduğunu ölçüyor ama hangi
+        ajanların BİRLİKTE güçlü olduğunu hiç görmüyor — gerçek örnek:
+        sentiment ajanı solo %5 isabetle kaldırılmıştı (bkz. contracts/
+        agent.py), ama pattern+sentiment/quant+sentiment gibi ikilileri
+        %99+ isabetliydi.
+
+        analytics/agent_combination_reliability_gate.py::
+        trustworthy_known_pairs ile AYNI güven filtresi (FDR'ı geçmiş VE
+        düşük örtüşmeli — aynı işlemlerin tekrar sayımı "kanıt" gibi
+        görünmesin) + gate'in KENDİ kullandığı AYNI canlı eşik
+        (agent_combination_gate_min_win_rate) — İKİ ayrı "başarı" tanımı
+        icat edilmesin diye. SADECE güçlendirme yönü: eşiğin altındaki
+        gruplar hiç katkı vermiyor (0.0) — "yok sayma" tarafı zaten
+        decision-time kapısının işi, burada tekrarlanmıyor. Rapor yoksa,
+        ayar okunamıyorsa ya da domain hiçbir güvenilir/eşik-üstü grupta
+        yer almıyorsa (fail-closed) düzeltme 0.0 — solo ağırlık hiç
+        değişmez."""
+        try:
+            from database.repositories.agent_combination_reliability_report_repository import (
+                AgentCombinationReliabilityReportRepository,
+            )
+            from database.repositories.app_settings_repository import AppSettingsRepository
+
+            with SessionFactory.get_session() as session:
+                report = AgentCombinationReliabilityReportRepository(session).get_latest()
+                min_win_rate_raw = AppSettingsRepository(session).get("agent_combination_gate_min_win_rate")
+        except Exception as exc:
+            import structlog
+            structlog.get_logger().warning("synergy_adjustment_load_failed", error=str(exc))
+            return {}
+
+        if not report or not report.get("result"):
+            return {}
+
+        from analytics.agent_combination_reliability_gate import DEFAULT_MIN_WIN_RATE, trustworthy_known_pairs
+
+        threshold = float(min_win_rate_raw) if min_win_rate_raw else DEFAULT_MIN_WIN_RATE
+        trustworthy = trustworthy_known_pairs(report["result"].get("pairs") or [])
+        strong_groups = [g for g in trustworthy if g.get("win_rate", 0.0) >= threshold]
+
+        adjustments: dict[str, float] = {}
+        for domain in domains:
+            relevant = [g for g in strong_groups if domain in g.get("domains", [])]
+            if not relevant:
+                continue
+            total_samples = sum(g["sample_size"] for g in relevant)
+            if total_samples == 0:
+                continue
+            weighted_excess = sum(
+                (g["win_rate"] - threshold) * g["sample_size"] for g in relevant
+            ) / total_samples
+            adjustment = round(min(MAX_SYNERGY_ADJUSTMENT, weighted_excess * SYNERGY_SCALE), 4)
+            if adjustment > 0:
+                adjustments[domain] = adjustment
+        return adjustments
 
     @staticmethod
     def _load_proposal_cooldown_hours() -> float:
@@ -271,10 +344,24 @@ class WeightOptimizer:
             for domain in domains_needing_fallback:
                 proposed[domain] = fallback
 
+        # Kullanıcı isteği (2026-08-28): "ajan kombinasyon kısmındaki gate
+        # değerinin üzerinde bir kombinasyon gelirse, bu kombinasyondaki
+        # ajanları güçlendirsin." Solo skorlar tamamlandıktan SONRA
+        # uygulanıyor (fallback dahil, çünkü zayıf/yeni bir domain bile
+        # güçlü bir grupta yer alabilir) — MAX_WEIGHT_DELTA onay-kuyruğu
+        # kontrolünden ÖNCE proposed'a eklenir, böylece büyük bir sinerji
+        # düzeltmesi de AYNI insan-onay mekanizmasından (aşağıda) geçer,
+        # onu atlamaz.
+        synergy_adjustments = self._compute_synergy_adjustments(domains)
+        for domain, adjustment in synergy_adjustments.items():
+            if domain in proposed:
+                proposed[domain] = round(proposed[domain] + adjustment, 3)
+
         snapshot = AgentWeightSnapshot(
             weights=proposed,
             evaluation_window=evaluation_window,
             window_breakdown=window_breakdown,
+            synergy_adjustments=synergy_adjustments,
             previous_snapshot_id=(
                 previous.id
                 if previous

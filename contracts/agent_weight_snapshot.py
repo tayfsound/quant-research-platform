@@ -20,6 +20,13 @@ class AgentWeightSnapshot(BaseModel):
     # bunların ortalaması, ama her bileşen ayrı ayrı burada şeffaf kalıyor
     # (bkz. services/weight_optimizer.py::propose_weights).
     window_breakdown: dict[str, dict[str, float]] = Field(default_factory=dict)
+    # Faz 367-devam — kullanıcı isteği: solo doğruluk ağırlıklandırması
+    # ajanların BİRLİKTE ne kadar güçlü olduğunu (analytics/agent_
+    # combination_reliability.py) hiç görmüyordu. {domain: adjustment} —
+    # `weights`e ZATEN uygulanmış küçük, sınırlı bir taban düzeltmesi
+    # (services/weight_optimizer.py::_compute_synergy_adjustments), burada
+    # SADECE şeffaflık için ayrı tutuluyor — window_breakdown ile AYNI ilke.
+    synergy_adjustments: dict[str, float] = Field(default_factory=dict)
     previous_snapshot_id: UUID | None = None
     snapshot_hash: str = ""
     reason: str = "performance_update"
