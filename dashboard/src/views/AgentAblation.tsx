@@ -24,11 +24,39 @@ const DOMAIN_LABEL: Record<string, string> = {
   technical: "Teknik", macro: "Makro", onchain: "On-chain", pattern: "Patern",
   quant: "Kantitatif", order_flow: "Emir Akışı", time: "Zaman",
   epistemology: "Epistemoloji", relative_strength: "Göreceli Güç",
+  credit: "Kredi", volatility: "Volatilite", sentiment: "Duyarlılık",
 };
+
+// Faz 368-devam — GPT'nin "Agent Interaction & Incremental Information
+// Layer" önerisi: yukarıdaki tablo her ajanı TEK BAŞINA ölçüyor, ama "A ve
+// B birbirinin yerini mi tutuyor, yoksa ikisi de bağımsız mı gerçek bilgi
+// taşıyor" sorusuna cevap vermiyor. Bu bölüm aynı kararı A+B ikisi birden
+// çıkarılmış halde de yeniden sentezleyip nedensel bir ilişki etiketi
+// üretiyor.
+type PairStat = {
+  n_both_voted: number;
+  redundant_substitutes_count: number;
+  substitution_rate: number;
+  both_independently_pivotal_count: number;
+  a_dominates_count: number;
+  b_dominates_count: number;
+  jointly_irrelevant_count: number;
+  redundant_substitutes_total_pnl: number;
+};
+type PairwiseResult = { by_pair: Record<string, PairStat>; n_decisions_analyzed: number };
+
+function relationshipSummary(s: PairStat): { label: string; tone: "fall" | "rise" | "neutral" } {
+  if (s.substitution_rate >= 0.3) return { label: "büyük ölçüde birbirinin yerini tutuyor", tone: "fall" };
+  if (s.both_independently_pivotal_count > s.redundant_substitutes_count) {
+    return { label: "çoğunlukla bağımsız pivotal", tone: "rise" };
+  }
+  return { label: "karışık / az veri", tone: "neutral" };
+}
 
 export default function AgentAblation() {
   const [live, setLive] = useState<Result | null>(null);
   const [reports, setReports] = useState<Report[]>([]);
+  const [pairwiseLive, setPairwiseLive] = useState<PairwiseResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,10 +66,12 @@ export default function AgentAblation() {
     Promise.all([
       fetch("/api/v1/agent-ablation/", { headers: authHeaders() }).then((r) => r.json()),
       fetch("/api/v1/agent-ablation/reports?limit=20", { headers: authHeaders() }).then((r) => r.json()),
+      fetch("/api/v1/agent-pairwise-ablation/", { headers: authHeaders() }).then((r) => r.json()),
     ])
-      .then(([liveData, history]) => {
+      .then(([liveData, history, pairwiseData]) => {
         setLive(liveData.result || null);
         setReports(history.reports || []);
+        setPairwiseLive(pairwiseData.result || null);
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
@@ -51,6 +81,12 @@ export default function AgentAblation() {
 
   const rows = live
     ? Object.entries(live.by_domain).sort((a, b) => a[1].caused_trade_total_pnl - b[1].caused_trade_total_pnl)
+    : [];
+
+  const pairRows = pairwiseLive
+    ? Object.entries(pairwiseLive.by_pair)
+        .filter(([, s]) => s.n_both_voted >= 10)
+        .sort((a, b) => b[1].substitution_rate - a[1].substitution_rate)
     : [];
 
   return (
@@ -117,6 +153,54 @@ export default function AgentAblation() {
                     <td className="py-2 pr-4 font-mono text-ink-soft">{s.flipped_direction_count}</td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <Card className="mb-6">
+        <h3 className="text-sm font-semibold text-ink mb-1">Agent Interaction — ikili nedensel ilişki</h3>
+        <p className="text-xs text-ink-soft mb-3">
+          Aynı kararda BİRLİKTE oy veren ajan çiftleri A+B ikisi birden çıkarılmış halde de yeniden
+          sentezleniyor. Yüksek "birbirinin yerini tutma oranı" (substitution rate), A ile B'nin tek başına
+          hiç pivotal olmasa da BİRLİKTE çıkınca sonucu değiştirdiği — yani birbirinin yedeği olduğu anlamına
+          gelir. Sadece ≥10 ortak oy kullanılmış çiftler gösteriliyor (fail-closed).
+        </p>
+        {loading ? (
+          <Spinner />
+        ) : pairRows.length === 0 ? (
+          <EmptyState label="Henüz yeterli ortak-oy örneklemi olan bir ajan çifti yok." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-ink-faint text-left border-b border-line-soft">
+                  <th className="py-2 pr-4">Çift</th>
+                  <th className="py-2 pr-4">Birlikte oy</th>
+                  <th className="py-2 pr-4">Yerini tutma oranı</th>
+                  <th className="py-2 pr-4">Bağımsız pivotal (ikisi de)</th>
+                  <th className="py-2 pr-4">Değerlendirme</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pairRows.map(([pair, s]) => {
+                  const [a, b] = pair.split("|");
+                  const summary = relationshipSummary(s);
+                  return (
+                    <tr key={pair} className="border-b border-line-soft/50">
+                      <td className="py-2 pr-4 text-ink font-medium">
+                        {DOMAIN_LABEL[a] ?? a} × {DOMAIN_LABEL[b] ?? b}
+                      </td>
+                      <td className="py-2 pr-4 font-mono text-ink-soft">{s.n_both_voted}</td>
+                      <td className="py-2 pr-4 font-mono text-ink-soft">{(s.substitution_rate * 100).toFixed(1)}%</td>
+                      <td className="py-2 pr-4 font-mono text-ink-soft">{s.both_independently_pivotal_count}</td>
+                      <td className="py-2 pr-4">
+                        <Badge tone={summary.tone}>{summary.label}</Badge>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

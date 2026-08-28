@@ -5,10 +5,13 @@ hiç cevap vermiyordu. Bu modül gerçek services/belief_engine.py::
 synthesize'ı (pure, deterministik) hedef ajan sıfırlanmış halde yeniden
 çalıştırıp GERÇEK bir leave-one-out rekonstrüksiyonu yapar."""
 from analytics.agent_ablation import (
+    classify_pairwise_relationship,
     compute_leave_one_out_counterfactual_direction,
     compute_leave_one_out_impact,
+    compute_pairwise_ablation_interaction,
     reconstruct_opinions,
     summarize_ablation_by_domain,
+    summarize_pairwise_ablation_by_domain_pair,
 )
 from contracts.agent import AgentDomain, AgentOpinion
 
@@ -165,3 +168,101 @@ def test_summarize_ablation_by_domain_win_rate_is_none_with_no_caused_trades():
     records = [{"domain": "macro", "impact": "not_pivotal", "pnl": 1.0}]
     summary = summarize_ablation_by_domain(records)
     assert summary["macro"]["caused_trade_win_rate"] is None
+
+
+def test_compute_pairwise_ablation_interaction_none_when_either_domain_never_voted():
+    contributions = [_opinion_dict(AgentDomain.TECHNICAL, "LONG", 0.9)]
+    assert compute_pairwise_ablation_interaction(contributions, "technical", "macro", "LONG") is None
+    assert compute_pairwise_ablation_interaction(contributions, "macro", "technical", "LONG") is None
+
+
+def test_compute_pairwise_ablation_interaction_redundant_substitutes():
+    """İki güçlü, AYNI yönde oy veren ajan (test_compute_leave_one_out_
+    impact_detects_not_pivotal_when_others_agree ile AYNI senaryo) —
+    NE biri NE diğeri tek başına pivotal (biri kalsa bile LONG sürüyor)
+    ama İKİSİ BİRDEN çıkınca sonuç değişiyor: birbirinin yerini tutuyorlar."""
+    contributions = [
+        _opinion_dict(AgentDomain.TECHNICAL, "LONG", 0.9),
+        _opinion_dict(AgentDomain.MACRO, "LONG", 0.9),
+    ]
+    result = compute_pairwise_ablation_interaction(contributions, "technical", "macro", "LONG")
+    assert result == {
+        "a_alone_impact": "not_pivotal",
+        "b_alone_impact": "not_pivotal",
+        "both_removed_impact": "caused_trade",
+    }
+    assert classify_pairwise_relationship(**result) == "redundant_substitutes"
+
+
+def test_compute_pairwise_ablation_interaction_both_independently_pivotal():
+    """İki ZAYIF aynı-yönlü oy, iki GÜÇLÜ karşıt oya karşı yarışıyor —
+    ikisinden HANGİSİ çıkarılırsa çıkarılsın (diğeri kalsa bile) karşıt
+    taraf kazanıyor: her ikisi de AYRI AYRI pivotal, birbirinden bağımsız
+    gerçek bilgi taşıyorlar."""
+    contributions = [
+        _opinion_dict(AgentDomain.TECHNICAL, "LONG", 0.5),
+        _opinion_dict(AgentDomain.MACRO, "LONG", 0.5),
+        _opinion_dict(AgentDomain.PATTERN, "SHORT", 0.45),
+        _opinion_dict(AgentDomain.QUANT, "SHORT", 0.45),
+    ]
+    result = compute_pairwise_ablation_interaction(contributions, "technical", "macro", "LONG")
+    assert result == {
+        "a_alone_impact": "flipped_direction",
+        "b_alone_impact": "flipped_direction",
+        "both_removed_impact": "flipped_direction",
+    }
+    assert classify_pairwise_relationship(**result) == "both_independently_pivotal"
+
+
+def test_compute_pairwise_ablation_interaction_a_dominates():
+    """test_compute_leave_one_out_impact_detects_flipped_direction ile
+    AYNI senaryo: baskın technical (0.95) tek başına yönü belirliyor,
+    zayıf macro (0.6) tek başına hiçbir şey değiştirmiyor."""
+    contributions = [
+        _opinion_dict(AgentDomain.TECHNICAL, "LONG", 0.95),
+        _opinion_dict(AgentDomain.MACRO, "SHORT", 0.6),
+    ]
+    result = compute_pairwise_ablation_interaction(contributions, "technical", "macro", "LONG")
+    assert result == {
+        "a_alone_impact": "flipped_direction",
+        "b_alone_impact": "not_pivotal",
+        "both_removed_impact": "caused_trade",
+    }
+    assert classify_pairwise_relationship(**result) == "a_dominates"
+
+
+def test_compute_pairwise_ablation_interaction_jointly_irrelevant():
+    """technical/macro ikisi de WAIT — üçüncü, çok baskın bir pattern
+    oyu (0.95 LONG) yönü tek başına belirliyor, bu ikili hiçbir şekilde
+    belirleyici değil (ne tek tek ne birlikte)."""
+    contributions = [
+        _opinion_dict(AgentDomain.TECHNICAL, "WAIT", 0.5),
+        _opinion_dict(AgentDomain.MACRO, "WAIT", 0.5),
+        _opinion_dict(AgentDomain.PATTERN, "LONG", 0.95),
+    ]
+    result = compute_pairwise_ablation_interaction(contributions, "technical", "macro", "LONG")
+    assert result == {
+        "a_alone_impact": "not_pivotal",
+        "b_alone_impact": "not_pivotal",
+        "both_removed_impact": "not_pivotal",
+    }
+    assert classify_pairwise_relationship(**result) == "jointly_irrelevant"
+
+
+def test_summarize_pairwise_ablation_by_domain_pair_aggregates_correctly():
+    records = [
+        {"pair": "macro|technical", "relationship": "redundant_substitutes", "both_removed_pnl": 10.0},
+        {"pair": "macro|technical", "relationship": "redundant_substitutes", "both_removed_pnl": -4.0},
+        {"pair": "macro|technical", "relationship": "both_independently_pivotal", "both_removed_pnl": 0.0},
+        {"pair": "macro|technical", "relationship": "jointly_irrelevant", "both_removed_pnl": 0.0},
+    ]
+    summary = summarize_pairwise_ablation_by_domain_pair(records)
+    stats = summary["macro|technical"]
+    assert stats["n_both_voted"] == 4
+    assert stats["redundant_substitutes_count"] == 2
+    assert stats["substitution_rate"] == 0.5
+    assert stats["both_independently_pivotal_count"] == 1
+    assert stats["jointly_irrelevant_count"] == 1
+    assert stats["a_dominates_count"] == 0
+    assert stats["b_dominates_count"] == 0
+    assert stats["redundant_substitutes_total_pnl"] == 6.0

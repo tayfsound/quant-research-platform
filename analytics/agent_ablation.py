@@ -80,14 +80,26 @@ def synthesize_with_domain_excluded(opinions: list[AgentOpinion], excluded_domai
     buraya çıkarıldı, _resynthesize_with_domain_excluded (geçmiş/
     kaydedilmiş kararlar için) ÜSTÜNE ince bir sarmalayıcı oldu — davranış
     DEĞİŞMEDİ, sadece paylaşılıyor."""
+    return synthesize_with_domains_excluded(opinions, {excluded_domain})
+
+
+def synthesize_with_domains_excluded(opinions: list[AgentOpinion], excluded_domains: set[str]):
+    """Faz 368-devam — kullanıcı kararı: GPT'nin "Agent Interaction" önerisi
+    ("A+B birlikte yokken ne olur?") tek-domain leave-one-out'un ötesine
+    geçiyor. synthesize_with_domain_excluded'in genelleştirilmiş hali —
+    BİRDEN ÇOK domain'in oyu aynı anda SIFIRLANMIŞ halde belief-fusion'ı
+    yeniden çalıştırır. excluded_domains'teki HİÇBİR domain bu kararda oy
+    kullanmamışsa None (ablation anlamsız). Tek-domain çağrısı (yukarıdaki
+    fonksiyon) davranışı DEĞİŞMEDİ — ona sadece {excluded_domain} ile
+    delege ediyor."""
     from services.belief_engine import BeliefEngine
 
-    if not any(o.domain.value == excluded_domain for o in opinions):
+    if not any(o.domain.value in excluded_domains for o in opinions):
         return None
 
     adjusted = []
     for o in opinions:
-        if o.domain.value == excluded_domain:
+        if o.domain.value in excluded_domains:
             o = o.model_copy(deep=True)
             o.performance_weight = 0.0
             o.recalculate()
@@ -229,5 +241,118 @@ def summarize_ablation_by_domain(records: list[dict]) -> dict:
                 round(sum(r["pnl"] for r in caused) / len(caused), 4) if caused else None
             ),
             "caused_trade_rate": round(len(caused) / len(domain_records), 4) if domain_records else 0.0,
+        }
+    return summary
+
+
+def _resynthesize_with_domains_excluded(agent_contributions: list[dict], excluded_domains: set[str]):
+    """_resynthesize_with_domain_excluded'in çoklu-domain hali —
+    synthesize_with_domains_excluded'e AYNI dict->reconstruct_opinions
+    hazırlığını yapar."""
+    opinions = reconstruct_opinions(agent_contributions)
+    if not opinions:
+        return None
+    return synthesize_with_domains_excluded(opinions, excluded_domains)
+
+
+def compute_pairwise_ablation_interaction(
+    agent_contributions: list[dict],
+    domain_a: str,
+    domain_b: str,
+    actual_direction: str,
+) -> dict | None:
+    """Faz 368-devam — GPT'nin "Agent Interaction" önerisi: tek-domain
+    leave-one-out ("A olmasaydı ne olurdu") A ile B arasındaki İLİŞKİYİ
+    hiç sormuyor. Bu fonksiyon AYNI gerçek kapanmış kararı üç farklı
+    karşı-olgusal durumda yeniden sentezler: SADECE A çıkarılmış (B hâlâ
+    oy veriyor), SADECE B çıkarılmış (A hâlâ oy veriyor), ve İKİSİ BİRDEN
+    çıkarılmış. domain_a veya domain_b bu kararda hiç oy kullanmamışsa
+    None (ablation anlamsız — ikisi de gerçekten oy vermiş olmalı).
+
+    Döner: {"a_alone_impact", "b_alone_impact", "both_removed_impact"} —
+    her biri compute_leave_one_out_impact'in AYNI üç kategorisi
+    ("caused_trade"/"flipped_direction"/"not_pivotal"). classify_pairwise_
+    relationship bu üçlüyü tek bir ilişki etiketine indirger."""
+    opinions = reconstruct_opinions(agent_contributions)
+    present_domains = {o.domain.value for o in opinions}
+    if domain_a not in present_domains or domain_b not in present_domains:
+        return None
+
+    def _classify(counterfactual) -> str:
+        if counterfactual.direction == "WAIT":
+            return "caused_trade"
+        if counterfactual.direction != actual_direction:
+            return "flipped_direction"
+        return "not_pivotal"
+
+    without_a = synthesize_with_domains_excluded(opinions, {domain_a})
+    without_b = synthesize_with_domains_excluded(opinions, {domain_b})
+    without_both = synthesize_with_domains_excluded(opinions, {domain_a, domain_b})
+
+    return {
+        "a_alone_impact": _classify(without_a),
+        "b_alone_impact": _classify(without_b),
+        "both_removed_impact": _classify(without_both),
+    }
+
+
+def classify_pairwise_relationship(a_alone_impact: str, b_alone_impact: str, both_removed_impact: str) -> str:
+    """compute_pairwise_ablation_interaction'ın üç kategorisini TEK bir
+    ilişki etiketine indirger — GPT'nin önerdiği "A+B varken/A tek/B
+    tek/hiçbiri yokken ne olur" 2x2 karşılaştırmasının nedensel (sadece
+    korelasyonel değil, gerçek karşı-olgusal replay'e dayanan) versiyonu:
+
+    - "redundant_substitutes": NE A NE B tek başına pivotal değil, ama
+      İKİSİ BİRDEN çıkınca sonuç değişiyor — birbirinin yerini tutuyorlar
+      (biri varken diğeri "gereksiz" görünüyor, ama ikisi de yoksa boşluk
+      kapanmıyor). Feature Intelligence Layer'ın redundancy kavramının
+      nedensel karşılığı.
+    - "both_independently_pivotal": HEM A HEM B tek başına bile pivotal —
+      birbirinden bağımsız, ikisi de gerçek/ayrı bilgi taşıyor.
+    - "a_dominates" / "b_dominates": SADECE biri tek başına pivotal,
+      diğerinin varlığı/yokluğu sonucu hiç değiştirmiyor.
+    - "jointly_irrelevant": üçü de "not_pivotal" — bu ikili bu kararda
+      hiçbir şekilde belirleyici değil."""
+    a_pivotal = a_alone_impact != "not_pivotal"
+    b_pivotal = b_alone_impact != "not_pivotal"
+    both_pivotal = both_removed_impact != "not_pivotal"
+
+    if a_pivotal and b_pivotal:
+        return "both_independently_pivotal"
+    if not a_pivotal and not b_pivotal:
+        return "redundant_substitutes" if both_pivotal else "jointly_irrelevant"
+    return "a_dominates" if a_pivotal else "b_dominates"
+
+
+def summarize_pairwise_ablation_by_domain_pair(records: list[dict]) -> dict:
+    """records: her biri {'pair': 'a|b' (alfabetik sıralı), 'relationship',
+    'both_removed_pnl'} olan GERÇEK sonuçlar (compute_pairwise_ablation_
+    interaction + classify_pairwise_relationship'in her gerçek karar için
+    ürettiği, sadece both_removed_impact=='caused_trade' olan kararlarda
+    pnl atfedilir — tek-domain summarize_ablation_by_domain'in AYNI
+    disiplini). Çift başına: kaç kararda ikisi de oy kullandı, ilişki
+    türü dağılımı, ve substitution_rate (kaçının "redundant_substitutes"
+    çıktığı — A ile B'nin ne sıklıkla birbirinin yerini tuttuğu)."""
+    by_pair: dict[str, list[dict]] = defaultdict(list)
+    for r in records:
+        by_pair[r["pair"]].append(r)
+
+    summary = {}
+    for pair, pair_records in by_pair.items():
+        n = len(pair_records)
+        redundant = [r for r in pair_records if r["relationship"] == "redundant_substitutes"]
+        both_pivotal = [r for r in pair_records if r["relationship"] == "both_independently_pivotal"]
+        a_dominates = [r for r in pair_records if r["relationship"] == "a_dominates"]
+        b_dominates = [r for r in pair_records if r["relationship"] == "b_dominates"]
+        irrelevant = [r for r in pair_records if r["relationship"] == "jointly_irrelevant"]
+        summary[pair] = {
+            "n_both_voted": n,
+            "redundant_substitutes_count": len(redundant),
+            "substitution_rate": round(len(redundant) / n, 4) if n else 0.0,
+            "both_independently_pivotal_count": len(both_pivotal),
+            "a_dominates_count": len(a_dominates),
+            "b_dominates_count": len(b_dominates),
+            "jointly_irrelevant_count": len(irrelevant),
+            "redundant_substitutes_total_pnl": round(sum(r["both_removed_pnl"] for r in redundant), 4),
         }
     return summary

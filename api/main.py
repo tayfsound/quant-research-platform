@@ -9,6 +9,7 @@ from fastapi.responses import Response
 from api.rest import (
     agent_ablation,
     agent_combination_reliability,
+    agent_pairwise_ablation,
     agents,
     audit,
     auth,
@@ -145,6 +146,7 @@ app.include_router(market_world_model.router, prefix="/api/v1")
 app.include_router(direction_prediction_v2.router, prefix="/api/v1")
 app.include_router(opportunity_quality.router, prefix="/api/v1")
 app.include_router(agent_ablation.router, prefix="/api/v1")
+app.include_router(agent_pairwise_ablation.router, prefix="/api/v1")
 app.include_router(tp_sl_confluence.router, prefix="/api/v1")
 app.include_router(research_summary.router, prefix="/api/v1")
 app.include_router(shadow.router, prefix="/api/v1")

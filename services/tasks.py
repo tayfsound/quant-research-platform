@@ -1083,6 +1083,31 @@ def refresh_agent_ablation_report_task() -> dict:
     return {"id": str(report.id), "n_decisions_analyzed": result.get("n_decisions_analyzed")}
 
 
+@celery_app.task(name="refresh_agent_pairwise_ablation_report_task")
+def refresh_agent_pairwise_ablation_report_task() -> dict:
+    """Faz 368-devam — GPT'nin "Agent Interaction & Incremental Information
+    Layer" önerisi, kullanıcı kararıyla ilk sıra. agent_ablation'ın tek-
+    domain leave-one-out'unun ötesine geçip, aynı kararda BİRLİKTE oy
+    veren HER ajan çiftinin (A+B ikisi birden çıkınca ne olur) nedensel
+    ilişkisini ölçer — "redundant_substitutes" (birbirinin yerini
+    tutuyorlar), "both_independently_pivotal" (ikisi de bağımsız gerçek
+    bilgi), "a_dominates"/"b_dominates", "jointly_irrelevant". SADECE
+    ölçüm/kayıt — hiçbir ajanın canlı oy hakkını değiştirmiyor."""
+    from contracts.agent_pairwise_ablation_report import AgentPairwiseAblationReport
+    from database.repositories.agent_pairwise_ablation_report_repository import (
+        AgentPairwiseAblationReportRepository,
+    )
+    from database.session_factory import SessionFactory
+    from services.agent_pairwise_ablation_gatherer import gather_agent_pairwise_ablation
+
+    result = gather_agent_pairwise_ablation()
+    with SessionFactory.get_session() as session:
+        report = AgentPairwiseAblationReport(result=result)
+        AgentPairwiseAblationReportRepository(session).save(report)
+
+    return {"id": str(report.id), "n_decisions_analyzed": result.get("n_decisions_analyzed")}
+
+
 @celery_app.task(name="refresh_tp_sl_confluence_report_task")
 def refresh_tp_sl_confluence_report_task() -> dict:
     """Faz 299-300 — kullanıcı isteği (2026-08-19): TP/SL Confluence

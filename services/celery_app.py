@@ -386,6 +386,14 @@ celery_app.conf.beat_schedule = {
         "task": "refresh_agent_ablation_report_task",
         "schedule": 604800.0,
     },
+    # Faz 368-devam — Agent Interaction (pairwise ablation). agent-ablation
+    # ile AYNI ritim — AYNI 3000 kararlık geçmişi tekrar tarayıp bu sefer
+    # 66 ajan çiftinin nedensel ilişkisini ölçüyor (biraz daha pahalı,
+    # haftalık yeterli).
+    "refresh-agent-pairwise-ablation-report-weekly": {
+        "task": "refresh_agent_pairwise_ablation_report_task",
+        "schedule": 604800.0,
+    },
     "refresh-tp-sl-confluence-report-weekly": {
         "task": "refresh_tp_sl_confluence_report_task",
         "schedule": 604800.0,

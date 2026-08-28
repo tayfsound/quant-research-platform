@@ -70,6 +70,11 @@ _MODULES = [
     # çakışmayı (redundancy matrisi) ve koşullu IC'yi (b bilinirken a'nın
     # kattığı EK bilgi) ölçüyor.
     ("feature_relationship", "Feature Relationship", "feature-relationship", "services.feature_relationship_gatherer", "gather_feature_relationship"),
+    # Faz 368-devam — GPT'nin "Agent Interaction & Incremental Information
+    # Layer" önerisi. agent_ablation'ın tek-domain leave-one-out'unun
+    # ötesine geçip, aynı kararda birlikte oy veren HER ajan çiftinin
+    # (A+B ikisi birden çıkınca ne olur) nedensel ilişkisini ölçüyor.
+    ("agent_pairwise_ablation", "Agent Interaction", "agent-pairwise-ablation", "services.agent_pairwise_ablation_gatherer", "gather_agent_pairwise_ablation"),
 ]
 
 
