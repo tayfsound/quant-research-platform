@@ -16,76 +16,6 @@ type ModuleEntry = {
   error: string | null;
 };
 
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
-// Her modülün ham sonucundan (10 farklı şekil) kısa, okunabilir birkaç
-// satırlık bir özet çıkarır — genel/şekil-agnostik bir sezgisel yöntem:
-// sayı/metin/boolean alanları doğrudan, dict-of-dict alanlarında (ör.
-// {bucket: {sample_size, win_rate}}) alt-kovaları "n=X, oran=%Y" olarak,
-// liste alanlarında sadece eleman sayısını gösterir.
-function summarizeResult(result: unknown): string[] {
-  if (!isPlainObject(result)) return ["veri yok"];
-  const lines: string[] = [];
-  for (const [key, value] of Object.entries(result)) {
-    if (lines.length >= 5) break;
-    if (value === null || value === undefined) continue;
-    if (typeof value === "number") {
-      lines.push(`${key}: ${Number.isInteger(value) ? value : value.toFixed(4)}`);
-    } else if (typeof value === "string" || typeof value === "boolean") {
-      lines.push(`${key}: ${String(value)}`);
-    } else if (Array.isArray(value)) {
-      // Kullanıcı bulgusu (GPT raporu üzerinden): self_model'in
-      // reliability_flags gibi PRİMİTİF (string/number) dizileri sadece
-      // "1 öğe" olarak gösteriliyordu — "degraded" durumunun ASIL nedeni
-      // (ör. "9_features_drifted") tamamen gizleniyordu. Primitif
-      // dizilerde artık içerik gösteriliyor (uzunsa kırpılıyor), sadece
-      // karmaşık/dict elemanlı dizilerde eski "N öğe" sayımına dönülüyor.
-      const isPrimitiveArray = value.every((v) => typeof v === "string" || typeof v === "number");
-      if (isPrimitiveArray && value.length > 0) {
-        const joined = value.slice(0, 5).join(", ");
-        lines.push(`${key}: ${joined}${value.length > 5 ? ` (+${value.length - 5} daha)` : ""}`);
-      } else {
-        lines.push(`${key}: ${value.length} öğe`);
-      }
-    } else if (isPlainObject(value)) {
-      const subEntries = Object.entries(value);
-      const bucketLines = subEntries
-        .filter(([, v]) => isPlainObject(v) && ("sample_size" in v || "win_rate" in v))
-        .slice(0, 3)
-        .map(([subKey, v]) => {
-          const sub = v as Record<string, unknown>;
-          const n = sub.sample_size ?? sub.votes_cast ?? "?";
-          const wr = typeof sub.win_rate === "number" ? `%${(sub.win_rate * 100).toFixed(0)}` : null;
-          const acc = typeof sub === "object" && typeof (sub as Record<string, unknown>).brier_score === "number"
-            ? `brier=${(sub.brier_score as number).toFixed(3)}`
-            : null;
-          return `${subKey}(n=${n}${wr ? `, ${wr}` : ""}${acc ? `, ${acc}` : ""})`;
-        });
-      if (bucketLines.length > 0) {
-        lines.push(`${key}: ${bucketLines.join(", ")}`);
-      } else {
-        // Kullanıcı bulgusu (GPT raporu): self_model'in "inputs" alanı
-        // (ece/recent_dsr/kill_switch_active/...) hiçbir sample_size/
-        // win_rate alt-alanı taşımadığı için sessizce "5 alt-öğe"ye
-        // düşüyordu — gerçek ECE/DSR değerleri hiç görünmüyordu.
-        // Primitif alt-değerler artık key=value olarak gösteriliyor.
-        const primitiveLines = subEntries
-          .filter(([, v]) => v === null || typeof v === "string" || typeof v === "number" || typeof v === "boolean")
-          .slice(0, 5)
-          .map(([subKey, v]) => `${subKey}=${v === null ? "—" : typeof v === "number" && !Number.isInteger(v) ? v.toFixed(4) : String(v)}`);
-        if (primitiveLines.length > 0) {
-          lines.push(`${key}: ${primitiveLines.join(", ")}`);
-        } else {
-          lines.push(`${key}: ${subEntries.length} alt-öğe`);
-        }
-      }
-    }
-  }
-  return lines.length > 0 ? lines : ["(boş sonuç)"];
-}
-
 export default function ResearchSummary({ onNavigate }: { onNavigate: (view: string) => void }) {
   const [modules, setModules] = useState<ModuleEntry[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -113,7 +43,7 @@ export default function ResearchSummary({ onNavigate }: { onNavigate: (view: str
     <div>
       <PageHeader
         title="Genel Özet"
-        description="10 Grup B (ölçüm-only) araştırma modülünün hepsini tek seferde, GERÇEK ZAMANLI çalıştırıp özetler — bazı modüller tüm watchlist'i taradığı için tam rapor 1-2 dakika sürebilir. Detaylar kendi sayfalarında kalıyor, buradan doğrudan atlanabilir."
+        description="10 Grup B (ölçüm-only) araştırma modülünün hepsini tek seferde, GERÇEK ZAMANLI çalıştırıp TAM VERİYİ (özetlenmeden) gösterir — bazı modüller tüm watchlist'i taradığı için tam rapor 1-2 dakika sürebilir. Kendi sayfalarına da 'Detaya git' ile atlanabilir."
         action={
           <Button onClick={generate} disabled={loading}>
             {loading ? "Rapor oluşturuluyor…" : "Rapor Oluştur"}
@@ -154,11 +84,18 @@ export default function ResearchSummary({ onNavigate }: { onNavigate: (view: str
                 {m.error ? (
                   <p className="text-xs text-fall">Geçici olarak alınamadı: {m.error}</p>
                 ) : (
-                  <ul className="text-xs text-ink-soft font-mono space-y-1">
-                    {summarizeResult(m.result).map((line, i) => (
-                      <li key={i} className="break-words">{line}</li>
-                    ))}
-                  </ul>
+                  // Kullanıcı isteği (2026-08-28): "gelen raporlar bütün
+                  // detaylarıyla gelsin, özet olarak gelmesin — bütün veriyi
+                  // tek seferde toplu çekip görebileyim." Önceki summarizeResult()
+                  // (hâlâ aşağıda, artık kullanılmıyor) her modülü 5 satıra/birkaç
+                  // alt-öğeye kırpıyordu — ham veri (m.result, kendi sayfasıyla
+                  // BİREBİR aynı) zaten backend'den tam geliyordu, sadece burada
+                  // budanıyordu. Artık tam JSON, kaydırılabilir bir blokta.
+                  <div className="max-h-96 overflow-auto rounded-lg bg-canvas-soft border border-line-soft">
+                    <pre className="text-[11px] text-ink-soft font-mono p-3 whitespace-pre-wrap break-words">
+                      {JSON.stringify(m.result, null, 2)}
+                    </pre>
+                  </div>
                 )}
               </Card>
             ))}
