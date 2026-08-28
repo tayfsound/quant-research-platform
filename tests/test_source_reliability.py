@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 
 from agents.source_reliability_agent import SourceReliabilityAgent
 from contracts.agent_performance import AgentPerformanceRecord
+from database.repositories.app_settings_repository import AppSettingsRepository
+from database.session_factory import SessionFactory
 from services.agent_memory import AgentMemory
 
 
@@ -287,3 +289,167 @@ def test_legacy_records_before_cutoff_do_not_count(tmp_path, monkeypatch):
     finally:
         with SessionFactory.get_session() as session:
             AppSettingsRepository(session).set("reliability_legacy_cutoff_at", original, updated_by="test")
+
+
+def _save_trustworthy_report(pairs: list[dict]) -> None:
+    from contracts.agent_combination_reliability_report import AgentCombinationReliabilityReport
+    from database.repositories.agent_combination_reliability_report_repository import (
+        AgentCombinationReliabilityReportRepository,
+    )
+
+    with SessionFactory.get_session() as session:
+        AgentCombinationReliabilityReportRepository(session).save(
+            AgentCombinationReliabilityReport(
+                result={"pairs": pairs, "baseline_win_rate": 0.7, "baseline_sample_size": 100, "n_trades": 100},
+            )
+        )
+
+
+def _set_gate_threshold(value: str) -> str:
+    with SessionFactory.get_session() as session:
+        repo = AppSettingsRepository(session)
+        original = repo.get("agent_combination_gate_min_win_rate")
+        repo.set("agent_combination_gate_min_win_rate", value, updated_by="test")
+    return original
+
+
+def _restore_gate_threshold(original: str) -> None:
+    with SessionFactory.get_session() as session:
+        AppSettingsRepository(session).set("agent_combination_gate_min_win_rate", original, updated_by="test")
+
+
+def test_combination_override_unbenches_a_domain_agreeing_with_a_trustworthy_group(tmp_path):
+    """Faz 367-devam — kullanıcı isteği: "ajanları kendi başlarına
+    değerlendirmeye devam ettiğimiz sürece çözemeyiz." technical solo
+    benchlenmiş (kötü geçmiş) ama ŞU AN quant ile AYNI yönde oy veriyor,
+    ve technical+quant tarihsel olarak güvenilir/eşik-üstü bir grup —
+    bench kararı geçersiz kılınmalı."""
+    memory = AgentMemory(storage_path=str(tmp_path))
+    _seed(memory, "technical", 15, was_correct=False, confidence=0.9)
+
+    original = _set_gate_threshold("0.74")
+    _save_trustworthy_report([{
+        "domains": ["technical", "quant"], "win_rate": 0.95,
+        "fdr_significant": True, "max_shared_trade_overlap_pct": 0.1, "sample_size": 40,
+    }])
+    try:
+        agent = SourceReliabilityAgent(memory=memory)
+        result = agent.annotate([
+            {"domain": "technical", "confidence": 0.9, "direction": "SHORT"},
+            {"domain": "quant", "confidence": 0.7, "direction": "SHORT"},
+        ])
+        technical = next(r for r in result if r["domain"] == "technical")
+        assert technical["benched"] is False
+        assert technical["combination_override_applied"] is True
+    finally:
+        _restore_gate_threshold(original)
+
+
+def test_combination_override_does_not_apply_when_agreeing_agents_dont_match_a_group(tmp_path):
+    """technical benchlenmiş ve ŞU AN sadece macro ile aynı yönde —
+    technical+macro güvenilir grup listesinde YOK, bench kararı korunmalı."""
+    memory = AgentMemory(storage_path=str(tmp_path))
+    _seed(memory, "technical", 15, was_correct=False, confidence=0.9)
+
+    original = _set_gate_threshold("0.74")
+    _save_trustworthy_report([{
+        "domains": ["technical", "quant"], "win_rate": 0.95,
+        "fdr_significant": True, "max_shared_trade_overlap_pct": 0.1, "sample_size": 40,
+    }])
+    try:
+        agent = SourceReliabilityAgent(memory=memory)
+        result = agent.annotate([
+            {"domain": "technical", "confidence": 0.9, "direction": "SHORT"},
+            {"domain": "macro", "confidence": 0.7, "direction": "SHORT"},
+        ])
+        technical = next(r for r in result if r["domain"] == "technical")
+        assert technical["benched"] is True
+        assert technical["combination_override_applied"] is False
+    finally:
+        _restore_gate_threshold(original)
+
+
+def test_combination_override_does_not_apply_when_agreeing_agents_vote_opposite_directions(tmp_path):
+    """technical+quant güvenilir bir grup ama BU KARARDA quant TERS yönde
+    (LONG) oy veriyor — technical'ın SHORT'u tek başına kalıyor, bench
+    kararı korunmalı."""
+    memory = AgentMemory(storage_path=str(tmp_path))
+    _seed(memory, "technical", 15, was_correct=False, confidence=0.9)
+
+    original = _set_gate_threshold("0.74")
+    _save_trustworthy_report([{
+        "domains": ["technical", "quant"], "win_rate": 0.95,
+        "fdr_significant": True, "max_shared_trade_overlap_pct": 0.1, "sample_size": 40,
+    }])
+    try:
+        agent = SourceReliabilityAgent(memory=memory)
+        result = agent.annotate([
+            {"domain": "technical", "confidence": 0.9, "direction": "SHORT"},
+            {"domain": "quant", "confidence": 0.7, "direction": "LONG"},
+        ])
+        technical = next(r for r in result if r["domain"] == "technical")
+        assert technical["benched"] is True
+        assert technical["combination_override_applied"] is False
+    finally:
+        _restore_gate_threshold(original)
+
+
+def test_combination_override_ignores_a_group_below_the_win_rate_threshold(tmp_path):
+    """technical+quant grubu var ama win_rate eşiğin altında — bench
+    kararı korunmalı, "sadece güçlendirme" ilkesi (gate ile AYNI eşik)."""
+    memory = AgentMemory(storage_path=str(tmp_path))
+    _seed(memory, "technical", 15, was_correct=False, confidence=0.9)
+
+    original = _set_gate_threshold("0.74")
+    _save_trustworthy_report([{
+        "domains": ["technical", "quant"], "win_rate": 0.50,
+        "fdr_significant": True, "max_shared_trade_overlap_pct": 0.1, "sample_size": 40,
+    }])
+    try:
+        agent = SourceReliabilityAgent(memory=memory)
+        result = agent.annotate([
+            {"domain": "technical", "confidence": 0.9, "direction": "SHORT"},
+            {"domain": "quant", "confidence": 0.7, "direction": "SHORT"},
+        ])
+        technical = next(r for r in result if r["domain"] == "technical")
+        assert technical["benched"] is True
+        assert technical["combination_override_applied"] is False
+    finally:
+        _restore_gate_threshold(original)
+
+
+def test_combination_override_never_applies_to_a_domain_that_wasnt_benched(tmp_path):
+    """Zaten benchlenmemiş bir domain'de override alanı False kalmalı —
+    "override" sadece GERÇEKTEN bir bench kararını geçersiz kıldığında
+    anlamlı, her zaman tetiklenen bir bayrak değil."""
+    memory = AgentMemory(storage_path=str(tmp_path))
+    _seed(memory, "pattern", 30, was_correct=True, confidence=0.6)
+
+    original = _set_gate_threshold("0.74")
+    _save_trustworthy_report([{
+        "domains": ["pattern", "quant"], "win_rate": 0.95,
+        "fdr_significant": True, "max_shared_trade_overlap_pct": 0.1, "sample_size": 40,
+    }])
+    try:
+        agent = SourceReliabilityAgent(memory=memory)
+        result = agent.annotate([
+            {"domain": "pattern", "confidence": 0.6, "direction": "SHORT"},
+            {"domain": "quant", "confidence": 0.7, "direction": "SHORT"},
+        ])
+        pattern = next(r for r in result if r["domain"] == "pattern")
+        assert pattern["benched"] is False
+        assert pattern["combination_override_applied"] is False
+    finally:
+        _restore_gate_threshold(original)
+
+
+def test_combination_override_is_a_noop_without_directions_in_opinions(tmp_path):
+    """Geriye dönük uyumluluk: direction hiç verilmezse (eski çağıran
+    şekli) davranış hiç değişmemeli — bench kararı solo hesaba göre kalır."""
+    memory = AgentMemory(storage_path=str(tmp_path))
+    _seed(memory, "technical", 15, was_correct=False, confidence=0.9)
+
+    agent = SourceReliabilityAgent(memory=memory)
+    result = agent.annotate([{"domain": "technical", "confidence": 0.9}])
+    assert result[0]["benched"] is True
+    assert result[0]["combination_override_applied"] is False

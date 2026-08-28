@@ -108,7 +108,7 @@ class CouncilOrchestrator:
         # confidence'i) göre güncelle — recalculate() intrinsic_trust/
         # effective_influence'ı bu yeni değerle yeniden hesaplar.
         annotated = self.reliability_annotator.annotate(
-            [{"domain": o.domain.value, "confidence": o.confidence} for o in opinions],
+            [{"domain": o.domain.value, "confidence": o.confidence, "direction": o.direction} for o in opinions],
             symbol=symbol,
         )
         for opinion, info in zip(opinions, annotated):

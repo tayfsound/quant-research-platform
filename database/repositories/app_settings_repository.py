@@ -244,6 +244,23 @@ DEFAULTS: dict[str, str] = {
     # bölünüyordu — hedef $80-100'lük pozisyonlar kuruşa (~$0.0007
     # notional) düşüyordu. Watchlist elle doğrulanmış, köklü 43 kripto +
     # 7 hisse/emtia/endekse (toplam 50) geri çekildi — kullanıcı tercihi.
+    # Faz 367-devam — kullanıcı bulgusu (2026-08-28): "NVDA/AAPL/MSFT/GC=F/
+    # SI=F/^IXIC/^GSPC binance'da token olarak var, neden doğrudan işlem
+    # alamayacağımız (Yahoo formatı) semboller watchlist'te duruyor."
+    # Gerçek Binance FUTURES exchangeInfo ile doğrulandı: AAPLUSDT/
+    # NVDAUSDT/MSFTUSDT/XAGUSDT/QQQUSDT/SPXUSDT hepsi GERÇEK, işlem gören
+    # USDT-marjinli perpetual — ama DENENİP GERİ ALINDI: market_data/
+    # ingestion/data_provider.py::BinanceProvider SADECE spot klines
+    # (api.binance.com) çekiyor, bu 6 sembolün HİÇBİRİ spot'ta yok (400
+    # Bad Request, gerçek testle doğrulandı) — sadece futures'ta işlem
+    # görüyorlar. XAUTUSDT (zaten listede) rastlantısal olarak HEM
+    # spot'ta HEM futures'ta var, o yüzden bugüne kadar sorun çıkmamıştı.
+    # Gerçek düzeltme için BinanceProvider'ın futures klines'a (fapi.
+    # binance.com) da düşebilmesi (ya da spot'ta yoksa futures'a fallback)
+    # gerekiyor — bu, OHLCVProvider soyutlamasını etkileyen daha büyük bir
+    # iş, ayrı bir turda ele alınacak. Şimdilik watchlist eski (Yahoo
+    # formatlı, sinyal üretilebilir ama testnet'te doğrudan işlem
+    # açılamaz) haline döndürüldü.
     "watchlist": "BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,ADAUSDT,XAUTUSDT,DOGEUSDT,TRXUSDT,LINKUSDT,UNIUSDT,NEARUSDT,ZECUSDT,AVAXUSDT,DOTUSDT,LTCUSDT,ATOMUSDT,APTUSDT,ARBUSDT,OPUSDT,SUIUSDT,INJUSDT,FILUSDT,ETCUSDT,ICPUSDT,BCHUSDT,WLDUSDT,TIAUSDT,SEIUSDT,RENDERUSDT,AAVEUSDT,ONDOUSDT,LDOUSDT,CRVUSDT,GALAUSDT,SANDUSDT,AXSUSDT,CHZUSDT,CAKEUSDT,ALGOUSDT,XLMUSDT,VETUSDT,JUPUSDT,AAPL,NVDA,MSFT,GC=F,SI=F,^IXIC,^GSPC",
     # Faz 199: portfolio_fusion.py'nin gerçekten bağlanması — aynı cycle'da
     # birden fazla sembol eşzamanlı yönlü öneri üretirse, gerçek kovaryans

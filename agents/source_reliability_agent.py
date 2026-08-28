@@ -130,8 +130,32 @@ class SourceReliabilityAgent:
         """Her opinion'a GERÇEK isabet oranından hesaplanan source_
         reliability ve benched durumunu ekler. symbol verilirse (bu
         council cycle'ının hangi enstrüman için çalıştığı) önce o
-        enstrümanın varlık sınıfına özel geçmiş kullanılır."""
+        enstrümanın varlık sınıfına özel geçmiş kullanılır.
+
+        Faz 367-devam — kullanıcı isteği: "ajanları kendi başlarına
+        değerlendirmeye devam ettiğimiz sürece çözemeyiz — başarı
+        kriterleri diğer ajanlarla ilişkiler silsilesi." Gerçek bulgu:
+        sentiment solo %5 ama pattern+sentiment %100 (bkz. contracts/
+        agent.py'nin sentiment notu); technical'ın SHORT'u solo çok kötü
+        görünse de (bu belirli dönemde PİYASA-GENELİ bir rejim etkisi —
+        tüm ajanlarda aynı desen doğrulandı) bu SOLO ölçüm asla o anki
+        gerçek KOMBİNASYON bağlamını görmüyordu. Artık her opinion'ın
+        `direction`ı da (varsa) veriliyorsa: bu domain'le AYNI yönde oy
+        veren diğer domain'lerle birlikte, en son haftalık raporun
+        GÜVENİLİR (FDR'ı geçmiş + düşük örtüşmeli — analytics/agent_
+        combination_reliability_gate.py::trustworthy_known_pairs ile AYNI
+        filtre) VE eşik-üstü (agent_combination_gate_min_win_rate) bir
+        grubun alt kümesiyse, solo-bench kararı GEÇERSİZ kılınır — o anki
+        GERÇEK şirket güçlüyse, geçmiş solo zayıflık tek başına artık
+        susturmuyor. Rapor yoksa/eşleşme yoksa (fail-closed) davranış hiç
+        değişmez."""
         cutoff = get_reliability_legacy_cutoff()
+        trustworthy_groups = self._load_trustworthy_groups()
+        direction_by_domain = {
+            op.get("domain"): op.get("direction")
+            for op in opinions
+            if op.get("direction") in ("LONG", "SHORT")
+        }
         for op in opinions:
             domain = op.get("domain", "unknown")
             summary = self._summary_for(domain, symbol, cutoff)
@@ -143,11 +167,48 @@ class SourceReliabilityAgent:
                 benched = reliability < self.BENCH_THRESHOLD
             if not benched and self._domain_drift_detected(domain, symbol, cutoff):
                 benched = True
+            combination_override = False
+            if benched and domain in direction_by_domain:
+                agreeing_now = {
+                    d for d, dirn in direction_by_domain.items()
+                    if dirn == direction_by_domain[domain]
+                }
+                if self._matches_a_trustworthy_group(agreeing_now, trustworthy_groups):
+                    benched = False
+                    combination_override = True
             op["source_reliability"] = reliability
             op["data_freshness_hours"] = 0.0
             op["source_count"] = summary.total_predictions
             op["benched"] = benched
+            op["combination_override_applied"] = combination_override
         return opinions
+
+    @staticmethod
+    def _load_trustworthy_groups() -> list[dict]:
+        try:
+            from database.repositories.agent_combination_reliability_report_repository import (
+                AgentCombinationReliabilityReportRepository,
+            )
+            from database.repositories.app_settings_repository import AppSettingsRepository
+            from database.session_factory import SessionFactory
+
+            with SessionFactory.get_session() as session:
+                report = AgentCombinationReliabilityReportRepository(session).get_latest()
+                min_win_rate_raw = AppSettingsRepository(session).get("agent_combination_gate_min_win_rate")
+        except Exception:
+            return []
+        if not report or not report.get("result"):
+            return []
+
+        from analytics.agent_combination_reliability_gate import DEFAULT_MIN_WIN_RATE, trustworthy_known_pairs
+
+        threshold = float(min_win_rate_raw) if min_win_rate_raw else DEFAULT_MIN_WIN_RATE
+        trustworthy = trustworthy_known_pairs(report["result"].get("pairs") or [])
+        return [g for g in trustworthy if g.get("win_rate", 0.0) >= threshold]
+
+    @staticmethod
+    def _matches_a_trustworthy_group(agreeing_now: set, trustworthy_groups: list[dict]) -> bool:
+        return any(set(g.get("domains", [])) <= agreeing_now for g in trustworthy_groups)
 
     def is_benched(self, domain: str, symbol: str | None = None) -> bool:
         cutoff = get_reliability_legacy_cutoff()
