@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from contracts.auth import Role
 from contracts.decision_event import DecisionEvent
+from database.repositories.app_settings_repository import AppSettingsRepository
 from database.repositories.decision_persistor import DecisionPersistor
 from database.session_factory import SessionFactory
 from tests.auth_helpers import make_authed_headers
@@ -18,6 +19,11 @@ def _client():
 
     from api.main import app
     return TestClient(app)
+
+
+def _set_ai_enabled(value: str, updated_by: str) -> None:
+    with SessionFactory.get_session() as session:
+        AppSettingsRepository(session).set("ai_enabled", value, updated_by=updated_by)
 
 
 def test_self_model_requires_auth():
@@ -32,13 +38,19 @@ def test_self_model_endpoint_wires_real_signals_end_to_end():
     overall_reliability'nin ne çıkacağı DB'nin o anki gerçek durumuna
     bağlı (bu yüzden sabit bir değer İDDİA EDİLMİYOR, calibration API
     testlerinin aynı gerçek-DB felsefesiyle). Burada asıl doğrulanan:
-    uçtan uca hatasız çalışıyor VE kill switch kapalıyken kill_switch_
-    active GERÇEKTEN False raporlanıyor (uydurma bir bayrak değil)."""
-    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
-        with patch(
-            "services.self_model_gatherer.load_position_risk_state",
-            return_value={"consecutive_losses": 0, "kill_switch_consecutive_losses": 10},
-        ):
+    uçtan uca hatasız çalışıyor VE ai_enabled gerçekten açıkken (ya da
+    kill_switch DIŞINDA bir sebeple kapalıyken) kill_switch_active
+    GERÇEKTEN False raporlanıyor (uydurma bir bayrak değil).
+
+    Faz 368 — kritik düzeltme (canlı olay, kullanıcı bulgusu): eskiden
+    kill_switch_active risk_state["consecutive_losses"]'in O ANKİ (canlı
+    yeniden hesaplanan) değerinden türetiliyordu — switch tetiklendikten
+    SONRA bir kazanç gelip sayaç eşiğin altına düşünce, switch HÂLÂ
+    aktifken (ai_enabled hâlâ false) bu yanlışlıkla False dönüyordu.
+    Artık GERÇEK duruma (ai_enabled + kim değiştirdi) bakılıyor."""
+    _set_ai_enabled("true", updated_by="test")
+    try:
+        with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
             client = _client()
             response = client.get("/api/v1/self-model/", headers=make_authed_headers(Role.VIEWER))
         assert response.status_code == 200
@@ -46,14 +58,18 @@ def test_self_model_endpoint_wires_real_signals_end_to_end():
         assert result["overall_reliability"] in ("high", "degraded", "untrustworthy")
         assert "inputs" in result
         assert result["inputs"]["kill_switch_active"] is False
+    finally:
+        _set_ai_enabled("true", updated_by="test")
 
 
-def test_self_model_flags_kill_switch_active():
-    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
-        with patch(
-            "services.self_model_gatherer.load_position_risk_state",
-            return_value={"consecutive_losses": 12, "kill_switch_consecutive_losses": 10},
-        ):
+def test_self_model_flags_kill_switch_active_from_real_ai_enabled_state():
+    """kill_switch_active artık risk_state'in canlı yeniden hesaplanan
+    sayacından DEĞİL, GERÇEK ai_enabled durumundan (updated_by='kill_
+    switch') geliyor — ardışık kayıp sayacı sıfırlansa bile switch
+    manuel açılmadıkça 'aktif' raporlanmaya devam etmeli."""
+    _set_ai_enabled("false", updated_by="kill_switch")
+    try:
+        with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
             client = _client()
             response = client.get("/api/v1/self-model/", headers=make_authed_headers(Role.VIEWER))
         assert response.status_code == 200
@@ -61,6 +77,23 @@ def test_self_model_flags_kill_switch_active():
         assert result["overall_reliability"] == "untrustworthy"
         assert "kill_switch_active" in result["reliability_flags"]
         assert result["inputs"]["kill_switch_active"] is True
+    finally:
+        _set_ai_enabled("true", updated_by="test")
+
+
+def test_kill_switch_active_is_false_when_ai_disabled_manually_not_by_kill_switch():
+    """ai_enabled=false ama kill switch DEĞİL, bir insan kapattıysa —
+    kill_switch_active hâlâ False olmalı, iki farklı durumu karıştırmamalı."""
+    _set_ai_enabled("false", updated_by="manual_user_action")
+    try:
+        with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+            client = _client()
+            response = client.get("/api/v1/self-model/", headers=make_authed_headers(Role.VIEWER))
+        assert response.status_code == 200
+        result = response.json()["result"]
+        assert result["inputs"]["kill_switch_active"] is False
+    finally:
+        _set_ai_enabled("true", updated_by="test")
 
 
 def test_self_model_computes_dsr_from_real_closed_trades():

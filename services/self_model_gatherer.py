@@ -17,7 +17,7 @@ from database.repositories.calibration_report_repository import CalibrationRepor
 from database.repositories.decision_persistor import DecisionPersistor
 from database.session_factory import SessionFactory
 from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMENT_BUCKET
-from services.risk_state import get_concept_drift_diagnostics, load_position_risk_state
+from services.risk_state import get_concept_drift_diagnostics
 
 _MIN_TRADES_FOR_DSR = 20
 
@@ -76,12 +76,25 @@ def gather_self_reliability_snapshot() -> dict:
         concept_diag = get_concept_drift_diagnostics(decision_repo)
         concept_drift_detected = bool(concept_diag.get("active"))
 
-    # Kill switch — RiskEngine'in tetikleme koşuluyla (engines/risk_engine.py)
-    # BİREBİR AYNI eşik karşılaştırması, kendi session'ını açıyor
-    # (load_position_risk_state zaten kendi bağlamını yönetiyor).
-    risk_state = load_position_risk_state()
-    threshold = risk_state["kill_switch_consecutive_losses"]
-    kill_switch_active = threshold > 0 and risk_state["consecutive_losses"] >= threshold
+    # Kill switch — Faz 368 kritik düzeltme: kullanıcı bulgusu (canlı olay,
+    # 2026-08-28) — gerçek kill switch tetiklenmiş (ai_enabled=false,
+    # updated_by='kill_switch', 11 ardışık kayıpla) ama Self-Model sayfası
+    # "hayır" gösteriyordu. Kök neden: eski kod risk_state["consecutive_
+    # losses"]'i CANLI yeniden hesaplıyordu (threshold'u GEÇİP GEÇMEDİĞİ,
+    # şu anki koşul) — kill switch tetiklendikten SONRA bir kazanç gelip
+    # sayaç eşiğin altına (11 -> 1) düşünce, switch HÂLÂ aktifken (ai_
+    # enabled hâlâ false, kimse elle açmadı) bu alan yanlışlıkla "hayır"
+    # dönüyordu. "kill_switch_active" GERÇEKTEN "şu an durduruldu mu"
+    # sorusuna cevap vermeli — koşulun şu an tekrar tetiklenip
+    # tetiklenmeyeceğine değil, GERÇEK anahtarın durumuna (ai_enabled +
+    # kim/ne değiştirdi) bakılıyor artık.
+    with SessionFactory.get_session() as session:
+        from database.repositories.app_settings_repository import AppSettingsRepository
+
+        settings_repo = AppSettingsRepository(session)
+        ai_enabled = settings_repo.get("ai_enabled")
+        ai_enabled_updated_by = settings_repo.get_updated_by("ai_enabled")
+    kill_switch_active = ai_enabled == "false" and ai_enabled_updated_by == "kill_switch"
 
     return compute_self_reliability_snapshot(
         ece=ece,
