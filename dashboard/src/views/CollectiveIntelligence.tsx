@@ -71,11 +71,12 @@ export default function CollectiveIntelligence() {
       <Card className="mb-6">
         <h3 className="text-sm font-semibold text-ink mb-1">Canlı ölçüm</h3>
         <p className="text-xs text-ink-soft mb-3">
-          Her ajanın son 20 gerçek yönlü kararının isabet oranı (SourceReliabilityAgent'ın kullandığı AYNI
-          pencere) — yeterli örneklemi (≥10) olmayan ajanlar (WAIT-only time/epistemology dahil) dışarıda
-          bırakılır. n=20 küçük bir örneklem olduğu için nokta tahminin yanında %95 Wilson güven aralığı da
-          gösteriliyor — dar bir aralık tahminin güvenilir olduğunu, geniş bir aralık (ör. %15 ± %20'lik bir
-          bant) tahminin çok az kararla belirlendiğini ve tek bir sonucun bile değiştirebileceğini gösterir.
+          Her ajanın son (en fazla 3000) gerçek yönlü kararının isabet oranı — yeterli örneklemi (≥10)
+          olmayan ajanlar (WAIT-only time/epistemology dahil) dışarıda bırakılır. Faz 368 — kullanıcı bulgusu:
+          bu pencere önceden SourceReliabilityAgent'ın CANLI bench mekanizmasından kopyalanmış son-20 sabitiydi
+          (orada doğru — "ajan SON 20 kararda çöktü mü" hızlı tepki için — ama burada yanlış, istatistiksel
+          bir soru için çok küçük bir örneklemdi). %95 Wilson güven aralığı yine de gösteriliyor — dar bir
+          aralık tahminin güvenilir olduğunu, geniş bir aralık tahminin hâlâ az kararla belirlendiğini gösterir.
         </p>
 
         {loading ? (
@@ -112,7 +113,7 @@ export default function CollectiveIntelligence() {
                 <thead>
                   <tr className="text-left text-ink-faint border-b border-line-soft">
                     <th className="py-2 pr-4">Ajan</th>
-                    <th className="py-2 pr-4">Son 20 karar isabeti</th>
+                    <th className="py-2 pr-4">Karar isabeti</th>
                     <th className="py-2 pr-4">%95 güven aralığı</th>
                     <th className="py-2 pr-4">Örneklem</th>
                   </tr>
