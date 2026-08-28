@@ -119,6 +119,16 @@ def test_summarize_ablation_by_domain_aggregates_correctly():
     assert stats["caused_trade_total_pnl"] == 7.0
     assert stats["flipped_direction_count"] == 1
     assert stats["not_pivotal_count"] == 1
+    assert stats["caused_trade_expectancy"] == 3.5  # 7.0 / 2 caused trades
+    assert stats["caused_trade_rate"] == 0.5  # 2 caused / 4 toplam oy
+
+
+def test_summarize_ablation_by_domain_expectancy_is_none_with_no_caused_trades():
+    records = [{"domain": "technical", "impact": "not_pivotal", "pnl": 1.0}]
+    summary = summarize_ablation_by_domain(records)
+    stats = summary["technical"]
+    assert stats["caused_trade_expectancy"] is None
+    assert stats["caused_trade_rate"] == 0.0
 
 
 def test_summarize_ablation_by_domain_win_rate_is_none_below_min_samples():

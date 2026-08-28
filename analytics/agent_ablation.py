@@ -215,5 +215,19 @@ def summarize_ablation_by_domain(records: list[dict]) -> dict:
             ),
             "flipped_direction_count": len(flipped),
             "not_pivotal_count": len(domain_records) - len(caused) - len(flipped),
+            # Faz 368 — GPT dış rapor önerisi (kullanıcı isteği): mutlak
+            # caused_trade_total_pnl tek başına yanıltıcı — order_flow'un
+            # 50 caused_trade'de ürettiği toplam, macro'nun 576 caused_
+            # trade'de ürettiğinden daha KÜÇÜK olabilir ama İŞLEM BAŞINA
+            # çok daha güçlü olabilir. caused_trade_expectancy (işlem
+            # başına ortalama pnl) bu iki boyutu ayırıyor. caused_trade_
+            # rate (bu domain'in TÜM oylarının ne kadarının gerçekten
+            # pivot olduğu) "geniş bağlam sağlayıcı" (yüksek rate, orta
+            # expectancy) ile "seçici güçlü tetikleyici" (düşük rate,
+            # yüksek expectancy) rollerini ayırt etmeye yarıyor.
+            "caused_trade_expectancy": (
+                round(sum(r["pnl"] for r in caused) / len(caused), 4) if caused else None
+            ),
+            "caused_trade_rate": round(len(caused) / len(domain_records), 4) if domain_records else 0.0,
         }
     return summary
