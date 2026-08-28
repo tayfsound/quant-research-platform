@@ -64,11 +64,24 @@ def _resynthesize_with_domain_excluded(agent_contributions: list[dict], excluded
     impact ve compute_leave_one_out_counterfactual_direction'ın PAYLAŞTIĞI
     tek yeniden-sentezleme adımı — iki fonksiyon arasında sürüklenme
     riski olmasın diye."""
-    from services.belief_engine import BeliefEngine
-
     opinions = reconstruct_opinions(agent_contributions)
     if not opinions:
         return None
+    return synthesize_with_domain_excluded(opinions, excluded_domain)
+
+
+def synthesize_with_domain_excluded(opinions: list[AgentOpinion], excluded_domain: str):
+    """Faz 368 — kullanıcı isteği: analytics/pivotal_agent_sizing_gate.py
+    CANLI bir karar döngüsünde (henüz agent_contributions'a serileştirilip
+    kaydedilmemiş, elde zaten list[AgentOpinion] varken) "bu domain
+    OLMASAYDI şu anki karar ne olurdu" sorusunu sormak istiyor —
+    _resynthesize_with_domain_excluded'in dict->reconstruct_opinions
+    adımı burada GEREKSIZ bir round-trip olurdu. Alt seviye ortak adım
+    buraya çıkarıldı, _resynthesize_with_domain_excluded (geçmiş/
+    kaydedilmiş kararlar için) ÜSTÜNE ince bir sarmalayıcı oldu — davranış
+    DEĞİŞMEDİ, sadece paylaşılıyor."""
+    from services.belief_engine import BeliefEngine
+
     if not any(o.domain.value == excluded_domain for o in opinions):
         return None
 

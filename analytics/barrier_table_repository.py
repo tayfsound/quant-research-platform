@@ -12,7 +12,18 @@ _DEFAULT_STORAGE_PATH = os.environ.get("BARRIER_TABLE_STORAGE_PATH", "barrier_ta
 # Bu oturumda daha önce doğrulanan (koşullu Adaptive Barrier OOS testi)
 # AYNI gruplama — farklı bir gruplamayla kaydedilmiş bir tablo farklı bir
 # şey ölçer, bu yüzden sabit tutuluyor.
-GROUP_BY = ("direction", "regime", "volatility_regime")
+#
+# Faz 368 — kullanıcı bulgusu: kripto işlem geçmişi hisse/emtia'dan
+# ÇOK daha kalabalık olduğu için (direction, regime, volatility_regime)
+# kovaları fiilen kripto tarafından kalibre ediliyordu — MSFT/GC=F gibi
+# semboller kendi risk profiline göre DEĞİL, hangi kovaya denk geldiyse
+# ona göre (kripto-uygun) SL/TP oranı alıyordu. "asset_class" eklendi —
+# services/agent_memory.py::asset_class_trading_category() ile AYNI kaba
+# (crypto/commodity/equity) sınıflandırma kullanılıyor (asset_class_
+# trading_gate'in de kullandığı TEK kaynak) — ince taneli sınıflandırma
+# (gold_backed/precious_metal_future/equity/equity_index ayrı ayrı) veri
+# seyrekliğinden dolayı min_group_size eşiğini geçemezdi.
+GROUP_BY = ("direction", "regime", "volatility_regime", "asset_class")
 
 
 class BarrierTableRepository:

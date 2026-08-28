@@ -682,6 +682,14 @@ DEFAULTS: dict[str, str] = {
     # ekler).
     "mae_mfe_bucket_trading_enabled": "{}",
 
+    # Kullanıcı isteği (2026-08-28): Dashboard'daki "LONG/SHORT kazanma
+    # oranı" kartlarına manuel bir aç/kapa anahtarı — bkz. analytics/
+    # direction_trading_gate.py. Varsayılan HER İKİSİ AÇIK — bu diğer
+    # kapılardan FARKLI olarak bilinçli bir kullanıcı kararı: "short
+    # işlemlerini kısıtlamayalım, ben gerekli görürsem dashboard'dan
+    # kapatırım" — hiçbir analiz/rapor bu anahtarı otomatik değiştirmemeli.
+    "direction_trading_enabled": '{"LONG": true, "SHORT": true}',
+
     # Kullanıcı isteği (2026-08-28): "kararı vermeden önce burayı
     # tarayacak, ajan gruplarının başarısını ölçecek — eşiğin altında
     # kalıyorsa pozisyonu açmayacak." bkz. analytics/agent_combination_

@@ -498,6 +498,13 @@ export default function Dashboard() {
   const toggleRegime = (key: string) => {
     save("regime_trading_enabled", JSON.stringify({ ...regimeEnabled, [key]: !regimeEnabled[key] }));
   };
+  // Kullanıcı isteği (2026-08-28): "LONG/SHORT kazanma oranı" kartlarına
+  // manuel aç/kapa — SADECE kullanıcı tercihi, hiçbir analiz/rapor bunu
+  // otomatik değiştirmiyor (bkz. analytics/direction_trading_gate.py).
+  const directionEnabled = parseJsonMap(settings.direction_trading_enabled, { LONG: true, SHORT: true });
+  const toggleDirection = (key: string) => {
+    save("direction_trading_enabled", JSON.stringify({ ...directionEnabled, [key]: !directionEnabled[key] }));
+  };
   const ASSET_CLASS_KEYS: Record<string, string> = { Kripto: "crypto", Emtia: "commodity", "Hisse Senedi": "equity" };
   const REGIME_LABELS: [string, string][] = [
     ["bullish_high", "Yükseliş — Yüksek Vol."],
@@ -702,12 +709,38 @@ export default function Dashboard() {
               value={`%${(perf.by_direction.LONG.win_rate * 100).toFixed(0)}`}
               tone={perf.by_direction.LONG.win_rate >= 0.5 ? "rise" : "fall"}
               sub={`${perf.by_direction.LONG.win_count} kazandı / ${perf.by_direction.LONG.loss_count} kaybetti (${perf.by_direction.LONG.trade_count} işlem)`}
+              action={
+                <button
+                  onClick={() => toggleDirection("LONG")}
+                  disabled={saving === "direction_trading_enabled"}
+                  className={`px-2 py-1 rounded-md text-xs font-medium border transition-colors shrink-0 ${
+                    directionEnabled.LONG !== false
+                      ? "bg-accent text-white border-accent"
+                      : "bg-canvas-soft text-ink-faint border-line hover:bg-surface-soft"
+                  }`}
+                >
+                  {directionEnabled.LONG !== false ? "Açık" : "Kapalı"}
+                </button>
+              }
             />
             <StatCard
               label="SHORT kazanma oranı"
               value={`%${(perf.by_direction.SHORT.win_rate * 100).toFixed(0)}`}
               tone={perf.by_direction.SHORT.win_rate >= 0.5 ? "rise" : "fall"}
               sub={`${perf.by_direction.SHORT.win_count} kazandı / ${perf.by_direction.SHORT.loss_count} kaybetti (${perf.by_direction.SHORT.trade_count} işlem)`}
+              action={
+                <button
+                  onClick={() => toggleDirection("SHORT")}
+                  disabled={saving === "direction_trading_enabled"}
+                  className={`px-2 py-1 rounded-md text-xs font-medium border transition-colors shrink-0 ${
+                    directionEnabled.SHORT !== false
+                      ? "bg-accent text-white border-accent"
+                      : "bg-canvas-soft text-ink-faint border-line hover:bg-surface-soft"
+                  }`}
+                >
+                  {directionEnabled.SHORT !== false ? "Açık" : "Kapalı"}
+                </button>
+              }
             />
           </div>
 
@@ -773,7 +806,7 @@ export default function Dashboard() {
                 <p className="text-xs uppercase tracking-wide text-ink-faint font-medium">
                   Varlık Sınıfına Göre AI Başarı Oranı
                 </p>
-                <p className="text-xs text-ink-faint">aç/kapa: bu sınıfta yeni giriş alınsın mı</p>
+                <p className="text-xs text-ink-faint">Aç/Kapa: Bu sınıfta yeni giriş alınsın mı?</p>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {["Kripto", "Emtia", "Hisse Senedi"].map((category) => {

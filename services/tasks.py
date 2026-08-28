@@ -368,6 +368,37 @@ def refresh_barrier_table_task() -> dict:
     return {"buckets": len(table)}
 
 
+@celery_app.task(name="refresh_self_correction_sizing_task")
+def refresh_self_correction_sizing_task() -> dict:
+    """Faz 368 — kullanıcı kararı: LONG'un son dönem çöküşü tespit
+    edildiğinde pozisyon boyutu kademeli küçülsün (bkz. analytics/self_
+    correction_sizing_gate.py). services/scientific_self_correction_
+    gatherer.py ucuz (~0.1sn) ama karar döngüsünde sembol başına tekrar
+    tekrar çağrılması gereksiz — refresh_barrier_table_task ile AYNI
+    "periyodik hesapla, dosyaya kaydet, karar anında sadece oku" deseni."""
+    from analytics.self_correction_sizing_repository import SelfCorrectionSizingRepository
+    from services.scientific_self_correction_gatherer import gather_scientific_self_correction
+
+    result = gather_scientific_self_correction()
+    SelfCorrectionSizingRepository().save(result["segments"])
+    return {"segments": list(result["segments"].keys())}
+
+
+@celery_app.task(name="refresh_symbol_performance_sizing_task")
+def refresh_symbol_performance_sizing_task() -> dict:
+    """Faz 368 — kullanıcı bulgusu: council SL zararları belirli sembol×yön
+    hücrelerinde sistematik olarak yoğunlaşıyor (bkz. analytics/symbol_
+    performance_sizing_gate.py). refresh_self_correction_sizing_task ile
+    AYNI 'periyodik hesapla, dosyaya kaydet, karar anında sadece oku'
+    deseni — sembol başına canlı SQL taraması tekrarlanmıyor."""
+    from analytics.symbol_performance_sizing_repository import SymbolPerformanceSizingRepository
+    from services.symbol_direction_performance_gatherer import gather_symbol_direction_performance
+
+    result = gather_symbol_direction_performance()
+    SymbolPerformanceSizingRepository().save(result["by_symbol_direction"])
+    return {"symbol_direction_pairs": len(result["by_symbol_direction"])}
+
+
 @celery_app.task(name="auto_reject_stale_weight_approvals_task")
 def auto_reject_stale_weight_approvals_task(max_age_hours: float = 24) -> dict:
     """Faz 229: kritik bulgu — canlı üretimde WeightOptimizer.optimize()/

@@ -27,6 +27,7 @@ type CombinationPair = {
   fdr_significant: boolean;
   max_shared_trade_overlap_pct: number;
   max_shared_trade_overlap_with: string[] | null;
+  distinct_days: number | null;
 };
 
 type CombinationResult = {
@@ -152,7 +153,10 @@ export default function AgentCombinationReliability() {
           birlikte nihai yönle aynı yönde oy vermişse listelenir, kazanma oranına göre en yüksekten en düşüğe
           sıralı. "Örtüşme" sütunu, grubun işlemlerinin ne kadarının AYNI zamanda başka (domain paylaşan) bir
           grupla da örtüştüğünü gösterir — yüksek örtüşme, bunun bağımsız bir bulgu değil, aynı işlemlerin
-          tekrar sayımı olabileceği anlamına gelir.
+          tekrar sayımı olabileceği anlamına gelir. "Gün sayısı" grubun işlemlerinin kaç FARKLI takvim gününe
+          yayıldığını gösterir — düşük gün sayısı (ör. tüm işlemler 1-2 günlük tek bir dar pencereden), düşük
+          örtüşmeye sahip bir grup için bile "bağımsız kanıt" yerine dar bir rejim/olay artefaktı olabileceğine
+          işaret eder.
         </p>
 
         {loading ? (
@@ -177,6 +181,7 @@ export default function AgentCombinationReliability() {
                   <th className="py-2 pr-4">Baseline'a göre fark</th>
                   <th className="py-2 pr-4">Örneklem</th>
                   <th className="py-2 pr-4">Örtüşme</th>
+                  <th className="py-2 pr-4">Gün sayısı</th>
                   <th className="py-2 pr-4">FDR sonrası</th>
                 </tr>
               </thead>
@@ -201,6 +206,13 @@ export default function AgentCombinationReliability() {
                         >
                           %{(p.max_shared_trade_overlap_pct * 100).toFixed(0)}
                         </span>
+                      ) : (
+                        <span className="text-ink-faint">—</span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-4">
+                      {p.distinct_days != null ? (
+                        <span className={p.distinct_days < 5 ? "text-fall" : "text-ink-soft"}>{p.distinct_days}</span>
                       ) : (
                         <span className="text-ink-faint">—</span>
                       )}

@@ -583,6 +583,209 @@ class DrawdownSizingStage:
         return ctx
 
 
+class SelfCorrectionSizingStage:
+    """Faz 368 — kullanıcı kararı (2026-08-28, Grok raporu doğrulaması):
+    scientific_self_correction'ın "bu yönün hipotezi hâlâ geçerli mi?"
+    sorusunu (services/scientific_self_correction_gatherer.py) pozisyon
+    boyutuna bağlar. DrawdownSizingStage ile AYNI "asla büyütmez, sadece
+    küçültür" ilkesi — o ardışık kayba tepki verirken, bu YÖNÜN kendi
+    istatistiksel geçmişinin son dönemde çöküp çökmediğine tepki verir.
+    Kararı asla ENGELLEMEZ (LONG kaldırmayalım kararı — direction_
+    trading_gate ayrı, kullanıcının manuel anahtarı), sadece boyutu
+    orantılı küçültür. Veri kaynağı GÜNLÜK bir dosya-tabanlı anlık
+    görüntü (analytics/self_correction_sizing_repository.py) — barrier
+    table ile AYNI desen, her kararda ~3500 satırlık bir SQL taraması
+    tekrarlanmıyor."""
+
+    def execute(self, ctx: CognitiveCycleContext) -> CognitiveCycleContext:
+        if (ctx.decision.final_size or 0.0) <= 0:
+            return ctx
+
+        direction = (ctx.decision.proposed_direction or "").upper()
+        if direction not in ("LONG", "SHORT"):
+            return ctx
+
+        from analytics.self_correction_sizing_gate import self_correction_size_multiplier
+        from analytics.self_correction_sizing_repository import SelfCorrectionSizingRepository
+
+        stored = SelfCorrectionSizingRepository().get_latest()
+        segment = (stored or {}).get("segments", {}).get(f"direction={direction}")
+        multiplier = self_correction_size_multiplier(segment)
+
+        if multiplier < 1.0:
+            ctx.cognition.relevant_knowledge.append({
+                "type": "self_correction_sizing",
+                "data": {
+                    "direction": direction,
+                    "exposure_multiplier": multiplier,
+                    "original_win_rate": (segment or {}).get("original_win_rate"),
+                    "recent_win_rate": (segment or {}).get("recent_win_rate"),
+                },
+            })
+            ctx.decision.final_size = round(ctx.decision.final_size * multiplier, 8)
+
+        return ctx
+
+
+class SelfModelSizingStage:
+    """Faz 368 — kullanıcı bulgusu (2026-08-28): "Kill Switch aktif olduğu
+    halde self control kapalı gibi görünüyor" — Self-Model'in overall_
+    reliability'si ("high"/"degraded"/"untrustworthy") hiçbir trading
+    kararına bağlı DEĞİLDİ, sadece dashboard'da gösteriliyordu (bkz.
+    analytics/self_model_sizing_gate.py'nin notu). Gerçek sert kill switch
+    zaten ayrı çalışıyor (engines/risk_engine.py); bu stage Self-Model'in
+    DAHA YUMUŞAK "degraded" sinyalini boyuta bağlıyor. Veri kaynağı
+    self_model_snapshots tablosu (services/tasks.py::refresh_self_model_
+    report_task, artık GÜNLÜK — DrawdownSizingStage'in aksine gather_self_
+    reliability_snapshot() ~1.4sn sürüyor, sembol başına tekrar tekrar
+    çağrılamaz, barrier table/self-correction sizing ile AYNI 'periyodik
+    hesapla, kaydet, karar anında sadece oku' deseni)."""
+
+    def execute(self, ctx: CognitiveCycleContext) -> CognitiveCycleContext:
+        if (ctx.decision.final_size or 0.0) <= 0:
+            return ctx
+
+        from analytics.self_model_sizing_gate import self_model_size_multiplier
+        from database.repositories.self_model_report_repository import SelfModelReportRepository
+        from database.session_factory import SessionFactory
+
+        with SessionFactory.get_session() as session:
+            stored = SelfModelReportRepository(session).get_latest()
+        overall_reliability = (stored or {}).get("result", {}).get("overall_reliability")
+        multiplier = self_model_size_multiplier(overall_reliability)
+
+        if multiplier < 1.0:
+            ctx.cognition.relevant_knowledge.append({
+                "type": "self_model_sizing",
+                "data": {
+                    "overall_reliability": overall_reliability,
+                    "exposure_multiplier": multiplier,
+                },
+            })
+            ctx.decision.final_size = round(ctx.decision.final_size * multiplier, 8)
+
+        return ctx
+
+
+class PivotalAgentSizingStage:
+    """Faz 368 — kullanıcı bulgusu (Grok raporu doğrulaması, agent_
+    ablation.py'nin GERÇEK karşı-olgusal verisi): technical ajanı pivot
+    olduğunda (oyu OLMASAYDI bu karar hiç açılmaz/farklı yöne açılırdı)
+    kazanma oranı %25.4 (n=63) — genel ortalamanın çok altında; order_
+    flow/macro ise pivot olunca TAM TERSİNE çok güçlü. Bu stage HERHANGİ
+    bir domain'i hardcode ETMİYOR (bkz. analytics/pivotal_agent_sizing_
+    gate.py'nin notu) — haftalık ablation raporundan 'pivot-olunca-kötü'
+    domain'leri okuyup, O ANKİ kararda GERÇEKTEN pivot olup olmadığını
+    (agent_ablation.py::synthesize_with_domain_excluded ile CANLI, ucuz
+    bir yeniden-sentez — DB sorgusu yok) test eder. Birden fazla riskli
+    domain pivotsa EN KÖTÜ (en düşük) çarpan uygulanır — 'iyi bir domain
+    de vardı' bahanesiyle kötü bir domain görmezden gelinmez (agent_
+    combination_reliability_gate.py ile AYNI ilke)."""
+
+    def execute(self, ctx: CognitiveCycleContext, opinions: list | None = None) -> CognitiveCycleContext:
+        if (ctx.decision.final_size or 0.0) <= 0 or not opinions:
+            return ctx
+
+        direction = (ctx.decision.proposed_direction or "").upper()
+        if direction not in ("LONG", "SHORT"):
+            return ctx
+
+        from analytics.agent_ablation import synthesize_with_domain_excluded
+        from analytics.pivotal_agent_sizing_gate import (
+            identify_risky_pivotal_domains,
+            pivotal_domain_size_multiplier,
+        )
+        from database.repositories.agent_ablation_report_repository import AgentAblationReportRepository
+        from database.repositories.app_settings_repository import AppSettingsRepository
+        from database.session_factory import SessionFactory
+
+        with SessionFactory.get_session() as session:
+            settings_repo = AppSettingsRepository(session)
+            baseline_win_rate = float(settings_repo.get("agent_combination_gate_min_win_rate"))
+            stored = AgentAblationReportRepository(session).get_latest()
+        by_domain = (stored or {}).get("result", {}).get("by_domain", {})
+        risky_domains = identify_risky_pivotal_domains(by_domain, baseline_win_rate)
+        if not risky_domains:
+            return ctx
+
+        opinion_domains = {o.domain.value for o in opinions if o.direction == direction}
+
+        worst_multiplier = 1.0
+        worst_domain = None
+        for domain, win_rate in risky_domains.items():
+            if domain not in opinion_domains:
+                continue
+            counterfactual = synthesize_with_domain_excluded(opinions, domain)
+            if counterfactual is None or counterfactual.direction == direction:
+                continue  # bu kararda gerçekten pivot DEĞİL — o olmasa da aynı yön çıkardı
+            multiplier = pivotal_domain_size_multiplier(win_rate, baseline_win_rate)
+            if multiplier < worst_multiplier:
+                worst_multiplier = multiplier
+                worst_domain = domain
+
+        if worst_multiplier < 1.0:
+            ctx.cognition.relevant_knowledge.append({
+                "type": "pivotal_agent_sizing",
+                "data": {
+                    "pivotal_domain": worst_domain,
+                    "caused_trade_win_rate": risky_domains.get(worst_domain),
+                    "exposure_multiplier": worst_multiplier,
+                },
+            })
+            ctx.decision.final_size = round(ctx.decision.final_size * worst_multiplier, 8)
+
+        return ctx
+
+
+class SymbolPerformanceSizingStage:
+    """Faz 368 — kullanıcı bulgusu (Grok raporu doğrulaması): council SL
+    zararları belirli sembol×yön hücrelerinde sistematik olarak
+    yoğunlaşıyor (ör. ATOMUSDT_LONG n=41, %31.7 kazanma, -$38.2k). Kara
+    liste DEĞİL (kullanıcı kararı, LONG/SHORT anahtarındaki AYNI tercih:
+    "kısıtlamayalım, boyut küçültelim") — analytics/symbol_performance_
+    sizing_gate.py ile AYNI orantılı 'asla büyütmez, sadece küçültür'
+    ailesi. Veri kaynağı günlük dosya-tabanlı anlık görüntü (analytics/
+    symbol_performance_sizing_repository.py — barrier table/self-
+    correction sizing ile AYNI desen)."""
+
+    def execute(self, ctx: CognitiveCycleContext) -> CognitiveCycleContext:
+        if (ctx.decision.final_size or 0.0) <= 0:
+            return ctx
+
+        direction = (ctx.decision.proposed_direction or "").upper()
+        if direction not in ("LONG", "SHORT") or not ctx.market.symbol:
+            return ctx
+
+        from analytics.symbol_performance_sizing_gate import symbol_direction_size_multiplier
+        from analytics.symbol_performance_sizing_repository import SymbolPerformanceSizingRepository
+        from database.repositories.app_settings_repository import AppSettingsRepository
+        from database.session_factory import SessionFactory
+
+        with SessionFactory.get_session() as session:
+            baseline_win_rate = float(AppSettingsRepository(session).get("agent_combination_gate_min_win_rate"))
+
+        stored = SymbolPerformanceSizingRepository().get_latest()
+        key = f"{ctx.market.symbol}_{direction}"
+        entry = (stored or {}).get("by_symbol_direction", {}).get(key)
+        multiplier = symbol_direction_size_multiplier(
+            (entry or {}).get("win_rate"), (entry or {}).get("sample_size"), baseline_win_rate,
+        )
+
+        if multiplier < 1.0:
+            ctx.cognition.relevant_knowledge.append({
+                "type": "symbol_performance_sizing",
+                "data": {
+                    "symbol_direction": key,
+                    "win_rate": (entry or {}).get("win_rate"),
+                    "sample_size": (entry or {}).get("sample_size"),
+                    "exposure_multiplier": multiplier,
+                },
+            })
+            ctx.decision.final_size = round(ctx.decision.final_size * multiplier, 8)
+
+        return ctx
+
+
 class RiskTargetStage:
     """Faz 191 — gerçek bulgu: DecisionFusion (aşağıda) `ctx.decision.
     take_profit_distance`/`stop_loss_distance`'a bakıp Expected Value hesaplıyordu, ama
@@ -648,11 +851,23 @@ class RiskTargetStage:
     EV'den türeyen bir oranı doğrudan uygulamak anlamsız bir "neredeyse
     anında kâr al" hedefi üretirdi; SHORT'un kendisi ayrı bir inceleme
     konusu (kalıcı bir düzeltme değil, gerçek kanıt eşiği geçilmeden hiçbir
-    kalıcı değişiklik yapılmıyor ilkesiyle tutarlı)."""
+    kalıcı değişiklik yapılmıyor ilkesiyle tutarlı).
+
+    Faz 368 — kullanıcı kararı (2026-08-28, canlı olay): barrier tablosu
+    artık SIFIR SHORT kovası üretiyor (bkz. analytics/mae_mfe.py::
+    MIN_DISTINCT_DAYS notu — SHORT/bear_trend geçmişi neredeyse tamamen
+    tek bir 3 günlük ters-yön rallisinden geliyordu), yani HER SHORT kararı
+    bu statik orana düşüyor. 1.4 ~%64.1 breakeven confidence istiyordu —
+    kullanıcı bunu geçici olarak 1.8'e gevşetmeyi seçti (~%58.1 breakeven,
+    2.5/(1.8+2.5)) — daha fazla GERÇEK SHORT denemesi biriksin diye (n=20
+    şu an istatistiksel olarak hiçbir şey kanıtlamıyor). Kalıcı bir "SHORT
+    düzeldi" iddiası DEĞİL — sadece örneklem biriktirme kapısı biraz
+    aralandı, scientific_self_correction SHORT hipotezi hâlâ 'geçerli'
+    (kötü) diyor."""
     DEFAULT_STOP_ATR_MULT_LONG = 2.5
     DEFAULT_TARGET_ATR_MULT_LONG = 6.89
     DEFAULT_STOP_ATR_MULT_SHORT = 2.5
-    DEFAULT_TARGET_ATR_MULT_SHORT = 1.4
+    DEFAULT_TARGET_ATR_MULT_SHORT = 1.8
     # Faz 268-sonrası — gerçek bulgu: kapanmış işlemleri "scalp" (stop <
     # %4.5, bkz. api/rest/positions.py::_SCALP_MAX_STOP_PCT) / gün_içi /
     # swing türüne göre ayırınca, scalp TEK BAŞINA toplam zararın %92'sini
@@ -858,11 +1073,14 @@ class RiskTargetStage:
             if stored is None:
                 return None
 
+            from services.agent_memory import asset_class_trading_category
+
             features = ctx.market.features or {}
             context = {
                 "direction": (ctx.decision.proposed_direction or "").upper(),
                 "regime": features.get("long_term_trend_regime", "unknown"),
                 "volatility_regime": features.get("volatility_regime", "unknown"),
+                "asset_class": asset_class_trading_category(ctx.market.symbol) or "unknown",
                 "confidence": ctx.decision.confidence or 0.0,
             }
             recommendation = recommend_barrier(context, stored["table"], group_by=tuple(stored["group_by"]))

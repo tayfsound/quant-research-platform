@@ -32,7 +32,23 @@ bağımsız bulgu" sorusunu yanıtlamak için her grubun, domain paylaşan
 diğer gruplarla (boyutundan BAĞIMSIZ) ne kadar örtüştüğü de raporlanıyor.
 
 Kasıtlı olarak SADECE ölçüm/rapor — hiçbir pozisyon/risk/ajan-ağırlık
-kararını burada otomatik değiştirmiyor."""
+kararını burada otomatik değiştirmiyor.
+
+Faz 368 — kullanıcı bulgusu (harici bir GPT incelemesi + canlı doğrulama):
+24 farklı grup birebir aynı win_rate_delta_vs_baseline (0.2965) veriyordu.
+Kod seviyesinde delta formülünde bug YOK (basitçe win_rate - baseline) ve
+outcome hiçbir eligibility kararını etkilemiyor (leakage yok) — canlı
+veriyle doğrulandı: pattern+sentiment grubunun (n=166, win_rate=%100)
+TAMAMI 20-22 Ağustos arası ~42 saatlik TEK bir pencereden, hepsi LONG.
+Yani ölçüm YANLIŞ değil — o dar pencerede piyasa gerçekten öyle sert bir
+ralli yapmış ki hangi kombinasyon LONG'a katıldıysa otomatik kazanmış.
+Mevcut max_shared_trade_overlap_pct SADECE domain-paylaşımlı gruplar
+arasındaki örtüşmeyi yakalıyordu — farklı domain kombinasyonlarına sahip
+ama AYNI dar zaman penceresinden gelen iki grubu YAKALAMIYORDU. Bu yüzden
+her adayın kaç FARKLI takvim gününe yayıldığı da (distinct_days) rapor
+ediliyor — düşük distinct_days + yüksek win_rate, "bağımsız kombinasyon
+sinerjisi" değil "dar bir rejim/dönem artefaktı" ihtimalini güçlendiren
+dürüst bir uyarı (overlap ile AYNI ilke, ayrı bir eksen)."""
 from collections import defaultdict
 from itertools import combinations
 
@@ -131,6 +147,7 @@ def compute_combination_reliability(
             if overlap > max_overlap_pct:
                 max_overlap_pct = overlap
                 max_overlap_with = other_key
+        closed_dates = {r["closed_at"].date() for r in group if r.get("closed_at") is not None}
         candidates.append({
             "domains": list(domains),
             "combination_size": len(domains),
@@ -139,6 +156,7 @@ def compute_combination_reliability(
             "win_rate_ci": compute_accuracy_confidence_interval(wins, len(group)),
             "max_shared_trade_overlap_pct": round(max_overlap_pct, 4),
             "max_shared_trade_overlap_with": list(max_overlap_with) if max_overlap_with else None,
+            "distinct_days": len(closed_dates) if closed_dates else None,
             "_wins": wins,
         })
 

@@ -4,12 +4,22 @@ intelligence.py::compute_expected_majority_accuracy() saf (pure) kalıyor
 — gerçek veriye dokunan kod burada.
 
 10 gerçek yönlü-oy-veren ajanın (contracts/agent.py::VOTING_AGENT_
-DOMAINS) her biri için AgentMemory'nin GERÇEK, son 20 kararlık isabet
-oranı (services/source_reliability_agent.py'nin kullandığı AYNI WINDOW,
-AYNI MIN_SAMPLES eşiği — tek gerçek kaynak) toplanır; yeterli örneklemi
-olmayan bir ajan (WAIT-only time/epistemology dahil, hiç yönlü oy
-vermedikleri için total_predictions=0 kalır) hesaba dahil edilmez —
-icat edilmiş bir "%50 varsayılan" asla kullanılmaz."""
+DOMAINS) her biri için AgentMemory'nin GERÇEK isabet oranı toplanır;
+yeterli örneklemi olmayan bir ajan (WAIT-only time/epistemology dahil,
+hiç yönlü oy vermedikleri için total_predictions=0 kalır) hesaba dahil
+edilmez — icat edilmiş bir "%50 varsayılan" asla kullanılmaz.
+
+Faz 368 — kullanıcı bulgusu (Grok raporu doğrulaması sırasında, ":D n=20
+da neyin nesi" tepkisiyle): WINDOW=20 önceden services/source_reliability_
+agent.py'nin CANLI bench/un-bench mekanizmasından kopyalanmıştı — o
+modülde küçük pencere BİLİNÇLİ bir tasarım ("ajan SON 20 kararda çöktü
+mü" — hızlı tepki, eski veri seni yavaşlatmasın). Ama bu rapor tamamen
+FARKLI bir soru soruyor ("istatistiksel olarak konsey en iyi bireyi
+geçiyor mu?") — orada aynı sabiti kullanmak bir kopyala-yapıştır hatasıydı,
+binlerce kapanmış karar dururken n=20'de nokta tahmini yapılıyordu.
+MAX_DECISIONS artık services/agent_ablation_gatherer.py::MAX_DECISIONS
+ile AYNI ölçek (3000) — bu raporun da "yeterince geniş, gerçek istatistik"
+prensibiyle tutarlı, ayrı bir sayı icat edilmedi."""
 from analytics.collective_intelligence import (
     compute_accuracy_confidence_interval,
     compute_expected_majority_accuracy,
@@ -17,7 +27,7 @@ from analytics.collective_intelligence import (
 from contracts.agent import VOTING_AGENT_DOMAINS
 from services.agent_memory import AgentMemory
 
-WINDOW = 20
+WINDOW = 3000
 MIN_SAMPLES = 10
 
 
@@ -32,14 +42,22 @@ def gather_collective_intelligence() -> dict:
     for domain in sorted(d.value for d in VOTING_AGENT_DOMAINS):
         summary = memory.get_summary(domain, window=WINDOW)
         if summary.total_predictions >= MIN_SAMPLES:
-            per_agent_accuracy[domain] = summary.recent_accuracy
+            # Faz 368 — kritik düzeltme: summary.recent_accuracy her zaman
+            # AgentMemory.get_summary()'nin kendi İÇ SABİTİ olan son 20
+            # kayıttan hesaplanıyor (window parametresinden bağımsız, bkz.
+            # o metodun "recent = records[-20:]" satırı) — yukarıdaki
+            # WINDOW=3000'i sadece total_predictions'a yansıtıp accuracy'yi
+            # hâlâ 20'de bırakırdı (sayı büyük görünür ama altındaki oran
+            # hâlâ n=20'den gelir — yanıltıcı). summary.overall_accuracy
+            # gerçekten window (3000) kadar kaydın ortalaması.
+            per_agent_accuracy[domain] = summary.overall_accuracy
             per_agent_sample_size[domain] = summary.total_predictions
-            # Faz 303 — n=20'de nokta tahmini tek başına yanıltıcı
+            # Faz 303 — küçük n'de nokta tahmini tek başına yanıltıcı
             # olabiliyor (bkz. analytics/collective_intelligence.py::
             # compute_accuracy_confidence_interval yorumu) — Wilson
             # aralığı bilgilendirme amaçlı ekleniyor, hiçbir hesabı
             # değiştirmiyor.
-            correct = round(summary.recent_accuracy * summary.total_predictions)
+            correct = round(summary.overall_accuracy * summary.total_predictions)
             ci = compute_accuracy_confidence_interval(correct, summary.total_predictions)
             if ci is not None:
                 per_agent_confidence_interval[domain] = ci

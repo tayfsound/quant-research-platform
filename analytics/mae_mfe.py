@@ -233,6 +233,17 @@ _BARRIER_QUANTILE_LEVELS = (0.5, 0.6, 0.7, 0.8, 0.9)
 # 1.4/2.5=0.56'nın çok altında — sadece GERÇEKTEN dejenere durumları eler,
 # normal muhafazakâr önerilere dokunmaz).
 MIN_REWARD_RISK_RATIO = 0.15
+# Faz 368 — kullanıcı bulgusu (canlı olay): SHORT|bear_trend/low kovasının
+# 260 örnekleminin NEREDEYSE TAMAMI 19-22 Ağustos'taki tek bir ters-yön
+# rallisinden geliyordu (win_rate=%0) — analytics/agent_combination_
+# reliability_gate.py'ye AYNI gün eklenen distinct_days teşhisiyle AYNI
+# kök neden, burada TERSİ yönde (sahte "sinerji" yerine sahte "felaket").
+# min_group_size (20) TEK BAŞINA yetmiyor — 260 örneklem büyük görünüyor
+# ama hepsi aynı ~3 günlük olaydan. agent_combination_reliability_gate.py
+# ile AYNI eşik (5) — ayrı bir modülde tekrar tanımlı (barrier tablosu ve
+# ajan-kombinasyonu bağımsız kavramlar, ama "dar bir tarihsel pencere
+# genellenemez" ilkesi ortak).
+MIN_DISTINCT_DAYS = 5
 
 
 def _counterfactual_barrier_outcome(trade: dict, sl_pct: float, tp_pct: float) -> str:
@@ -356,9 +367,18 @@ def compute_optimal_barrier(
         # ~%87'nin (0.15/(0.15+1)) üstüne çıkaran bir öneri hiç
         # döndürülmüyor, statik orana düşülüyor.
         reward_risk_ratio = (best["tp_pct"] / best["sl_pct"]) if best is not None and best["sl_pct"] > 0 else 0.0
-        if best is not None and best["expected_value_pct"] > 0 and reward_risk_ratio >= MIN_REWARD_RISK_RATIO:
+        distinct_days = len({
+            t["closed_at"].date() for t in group_trades if t.get("closed_at") is not None
+        })
+        if (
+            best is not None
+            and best["expected_value_pct"] > 0
+            and reward_risk_ratio >= MIN_REWARD_RISK_RATIO
+            and distinct_days >= MIN_DISTINCT_DAYS
+        ):
             label = "|".join(f"{field}={value}" for field, value in zip(group_by, key))
             best["total_sample_size"] = len(group_trades)
+            best["distinct_days"] = distinct_days
             results[label] = best
     return results
 

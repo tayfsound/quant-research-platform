@@ -599,6 +599,12 @@ type OutcomeFilter = "all" | "profit" | "loss";
 // "testnet" rozeti, aşağıda), sadece filtre eksikti.
 type ExecutionModeFilter = "all" | "testnet" | "simulated";
 
+// Kullanıcı isteği (2026-08-28): "emtia, hisse, token diye kategori
+// yapalım." services/agent_memory.py::asset_class_trading_category() ile
+// AYNI kaba (crypto/commodity/equity) sınıflandırma — backend'e ayrı bir
+// alan eklemeden, sabit/küçük sembol listesinden frontend'de türetiliyor.
+type CategoryFilter = "all" | "crypto" | "commodity" | "equity";
+
 // Kullanıcı isteği (2026-08-28): "kapanan ve açık işlemler aynı anda
 // görüntülenmese, hangisini açacağımızı seçebileceğimiz bir kart gibi bir
 // şey olsa." Önceden iki liste alt alta hep açık duruyordu — kapanmışlara
@@ -641,6 +647,26 @@ function matchesExecutionModeFilter(p: Position, filter: ExecutionModeFilter): b
   return p.execution_mode !== "testnet";
 }
 
+const CATEGORY_FILTER_OPTIONS: { value: CategoryFilter; label: string }[] = [
+  { value: "all", label: "Tüm kategoriler" },
+  { value: "crypto", label: "Token" },
+  { value: "commodity", label: "Emtia" },
+  { value: "equity", label: "Hisse" },
+];
+
+function assetClassCategory(symbol: string): CategoryFilter | null {
+  const s = (symbol || "").toUpperCase();
+  if (s === "GC=F" || s === "SI=F" || s === "PAXGUSDT" || s === "XAUTUSDT") return "commodity";
+  if (s === "AAPL" || s === "NVDA" || s === "MSFT" || s === "^IXIC" || s === "^GSPC") return "equity";
+  if (/(USDT|BUSD|USDC|FDUSD)$/.test(s)) return "crypto";
+  return null;
+}
+
+function matchesCategoryFilter(p: Position, filter: CategoryFilter): boolean {
+  if (filter === "all") return true;
+  return assetClassCategory(p.symbol) === filter;
+}
+
 function FilterSelect<T extends string>({
   value, onChange, options,
 }: {
@@ -671,6 +697,7 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
   const [directionFilter, setDirectionFilter] = useState<DirectionFilter>("all");
   const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>("all");
   const [executionModeFilter, setExecutionModeFilter] = useState<ExecutionModeFilter>("all");
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
   const [closingId, setClosingId] = useState<string | null>(null);
   const [closeError, setCloseError] = useState<string | null>(null);
   const [closingProfitable, setClosingProfitable] = useState(false);
@@ -701,7 +728,7 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
   const TRADES_PAGE_SIZE = 100;
   const [tradesPage, setTradesPage] = useState(0);
 
-  const hasActiveFilters = typeFilter !== "all" || directionFilter !== "all" || outcomeFilter !== "all" || executionModeFilter !== "all";
+  const hasActiveFilters = typeFilter !== "all" || directionFilter !== "all" || outcomeFilter !== "all" || executionModeFilter !== "all" || categoryFilter !== "all";
 
   const filteredTrades = useMemo(() => {
     let result = trades;
@@ -714,17 +741,19 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
       && matchesDirectionFilter(t, directionFilter)
       && matchesOutcomeFilter(t.pnl, outcomeFilter)
       && matchesExecutionModeFilter(t, executionModeFilter)
+      && matchesCategoryFilter(t, categoryFilter)
     );
-  }, [trades, sinceMinutes, typeFilter, directionFilter, outcomeFilter, executionModeFilter]);
+  }, [trades, sinceMinutes, typeFilter, directionFilter, outcomeFilter, executionModeFilter, categoryFilter]);
 
   const filteredOpen = useMemo(() => {
     return open.filter((p) =>
       matchesTypeFilter(p, typeFilter)
       && matchesDirectionFilter(p, directionFilter)
       && matchesOutcomeFilter(p.net_unrealized_pnl, outcomeFilter)
+      && matchesCategoryFilter(p, categoryFilter)
       && matchesExecutionModeFilter(p, executionModeFilter)
     );
-  }, [open, typeFilter, directionFilter, outcomeFilter, executionModeFilter]);
+  }, [open, typeFilter, directionFilter, outcomeFilter, executionModeFilter, categoryFilter]);
 
   const filteredSummary = useMemo(() => {
     if (sinceMinutes === null && !hasActiveFilters) return null;
@@ -871,6 +900,7 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-ink-faint font-medium mr-1">Filtrele:</span>
           <FilterSelect value={typeFilter} onChange={setTypeFilter} options={TYPE_FILTER_OPTIONS} />
+          <FilterSelect value={categoryFilter} onChange={setCategoryFilter} options={CATEGORY_FILTER_OPTIONS} />
           <FilterSelect
             value={directionFilter}
             onChange={setDirectionFilter}

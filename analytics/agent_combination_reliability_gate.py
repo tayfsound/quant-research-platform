@@ -29,18 +29,33 @@ yönünün gerçekten iyi çalıştığı gözlemlensin)."""
 # tutarlı şekilde zarara işaret ediyor (baseline'a göre negatif fark).
 DEFAULT_MIN_WIN_RATE = 0.74
 DEFAULT_MAX_OVERLAP_PCT = 0.50
+# Faz 368 — kullanıcı bulgusu (GPT incelemesi + canlı doğrulama): örtüşme
+# eşiği TEK BAŞINA yetmiyor — farklı domain kombinasyonlarına sahip iki
+# grup (düşük overlap) yine de AYNI dar tarihsel pencereden (ör. tek bir
+# ~42 saatlik ralli) gelip "bağımsız kanıt" gibi görünebiliyordu (bkz.
+# agent_combination_reliability.py'nin pattern+sentiment n=166 örneği —
+# 166 işlemin TAMAMI 20-22 Ağustos'tan). En az bu kadar FARKLI takvim
+# gününe yayılmayan bir grup "kanıtlanmış" sayılmaz — dar bir rejim/olay
+# artefaktını "sinerji" sanmayı engellemek için.
+DEFAULT_MIN_DISTINCT_DAYS = 5
 
 
 def trustworthy_known_pairs(
     report_pairs: list[dict],
     max_overlap_pct: float = DEFAULT_MAX_OVERLAP_PCT,
+    min_distinct_days: int = DEFAULT_MIN_DISTINCT_DAYS,
 ) -> list[dict]:
     """Rapordaki TÜM gruplardan, gerçekten bağımsız kanıt sayılabilecek
-    (FDR'ı geçmiş VE örtüşmesi düşük) alt kümeyi çıkarır — kapı fonksiyonu
-    SADECE bu alt kümeye bakar, ham rapor asla doğrudan kullanılmaz."""
+    (FDR'ı geçmiş VE örtüşmesi düşük VE yeterince geniş bir zaman
+    aralığına yayılmış) alt kümeyi çıkarır — kapı fonksiyonu SADECE bu alt
+    kümeye bakar, ham rapor asla doğrudan kullanılmaz. distinct_days
+    bilinmiyorsa (eski/kayıp closed_at verisi) fail-closed dışlanır —
+    "kanıtlanmış" varsayılan durum değil, ispat gerekir."""
     return [
         p for p in report_pairs
-        if p.get("fdr_significant") and p.get("max_shared_trade_overlap_pct", 1.0) < max_overlap_pct
+        if p.get("fdr_significant")
+        and p.get("max_shared_trade_overlap_pct", 1.0) < max_overlap_pct
+        and (p.get("distinct_days") or 0) >= min_distinct_days
     ]
 
 

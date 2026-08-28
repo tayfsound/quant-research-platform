@@ -193,20 +193,43 @@ def test_competing_risk_separates_groups_by_condition():
 
 
 def _barrier_trade(mae_pct, mfe_pct, time_to_mae=100.0, time_to_mfe=50.0, direction="LONG",
-                    regime="bull_trend", volatility_regime="normal", confidence=0.7) -> dict:
+                    regime="bull_trend", volatility_regime="normal", confidence=0.7, closed_at=None) -> dict:
     return {
         "mae_pct": mae_pct, "mfe_pct": mfe_pct,
         "time_to_mae_seconds": time_to_mae, "time_to_mfe_seconds": time_to_mfe,
         "direction": direction, "regime": regime,
         "volatility_regime": volatility_regime, "confidence": confidence,
+        "closed_at": closed_at,
     }
+
+
+def _spread_over_distinct_days(n: int, start=None):
+    """Faz 368 — kullanıcı bulgusu: min_group_size TEK BAŞINA yetmiyor,
+    bir kova dar bir tarihsel pencereden (ör. tek bir olay) gelebiliyordu.
+    compute_optimal_barrier artık MIN_DISTINCT_DAYS de istiyor — bu
+    yardımcı, n trade'i en az MIN_DISTINCT_DAYS FARKLI takvim gününe
+    (round-robin) yayar, testlerin gerçek çeşitliliği simüle etmesi için."""
+    from datetime import UTC, datetime, timedelta
+
+    from analytics.mae_mfe import MIN_DISTINCT_DAYS
+
+    base = start or datetime(2026, 8, 1, tzinfo=UTC)
+    days = max(MIN_DISTINCT_DAYS, 1)
+    return [base + timedelta(days=i % days, hours=i) for i in range(n)]
+
+
+_ONE_DAY = datetime(2026, 8, 20, 12, tzinfo=UTC)
 
 
 def test_optimal_barrier_computes_real_ev_for_constant_trades():
     """Tüm trade'ler aynı mae/mfe/zamanlamaya sahipse yüzdelikler hep aynı
     değere düşer, tek aday çift kalır — EV hesabı (gerçek maker/taker fee
     dahil) doğru olmalı."""
-    trades = [_barrier_trade(mae_pct=-0.01, mfe_pct=0.03, time_to_mae=100.0, time_to_mfe=50.0) for _ in range(30)]
+    dates = _spread_over_distinct_days(30)
+    trades = [
+        _barrier_trade(mae_pct=-0.01, mfe_pct=0.03, time_to_mae=100.0, time_to_mfe=50.0, closed_at=dates[i])
+        for i in range(30)
+    ]
     result = compute_optimal_barrier(trades, group_by=("direction",), min_group_size=20, min_decisive_count=20)
     key = "direction=LONG"
     assert key in result
@@ -229,8 +252,9 @@ def test_optimal_barrier_censors_trades_that_hit_neither_barrier():
     """Bazı trade'ler ne aday SL'ye ne aday TP'ye ulaşmıyorsa (ekstremumları
     çok küçük) o çift için decisive_sample_size küçülmeli — 40'ın tamamı
     asla sayılmamalı, censored olan hiç sayılmamalı (icat edilmemeli)."""
-    reaching = [_barrier_trade(mae_pct=-0.02, mfe_pct=0.05) for _ in range(20)]
-    barely_moving = [_barrier_trade(mae_pct=-0.001, mfe_pct=0.001) for _ in range(20)]
+    dates = _spread_over_distinct_days(40)
+    reaching = [_barrier_trade(mae_pct=-0.02, mfe_pct=0.05, closed_at=dates[i]) for i in range(20)]
+    barely_moving = [_barrier_trade(mae_pct=-0.001, mfe_pct=0.001, closed_at=dates[20 + i]) for i in range(20)]
     result = compute_optimal_barrier(
         reaching + barely_moving, group_by=("direction",), min_group_size=20, min_decisive_count=15,
     )
@@ -244,9 +268,13 @@ def test_optimal_barrier_separates_groups_by_regime():
     girer. bear: MAE'ye ÖNCE ulaşılıyor (SL kazanır) → negatif EV — iki
     grup birbirinden bağımsız hesaplanıyor ama bear_trend, negatif EV
     yüzünden SONUÇTA HİÇ GÖRÜNMÜYOR (bkz. aşağıdaki test)."""
+    bull_dates = _spread_over_distinct_days(25)
     bull = [
-        _barrier_trade(mae_pct=-0.01, mfe_pct=0.04, time_to_mae=100.0, time_to_mfe=50.0, regime="bull_trend")
-        for _ in range(25)
+        _barrier_trade(
+            mae_pct=-0.01, mfe_pct=0.04, time_to_mae=100.0, time_to_mfe=50.0, regime="bull_trend",
+            closed_at=bull_dates[i],
+        )
+        for i in range(25)
     ]
     bear = [
         _barrier_trade(mae_pct=-0.03, mfe_pct=0.01, time_to_mae=50.0, time_to_mfe=200.0, regime="bear_trend")
@@ -271,9 +299,13 @@ def test_optimal_barrier_excludes_a_bucket_whose_best_candidate_is_still_negativ
     ATR oranına düşüyor."""
     # MAE her zaman büyük, MFE her zaman küçük — hangi (sl,tp) çifti
     # denenirse denensin gerçekçi hiçbir kombinasyon kârlı çıkamaz.
+    losing_dates = _spread_over_distinct_days(30)
     losing = [
-        _barrier_trade(mae_pct=-0.15, mfe_pct=0.005, time_to_mae=50.0, time_to_mfe=200.0, regime="bear_trend")
-        for _ in range(30)
+        _barrier_trade(
+            mae_pct=-0.15, mfe_pct=0.005, time_to_mae=50.0, time_to_mfe=200.0, regime="bear_trend",
+            closed_at=losing_dates[i],
+        )
+        for i in range(30)
     ]
     result = compute_optimal_barrier(losing, group_by=("regime",), min_group_size=20, min_decisive_count=20)
     assert "regime=bear_trend" not in result
@@ -288,14 +320,36 @@ def test_optimal_barrier_excludes_a_positive_ev_bucket_with_an_unreachable_rewar
     büyük ama YAVAŞ (time_to_mae büyük) — TP her zaman zamanlama avantajıyla
     kazanıyor (gerçek EV pozitif), ama sl_pct adayları hep büyük kalıp
     oran hep MIN_REWARD_RISK_RATIO'nun altında kalıyor."""
+    trade_dates = _spread_over_distinct_days(30)
     trades = []
+    i = 0
     for mae in (-0.08, -0.10, -0.12, -0.15, -0.20, -0.25):
         trades += [
-            _barrier_trade(mae_pct=mae, mfe_pct=0.01, time_to_mae=1000.0, time_to_mfe=10.0, regime="bear_trend")
-            for _ in range(5)
+            _barrier_trade(
+                mae_pct=mae, mfe_pct=0.01, time_to_mae=1000.0, time_to_mfe=10.0, regime="bear_trend",
+                closed_at=trade_dates[i + j],
+            )
+            for j in range(5)
         ]
+        i += 5
     result = compute_optimal_barrier(trades, group_by=("regime",), min_group_size=20, min_decisive_count=20)
     assert "regime=bear_trend" not in result
+
+
+def test_optimal_barrier_excludes_a_bucket_concentrated_in_a_narrow_time_window():
+    """Faz 368 — kullanıcı bulgusu (gerçek canlı olay): SHORT|bear_trend/low
+    kovasının 260 örnekleminin NEREDEYSE TAMAMI tek bir ~3 günlük ters-yön
+    rallisinden (19-22 Ağustos) geliyordu — min_group_size (20) kolayca
+    geçiliyordu ama bu 'bağımsız kanıt' değil, tek bir olayın tekrar
+    sayımıydı. Trade'lerin HEPSİ AYNI GÜNDE kapanmışsa (min_group_size'ı
+    fazlasıyla geçse bile) kova artık dışlanmalı."""
+    same_day_trades = [
+        _barrier_trade(mae_pct=-0.01, mfe_pct=0.03, time_to_mae=100.0, time_to_mfe=50.0, closed_at=_ONE_DAY)
+        for _ in range(30)
+    ]
+    result = compute_optimal_barrier(same_day_trades, group_by=("direction",), min_group_size=20, min_decisive_count=20)
+    assert "direction=LONG" not in result
+    assert result == {}
 
 
 def _decomp_trade(exit_reason: str, mfe_pct: float, confidence=0.7, direction="LONG",

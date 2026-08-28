@@ -13,7 +13,11 @@ from engines.cognitive_pipeline import (
     PredictiveRiskStage,
     RecordingStage,
     RiskGateStage,
+    PivotalAgentSizingStage,
     RiskTargetStage,
+    SelfCorrectionSizingStage,
+    SelfModelSizingStage,
+    SymbolPerformanceSizingStage,
 )
 from engines.memory_engine import MemoryEngine
 from engines.risk_engine import RiskEngine
@@ -45,6 +49,10 @@ class CognitiveEngine:
         self.meta_stage = MetaStage()
         self.predictive_risk_stage = PredictiveRiskStage()
         self.drawdown_sizing_stage = DrawdownSizingStage()
+        self.self_correction_sizing_stage = SelfCorrectionSizingStage()
+        self.self_model_sizing_stage = SelfModelSizingStage()
+        self.pivotal_agent_sizing_stage = PivotalAgentSizingStage()
+        self.symbol_performance_sizing_stage = SymbolPerformanceSizingStage()
         self.risk_target_stage = RiskTargetStage()
         self.decision_fusion = DecisionFusionStage()
         self.record_stage = RecordingStage()
@@ -79,6 +87,10 @@ class CognitiveEngine:
         ctx = self.meta_stage.execute(ctx, belief, opinions)
         ctx = self.predictive_risk_stage.execute(ctx)
         ctx = self.drawdown_sizing_stage.execute(ctx)
+        ctx = self.self_correction_sizing_stage.execute(ctx)
+        ctx = self.self_model_sizing_stage.execute(ctx)
+        ctx = self.pivotal_agent_sizing_stage.execute(ctx, opinions)
+        ctx = self.symbol_performance_sizing_stage.execute(ctx)
         ctx = self.risk_target_stage.execute(ctx, opinions)
         ctx = self.decision_fusion.execute(ctx, belief, opinions)
         ctx = self.risk_gate_stage.execute(ctx)

@@ -20,13 +20,23 @@ def is_mae_mfe_bucket_trading_blocked(bucket_key: str | None, enabled_map: dict)
     return enabled_map.get(bucket_key, True) is False
 
 
-def build_bucket_key(direction: str, regime: str, volatility_regime: str) -> str:
+def build_bucket_key(direction: str, regime: str, volatility_regime: str, asset_class: str = "unknown") -> str:
     """analytics/mae_mfe.py::compute_conditional_mae_distribution'ın
     ürettiği etiketle (barrier_table_repository.py::GROUP_BY sırasıyla)
     BİREBİR aynı formatı üretir — dashboard'daki "Kova" sütunundaki
     metin doğrudan ayar anahtarı olsun diye, ayrı bir eşleme/çeviri
-    katmanı icat edilmiyor."""
+    katmanı icat edilmiyor.
+
+    Faz 368 — GROUP_BY'a asset_class eklendi (bkz. barrier_table_
+    repository.py'deki not); varsayılan="unknown" eski çağrı yerlerinin
+    (varsa) kırılmaması için, ama tek gerçek çağıran (decision_recorder.py)
+    bunu her zaman açıkça geçiyor."""
     from analytics.barrier_table_repository import GROUP_BY
 
-    values = {"direction": direction, "regime": regime, "volatility_regime": volatility_regime}
+    values = {
+        "direction": direction,
+        "regime": regime,
+        "volatility_regime": volatility_regime,
+        "asset_class": asset_class,
+    }
     return "|".join(f"{field}={values[field]}" for field in GROUP_BY)

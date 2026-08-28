@@ -39,7 +39,7 @@ def _ctx(symbol: str, direction: str = "LONG", regime: str = "bull_trend", volat
 
 def test_bucket_disabled_blocks_a_matching_entry():
     _reset_defaults()
-    _set_bucket_map({"direction=LONG|regime=bull_trend|volatility_regime=normal": False})
+    _set_bucket_map({"direction=LONG|regime=bull_trend|volatility_regime=normal|asset_class=crypto": False})
     symbol = f"MMTEST{uuid.uuid4().hex[:6]}USDT"
     try:
         event = DecisionRecorder().record(_ctx(symbol), [])
@@ -60,7 +60,7 @@ def test_different_direction_in_same_regime_is_not_blocked():
     """LONG kapalıyken AYNI rejim/volatilitedeki SHORT etkilenmemeli —
     kova anahtarı direction'ı da içeriyor."""
     _reset_defaults()
-    _set_bucket_map({"direction=LONG|regime=bull_trend|volatility_regime=normal": False})
+    _set_bucket_map({"direction=LONG|regime=bull_trend|volatility_regime=normal|asset_class=crypto": False})
     symbol = f"MMTEST{uuid.uuid4().hex[:6]}USDT"
     try:
         event = DecisionRecorder().record(_ctx(symbol, direction="SHORT"), [])
@@ -71,7 +71,7 @@ def test_different_direction_in_same_regime_is_not_blocked():
 
 def test_different_volatility_regime_is_not_blocked():
     _reset_defaults()
-    _set_bucket_map({"direction=LONG|regime=bull_trend|volatility_regime=normal": False})
+    _set_bucket_map({"direction=LONG|regime=bull_trend|volatility_regime=normal|asset_class=crypto": False})
     symbol = f"MMTEST{uuid.uuid4().hex[:6]}USDT"
     try:
         event = DecisionRecorder().record(_ctx(symbol, volatility_regime="high"), [])
@@ -82,7 +82,7 @@ def test_different_volatility_regime_is_not_blocked():
 
 def test_bucket_explicitly_enabled_does_not_block():
     _reset_defaults()
-    _set_bucket_map({"direction=LONG|regime=bull_trend|volatility_regime=normal": True})
+    _set_bucket_map({"direction=LONG|regime=bull_trend|volatility_regime=normal|asset_class=crypto": True})
     symbol = f"MMTEST{uuid.uuid4().hex[:6]}USDT"
     try:
         event = DecisionRecorder().record(_ctx(symbol), [])

@@ -126,15 +126,20 @@ export function StatCard({
   value,
   sub,
   tone = "neutral",
+  action,
 }: {
   label: string;
   value: ReactNode;
   sub?: string;
   tone?: keyof typeof badgeTones;
+  action?: ReactNode;
 }) {
   return (
     <Card>
-      <p className="text-xs uppercase tracking-wide text-ink-faint font-medium break-words">{label}</p>
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs uppercase tracking-wide text-ink-faint font-medium break-words">{label}</p>
+        {action}
+      </div>
       <p
         className={`text-2xl font-semibold mt-2 break-words leading-tight ${tone === "rise" ? "text-rise" : tone === "fall" ? "text-fall" : "text-ink"}`}
         title={typeof value === "string" || typeof value === "number" ? String(value) : undefined}

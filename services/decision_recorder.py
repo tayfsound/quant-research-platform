@@ -196,6 +196,27 @@ class DecisionRecorder:
             if is_regime_trading_blocked(market_regime, regime_enabled_map):
                 opens_position = False
 
+        # Kullanıcı isteği (2026-08-28): Dashboard'daki "LONG/SHORT kazanma
+        # oranı" kartlarına manuel bir aç/kapa anahtarı — Grok raporunun
+        # SHORT'u otomatik daralt/kapat önerisine karşı, kullanıcı açıkça:
+        # "short işlemlerini kısıtlamayalım, ben gerekli görürsem
+        # dashboard'dan kapatırım" dedi. Bu yüzden varsayılan HER ZAMAN
+        # açık (fail-open) — sadece kullanıcı elle kapatırsa etkili olur,
+        # rapor/model asla otomatik tetiklemez.
+        if opens_position and experiment_bucket is None:
+            import json as _json
+
+            from analytics.direction_trading_gate import is_direction_trading_blocked
+            from database.repositories.app_settings_repository import AppSettingsRepository
+
+            raw_map = AppSettingsRepository(self.session).get("direction_trading_enabled")
+            try:
+                direction_enabled_map = _json.loads(raw_map) if raw_map else {}
+            except (ValueError, TypeError):
+                direction_enabled_map = {}
+            if is_direction_trading_blocked(direction, direction_enabled_map):
+                opens_position = False
+
         # Kullanıcı isteği (2026-08-28): canlıya kademeli geçiş için,
         # yukarıdaki rejim kapısından DAHA GRANÜLER bir kontrol — MAE/MFE
         # Güven Aralığı sayfasının (direction|regime|volatility_regime)
@@ -213,6 +234,7 @@ class DecisionRecorder:
                 is_mae_mfe_bucket_trading_blocked,
             )
             from database.repositories.app_settings_repository import AppSettingsRepository
+            from services.agent_memory import asset_class_trading_category
 
             raw_map = AppSettingsRepository(self.session).get("mae_mfe_bucket_trading_enabled")
             try:
@@ -224,6 +246,7 @@ class DecisionRecorder:
                 direction,
                 features.get("long_term_trend_regime", "unknown"),
                 features.get("volatility_regime", "unknown"),
+                asset_class_trading_category(ctx.market.symbol) or "unknown",
             )
             if is_mae_mfe_bucket_trading_blocked(bucket_key, bucket_enabled_map):
                 opens_position = False

@@ -61,6 +61,7 @@ _LOW_TRUSTED_PAIR = {
     "domains": ["technical", "quant"], "combination_size": 2, "sample_size": 40,
     "win_rate": 0.40, "win_rate_delta_vs_baseline": -0.30, "fdr_significant": True,
     "max_shared_trade_overlap_pct": 0.1, "max_shared_trade_overlap_with": None,
+    "distinct_days": 10,
 }
 
 

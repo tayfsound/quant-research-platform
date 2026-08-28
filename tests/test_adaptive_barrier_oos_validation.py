@@ -4,11 +4,14 @@ mantığını (train/test/embargo bölünmesi, path-relabeling ile karşı-olgus
 sonuç, baseline'a karşı gerçek karşılaştırma) doğrular — gerçek/canlı
 backtest verisi burada YOK (bkz. scripts/ altındaki ayrı, canlı Binance
 verisiyle çalışan analiz)."""
+from datetime import UTC, datetime, timedelta
+
 from analytics.adaptive_barrier_oos_validation import run_oos_validation
+from analytics.mae_mfe import MIN_DISTINCT_DAYS
 
 
 def _trade(entry_time, mae_pct, mfe_pct, net_return_pct, time_to_mae=100.0, time_to_mfe=50.0,
-           direction="LONG", regime="bull", volatility_regime="normal", confidence=0.7) -> dict:
+           direction="LONG", regime="bull", volatility_regime="normal", confidence=0.7, closed_at=None) -> dict:
     return {
         "entry_time": entry_time,
         "mae_pct": mae_pct, "mfe_pct": mfe_pct,
@@ -16,7 +19,17 @@ def _trade(entry_time, mae_pct, mfe_pct, net_return_pct, time_to_mae=100.0, time
         "direction": direction, "regime": regime,
         "volatility_regime": volatility_regime, "confidence": confidence,
         "net_return_pct": net_return_pct,
+        "closed_at": closed_at,
     }
+
+
+def _spread_over_distinct_days(n: int) -> list[datetime]:
+    """Faz 368 — compute_optimal_barrier artık TRAIN kovasının da
+    MIN_DISTINCT_DAYS'i geçmesini istiyor (bkz. o modülün notu) — tek bir
+    dar tarihsel pencere 'öğrenilmiş' bir bariyer üretmemeli."""
+    base = datetime(2026, 8, 1, tzinfo=UTC)
+    days = max(MIN_DISTINCT_DAYS, 1)
+    return [base + timedelta(days=i % days, hours=i) for i in range(n)]
 
 
 def test_returns_insufficient_data_when_too_few_trades():
@@ -32,10 +45,11 @@ def test_oos_validation_compares_adaptive_barrier_against_real_baseline_on_held_
     profili) — TEST'teki GERÇEK (baseline) sonuç kasıtlı olarak kötü
     (ortalama -0.005), adaptive'in path-relabeling ile türetilen sonucu
     bundan gerçekten daha iyi çıkmalı."""
+    train_dates = _spread_over_distinct_days(70)
     trades = []
     # TRAIN: 70 trade, tek profil.
     for i in range(70):
-        trades.append(_trade(i, mae_pct=-0.01, mfe_pct=0.03, net_return_pct=0.0))
+        trades.append(_trade(i, mae_pct=-0.01, mfe_pct=0.03, net_return_pct=0.0, closed_at=train_dates[i]))
     # Embargo: 10 trade (train/test arasında atlanır, hangi profilde olduğu önemsiz).
     for i in range(70, 80):
         trades.append(_trade(i, mae_pct=-0.01, mfe_pct=0.03, net_return_pct=0.0))
@@ -86,9 +100,10 @@ def test_returns_no_barrier_groups_when_train_never_clears_min_group_size():
 def test_returns_insufficient_matched_test_trades_when_test_bucket_never_seen_in_train():
     """TRAIN sadece LONG/bull, TEST sadece SHORT/bear -> recommend_barrier
     hiçbir test trade'i için eşleşme bulamaz, matched=0."""
+    train_dates = _spread_over_distinct_days(70)
     trades = []
     for i in range(70):
-        trades.append(_trade(i, -0.01, 0.03, 0.0, direction="LONG", regime="bull"))
+        trades.append(_trade(i, -0.01, 0.03, 0.0, direction="LONG", regime="bull", closed_at=train_dates[i]))
     for i in range(70, 80):
         trades.append(_trade(i, -0.01, 0.03, 0.0, direction="LONG", regime="bull"))
     for i in range(80, 110):

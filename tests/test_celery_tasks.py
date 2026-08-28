@@ -207,6 +207,64 @@ def test_refresh_barrier_table_task_is_in_beat_schedule():
     assert entry["task"] == "refresh_barrier_table_task"
 
 
+def test_refresh_self_correction_sizing_task_runs_in_eager_mode_and_saves_a_snapshot(tmp_path):
+    from services.celery_app import celery_app
+    from services.tasks import refresh_self_correction_sizing_task
+
+    celery_app.conf.task_always_eager = True
+    celery_app.conf.task_eager_propagates = True
+    try:
+        fake_result = {"recent_days": 7, "segments": {"overall": {"original_win_rate": 0.7}}}
+        with patch(
+            "services.scientific_self_correction_gatherer.gather_scientific_self_correction",
+            return_value=fake_result,
+        ), patch(
+            "analytics.self_correction_sizing_repository.SelfCorrectionSizingRepository.save",
+        ) as mock_save:
+            async_result = refresh_self_correction_sizing_task.delay()
+            assert async_result.successful()
+            assert async_result.result == {"segments": ["overall"]}
+            mock_save.assert_called_once_with(fake_result["segments"])
+    finally:
+        celery_app.conf.task_always_eager = False
+
+
+def test_refresh_self_correction_sizing_task_is_in_beat_schedule():
+    from services.celery_app import celery_app
+
+    entry = celery_app.conf.beat_schedule["refresh-self-correction-sizing-daily"]
+    assert entry["task"] == "refresh_self_correction_sizing_task"
+
+
+def test_refresh_symbol_performance_sizing_task_runs_in_eager_mode_and_saves_a_snapshot(tmp_path):
+    from services.celery_app import celery_app
+    from services.tasks import refresh_symbol_performance_sizing_task
+
+    celery_app.conf.task_always_eager = True
+    celery_app.conf.task_eager_propagates = True
+    try:
+        fake_result = {"by_symbol_direction": {"ATOMUSDT_LONG": {"win_rate": 0.3171, "sample_size": 41}}}
+        with patch(
+            "services.symbol_direction_performance_gatherer.gather_symbol_direction_performance",
+            return_value=fake_result,
+        ), patch(
+            "analytics.symbol_performance_sizing_repository.SymbolPerformanceSizingRepository.save",
+        ) as mock_save:
+            async_result = refresh_symbol_performance_sizing_task.delay()
+            assert async_result.successful()
+            assert async_result.result == {"symbol_direction_pairs": 1}
+            mock_save.assert_called_once_with(fake_result["by_symbol_direction"])
+    finally:
+        celery_app.conf.task_always_eager = False
+
+
+def test_refresh_symbol_performance_sizing_task_is_in_beat_schedule():
+    from services.celery_app import celery_app
+
+    entry = celery_app.conf.beat_schedule["refresh-symbol-performance-sizing-daily"]
+    assert entry["task"] == "refresh_symbol_performance_sizing_task"
+
+
 def test_auto_reject_stale_weight_approvals_task_rejects_only_old_pending_rows():
     """Faz 229: kritik bulgu — canlı üretimde WeightApproval kuyruğu
     (dedup kontrolü olmadan) 7000'den fazla bekleyen satır biriktirmişti,

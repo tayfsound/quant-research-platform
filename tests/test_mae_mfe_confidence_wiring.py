@@ -88,7 +88,7 @@ def test_mae_mfe_confidence_learns_a_real_bucket_and_reports_its_ci():
         from services.mae_mfe_confidence_gatherer import gather_mae_mfe_confidence
         result = gather_mae_mfe_confidence(window=60)
 
-        key = "direction=LONG|regime=mae_ci_test_regime|volatility_regime=normal"
+        key = "direction=LONG|regime=mae_ci_test_regime|volatility_regime=normal|asset_class=unknown"
         assert key in result["confidence_intervals"]
         ci = result["confidence_intervals"][key]
         assert ci["ci_lower"] <= ci["point_estimate"] <= ci["ci_upper"]

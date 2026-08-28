@@ -31,10 +31,12 @@ def _set_threshold(value: str) -> None:
 _STRONG_PAIR = {
     "domains": ["technical", "quant"], "win_rate": 0.95,
     "fdr_significant": True, "max_shared_trade_overlap_pct": 0.1, "sample_size": 40,
+    "distinct_days": 10,
 }
 _WEAK_PAIR = {
     "domains": ["macro", "credit"], "win_rate": 0.40,
     "fdr_significant": True, "max_shared_trade_overlap_pct": 0.1, "sample_size": 40,
+    "distinct_days": 10,
 }
 
 

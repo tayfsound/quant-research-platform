@@ -29,14 +29,21 @@ def test_build_bucket_key_matches_mae_mfe_label_format():
     "|".join(f"{field}={value}"...) ürettiği etiketle BİREBİR aynı olmalı
     — dashboard'daki "Kova" sütunundaki metin doğrudan ayar anahtarı."""
     assert (
+        build_bucket_key("LONG", "bull_trend", "normal", "crypto")
+        == "direction=LONG|regime=bull_trend|volatility_regime=normal|asset_class=crypto"
+    )
+
+
+def test_build_bucket_key_defaults_asset_class_to_unknown():
+    assert (
         build_bucket_key("LONG", "bull_trend", "normal")
-        == "direction=LONG|regime=bull_trend|volatility_regime=normal"
+        == "direction=LONG|regime=bull_trend|volatility_regime=normal|asset_class=unknown"
     )
 
 
 def test_build_bucket_key_reflects_group_by_order():
     from analytics.barrier_table_repository import GROUP_BY
 
-    key = build_bucket_key("SHORT", "insufficient_data", "high")
+    key = build_bucket_key("SHORT", "insufficient_data", "high", "equity")
     parts = key.split("|")
     assert [p.split("=")[0] for p in parts] == list(GROUP_BY)

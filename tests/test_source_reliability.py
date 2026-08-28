@@ -331,6 +331,7 @@ def test_combination_override_unbenches_a_domain_agreeing_with_a_trustworthy_gro
     _save_trustworthy_report([{
         "domains": ["technical", "quant"], "win_rate": 0.95,
         "fdr_significant": True, "max_shared_trade_overlap_pct": 0.1, "sample_size": 40,
+        "distinct_days": 10,
     }])
     try:
         agent = SourceReliabilityAgent(memory=memory)
@@ -355,6 +356,7 @@ def test_combination_override_does_not_apply_when_agreeing_agents_dont_match_a_g
     _save_trustworthy_report([{
         "domains": ["technical", "quant"], "win_rate": 0.95,
         "fdr_significant": True, "max_shared_trade_overlap_pct": 0.1, "sample_size": 40,
+        "distinct_days": 10,
     }])
     try:
         agent = SourceReliabilityAgent(memory=memory)
@@ -380,6 +382,7 @@ def test_combination_override_does_not_apply_when_agreeing_agents_vote_opposite_
     _save_trustworthy_report([{
         "domains": ["technical", "quant"], "win_rate": 0.95,
         "fdr_significant": True, "max_shared_trade_overlap_pct": 0.1, "sample_size": 40,
+        "distinct_days": 10,
     }])
     try:
         agent = SourceReliabilityAgent(memory=memory)
@@ -404,6 +407,7 @@ def test_combination_override_ignores_a_group_below_the_win_rate_threshold(tmp_p
     _save_trustworthy_report([{
         "domains": ["technical", "quant"], "win_rate": 0.50,
         "fdr_significant": True, "max_shared_trade_overlap_pct": 0.1, "sample_size": 40,
+        "distinct_days": 10,
     }])
     try:
         agent = SourceReliabilityAgent(memory=memory)
@@ -429,6 +433,7 @@ def test_combination_override_never_applies_to_a_domain_that_wasnt_benched(tmp_p
     _save_trustworthy_report([{
         "domains": ["pattern", "quant"], "win_rate": 0.95,
         "fdr_significant": True, "max_shared_trade_overlap_pct": 0.1, "sample_size": 40,
+        "distinct_days": 10,
     }])
     try:
         agent = SourceReliabilityAgent(memory=memory)

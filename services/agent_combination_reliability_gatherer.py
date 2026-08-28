@@ -31,7 +31,7 @@ def gather_agent_combination_reliability() -> dict:
         agreeing = agreeing_domains_for_decision(contributions, final_direction)
         if agreeing is None:
             continue
-        records.append({"agreeing_domains": agreeing, "win": pnl > 0})
+        records.append({"agreeing_domains": agreeing, "win": pnl > 0, "closed_at": t.get("closed_at")})
 
     result = compute_combination_reliability(records)
     result["n_trades"] = len(records)

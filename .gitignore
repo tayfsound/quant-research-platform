@@ -12,6 +12,8 @@ decision_logs/
 weight_history/
 confidence_model_history/
 barrier_table_history/
+self_correction_sizing_history/
+symbol_performance_sizing_history/
 test_intelligence_logs/
 celerybeat-schedule*
 agents/plugins/TRUSTED_HASHES.json

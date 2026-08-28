@@ -53,22 +53,35 @@ export default function SelfModel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = () => {
-    setLoading(true);
-    setError(null);
-    Promise.all([
+  // Kullanıcı bulgusu (2026-08-28): "Kill Switch aktif olduğu halde self
+  // control kapalı gibi görünüyor" — sayfa SADECE ilk açılışta çekiyordu
+  // (bkz. eski useEffect(load, [])), bir süre açık kalınca kill_switch_
+  // active gibi hızlı değişen bir alan donmuş/bayat kalabiliyordu.
+  // Dashboard.tsx'teki AYNI "sessiz arka plan yenileme" deseni — refresh()
+  // loading spinner'ı TEKRAR tetiklemiyor, sadece veriyi günceller.
+  const refresh = () => {
+    return Promise.all([
       fetch("/api/v1/self-model/", { headers: authHeaders() }).then((r) => r.json()),
       fetch("/api/v1/self-model/reports?limit=20", { headers: authHeaders() }).then((r) => r.json()),
     ])
       .then(([liveData, history]) => {
         setLive(liveData.result || null);
         setReports(history.reports || []);
+        setError(null);
       })
-      .catch((e) => setError(String(e)))
-      .finally(() => setLoading(false));
+      .catch((e) => setError(String(e)));
   };
 
-  useEffect(load, []);
+  const load = () => {
+    setLoading(true);
+    refresh().finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    load();
+    const interval = setInterval(refresh, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div>

@@ -225,6 +225,20 @@ celery_app.conf.beat_schedule = {
         "task": "refresh_barrier_table_task",
         "schedule": 86400.0,
     },
+    # Faz 368 — kullanıcı kararı: LONG'un son dönem çöküşü tespit
+    # edildiğinde pozisyon boyutu kademeli küçülsün. refresh-barrier-
+    # table-daily ile AYNI ritim (günlük, ucuz bir SQL taraması).
+    "refresh-self-correction-sizing-daily": {
+        "task": "refresh_self_correction_sizing_task",
+        "schedule": 86400.0,
+    },
+    # Faz 368 — kullanıcı bulgusu: sembol×yön bazlı sistematik zarar
+    # yoğunlaşması (ör. ATOMUSDT_LONG). Diğer günlük sizing gate'leriyle
+    # AYNI ritim.
+    "refresh-symbol-performance-sizing-daily": {
+        "task": "refresh_symbol_performance_sizing_task",
+        "schedule": 86400.0,
+    },
     # Faz 229: kritik bulgu — WeightOptimizer'ın onay-gate'i (Faz 160-165)
     # dedup kontrolü olmadan üretimde 7000'den fazla bekleyen onay biriktirdi.
     # Dedup eklendi (has_pending()) ama zaten var olan/ilerideki süresi
@@ -303,9 +317,16 @@ celery_app.conf.beat_schedule = {
     },
     # Cognitive Core 3.0 — Self-Model: ECE'den sonraki, council'i hiç
     # etkilemeyen ikinci ölçüm-only Grup B adayı.
-    "refresh-self-model-report-weekly": {
+    #
+    # Faz 368 — kullanıcı bulgusu: overall_reliability artık services/
+    # cognitive_engine.py::SelfModelSizingStage üzerinden GERÇEKTEN
+    # pozisyon boyutuna bağlı (bkz. analytics/self_model_sizing_gate.py) —
+    # haftalık tazelik "kill switch/degraded" gibi bir sinyal için çok
+    # bayattı, refresh_barrier_table_task/refresh_self_correction_sizing_
+    # task ile AYNI günlük ritme çekildi.
+    "refresh-self-model-report-daily": {
         "task": "refresh_self_model_report_task",
-        "schedule": 604800.0,
+        "schedule": 86400.0,
     },
     # Cognitive Core 4.0 — Causal Inference: Self-Model'den sonraki
     # üçüncü ölçüm-only Grup B adayı (Granger causality).

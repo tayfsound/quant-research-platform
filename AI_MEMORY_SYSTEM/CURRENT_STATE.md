@@ -1,9 +1,253 @@
-# Mevcut Durum -- v1.110.0 (Faz 367-devam: Sentiment ajanı sinerji kanıtıyla geri geldi + ağırlıklandırmaya sinerji düzeltmesi + SHORT kilidi açıldı)
+# Mevcut Durum -- v1.110.0 (Faz 368: Adaptive Barrier asset_class segmentasyonu + LONG/SHORT manuel anahtar + Grok raporu doğrulaması + kolektif zeka n=20 bug'ı)
 
 **Tarih:** 2026-08-28
 **Branch:** main
-**Son commit (HEAD):** `8b7e819` (Sentiment ajanı geri getirildi). Tüm bu turun işleri commit + push edildi.
-**Servis durumu:** celery worker + celery beat + uvicorn + vite ÜÇÜ DE temiz yeniden başlatıldı, hatasız. tsc temiz. Canlıda gerçek bir trading cycle sonrası doğrulandı: sentiment gerçek veriyle (news_tone/positioning) oy veriyor.
+**Son commit (HEAD):** `8b7e819` — bu turun işleri (aşağıdaki Faz 368) HENÜZ commit edilmedi, kullanıcı onayı bekleniyor.
+**Servis durumu:** uvicorn + celery worker + celery beat yeniden başlatıldı, hatasız. tsc temiz. 132 hedefli test yeşil.
+
+## Faz 368 — Adaptive Barrier'a asset_class segmentasyonu (MSFT/GC=F artık kripto-kalibreli SL/TP almıyor) (2026-08-28)
+
+Kullanıcı bulgusu: Adaptive Barrier Engine'in `group_by=(direction, regime,
+volatility_regime)` kovaları asset_class'a duyarsızdı — kripto işlem geçmişi
+(çok daha kalabalık) hisse/emtia sembollerinin (MSFT, GC=F) SL/TP kalibrasyonunu
+da fiilen belirliyordu. `GROUP_BY`'a `asset_class` eklendi (services/agent_
+memory.py::asset_class_trading_category() ile AYNI kaba crypto/commodity/
+equity sınıflandırma — asset_class_trading_gate'in de kullandığı TEK kaynak).
+Etkilenen: analytics/barrier_table_repository.py, analytics/barrier_table_
+builder.py (SELECT'e symbol eklendi), engines/cognitive_pipeline.py::
+RiskTargetStage, analytics/mae_mfe_bucket_trading_gate.py::build_bucket_key
+(+asset_class param), services/decision_recorder.py wiring. Canlı tabloda
+doğrulandı: şu an SADECE crypto kovaları var (equity/commodity kendi geçmişi
+min_group_size=20'yi geçemiyor) — MSFT/GC=F artık doğru şekilde statik ATR'ye
+düşüyor (fail-closed), icat edilmiş/yanlış bir oran almıyor. 122 test yeşil
+(yeni: crypto/equity aynı kovada farklı sl_pct alıyor mu testi dahil).
+
+## Faz 368 — Dashboard LONG/SHORT manuel aç/kapa anahtarı (2026-08-28)
+
+Kullanıcı kararı (Grok raporunun "SHORT'u varsayılan kısıtla" önerisine
+KARŞI, bilinçli): "short işlemlerini kısıtlamayalım, ben gerekli görürsem
+dashboard'dan kapatırım." Yeni analytics/direction_trading_gate.py +
+`direction_trading_enabled` ayarı (varsayılan `{"LONG": true, "SHORT": true}`,
+fail-open) — decision_recorder.py'ye diğer aç/kapa kapılarıyla (regime/
+asset_class/mae_mfe_bucket) AYNI desende wire edildi, SADECE AI konseyi
+kararlarını etkiliyor. Dashboard'daki StatCard bileşenine opsiyonel `action`
+slotu eklendi (ui.tsx), LONG/SHORT kazanma oranı kartlarına Açık/Kapalı
+butonu bağlandı. Hiçbir rapor/model bu anahtarı otomatik değiştirmiyor.
+
+## Faz 368 — Transactions'a Token/Emtia/Hisse kategori filtresi (2026-08-28)
+
+Kullanıcı isteği — services/agent_memory.py'deki AYNI kaba sınıflandırmanın
+frontend'de (sabit, küçük sembol listesi) mirror'ı, backend'e yeni bir alan
+eklemeden.
+
+## Faz 368 — Grok dış rapor doğrulaması + Kolektif Zeka'nın n=20 bug'ı (2026-08-28)
+
+Kullanıcı harici bir Grok analizi getirdi (Self-Model untrustworthy, LONG
+son dönem çöküşü, Condorcet başarısız, ablation, kayıp coğrafyası, entry
+persistence, vb.). Rapordaki ~15 somut rakam tek tek canlı veriyle
+karşılaştırıldı — neredeyse hepsi birebir/çok yakın eşleşti (yüksek güven,
+uydurma değil). Tek nüans: pump_fade "-456k" net PnL değil, brüt zarar
+toplamıydı (net: -326,633).
+
+Doğrulama sırasında GERÇEK bir bug bulundu: `services/collective_
+intelligence_gatherer.py`'nin `WINDOW=20`'si `agents/source_reliability_
+agent.py`'nin CANLI bench mekanizmasından kopyalanmıştı (orada bilinçli
+kısa pencere doğru) — ama Condorcet/kolektif-zeka raporu (istatistiksel
+"konsey en iyi bireyi geçiyor mu?" sorusu) için yanlış, binlerce kapanmış
+karar dururken n=20'de nokta tahmini üretiyordu. İKİNCİ, gizli bir bug daha
+vardı: `services/agent_memory.py::AgentMemory.get_summary()` içindeki
+`recent_accuracy` HER ZAMAN kendi iç sabiti olan son-20 kayıttan
+hesaplanıyordu (window parametresinden bağımsız) — WINDOW'u büyütmek tek
+başına yeterli değildi, gatherer `summary.overall_accuracy`'ye geçirildi
+(gerçekten window kadar kaydın ortalaması). WINDOW=3000'e çıkarıldı
+(agent_ablation_gatherer.py::MAX_DECISIONS ile AYNI ölçek). Sonuç:
+onchain'in fluk %100'ü (n=20) → gerçek %57.8 (n=614); gerçek lider macro
+%76.2 (n=3000, dar GA). version.py::SYSTEM_VERSION de 1.99→1.110
+senkronlandı (Grok'un bulduğu drift). 15 test yeşil.
+
+## Faz 368 — GPT dış raporu doğrulaması: kombinasyon güvenilirliğine zamansal-yoğunlaşma teşhisi (2026-08-28)
+
+İkinci bir harici (GPT) rapor "measurement bug" iddia etti: 24 farklı
+ajan kombinasyonu grubunun birebir aynı `win_rate_delta_vs_baseline`
+(0.2965) vermesi + quant'ın solo %5 iken quant+sentiment %99 olması.
+Kod seviyesinde kontrol edildi: delta formülü doğru (`win_rate - baseline`,
+max_possible değil) ve outcome hiçbir eligibility kararını etkilemiyor
+(leakage yok) — GPT'nin #1 ve #2 alarmı kod düzeyinde YANLIŞ çıktı.
+
+Ama canlı veriyle gerçek kök neden bulundu: `pattern+sentiment` grubunun
+(n=166, win_rate=%100) TÜM işlemleri 20-22 Ağustos arası ~42 saatlik TEK
+bir pencereden, 12 farklı sembolden, hepsi LONG — o dönemde piyasa öyle
+sert bir ralli yapmış ki hangi kombinasyon LONG'a katıldıysa otomatik
+kazanmış (Grok'un "boğa/sakin piyasa artefaktı" dediği şeyin somut
+kanıtı). Mevcut `max_shared_trade_overlap_pct` SADECE domain-paylaşımlı
+gruplar arasındaki örtüşmeyi yakalıyordu — farklı domain kombinasyonlarına
+sahip ama AYNI dar zaman penceresinden gelen iki grubu yakalamıyordu.
+
+Eklendi: her adaya `distinct_days` (kaç FARKLI takvim gününe yayıldığı) —
+`analytics/agent_combination_reliability.py`. `analytics/agent_
+combination_reliability_gate.py::trustworthy_known_pairs()`'a `DEFAULT_
+MIN_DISTINCT_DAYS=5` eklendi (fdr_significant VE overlap<0.5 VE
+distinct_days>=5 — hepsi AND, distinct_days bilinmiyorsa fail-closed
+dışlanır). Bu, WeightOptimizer sinerji artışı VE SourceReliabilityAgent
+kombinasyon override'ı VE decision_recorder'ın blok kapısının HEPSİNİ
+aynı anda korur (üçü de aynı `trustworthy_known_pairs()`'ı kullanıyor).
+Canlı doğrulama: şu an "onchain+X" gruplarının hepsi distinct_days=2,
+pattern+sentiment distinct_days=3 — hepsi zaten overlap yüzünden
+güvenilmiyordu, artık ikinci bir bağımsız nedenle de dışlanıyorlar
+(gelecekte düşük-overlap-ama-dar-pencere bir grup çıkarsa artık
+yakalanacak). Dashboard'a "Gün sayısı" sütunu eklendi. 190 test yeşil.
+
+## Faz 368 — P0 #1: LONG'un son dönem çöküşüne boyut-küçültme gate'i (2026-08-28)
+
+Kullanıcı kararı: hipotez çöktüğünde (hypothesis_still_valid=false +
+significant_change=true) pozisyon İPTAL edilmez, KADEMELİ küçültülür —
+`risk/drawdown_sizing.py`'nin "asla büyütmez, sadece küçültür" ilkesiyle
+AYNI aile. Yeni: `analytics/self_correction_sizing_gate.py::self_
+correction_size_multiplier()` (saf fonksiyon, `recent_win_rate/original_
+win_rate` oranı, [0.4, 1.0] aralığında sabitlenir), `analytics/self_
+correction_sizing_repository.py` (barrier_table_repository.py ile AYNI
+dosya-tabanlı "en son" anlık görüntü deseni — Alembic migration YOK,
+öğrenilmiş bir artefakt). Yeni `services/tasks.py::refresh_self_
+correction_sizing_task` (günlük, refresh_barrier_table_task ile AYNI
+ritim — gatherer'ın kendisi ucuz ~0.1sn ama sembol başına tekrar tekrar
+çağrılmasın diye). Yeni `engines/cognitive_pipeline.py::
+SelfCorrectionSizingStage`, `services/cognitive_engine.py`'de
+`drawdown_sizing_stage`'den hemen sonra wire edildi (final_size'ı
+DrawdownSizingStage'in yaptığı gibi çarpıyor). SADECE `direction_
+trading_enabled` anahtarıyla aynı kapsamda — kullanıcının manuel
+LONG/SHORT anahtarını EZMİYOR, ayrı bir katman.
+
+Canlı doğrulandı (task manuel tetiklendi, gerçek veriyle): LONG segment
+`original=0.9642, recent=0.7133, hypothesis_still_valid=false` →
+multiplier=**0.7398** — yeni her LONG kararı şu an ~%26 daha küçük
+boyutla açılıyor, otomatik. SHORT segmenti `hypothesis_still_valid=true`
+olduğu için hiç etkilenmiyor (multiplier=1.0). 244 test yeşil (1 pre-
+existing, ilgisiz torch/mock flake'i — izole çalıştırıldığında geçiyor).
+
+## Faz 368 — Canlı olay: barrier tablosuna da zamansal-çeşitlilik kontrolü (2026-08-28)
+
+Kullanıcı gerçek zamanlı bulgu: "AI %74 sembolde SHORT diyor ama hiç SHORT
+açmıyor." Kök neden zincirini kazdım: `decision_fusion` tüm SHORT
+kararlarını "Negatif EV" ile reddediyordu çünkü asset_class düzeltmesinden
+sonra SHORT/kripto barrier tablosu SIFIR kova üretiyordu. Neden: SHORT/
+bear_trend kovalarının (31 ve 260 örneklem — min_group_size'ı rahatça
+geçiyor) neredeyse TÜM işlemleri 19-22 Ağustos'taki AYNI ters-yön
+rallisinden geliyordu (`bear_trend/low`: win_rate=**%0**, 260 işlem) —
+agent_combination_reliability'deki sahte-sinerji sorununun TERSİ (burada
+sahte-felaket). min_group_size TEK BAŞINA yetersizdi.
+
+Çözüm: `analytics/mae_mfe.py::compute_optimal_barrier()`'a `MIN_DISTINCT_
+DAYS=5` eklendi — bir kova artık en az 5 FARKLI takvim gününe yayılmamışsa
+sonuç döndürmüyor (agent_combination_reliability_gate.py ile AYNI ilke,
+ayrı modülde). `analytics/barrier_table_builder.py`'nin SQL'ine `closed_at`
+eklendi. Canlı rebuild: tablo 7 kovadan 5'e düştü (2 LONG kova — bull_
+trend/normal VE bear_trend/low — distinct_days=4 olduğu için artık ELENDİ,
+daha önce "iyi" görünseler de aynı ilkeyle prensipli şekilde çıkarıldılar).
+SIFIR SHORT kovası hâlâ sıfır — ama artık BİLEREK/doğrulanmış şekilde,
+"gizlice kötü kalibre" değil.
+
+**Dürüst sonuç — bu SHORT'u AÇMADI:** SHORT zaten önceden de tabloda hiç
+yoktu (reward/risk filtresiyle eleniyordu), bu düzeltme sadece AYNI
+sonucu daha sağlam bir gerekçeyle üretiyor. Statik ATR'ye (2.5 stop/1.4
+hedef, Faz 320/321) düşüyor, bu da EV>0 için ~%64 confidence istiyor.
+Şu anki SHORT sinyalleri %25-58 confidence — hiçbiri geçemiyor. Bu bar
+hâlâ ampirik olarak haklı: scientific_self_correction SHORT'un
+hypothesis_still_valid=true olduğunu, tarihsel kötü performansın (orijinal
+%21.6, çok küçük son örneklemde %35) İSTATİSTİKSEL OLARAK anlamlı şekilde
+değişmediğini gösteriyor. Yani: bug yok, sistem kasıtlı temkinli — ama
+gerçek darboğaz artık netleşti (statik SHORT bariyer oranının kendisi).
+118 test yeşil.
+
+## Faz 368 — SHORT statik oranı gevşetildi + Self-Model artık trading'e bağlı (2026-08-28)
+
+**Statik SHORT oranı:** kullanıcı kararı — `DEFAULT_TARGET_ATR_MULT_SHORT`
+1.4 → **1.8** (`engines/cognitive_pipeline.py::RiskTargetStage`).
+Breakeven confidence ~%64.1 → ~%58.1. Kalıcı bir "SHORT düzeldi" iddiası
+DEĞİL — sadece örneklem biriktirme kapısı aralandı (scientific_self_
+correction SHORT hipotezinin hâlâ 'geçerli' (kötü) olduğunu söylüyor).
+
+**Self-Model artık gerçekten trading'e bağlı:** kullanıcı bulgusu — "Kill
+Switch aktif olduğu halde self control kapalı gibi görünüyor." Kök neden
+DOĞRULANDI: `overall_reliability` ("high"/"degraded"/"untrustworthy")
+hiçbir yerde (`cognitive_pipeline.py`, `decision_recorder.py`,
+`cognitive_engine.py`) trading kararına bağlı DEĞİLDİ — sadece
+dashboard'da gösteriliyordu, GPT raporunun "REDUCE/WAIT path'i doğrula"
+uyarısı GERÇEKTEN eksikmiş. (Gerçek SERT kill switch — `engines/risk_
+engine.py::_trip_kill_switch`, 10 ardışık kayıpta `ai_enabled=false` —
+ayrı ve zaten çalışıyor, bununla karıştırılmasın.)
+
+Yeni: `analytics/self_model_sizing_gate.py::self_model_size_multiplier()`
+(untrustworthy→0.4, degraded→0.7, high→1.0 — sabit/açıklanabilir, DrawdownSizingStage
+ailesi), yeni `engines/cognitive_pipeline.py::SelfModelSizingStage`
+(`self_correction_sizing_stage`'den hemen sonra wire edildi). Veri kaynağı
+MEVCUT `self_model_snapshots` tablosu (yeni migration YOK) — `gather_self_
+reliability_snapshot()` ~1.4sn sürdüğü için sembol başına tekrar
+çağrılmıyor, refresh_self_model_report_task haftalık→**günlük**'e çekildi.
+
+`SelfModel.tsx`'e otomatik yenileme eklendi (60sn, Dashboard.tsx'teki
+"sessiz arka plan yenileme" deseniyle AYNI — spinner tekrar tetiklenmiyor)
+— sayfa artık kill_switch_active gibi hızlı değişen alanlarda bayat
+kalmıyor.
+
+Canlı doğrulandı: şu anki gerçek snapshot `overall_reliability=
+untrustworthy` (DSR çok düşük + feature drift) → çarpan **0.4**. Bu,
+bugünkü LONG self-correction çarpanıyla (0.74) ÇARPIMSAL — şu an yeni bir
+LONG kararı ~0.74*0.4=**%30**'a kadar küçültülmüş boyutla açılabiliyor.
+125 test yeşil.
+
+## Faz 368 — Son 2 P0: pivot ajan boyut kısıtı + sembol×yön boyut kısıtı (2026-08-28)
+
+**Pivotal Agent Sizing:** kullanıcı bulgusu (Grok raporu doğrulaması):
+technical ajanı pivot olduğunda (oyu OLMASAYDI karar hiç açılmaz/farklı
+yöne açılırdı) kazanma oranı %25.4 (n=63) — order_flow/macro ise pivot
+olunca TAM TERSİNE çok güçlü. Yeni `analytics/pivotal_agent_sizing_
+gate.py` HİÇBİR domaini hardcode ETMİYOR — haftalık agent_ablation
+raporundan "pivot-olunca-kötü" domain'leri okuyup, O ANKİ kararda
+GERÇEKTEN pivot olup olmadığını `analytics/agent_ablation.py::
+synthesize_with_domain_excluded()` (yeni, canlı-kullanılabilir refactor —
+BeliefEngine.synthesize'ı domain sıfırlanmış tekrar çalıştırıyor, ucuz/
+DB'siz) ile test ediyor. Yeni `engines/cognitive_pipeline.py::
+PivotalAgentSizingStage`. Baseline win_rate AYNI `agent_combination_
+gate_min_win_rate` ayarından (0.74) okunuyor — tek bir "başarı" tanımı.
+Canlı doğrulandı: `technical` şu an tek riskli domain (%26.6 pivot win
+rate).
+
+**Symbol×Direction Performance Sizing:** council SL zararları belirli
+sembol×yön hücrelerinde sistematik yoğunlaşıyor (ATOMUSDT_LONG n=41
+%31.7/-$38.2k, ALGOUSDT_LONG n=14 %42.9/-$14.2k, AVAXUSDT_LONG n=30
+%40.0/-$13.6k, ARBUSDT_LONG n=31 %48.4/-$12.4k). Kullanıcı kararı: kara
+liste DEĞİL, boyut küçültme (LONG/SHORT anahtarındaki AYNI tercih). Yeni
+`services/symbol_direction_performance_gatherer.py` + `analytics/symbol_
+performance_sizing_repository.py` (barrier table ile AYNI dosya-tabanlı
+günlük anlık görüntü) + `analytics/symbol_performance_sizing_gate.py` +
+`engines/cognitive_pipeline.py::SymbolPerformanceSizingStage`. Canlı
+doğrulandı: ATOM→×0.43, ALGO→×0.58, AVAX→×0.54, ARB→×0.65.
+
+**Toplam sizing zinciri artık:** DrawdownSizing → SelfCorrectionSizing
+(yön-bazlı) → SelfModelSizing (öz-güvenilirlik) → PivotalAgentSizing
+(pivot ajan kalitesi) → SymbolPerformanceSizing (sembol×yön geçmişi) —
+hepsi ÇARPIMSAL, hepsi "asla büyütmez sadece küçültür", hiçbiri karar
+İPTAL etmiyor (mevcut kara-liste/blok kapılarından — regime/asset_class/
+mae_mfe_bucket/direction/agent_combination — AYRI, onlar hâlâ ayrıca
+çalışıyor). Grok raporunun P0 listesi TAMAMLANDI. 135+ yeni test yeşil
+(tam paket doğrulanıyor).
+
+TP/SL Confluence wire etme kullanıcı isteğiyle listenin sonuna alındı
+(yeterli veri birikince tekrar bakılacak).
+
+**Tam test paketi doğrulaması (1981 test, 2 ayrı run):** 1978 geçti, 4
+farklı dosyada (test_meta_stage_bearish_low_short_gate.py 3/5,
+test_meta_stage_strong_dissent.py 1/3, test_failure_classifier.py 1,
+test_tp_sl_confluence_properties.py 1) başarısızlık — HEPSİ git-stash
+karşılaştırmasıyla DOĞRULANDI: bugünkü hiçbir değişiklikle İLGİSİZ, zaten
+var olan "shared test state bloat" sorununun (bkz. proje hafızası)
+somut örnekleri — quantdb_test'in kendi app_settings tablosundaki
+(act_threshold/reduce_threshold gibi) satırlar önceki test koşularından
+BİRİKMİŞ, testler kendi durumlarını temizlemiyor. test_meta_stage_
+strong_dissent.py özellikle order-dependent (izole çalıştırıldığında
+geçiyor). Kapsamlı bir düzeltme (testlerin app_settings izolasyonu/
+teardown'ı) bilinçli olarak bu turun kapsamı dışında bırakıldı — sistemik,
+daha büyük bir temizlik işi, ayrı bir gündem maddesi olarak not düşüldü.
 
 ## Faz 367-devam — Ajan ağırlıklandırmasına sinerji düzeltmesi + Sentiment ajanı geri getirildi (2026-08-28)
 

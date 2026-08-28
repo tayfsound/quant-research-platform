@@ -7,6 +7,7 @@ AYNI "gerçek veriden öğren, yetersizse fail-closed" deseni."""
 from analytics.barrier_table_repository import GROUP_BY, BarrierTableRepository
 from analytics.mae_mfe import MIN_GROUP_SIZE, compute_optimal_barrier
 from services.agent_confidence_model import _normalize_raw_features
+from services.agent_memory import asset_class_trading_category
 
 DEFAULT_WINDOW = 2000
 # compute_optimal_barrier zaten kova başına min_group_size uyguluyor —
@@ -29,7 +30,7 @@ def _extract_real_trades_for_barrier_table(window: int = DEFAULT_WINDOW) -> list
     with SessionFactory.get_session() as session:
         rows = session.execute(
             text(
-                "SELECT direction, confidence, agent_contributions, outcome, experiment_bucket "
+                "SELECT direction, confidence, agent_contributions, outcome, experiment_bucket, symbol, closed_at "
                 "FROM decisions "
                 "WHERE status = 'closed' AND excluded_from_stats = false "
                 "AND outcome ->> 'mae_pct' IS NOT NULL AND outcome ->> 'mfe_pct' IS NOT NULL "
@@ -59,6 +60,11 @@ def _extract_real_trades_for_barrier_table(window: int = DEFAULT_WINDOW) -> list
             "confidence": row["confidence"] or 0.0,
             "regime": feats.get("long_term_trend_regime", "unknown"),
             "volatility_regime": feats.get("volatility_regime", "unknown"),
+            "asset_class": asset_class_trading_category(row["symbol"]) or "unknown",
+            # Faz 368 — sadece EKLENDİ: compute_optimal_barrier'ın yeni
+            # MIN_DISTINCT_DAYS kontrolü için (bkz. o modülün notu — bir
+            # kova dar bir tarihsel pencereden gelmemeli).
+            "closed_at": row["closed_at"],
             "mae_pct": outcome.get("mae_pct"),
             "mfe_pct": outcome.get("mfe_pct"),
             "time_to_mae_seconds": outcome.get("time_to_mae_seconds"),
