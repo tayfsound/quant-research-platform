@@ -1,9 +1,66 @@
-# Mevcut Durum -- v1.110.0 (Faz 368: Adaptive Barrier asset_class segmentasyonu + LONG/SHORT manuel anahtar + Grok raporu doğrulaması + kolektif zeka n=20 bug'ı)
+# Mevcut Durum -- v1.110.0 (Faz 368: Feature Intelligence Layer Faz A + Adaptive Barrier asset_class segmentasyonu + LONG/SHORT manuel anahtar + Grok raporu doğrulaması + kolektif zeka n=20 bug'ı)
 
 **Tarih:** 2026-08-28
 **Branch:** main
-**Son commit (HEAD):** `8b7e819` — bu turun işleri (aşağıdaki Faz 368) HENÜZ commit edilmedi, kullanıcı onayı bekleniyor.
-**Servis durumu:** uvicorn + celery worker + celery beat yeniden başlatıldı, hatasız. tsc temiz. 132 hedefli test yeşil.
+**Son commit (HEAD):** `8b7e819` — bu turun işleri (aşağıdaki Faz 368 maddeleri, FIL Faz A dahil) HENÜZ commit edilmedi, kullanıcı onayı bekleniyor.
+**Servis durumu:** uvicorn + celery worker + celery beat FIL Faz A ile yeniden başlatıldı, hatasız (yeni haftalık `refresh-feature-relationship-report-weekly` beat girişi doğrulandı). Migration faz368 hem quantdb hem quantdb_test'e uygulandı. tsc temiz.
+
+## Faz 368 — Feature Intelligence Layer, Faz A: Redundancy Matrix + Koşullu IC (2026-08-28)
+
+Kullanıcı kararı (GPT'nin "aynı bilgi tekrar sayılıyor" teşhisine, TAM mimari
+revize ile, kısmi çözüm YOK — bkz. [[feedback_no_partial_fixes]]): analytics/
+feature_ic.py'nin her feature'ı TEK BAŞINA ölçtüğü yerde, artık feature'lar
+BİRBİRİYLE de karşılaştırılıyor. Yeni: analytics/feature_relationship.py
+(`compute_feature_redundancy` — aynı trade'de birlikte ateşlenen feature
+çiftlerinin birbirleriyle Pearson korelasyonu; `compute_conditional_ic` —
+kapalı-form 2-değişkenli kısmi korelasyon, redundancy≥0.7 çiftler için "b
+biliniyorken a'nın kattığı EK bilgi"), services/feature_relationship_
+gatherer.py, contracts/feature_relationship_report.py + repository + migration
+(`feature_relationship_reports` tablosu), haftalık Celery task (`refresh-
+feature-relationship-report-weekly`, feature-ic ile AYNI ritim), GET /api/v1/
+feature-relationship/(+/reports), dashboard'da FeatureIC.tsx'e redundancy
+matrisi + koşullu IC bölümleri eklendi, research_summary_gatherer.py'ye
+kaydedildi. SADECE ölçüm/rapor — karar hattına bağlanmadı.
+
+Gerçek veriyle (3648 kapanmış karar) doğrulandı: trend/ema_alignment/momentum/
+vwap_confirm/adx_strong_confirm/bollinger_confirm arasında r=1.000 (yüzlerce-
+binlerce işlem boyunca sapmasız) — council'e 6 ayrı oy gibi giriyorlar ama
+matematiksel olarak TEK bir ikili sinyalin 6 farklı ismi; bu çiftlerin koşullu
+IC'si doğru şekilde None dönüyor (payda≈0, fail-closed). İKİNCİ bir dejenere
+durum da doğrulama sırasında bulundu ve düzeltildi: r_ab TAM 1.0 değil ama çok
+yakınken (ör. 0.991) kapalı-form formül [-1,1] dışında bir "korelasyon"
+üretebiliyordu (gerçek veride +3.75 gibi) — |partial|>1 olan sonuçlar da artık
+None'a düşüyor (kısmi korelasyon tanım gereği her zaman [-1,1] içindedir).
+15 yeni test yeşil (tests/test_feature_relationship.py + _wiring.py), toplam
+targeted suite bu turda 55+15=70 test.
+
+Faz B/C/D (çoklu-değişkenli residualizasyon, Opportunity Quality ağırlıklı
+sürüm, feature graph, cross-asset causal entegrasyonu, walk-forward meta-
+model) plan dosyasında (~/.claude/plans/velvety-whistling-parasol.md)
+tanımlı ama BU turda kodlanmadı — Faz A'nın gerçek sonucu onaylandıktan
+sonra, [[feedback_incremental_module_activation]] disiplinine göre.
+
+## Faz 368 — embargo_walk_forward.py: eksik test kapsamı kapatıldı (2026-08-28)
+
+Kullanıcı isteği (defalarca tekrarlanan "unutmayalım" — [[feedback_no_partial_fixes]]):
+backtest/embargo_walk_forward.py (meta_optimizer/agent_tuner.py::walk_forward_
+validate'in TEK leakage-güvenlik mekanizması, CMA-ES ajan katsayı tuning'inin
+in-sample ezber YASAK garantisi) daha önce HİÇ test edilmemişti. Kod incelemesi
++ Hypothesis property testleriyle (500 rastgele girdi) doğrulandı: gerçek bir
+bug YOK — train/test arasında her zaman TAM `embargo` kadar boşluk var, asla
+örtüşme yok, n_bars sınırı asla aşılmıyor. tests/test_embargo_walk_forward.py
+(11 test, invariant + edge-case) eklendi — artık bu kritik güvenlik
+mekanizması kalıcı test kapsamı altında.
+
+## Faz 368 — Agent Ablation: caused_trade_expectancy + caused_trade_rate (2026-08-28)
+
+GPT önerisi, küçük/ucuz ek: `summarize_ablation_by_domain()`'a iki yeni alan
+— `caused_trade_expectancy` (caused_trade_total_pnl / caused_trade_count,
+örneklem yoksa None) ve `caused_trade_rate` (caused_trade_count / votes_cast).
+Amaç: bir ajan domain'inin "geniş bağlam sağlayıcı" (yüksek rate, mütevazı
+expectancy — ör. macro) mı yoksa "seçici yüksek-etki tetikleyici" (düşük
+rate, yüksek expectancy — ör. order_flow) mi olduğunu ayırt etmek. 2 yeni
+test, 13 test yeşil.
 
 ## Faz 368 — Adaptive Barrier'a asset_class segmentasyonu (MSFT/GC=F artık kripto-kalibreli SL/TP almıyor) (2026-08-28)
 
@@ -234,6 +291,168 @@ mae_mfe_bucket/direction/agent_combination — AYRI, onlar hâlâ ayrıca
 
 TP/SL Confluence wire etme kullanıcı isteğiyle listenin sonuna alındı
 (yeterli veri birikince tekrar bakılacak).
+
+## Faz 368 — Watchlist Binance-native entegrasyonu + token sayısı genişletildi (2026-08-28)
+
+Kullanıcı bulgusu: `execution_mode_symbols` zaten NVDA/GC=F/^IXIC/MSFT'i
+"testnet" işaretlemişti ve `.env`'de testnet anahtarları da vardı — ama
+`ExecutionService.open_position()` sembolü HİÇ çevirmeden Binance'e
+gönderiyordu ("NVDA" Binance'te tanınmıyor, gerçek ad "NVDAUSDT").
+Kullanıcı kararı: "Yahoo'dan veri ölçmenin anlamı yok, boş boş işlem
+yapmadıktan sonra." Tam kapsamlı düzeltildi (kısmi/geçici çözüm YOK —
+kullanıcının açık isteği, bkz. [[feedback_no_partial_fixes]]):
+
+1. `exchange_gateway/binance/adapter.py::fetch_ohlcv` artık spot 400
+   Bad Request dönerse OTOMATİK futures'a (fapi.binance.com) düşüyor —
+   gerçek Binance'e karşı test edildi (mock yok, mevcut dosya
+   konvansiyonu). NVDAUSDT/XAGUSDT/QQQUSDT/SPXUSDT gerçek, TRADING
+   durumda futures sözleşmeleri (mainnet'te doğrulandı).
+2. Testnet'in enstrüman evreni mainnet'ten KÜÇÜK — gerçek testle
+   doğrulandı: NVDAUSDT/XAGUSDT/QQQUSDT/SPXUSDT testnet'te VAR,
+   AAPLUSDT/MSFTUSDT YOK. Kullanıcının "işlem alamayacağımız semboller
+   watchlistte durmasın" ilkesiyle: AAPL/MSFT watchlist'ten TAMAMEN
+   çıkarıldı. GC=F çıkarıldı (XAUTUSDT zaten aynı varlığı — altını —
+   kapsıyor, kullanıcı bunu PAXG'de daha önce de yapmıştık dedi).
+   NVDA/SI=F/^IXIC/^GSPC gerçek Binance-native isimlerine (NVDAUSDT/
+   XAGUSDT/QQQUSDT/SPXUSDT) geçirildi.
+3. Kullanıcı isteği: "token sayısını artıralım." Gerçek Binance Futures
+   24sa hacim verisinden (mainnet+testnet ikisinde doğrulandı) 34 yeni
+   kripto sembolü eklendi — 25 tanınmış/likit alt-coin (HYPE/ENA/TAO/
+   XMR/FET/JTO/DASH/AERO/PYTH/COMP/STRK/MINA/SNX/KAVA/DYDX/GRT/IOTA/
+   BAT/EGLD/ZIL/ARKM/MANA/NEO/ENJ/XTZ) + kullanıcının bilerek istediği
+   9 spekülatif/meme coin (TRUMP/FARTCOIN/1000PEPE/PENGU/MOVR/WIF/
+   1000SHIB/1000BONK/1000FLOKI). **Watchlist artık 50 → 81 sembol.**
+4. `services/agent_memory.py::_ASSET_CLASS_SYMBOLS`, `services/
+   causal_inference_gatherer.py::EFFECT_SYMBOLS`, `services/context_
+   adapter.py` (^IXIC/^GSPC korelasyon lookup'ı), `analytics/pairs_
+   trading.py` (GC=F/SI=F → XAUTUSDT/XAGUSDT; NVDA/MSFT çifti kaldırıldı,
+   MSFT testnet'te yok) — hepsi yeni sembol isimlerine güncellendi.
+   Canlı `execution_mode_symbols`/`watchlist` DB değerleri de düzeltildi
+   (sadece kod DEFAULTS değil).
+5. Canlı doğrulandı: `RoutingProvider` yeni 4 tokenize sembolü de gerçek
+   fiyatlarla çekiyor (NVDAUSDT ~$217, XAUTUSDT ~$4455 vb.).
+
+**Ayrıca bulunan/düzeltilen yan bug:** `analytics/tp_sl_confluence.py::
+snap_stop_to_confluence` — Hypothesis property testi (300 rastgele
+örnek) gerçek bir güvenlik-invaryantı ihlali buldu: confluence bölgesi
+stop_price'a çok yakınsa, koruma payı (buffer) stop'u ORİJİNAL ATR-
+stop'tan bile daha uzağa itebiliyordu ("asla riski artırmaz" garantisi
+bozuluyordu). max/min ile stop_price'a kelepçelendi, düzeltildi.
+
+**Ayrıca bulunan/düzeltilen kritik bug:** Self-Model'in `kill_switch_
+active` alanı GERÇEKTEN yanlıştı — canlı olayla yakalandı: kill switch
+18:34'te 11 ardışık kayıpla GERÇEKTEN tetiklenmiş (`ai_enabled=false`),
+ama Self-Model canlı yeniden hesaplanan ardışık-kayıp sayacına
+bakıyordu — bir kazanç gelip sayaç eşiğin altına düşünce (11→1) switch
+HÂLÂ aktifken "hayır" gösteriyordu. Artık GERÇEK `ai_enabled` + `updated_
+by` durumuna bakıyor (`services/self_model_gatherer.py`). Kullanıcı
+AI'ı inceleme sonrası elle yeniden açtı.
+
+**Wrap-up:** tam test paketinde (1987/1992 yeşil) 2 GERÇEK regresyon bulundu
+ve düzeltildi: `test_barrier_table_builder.py` MSFT'i equity_symbol olarak
+kullanıyordu (artık NVDAUSDT'ye çevrildi — MSFT sınıflandırmadan
+kaldırıldığı için kırılmıştı). Ayrıca kullanıcı bulgusu: `Collective
+Intelligence` sayfası hâlâ "Son 20 karar isabeti" diyordu ve açıklama
+metni SourceReliabilityAgent'ın penceresiyle "aynı" olduğunu iddia
+ediyordu — GERÇEKTEN yanlış hale gelmişti (n=20 bug'ı bu oturumda
+düzeltilmişti ama metin güncellenmemişti). Düzeltildi. Kalan 3 test
+(`test_meta_stage_bearish_low_short_gate.py`) yine quantdb_test'in
+~2000 testlik tam koşu sırasında YENİDEN kirlenmesinden — daha önce
+bir kez temizlemiştim, tam koşu tekrar kirletiyor; bu, zaten bilinen
+sistemik soruna (proje hafızası) ek bir kanıt, tek tek izole
+çalıştırıldığında hâlâ geçiyor. Servisler yeniden başlatıldı, sağlıklı.
+
+## SIRADAKİ İŞLER (kullanıcı isteği: "araya kaynamasınlar" — sırayla, hiçbiri düşmeden)
+
+1. ✅ **TAMAMLANDI** — EmbeddingService crash bug'ı (`RuntimeError('Cannot
+   send a request, as the client has been closed.')`, ~50dk'da 3 kez, her
+   seferinde bir trading cycle'ın tamamı kayboluyordu). Kök neden: model
+   zaten yerelde TAM önbelleklenmiş olmasına rağmen her yüklemede yine de
+   gereksiz bir HuggingFace Hub ağ isteği atılıyordu — bu ağ bağımlılığı
+   nadir bir HTTP-istemci yarış durumuyla birleşince çöküyordu.
+   `services/embedding_service.py::get_embedding_model()` artık ÖNCE
+   `local_files_only=True` deniyor (önbellek varsa ağa hiç dokunmuyor —
+   bu çökme sınıfı tamamen ortadan kalkıyor, üstelik hızlanıyor: 0.13sn),
+   önbellek yoksa (taze deploy) normal ağ-destekli yüklemeye düşüyor
+   (fail-closed değil). 2 yeni test + mevcut 2 test yeşil, celery worker
+   yeniden başlatıldı.
+2. **GPT raporunun derin doğrulama testleri** — golden trade ledger
+   (tekil decision_id lineage), LONG/SHORT parity testi, tüm feature
+   pipeline'ında temporal leakage assertion. Ana endişeler kod
+   seviyesinde zaten doğrulandı (bkz. yukarıdaki "Grok/GPT dış rapor
+   doğrulaması" bölümü) ama resmi/kalıcı test altyapısı hiç kurulmadı.
+3. **Feature Intelligence Layer + Causal Inference entegrasyonu (BİRLİKTE)**
+   — GPT'nin önerdiği, kullanıcının "tam mimari revize, geçici çözüm
+   değil" dediği büyük proje: redundancy matrix + conditional/incremental
+   IC + interaction detection + feature graph + regime-conditional
+   meta-features + walk-forward meta-model. Kullanıcı kararı: Causal
+   Inference'ın (cross-asset Granger sinyalleri) ayrı bir sistem OLARAK
+   değil, FIL'in tükettiği bir kanıt akışı (evidence stream) olarak
+   BİRLİKTE tasarlanacak — causal_inference.py kendi başına ayrı bir
+   modül kalıyor, sadece ÇIKTISI FIL'e giriyor (gevşek bağlantı, kod
+   birleştirme YOK). Henüz TASARIM bile başlamadı — kendi başına ayrı
+   bir plan/tasarım aşaması gerektiriyor, tek oturumda bitecek bir iş
+   değil.
+4. **Risk Simülatörü (Market World Model) iyileştirmesi** — küçük/ucuz,
+   FIL gibi büyük tasarım gerektirmiyor. GPT önerisi: block-size
+   duyarlılık testi (5/10/20/30 karşılaştırması — sonuç stabil mi yoksa
+   block-size'a aşırı duyarlı mı) + max drawdown/en uzun kayıp
+   serisi/CVaR eklemek (AYNI bootstrap çıktısından, yeni veri hattı
+   gerekmiyor). Hâlâ karar motoruna BAĞLANMAYACAK (saf teşhis kalıyor).
+5. ✅ **KONTROL EDİLDİ (2026-08-28)** — Direction Prediction v2'deki Brier
+   skorları KALİBRE EDİLMİŞ confidence üzerinden hesaplanıyor, raw değil.
+   `council_orchestrator.py:140`'taki `opinion.confidence = calibrate_
+   domain_confidence(...)` AgentOpinion'ı YERİNDE mutasyona uğratıyor
+   (ayrı bir raw_confidence alanı yok, `contracts/agent.py`'de tek
+   `confidence` alanı var) — bu mutasyondan SONRA AgentMemory'ye
+   yazılıyor (`services/learning_loop.py:70`), Brier de bu kayıtları
+   okuyor. Sonuç: technical'ın Brier=0.334'ü ZATEN kalibrasyondan
+   geçmiş confidence'ın kalitesi — mevcut kalibrasyon mekanizması
+   agregat yanlılığı düzeltiyor ama technical'ın sinyalinin doğru/
+   yanlışı AYIRT ETME gücünü düzeltmiyor. GPT'nin asıl noktasını
+   doğruluyor: sorun kalibrasyon değil, ham sinyalin kendisi yeterince
+   bilgilendirici değil — Feature Intelligence Layer'ın (madde 3)
+   çözeceği türden bir sorun, aynı FIL girdisi olarak değerlendirilecek.
+
+## LONG/SHORT Parity Testi (madde 2'nin ilk parçası) — TAMAMLANDI (2026-08-28)
+
+`analytics/mae_mfe.py::compute_mae_mfe` için Hypothesis property-based
+test (`tests/property/test_mae_mfe_parity_properties.py`, 5 test, her
+biri 300 rastgele senaryo — 1500 toplam): SHORT.mae_pct == -LONG.mfe_pct,
+SHORT.mfe_pct == -LONG.mae_pct, zaman eşleşmeleri, ve mae<=0/mfe>=0
+invaryantı. Kodun kendi formülünden matematiksel olarak türetildi, TÜMÜ
+YEŞİL — GERÇEK bir sign/inversion bug'ı YOK, ve bu test artık böyle bir
+bug'ın gelecekte GİRMESİNİ kalıcı olarak imkansız kılıyor.
+
+**Temporal leakage bulgusu:** klasik bir backtest replay engine bu
+sistemde YOK (önceki bir refactor'de kaldırılmış) — bugün dokunulan HER
+analitik modül GERÇEK, zaten kapanmış kararlardan çalışıyor, klasik ML
+backtest mimarilerindeki kadar geniş bir look-ahead riski yok. Gerçek
+risk `backtest/embargo_walk_forward.py`'de yoğunlaşıyor — kullanıcı
+kararıyla bu tur ERTELENDİ, golden ledger'a öncelik verildi.
+
+**Golden trade ledger / cross-module consistency — TAMAMLANDI:**
+GERÇEK prod verisine (quantdb, 3502 gerçek kapanmış karar) karşı bir kez
+elle doğrulandı: pnl işareti ile outcome.win alanı HER YERDE birebir
+eşleşiyor (0 uyuşmazlık), direction her zaman LONG/SHORT. Bunu KALICI
+bir "tüm tabloyu tara" pytest testi yapmayı denedim ama İLGİNÇ bir
+şey oldu: test GERÇEKTEN 6 "uyuşmazlık" buldu — ama araştırınca
+`tests/test_calibration_api.py`'nin KASITLI bir test fixture'ı çıktı
+(ECE/kalibrasyon matematiğini test etmek için sabit dummy pnl=1.0 +
+elle işaretlenmiş outcome.win kullanıyor, %80 kalibrasyon simüle
+ediyor — gerçek bir tutarsızlık değil, o testin meşru senaryosu).
+Bu, paylaşılan quantdb_test'in TAM OLARAK GPT'nin öngördüğü riski
+(farklı testlerin "aynı trade farklı yerlerde farklı görünüyor" tuzağı)
+kanıtladı — ama üretimde değil, test altyapısında. `tests/test_golden_
+ledger_consistency.py` artık SADECE kendi izole ürettiği veriyi
+kontrol ediyor (paylaşılan tabloyu taramıyor) — `symbol_direction_
+performance_gatherer.py`'nin çıktısını bağımsız ham SQL'le çapraz
+doğruluyor, hem win/pnl tutarlılığını hem sample_size/win_rate/
+total_pnl'i.
+
+**Madde 2 TAMAMLANDI** — LONG/SHORT parity (5 test, 1500 senaryo, temiz),
+temporal leakage (kapsam netleşti, dar risk), golden ledger (prod'da
+doğrulandı + kalıcı izole test). 16 yeni/ilgili test yeşil.
 
 **Tam test paketi doğrulaması (1981 test, 2 ayrı run):** 1978 geçti, 4
 farklı dosyada (test_meta_stage_bearish_low_short_gate.py 3/5,
