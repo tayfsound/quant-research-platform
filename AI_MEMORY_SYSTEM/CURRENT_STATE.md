@@ -1,9 +1,54 @@
-# Mevcut Durum -- v1.109.0 (Faz 367-devam: SHORT'u kilitleyen Adaptive Barrier bug'ı + Ajan Kombinasyonu genelleştirmesi + kaldıraç senkronizasyonu)
+# Mevcut Durum -- v1.110.0 (Faz 367-devam: Sentiment ajanı sinerji kanıtıyla geri geldi + ağırlıklandırmaya sinerji düzeltmesi + SHORT kilidi açıldı)
 
 **Tarih:** 2026-08-28
 **Branch:** main
-**Son commit (HEAD):** `e7859e6` (kaldıraç senkronizasyonu + testnet sembol/filtre UI). Bu turun işleri (aşağıda) henüz commit edilmedi.
-**Servis durumu:** celery worker + celery beat + uvicorn + vite ÜÇÜ DE temiz yeniden başlatıldı, hatasız. tsc temiz.
+**Son commit (HEAD):** `8b7e819` (Sentiment ajanı geri getirildi). Tüm bu turun işleri commit + push edildi.
+**Servis durumu:** celery worker + celery beat + uvicorn + vite ÜÇÜ DE temiz yeniden başlatıldı, hatasız. tsc temiz. Canlıda gerçek bir trading cycle sonrası doğrulandı: sentiment gerçek veriyle (news_tone/positioning) oy veriyor.
+
+## Faz 367-devam — Ajan ağırlıklandırmasına sinerji düzeltmesi + Sentiment ajanı geri getirildi (2026-08-28)
+
+Kullanıcı gözlemi: Ajan Kombinasyonu Güvenilirliği tablosunda pattern+
+sentiment %100, quant+sentiment %99.3, order_flow+sentiment %98.2 gibi
+çok güçlü ikililer var — ama sentiment ajanı Faz 269'da SOLO %5 isabetle
+kaldırılmıştı. Kök tespit: eski ağırlıklandırma (`WeightOptimizer.
+propose_weights()`) tamamen solo doğrulukla çalışıyordu, hangi ajanların
+BİRLİKTE güçlü olduğunu hiç göremiyordu.
+
+İki parça çözüm: (1) `_compute_synergy_adjustments()` — haftalık raporun
+FDR'ı geçmiş+düşük örtüşmeli gruplarından, agent_combination_gate_min_
+win_rate eşiğini (kapı ile AYNI eşik) geçenlerin ajanlarına küçük/sınırlı
+bir taban ağırlık düzeltmesi ekliyor (snapshot'ta `synergy_adjustments`
+alanında şeffaf, büyük değişiklikler zaten var olan insan-onay kuyruğundan
+geçiyor). (2) `agents/sentiment_agent.py` + 4 provider (fear_greed/
+news_tone/positioning/reddit) + tüm wiring (CouncilStage/registry/
+VOTING_AGENT_DOMAINS) GERİ getirildi. Canlıda doğrulandı: gerçek kararlarda
+sentiment artık oy veriyor, ama SourceReliabilityAgent onu ESKİ geçmişi
+yüzünden beklendiği gibi anında benchlemiş (performance_weight=0.0) —
+sistem tasarım gereği çalışıyor, yeni kararlarla/sinerji verisiyle kendini
+yeniden kanıtlayacak.
+
+## Faz 367-devam — SHORT'u fiilen imkansız kılan Adaptive Barrier bug'ı düzeltildi (2026-08-28)
+
+Kullanıcı gözlemi: "piyasa yön değiştirdiğinde de SHORT açmıyor." Gerçek
+veriyle doğrulandı: 10 gündür AI-konseyi SHORT işlemi sıfırdı (arbitraj/
+pump-fade hariç). Kök neden: `analytics/mae_mfe.py::compute_optimal_
+barrier`, SHORT|bear_trend kovalarında en iyi bulduğu (sl,tp) çifti bile
+negatif EV'liyken yine de döndürüyordu — tp_pct neredeyse sıfıra (%0.04)
+düşünce, EV kapısı %90+ güvenli SHORT kararlarını bile yapısal olarak
+reddediyordu. İki düzeltme: negatif EV'li kova hiç sonuç döndürmüyor
+(fail-closed, statik 2.5/1.4 ATR oranına düşülüyor) + minimum ödül/risk
+oranı tabanı (MIN_REWARD_RISK_RATIO=0.15, teknik olarak pozitif ama
+anlamsızca küçük bir oranı da eliyor). Canlı tablo elle yeniden inşa
+edildi (10→8 SHORT anahtarı temizlendi).
+
+## Faz 367-devam — Diğer küçük işler (2026-08-28)
+
+Transactions filtre listesinden Basis Arb (kodu tamamen kaldırılmıştı) ve
+Hedge (pairs_trading kapalı) çıkarıldı. Ajan Kombinasyonu Güvenilirliği
+2/3/4'lü gruplara genelleştirildi + örtüşme teşhisi + karar-time kapısı
+(varsayılan kapalı, eşik %74). pump_fade lookback_hours araştırması:
+mevcut 48h ayarı korundu (büyük örneklem küçük örneklemin yanıltıcı
+sonucunu düzeltti).
 
 ## Faz 367-devam — KRİTİK BUG: SHORT işlemleri 10 gündür fiilen kilitliydi (2026-08-28)
 
