@@ -70,6 +70,9 @@ class CouncilStage:
             AgentDomain.RELATIVE_STRENGTH: self.adapter.to_relative_strength(ctx),
             AgentDomain.CREDIT: self.adapter.to_credit(ctx),
             AgentDomain.VOLATILITY: self.adapter.to_volatility(ctx),
+            # Faz 367-devam — kullanıcı kararıyla geri getirildi (2026-08-28,
+            # bkz. contracts/agent.py::VOTING_AGENT_DOMAINS üstündeki not).
+            AgentDomain.SENTIMENT: self.adapter.to_sentiment(ctx),
         }
 
         # Kullanıcı bulgusu — bkz. contracts/contexts/market.py::

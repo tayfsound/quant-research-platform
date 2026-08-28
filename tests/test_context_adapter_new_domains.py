@@ -22,6 +22,55 @@ def test_to_macro_falls_back_to_real_fred_categories_when_no_override():
     assert result.liquidity_condition in ("loose", "tight", "neutral")
 
 
+def test_to_sentiment_uses_real_fear_greed_index_for_crypto():
+    ctx = CognitiveCycleContext(market={"symbol": "BTCUSDT"})
+    result = ContextAdapter().to_sentiment(ctx)
+    assert 0 <= result.fear_greed_index <= 100
+
+
+def test_to_sentiment_defaults_to_neutral_for_non_crypto():
+    ctx = CognitiveCycleContext(market={"symbol": "AAPL"})
+    result = ContextAdapter().to_sentiment(ctx)
+    assert result.fear_greed_index == 50.0
+
+
+def test_to_sentiment_explicit_override_wins_over_real_fetch():
+    ctx = CognitiveCycleContext(market={
+        "symbol": "BTCUSDT",
+        "raw_snapshot": {"fear_greed_index": 12.0},
+    })
+    result = ContextAdapter().to_sentiment(ctx)
+    assert result.fear_greed_index == 12.0
+
+
+def test_to_sentiment_falls_back_to_reddit_when_configured(monkeypatch):
+    """Faz 367-devam — kullanıcı kararıyla geri getirildi: LLM tabanlı ara
+    kaynak (llm_news_sentiment_provider.py) artık yok (ayrıca kaldırılmıştı,
+    bkz. services/context_adapter.py::to_sentiment üstündeki not) — tek
+    kaynak reddit_provider.py, gerçek değeri döndürdüğünde kullanılmalı."""
+    import market_data.sentiment.reddit_provider as reddit_provider
+
+    monkeypatch.setattr(reddit_provider, "fetch_social_sentiment", lambda: -0.3)
+
+    ctx = CognitiveCycleContext(market={"symbol": "BTCUSDT"})
+    result = ContextAdapter().to_sentiment(ctx)
+    assert result.social_media_sentiment == -0.3
+
+
+def test_to_sentiment_defaults_social_media_to_neutral_when_reddit_unavailable(monkeypatch):
+    """Reddit kimlik bilgisi ayarlı değilse (varsayılan — proje hafızası
+    "project_reddit_sentiment_blocked", Devvit politikası) fetch_social_
+    sentiment None döner, dürüstçe nötr (0.0) düşülür, hiçbir zaman
+    uydurulmaz."""
+    import market_data.sentiment.reddit_provider as reddit_provider
+
+    monkeypatch.setattr(reddit_provider, "fetch_social_sentiment", lambda: None)
+
+    ctx = CognitiveCycleContext(market={"symbol": "BTCUSDT"})
+    result = ContextAdapter().to_sentiment(ctx)
+    assert result.social_media_sentiment == 0.0
+
+
 def test_to_pattern_reads_raw_snapshot():
     ctx = CognitiveCycleContext(market={"raw_snapshot": {"structure_phase": "accumulation"}})
     result = ContextAdapter().to_pattern(ctx)

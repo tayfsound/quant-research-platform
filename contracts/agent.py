@@ -43,12 +43,20 @@ class AgentDomain(StrEnum):
 # Faz 242-243: 10. oy-veren ajan eklendi (Relative Strength — bkz.
 # agents/relative_strength_agent.py).
 #
-# Faz 269-sonrası — kullanıcı kararı: SENTIMENT çıkarıldı (9 oy-veren
-# ajan kaldı). Gerçek veri: son 20 kararının isabet oranı %5, zaten
-# otomatik benchlenmişti (SourceReliabilityAgent, reliability=0.2<0.35)
-# — kararlara hiç katkısı yoktu. AgentDomain.SENTIMENT enum üyesinin
-# kendisi KASITLI OLARAK silinmedi — eski decisions.agent_contributions
-# kayıtları hâlâ bu domain'i referans veriyor.
+# Faz 269-sonrası — kullanıcı kararı: SENTIMENT çıkarılmıştı. Gerçek veri:
+# son 20 kararının isabet oranı %5, zaten otomatik benchlenmişti
+# (SourceReliabilityAgent, reliability=0.2<0.35) — SOLO kararlara hiç
+# katkısı yoktu.
+#
+# Faz 367-devam — kullanıcı kararıyla GERİ GETİRİLDİ (2026-08-28): Ajan
+# Kombinasyonu Güvenilirliği'nin (analytics/agent_combination_
+# reliability.py) ölçtüğü GERÇEK geçmiş veri, sentiment'in DİĞER ajanlarla
+# BİRLİKTE anlaştığında çok güçlü olduğunu gösterdi (pattern+sentiment
+# %100, quant+sentiment %99.3, order_flow+sentiment %98.2, sentiment+
+# technical %98.0 — hepsi FDR'ı geçmiş). Solo-doğruluk tabanlı eski
+# ağırlıklandırma bunu hiç göremezdi; artık services/weight_optimizer.py::
+# _compute_synergy_adjustments bu tür "solo zayıf ama grupta güçlü"
+# ajanları doğru şekilde ödüllendirebiliyor.
 
 # Faz 333 — 10. oy-veren ajan: Credit (bkz. agents/credit_agent.py).
 # Kullanıcı isteği, harici bir AI incelemesinin önerdiği "tek tek,
@@ -64,6 +72,7 @@ VOTING_AGENT_DOMAINS = frozenset({
     AgentDomain.PATTERN, AgentDomain.QUANT,
     AgentDomain.ORDER_FLOW, AgentDomain.TIME, AgentDomain.EPISTEMOLOGY,
     AgentDomain.RELATIVE_STRENGTH, AgentDomain.CREDIT, AgentDomain.VOLATILITY,
+    AgentDomain.SENTIMENT,
 })
 
 class AgentOpinion(BaseModel):

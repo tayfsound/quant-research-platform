@@ -7,6 +7,7 @@ from agents.order_flow_agent import OrderFlowAgent
 from agents.pattern_agent import PatternAgent
 from agents.quant_agent import QuantAgent
 from agents.relative_strength_agent import RelativeStrengthAgent
+from agents.sentiment_agent import SentimentAgent
 from agents.technical_agent import TechnicalAgent
 from agents.time_agent import TimeAgent
 from agents.volatility_agent import VolatilityAgent
@@ -31,24 +32,27 @@ class AgentRegistry:
 
     @classmethod
     def create_default(cls) -> "AgentRegistry":
-        """On bir uzman ajanla (4 orijinal + 5 sonraki turda eklenen: Pattern,
+        """On iki uzman ajanla (4 orijinal + 5 sonraki turda eklenen: Pattern,
         Quant, Order Flow, Time, Epistemology + Faz 242-243'te eklenen
         Relative Strength + Faz 333'te eklenen Credit + Faz 336'da eklenen
-        Volatility) hazır bir registry oluşturur,
-        sonra agents/plugins/'daki güvenilir (hash'i TRUSTED_PLUGIN_HASHES'te
-        olan) eklentileri keşfeder. TRUSTED_PLUGIN_HASHES varsayılan olarak
-        boş — hiçbir plugin, bir insan onun hash'ini gözden geçirip
-        eklemeden otomatik yüklenmez (Sprint 17-18).
+        Volatility + Faz 367-devam'da GERİ getirilen Sentiment) hazır bir
+        registry oluşturur, sonra agents/plugins/'daki güvenilir (hash'i
+        TRUSTED_PLUGIN_HASHES'te olan) eklentileri keşfeder. TRUSTED_PLUGIN_
+        HASHES varsayılan olarak boş — hiçbir plugin, bir insan onun
+        hash'ini gözden geçirip eklemeden otomatik yüklenmez (Sprint 17-18).
 
-        Faz 269-sonrası — kullanıcı kararı: SentimentAgent kaldırıldı.
+        Faz 269-sonrası — kullanıcı kararı: SentimentAgent kaldırılmıştı.
         Gerçek veri: son 20 kararının isabet oranı %5, SourceReliabilityAgent
-        tarafından zaten otomatik benchlenmişti (reliability=0.2 < 0.35,
-        effective_influence=0 — kararlara hiç katkısı yoktu). Kullanıcının
-        kendi sözleriyle: "elimizde fazlasıyla enstrüman var... bu veriler
-        ile piyasa yönü arasında korelasyon kurabileceğimiz bir ilişki
-        tespit edemedik." AgentDomain.SENTIMENT enum üyesi KASITLI OLARAK
-        kaldırılmadı — eski decisions.agent_contributions kayıtları hâlâ
-        bu domain'i referans veriyor, geriye dönük uyumluluk için duruyor."""
+        tarafından zaten otomatik benchlenmişti (reliability=0.2 < 0.35) —
+        SOLO kararlara hiç katkısı yoktu.
+
+        Faz 367-devam — kullanıcı kararıyla GERİ GETİRİLDİ (2026-08-28):
+        Ajan Kombinasyonu Güvenilirliği'nin ölçtüğü GERÇEK veri, sentiment'in
+        DİĞER ajanlarla BİRLİKTE anlaştığında çok güçlü olduğunu gösterdi
+        (pattern+sentiment %100, quant+sentiment %99.3 — hepsi FDR'ı
+        geçmiş, bkz. contracts/agent.py::VOTING_AGENT_DOMAINS'in üstündeki
+        not). Artık services/weight_optimizer.py'nin sinerji düzeltmesi bu
+        tür "solo zayıf ama grupta güçlü" ajanları doğru ödüllendirebiliyor."""
         registry = cls()
         registry.register(AgentDomain.MACRO, MacroAgent())
         registry.register(AgentDomain.ONCHAIN, OnChainAgent())
@@ -61,6 +65,7 @@ class AgentRegistry:
         registry.register(AgentDomain.RELATIVE_STRENGTH, RelativeStrengthAgent())
         registry.register(AgentDomain.CREDIT, CreditAgent())
         registry.register(AgentDomain.VOLATILITY, VolatilityAgent())
+        registry.register(AgentDomain.SENTIMENT, SentimentAgent())
 
         from agents.plugin_loader import discover_plugins
         discover_plugins(registry)

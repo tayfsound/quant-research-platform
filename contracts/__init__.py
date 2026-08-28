@@ -24,6 +24,7 @@ from contracts.memory import Episode, EpisodicMemory, SemanticMemory, WorkingMem
 from contracts.observation import Observation, ObservationType
 from contracts.onchain import OnChainContext
 from contracts.outcome import DecisionEvaluation, TradeOutcome
+from contracts.sentiment import SentimentContext
 from contracts.technical import TechnicalContext
 
 __all__ = [
@@ -41,6 +42,7 @@ __all__ = [
     "KnowledgeEntry", "KnowledgeCategory",
     "TradeOutcome", "DecisionEvaluation",
     "MacroContext", "MacroIndicator",
+    "SentimentContext",
     "OnChainContext",
     "TechnicalContext",
     "DecisionEvent",
