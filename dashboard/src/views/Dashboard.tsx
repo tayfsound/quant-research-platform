@@ -905,6 +905,87 @@ export default function Dashboard() {
             </div>
           </Card>
 
+          {/* Kullanıcı isteği (2026-08-28): "sembolleri nasıl canlıya
+              alacağız? UI'da bunun ayarı yok." execution_mode_symbols
+              (Faz 315, testnet emir gönderimi) — sembol bazında simülasyon/
+              testnet seçimi, önceden sadece Python'dan elle ayarlanabiliyordu.
+              watchlist'ten seçilip eklenir, listede tek tıkla simülasyona
+              geri döndürülür. */}
+          <Card className="mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs uppercase tracking-wide text-ink-faint font-medium">Canlı Emir Modu (Testnet)</p>
+              <p className="text-xs text-ink-faint">Seçilen semboller gerçek Binance Futures Testnet emirleriyle işlem görür</p>
+            </div>
+            {(() => {
+              const parseExecutionModeMap = (raw: string | undefined): Record<string, string> => {
+                if (!raw) return {};
+                try {
+                  const parsed = JSON.parse(raw);
+                  return typeof parsed === "object" && parsed !== null ? parsed : {};
+                } catch {
+                  return {};
+                }
+              };
+              const executionModeSymbols = parseExecutionModeMap(settings.execution_mode_symbols);
+              const liveSymbols = Object.entries(executionModeSymbols).filter(([, mode]) => mode === "testnet");
+              const watchlist = (settings.watchlist || "").split(",").map((s) => s.trim()).filter(Boolean);
+              const availableToAdd = watchlist.filter((s) => executionModeSymbols[s] !== "testnet");
+              const setSymbolMode = (symbol: string, mode: "testnet" | "simulated") => {
+                const next: Record<string, string> = { ...executionModeSymbols };
+                if (mode === "simulated") {
+                  delete next[symbol];
+                } else {
+                  next[symbol] = "testnet";
+                }
+                save("execution_mode_symbols", JSON.stringify(next));
+              };
+              return (
+                <>
+                  {liveSymbols.length === 0 ? (
+                    <p className="text-xs text-ink-faint mb-3">Şu an hiçbir sembol canlı (testnet) modda değil — hepsi simülasyonda.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {liveSymbols.map(([symbol]) => (
+                        <div key={symbol} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-accent text-white text-xs font-mono">
+                          {symbol}
+                          <button
+                            onClick={() => setSymbolMode(symbol, "simulated")}
+                            disabled={saving === "execution_mode_symbols"}
+                            title="Simülasyona geri döndür"
+                            className="opacity-80 hover:opacity-100"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <select
+                      id="execution-mode-symbol-select"
+                      className="px-2 py-1.5 rounded-lg text-xs border border-line bg-canvas-soft text-ink"
+                      defaultValue=""
+                    >
+                      <option value="" disabled>Sembol seç...</option>
+                      {availableToAdd.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                    <Button
+                      disabled={saving === "execution_mode_symbols"}
+                      onClick={() => {
+                        const el = document.getElementById("execution-mode-symbol-select") as HTMLSelectElement | null;
+                        if (el && el.value) setSymbolMode(el.value, "testnet");
+                      }}
+                    >
+                      Canlıya Al
+                    </Button>
+                  </div>
+                </>
+              );
+            })()}
+          </Card>
+
           <TradeTypeBreakdownTable
             title="İşlem türüne göre açık pozisyonlar"
             description="Scalp/swing gerçek stop mesafesine göre; Pump-Fade ve hedge kendi mekanik stratejilerinin etiketiyle ayrılıyor (bkz. Transactions'taki aynı rozetler)."

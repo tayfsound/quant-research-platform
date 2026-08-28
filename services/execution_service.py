@@ -121,6 +121,7 @@ class ExecutionService:
         quantity: float,
         stop_loss_price: float,
         take_profit_price: float,
+        leverage: float,
     ) -> OpenPositionResult | None:
         """Gerçek MARKET giriş emri + hemen ardından STOP_MARKET/
         TAKE_PROFIT_MARKET koruma emirleri. Herhangi bir adım belirsiz/
@@ -128,8 +129,23 @@ class ExecutionService:
         yerleşmedi) fail-closed None döner — çağıran (DecisionRecorder)
         "open" YAZMAZ, deneme başarısız olarak kaydedilir. Giriş dolup
         koruma emirleri başarısız olursa, pozisyonu korumasız bırakmak
-        yerine ACİL kapatılır (aynı "çıplak pozisyon asla" ilkesi)."""
+        yerine ACİL kapatılır (aynı "çıplak pozisyon asla" ilkesi).
+
+        Faz 367-devam — kritik bulgu (2026-08-28, kullanıcının kendi
+        testnet denemesinde yakalandı): girişten ÖNCE borsa hesabının
+        kaldıracı uygulamanın (quantity'yi zaten buna göre hesaplamış
+        olan) `leverage` değerine ayarlanıyor — aksi halde borsadaki
+        GERÇEK marj/likidasyon riski uygulamanın varsaydığından sessizce
+        farklı kalıyordu (gerçek örnek: uygulama 1x varsaydı, hesap
+        20x'te kalmıştı). Bu adım başarısız olursa fail-closed None —
+        yanlış kaldıraçla asla bir giriş denenmez."""
         if not self.is_configured():
+            return None
+
+        try:
+            self._adapter.set_leverage(symbol, max(1, round(leverage)))
+        except Exception as exc:
+            logger.warning("execution_open_set_leverage_failed", symbol=symbol, decision_id=str(decision_id), error=str(exc))
             return None
 
         entry_req = PlaceOrderRequest(

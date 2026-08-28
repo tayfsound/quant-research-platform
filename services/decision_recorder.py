@@ -411,6 +411,7 @@ class DecisionRecorder:
                     quantity=quantity,
                     stop_loss_price=stop_loss_price,
                     take_profit_price=take_profit_price,
+                    leverage=leverage,
                 )
                 if exec_result is None:
                     opens_position = False

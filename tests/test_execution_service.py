@@ -13,10 +13,18 @@ class _FakeAdapter:
     etmeden, ExecutionService'in KENDİ karar mantığını (fail-closed,
     emergency-close, reinstate) izole test edebilmek için."""
 
-    def __init__(self, place_order_responses):
+    def __init__(self, place_order_responses, set_leverage_response=None):
         self._responses = list(place_order_responses)
         self.placed_requests: list[PlaceOrderRequest] = []
         self.cancelled: list[tuple[str, str]] = []
+        self.leverage_calls: list[tuple[str, int]] = []
+        self._set_leverage_response = set_leverage_response
+
+    def set_leverage(self, symbol: str, leverage: int) -> int:
+        self.leverage_calls.append((symbol, leverage))
+        if isinstance(self._set_leverage_response, Exception):
+            raise self._set_leverage_response
+        return self._set_leverage_response if self._set_leverage_response is not None else leverage
 
     def place_order(self, req: PlaceOrderRequest) -> OrderStatus:
         self.placed_requests.append(req)
@@ -53,6 +61,7 @@ def test_open_position_happy_path_places_entry_then_stop_then_take_profit():
     result = service.open_position(
         decision_id=uuid.uuid4(), symbol="BTCUSDT", direction="LONG",
         quantity=0.5, stop_loss_price=26000.0, take_profit_price=28000.0,
+        leverage=10.0,
     )
 
     assert result is not None
@@ -65,6 +74,7 @@ def test_open_position_happy_path_places_entry_then_stop_then_take_profit():
     assert adapter.placed_requests[1].reduce_only is True
     assert adapter.placed_requests[1].stop_price == 26000.0
     assert adapter.placed_requests[2].stop_price == 28000.0
+    assert adapter.leverage_calls == [("BTCUSDT", 10)]
 
 
 def test_open_position_returns_none_when_entry_never_confirmed_filled():
@@ -76,12 +86,34 @@ def test_open_position_returns_none_when_entry_never_confirmed_filled():
     result = service.open_position(
         decision_id=uuid.uuid4(), symbol="BTCUSDT", direction="LONG",
         quantity=0.5, stop_loss_price=26000.0, take_profit_price=28000.0,
+        leverage=10.0,
     )
 
     assert result is None
     # Sadece giriş denendi — belirsiz bir dolumdan sonra ASLA koruma
     # emri denenmedi (uydurma bir "açık pozisyon" hiç oluşturulmadı).
     assert len(adapter.placed_requests) == 1
+
+
+def test_open_position_returns_none_when_set_leverage_fails():
+    adapter = _FakeAdapter(
+        [_filled("1", "qrpe1", OrderSide.BUY, 0.5, 27000.0)],
+        set_leverage_response=RuntimeError("leverage rejected"),
+    )
+    service = ExecutionService(adapter=adapter)
+
+    result = service.open_position(
+        decision_id=uuid.uuid4(), symbol="BTCUSDT", direction="LONG",
+        quantity=0.5, stop_loss_price=26000.0, take_profit_price=28000.0,
+        leverage=10.0,
+    )
+
+    assert result is None
+    # Kaldıraç doğrulanmadan HİÇBİR emir denenmedi — borsadaki gerçek
+    # kaldıraçla uygulamanın varsaydığı arasında sessiz bir uyuşmazlık
+    # riski (Faz 367-devam'da yakalanan gerçek bug) böylece engelleniyor.
+    assert len(adapter.placed_requests) == 0
+    assert adapter.leverage_calls == [("BTCUSDT", 10)]
 
 
 def test_open_position_emergency_closes_when_protective_orders_fail_after_confirmed_fill():
@@ -94,6 +126,7 @@ def test_open_position_emergency_closes_when_protective_orders_fail_after_confir
     result = service.open_position(
         decision_id=uuid.uuid4(), symbol="BTCUSDT", direction="LONG",
         quantity=0.5, stop_loss_price=26000.0, take_profit_price=28000.0,
+        leverage=10.0,
     )
 
     assert result is None
@@ -176,6 +209,7 @@ def test_is_configured_false_without_an_adapter_and_without_env_keys(monkeypatch
         assert service.open_position(
             decision_id=uuid.uuid4(), symbol="BTCUSDT", direction="LONG",
             quantity=0.5, stop_loss_price=26000.0, take_profit_price=28000.0,
+            leverage=10.0,
         ) is None
     finally:
         get_settings.cache_clear()

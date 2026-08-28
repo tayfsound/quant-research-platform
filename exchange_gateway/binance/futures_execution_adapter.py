@@ -263,5 +263,23 @@ class BinanceFuturesExecutionAdapter:
                 return row
         return None
 
+    def set_leverage(self, symbol: str, leverage: int) -> int:
+        """POST /fapi/v1/leverage — Faz 367-devam, kritik bulgu: place_
+        order() öncesinde borsa hesabının GERÇEK kaldıracını uygulamanın
+        varsaydığıyla eşitlemek ZORUNLU (bkz. contracts/exchange.py'nin
+        kendi notu — aksi halde gerçek marj/likidasyon riski uygulamanın
+        hesapladığından sessizce farklı kalıyordu). Binance leverage'ı
+        TAM SAYI istiyor (uygulamanın kendi ondalık, pyramid-damped
+        değerleri değil) — çağıran (ExecutionService) yuvarlamadan
+        sorumlu. Dönen 'leverage' alanı borsanın GERÇEKTEN uyguladığı
+        değer (istenenden farklı olabilir, ör. sembolün üst sınırına
+        kırpılmış) — icat edilmiş bir "başarılı" varsayımı yok."""
+        params = {"symbol": symbol, "leverage": leverage}
+        resp = self._client.post("/fapi/v1/leverage", params=self._signed_params(params))
+        if resp.status_code >= 400:
+            self._handle_error_response(resp)
+        resp.raise_for_status()
+        return int(resp.json()["leverage"])
+
     def close(self) -> None:
         self._client.close()

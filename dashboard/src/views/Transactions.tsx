@@ -587,6 +587,10 @@ function sinceCutoffMs(minutes: number): number {
 type TypeFilter = "all" | "pump_fade" | "basis_arb" | "hedge" | "scalp" | "swing";
 type DirectionFilter = "all" | "LONG" | "SHORT";
 type OutcomeFilter = "all" | "profit" | "loss";
+// Kullanıcı isteği (2026-08-28): "canlıdan gelen işlemler etiketlenecek
+// mi, filtreleyebilecek miyim?" — etiket zaten vardı (execution_mode ===
+// "testnet" rozeti, aşağıda), sadece filtre eksikti.
+type ExecutionModeFilter = "all" | "testnet" | "simulated";
 
 const TYPE_FILTER_OPTIONS: { value: TypeFilter; label: string }[] = [
   { value: "all", label: "Tüm türler" },
@@ -619,6 +623,14 @@ function matchesOutcomeFilter(pnl: number | null | undefined, filter: OutcomeFil
   return filter === "profit" ? pnl > 0 : pnl < 0;
 }
 
+function matchesExecutionModeFilter(p: Position, filter: ExecutionModeFilter): boolean {
+  if (filter === "all") return true;
+  if (filter === "testnet") return p.execution_mode === "testnet";
+  // "simulated": execution_mode NULL/eksik de simülasyon sayılır (eski
+  // satırlar, execution_mode sütunu Faz 315'ten önce hiç yoktu).
+  return p.execution_mode !== "testnet";
+}
+
 function FilterSelect<T extends string>({
   value, onChange, options,
 }: {
@@ -648,6 +660,7 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [directionFilter, setDirectionFilter] = useState<DirectionFilter>("all");
   const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>("all");
+  const [executionModeFilter, setExecutionModeFilter] = useState<ExecutionModeFilter>("all");
   const [closingId, setClosingId] = useState<string | null>(null);
   const [closeError, setCloseError] = useState<string | null>(null);
   const [closingProfitable, setClosingProfitable] = useState(false);
@@ -670,7 +683,7 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
   const TRADES_PAGE_SIZE = 100;
   const [tradesPage, setTradesPage] = useState(0);
 
-  const hasActiveFilters = typeFilter !== "all" || directionFilter !== "all" || outcomeFilter !== "all";
+  const hasActiveFilters = typeFilter !== "all" || directionFilter !== "all" || outcomeFilter !== "all" || executionModeFilter !== "all";
 
   const filteredTrades = useMemo(() => {
     let result = trades;
@@ -682,16 +695,18 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
       matchesTypeFilter(t, typeFilter)
       && matchesDirectionFilter(t, directionFilter)
       && matchesOutcomeFilter(t.pnl, outcomeFilter)
+      && matchesExecutionModeFilter(t, executionModeFilter)
     );
-  }, [trades, sinceMinutes, typeFilter, directionFilter, outcomeFilter]);
+  }, [trades, sinceMinutes, typeFilter, directionFilter, outcomeFilter, executionModeFilter]);
 
   const filteredOpen = useMemo(() => {
     return open.filter((p) =>
       matchesTypeFilter(p, typeFilter)
       && matchesDirectionFilter(p, directionFilter)
       && matchesOutcomeFilter(p.net_unrealized_pnl, outcomeFilter)
+      && matchesExecutionModeFilter(p, executionModeFilter)
     );
-  }, [open, typeFilter, directionFilter, outcomeFilter]);
+  }, [open, typeFilter, directionFilter, outcomeFilter, executionModeFilter]);
 
   const filteredSummary = useMemo(() => {
     if (sinceMinutes === null && !hasActiveFilters) return null;
@@ -852,9 +867,18 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
               { value: "loss", label: "Sadece zararda" },
             ]}
           />
+          <FilterSelect
+            value={executionModeFilter}
+            onChange={setExecutionModeFilter}
+            options={[
+              { value: "all", label: "Mod: Tümü" },
+              { value: "testnet", label: "Sadece canlı (testnet)" },
+              { value: "simulated", label: "Sadece simülasyon" },
+            ]}
+          />
           {hasActiveFilters && (
             <button
-              onClick={() => { setTypeFilter("all"); setDirectionFilter("all"); setOutcomeFilter("all"); }}
+              onClick={() => { setTypeFilter("all"); setDirectionFilter("all"); setOutcomeFilter("all"); setExecutionModeFilter("all"); }}
               className="text-xs text-accent hover:underline ml-1"
             >
               Filtreleri temizle

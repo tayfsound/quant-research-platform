@@ -122,3 +122,15 @@ class OrderExecutionPort(Protocol):
     def cancel_order(self, symbol: str, order_id: str) -> None: ...
     @abstractmethod
     def get_open_position(self, symbol: str) -> dict[str, Any] | None: ...
+    # Faz 367-devam — kritik bulgu (2026-08-28, kullanıcının kendi testnet
+    # denemesinde yakalandı): open_position() borsaya HİÇ "bu sembolde
+    # kaldıracı X yap" demiyordu — uygulama kendi symbol_leverage ayarına
+    # göre quantity/liquidation_price hesaplıyordu ama borsa hesabındaki
+    # GERÇEK kaldıraç önceki (elle/varsayılan) ne ayarlıysa o kalıyordu.
+    # Gerçek örnek: uygulama 1x varsaydı, borsa hesabı 20x'te kalmıştı —
+    # gerçek marj/likidasyon riski uygulamanın hesapladığından TAMAMEN
+    # farklıydı. Dönen int, borsanın GERÇEKTEN onayladığı kaldıraç
+    # (istenenle aynı olmayabilir, borsanın kendi sembol-bazlı üst
+    # sınırına göre kırpılmış olabilir) — çağıran bunu doğrulamalı.
+    @abstractmethod
+    def set_leverage(self, symbol: str, leverage: int) -> int: ...

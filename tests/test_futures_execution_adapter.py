@@ -231,3 +231,43 @@ def test_get_open_position_returns_row_when_position_amt_nonzero():
     adapter = _adapter_with_transport(handler)
     row = adapter.get_open_position("BTCUSDT")
     assert row["positionAmt"] == "0.5"
+
+
+def test_set_leverage_sends_signed_request_and_returns_confirmed_value():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        captured["query"] = parse_qs(urlparse(str(request.url)).query)
+        return httpx.Response(200, json={"symbol": "BTCUSDT", "leverage": 10, "maxNotionalValue": "1000000"})
+
+    adapter = _adapter_with_transport(handler)
+    result = adapter.set_leverage("BTCUSDT", 10)
+
+    assert captured["path"] == "/fapi/v1/leverage"
+    assert captured["query"]["symbol"] == ["BTCUSDT"]
+    assert captured["query"]["leverage"] == ["10"]
+    assert "signature" in captured["query"]
+    assert result == 10
+
+
+def test_set_leverage_returns_exchange_clipped_value_when_different_from_requested():
+    """Borsa, sembolün kendi üst sınırına göre isteneni kırpabilir —
+    adaptör icat edilmiş bir "istenen == uygulanan" varsayımı yapmamalı,
+    borsanın döndürdüğü GERÇEK değeri aynen iletmeli."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"symbol": "BTCUSDT", "leverage": 20, "maxNotionalValue": "500000"})
+
+    adapter = _adapter_with_transport(handler)
+    result = adapter.set_leverage("BTCUSDT", 50)
+
+    assert result == 20
+
+
+def test_set_leverage_raises_rejected_error_on_binance_error_code():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"code": -4028, "msg": "Leverage is not valid"})
+
+    adapter = _adapter_with_transport(handler)
+    with pytest.raises(BinanceOrderRejectedError):
+        adapter.set_leverage("BTCUSDT", 999)
