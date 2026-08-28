@@ -400,6 +400,16 @@ def _validate(key: str, value: str) -> None:
                 raise ValueError
         except ValueError:
             raise HTTPException(400, "pivot_distance_gate_threshold_pct must be a number in (0, 1)")
+    elif key == "agent_combination_gate_enabled":
+        if value not in ("true", "false"):
+            raise HTTPException(400, "agent_combination_gate_enabled must be 'true' or 'false'")
+    elif key == "agent_combination_gate_min_win_rate":
+        try:
+            v = float(value)
+            if not (0 < v <= 1):
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "agent_combination_gate_min_win_rate must be a number in (0, 1]")
     elif key == "pyramid_worse_price_allowed_regime":
         # Faz 361 — bkz. analytics/pyramid_regime_gate.py. Sadece gerçek
         # market_regime formatının ({trend}_{volatility}) üretebileceği

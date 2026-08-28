@@ -324,7 +324,21 @@ def compute_optimal_barrier(
                         "decisive_fraction": round(len(pnls) / len(group_trades), 4),
                     }
 
-        if best is not None:
+        # Kullanıcı bulgusu (2026-08-28): gerçek canlı örnek — SHORT|
+        # bear_trend kovalarının İKİSİNDE de en iyi bulunan (sl,tp) çifti
+        # bile NEGATİF EV'liydi (-%9.7/-%8.1), ama önceden buraya kadar
+        # gelen HER şey (örneklem eşiğini geçen her şey) döndürülüyordu —
+        # ızgara taramasının bulabildiği "en az kötü" tp_pct neredeyse
+        # sıfıra (ör. %0.04) yakın çıkınca, RiskTargetStage'in EV kapısı
+        # (services/decision_fusion.py) bu kovaya düşen HER kararı
+        # (confidence ne olursa olsun, %90+ dahil) yapısal olarak
+        # reddediyordu — SHORT, piyasa gerçekten düşüşe geçtiğinde bile
+        # fiilen tamamen kilitlenmiş oluyordu. Artık bu fonksiyon da
+        # (örneklem eşiği kontrolüyle AYNI fail-closed ilke) negatif EV'li
+        # bir kova için hiç sonuç döndürmüyor — çağıran (RiskTargetStage)
+        # None alıp zaten var olan, her zaman geçilebilir statik ATR
+        # oranına (2.5/1.4) düşüyor.
+        if best is not None and best["expected_value_pct"] > 0:
             label = "|".join(f"{field}={value}" for field, value in zip(group_by, key))
             best["total_sample_size"] = len(group_trades)
             results[label] = best

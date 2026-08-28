@@ -240,8 +240,10 @@ def test_optimal_barrier_censors_trades_that_hit_neither_barrier():
 
 
 def test_optimal_barrier_separates_groups_by_regime():
-    """bull: MFE'ye erken ulaşılıyor (TP kazanır) → pozitif EV. bear: MAE'ye
-    ÖNCE ulaşılıyor (SL kazanır) → negatif EV. İki grup ayrı hesaplanmalı."""
+    """bull: MFE'ye erken ulaşılıyor (TP kazanır) → pozitif EV, tabloya
+    girer. bear: MAE'ye ÖNCE ulaşılıyor (SL kazanır) → negatif EV — iki
+    grup birbirinden bağımsız hesaplanıyor ama bear_trend, negatif EV
+    yüzünden SONUÇTA HİÇ GÖRÜNMÜYOR (bkz. aşağıdaki test)."""
     bull = [
         _barrier_trade(mae_pct=-0.01, mfe_pct=0.04, time_to_mae=100.0, time_to_mfe=50.0, regime="bull_trend")
         for _ in range(25)
@@ -252,9 +254,30 @@ def test_optimal_barrier_separates_groups_by_regime():
     ]
     result = compute_optimal_barrier(bull + bear, group_by=("regime",), min_group_size=20, min_decisive_count=20)
     assert "regime=bull_trend" in result
-    assert "regime=bear_trend" in result
     assert result["regime=bull_trend"]["expected_value_pct"] > 0
-    assert result["regime=bear_trend"]["expected_value_pct"] < 0
+    assert "regime=bear_trend" not in result
+
+
+def test_optimal_barrier_excludes_a_bucket_whose_best_candidate_is_still_negative_ev():
+    """Kullanıcı bulgusu (2026-08-28, gerçek canlı örnek): SHORT|bear_trend
+    kovalarının İKİSİNDE de ızgara taramasının bulabildiği "en iyi" (sl,tp)
+    çifti bile negatif EV'liydi (-%9.7/-%8.1) — ama önceden bu, tp_pct'i
+    neredeyse sıfıra yakın (%0.04) bir "öneri" olarak yine de döndürülüyordu.
+    RiskTargetStage'in EV kapısı bu öneriyi kullanınca, o kovaya düşen HER
+    karar (confidence %90+ dahil) yapısal olarak imkansız hale geliyordu —
+    SHORT, piyasa gerçekten düşüşe geçtiğinde bile fiilen kilitleniyordu.
+    Artık örneklem-eşiği kontrolüyle AYNI fail-closed ilke: en iyi bulunan
+    çift bile kârlı değilse kova hiç sonuç döndürmüyor, çağıran statik
+    ATR oranına düşüyor."""
+    # MAE her zaman büyük, MFE her zaman küçük — hangi (sl,tp) çifti
+    # denenirse denensin gerçekçi hiçbir kombinasyon kârlı çıkamaz.
+    losing = [
+        _barrier_trade(mae_pct=-0.15, mfe_pct=0.005, time_to_mae=50.0, time_to_mfe=200.0, regime="bear_trend")
+        for _ in range(30)
+    ]
+    result = compute_optimal_barrier(losing, group_by=("regime",), min_group_size=20, min_decisive_count=20)
+    assert "regime=bear_trend" not in result
+    assert result == {}
 
 
 def _decomp_trade(exit_reason: str, mfe_pct: float, confidence=0.7, direction="LONG",

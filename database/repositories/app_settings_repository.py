@@ -665,6 +665,19 @@ DEFAULTS: dict[str, str] = {
     # ekler).
     "mae_mfe_bucket_trading_enabled": "{}",
 
+    # Kullanıcı isteği (2026-08-28): "kararı vermeden önce burayı
+    # tarayacak, ajan gruplarının başarısını ölçecek — eşiğin altında
+    # kalıyorsa pozisyonu açmayacak." bkz. analytics/agent_combination_
+    # reliability_gate.py — HAFTALIK rapordaki (fdr_significant VE düşük
+    # örtüşmeli, gerçekten bağımsız) gruplara bakar. Eşik %74 — kullanıcı
+    # bulgusu: gerçek veride genel ortalama (baseline) win_rate ~%74
+    # civarında, bunun altındaki gruplar dashboard'da tutarlı şekilde
+    # zarar ("-" işaretli) çıkıyor. Varsayılan KAPALI (fail-open, adım
+    # adım aktivasyon ilkesi) — kullanıcı gerçek veriyle gözlemleyip
+    # kendi açacak.
+    "agent_combination_gate_enabled": "false",
+    "agent_combination_gate_min_win_rate": "0.74",
+
     # Faz 362 — kullanıcı bulgusu: "council'in ara sıra bir cycle'da
     # tersine dönmesi çoğunlukla gürültü — bu gürültüye güvenerek yeni
     # pozisyonlara da girebilir." Gerçek 3619 kapanmış pozisyonla (10-24

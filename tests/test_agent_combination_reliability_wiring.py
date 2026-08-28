@@ -29,8 +29,8 @@ def test_agent_combination_reliability_returns_real_shape_and_is_json_serializab
     assert "baseline_win_rate" in result
     assert "n_trades" in result
     for pair in result["pairs"]:
-        assert isinstance(pair["domain_a"], str)
-        assert isinstance(pair["domain_b"], str)
+        assert isinstance(pair["domains"], list)
+        assert len(pair["domains"]) == pair["combination_size"]
         assert 0.0 <= pair["win_rate"] <= 1.0
         assert isinstance(pair["fdr_significant"], bool)
 
@@ -52,7 +52,7 @@ def test_agent_combination_reliability_reports_returns_saved_snapshots():
         report = AgentCombinationReliabilityReport(
             result={
                 "pairs": [{
-                    "domain_a": "macro", "domain_b": "technical", "sample_size": 40,
+                    "domains": ["macro", "technical"], "combination_size": 2, "sample_size": 40,
                     "win_rate": 0.95, "win_rate_delta_vs_baseline": 0.2, "fdr_significant": True,
                 }],
                 "baseline_win_rate": 0.75,
@@ -83,7 +83,7 @@ def test_refresh_agent_combination_reliability_report_task_saves_a_snapshot():
 
     fake_result = {
         "pairs": [{
-            "domain_a": "macro", "domain_b": "technical", "sample_size": 40,
+            "domains": ["macro", "technical"], "combination_size": 2, "sample_size": 40,
             "win_rate": 0.95, "win_rate_delta_vs_baseline": 0.2, "fdr_significant": True,
         }],
         "baseline_win_rate": 0.75,

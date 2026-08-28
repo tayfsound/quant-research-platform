@@ -228,6 +228,36 @@ class DecisionRecorder:
             if is_mae_mfe_bucket_trading_blocked(bucket_key, bucket_enabled_map):
                 opens_position = False
 
+        # Kullanıcı isteği (2026-08-28): "kararı vermeden önce burayı
+        # tarayacak, ajan gruplarının başarısını ölçecek — %80'in altında
+        # kalıyorsa pozisyonu açmayacak." Rapor HAFTALIK (bkz. analytics/
+        # agent_combination_reliability_gate.py — her kararda 2000 işlemi
+        # yeniden taramak çok pahalı olurdu, diğer periyodik-sınıflandırmalı
+        # kapılarla AYNI ilke). Mekanik stratejiler council oylaması
+        # kullanmıyor, diğer AI-konseyi-özel kapılarla AYNI kısıt.
+        if opens_position and experiment_bucket is None:
+            from analytics.agent_combination_reliability import agreeing_domains_for_decision
+            from analytics.agent_combination_reliability_gate import (
+                DEFAULT_MIN_WIN_RATE,
+                is_agent_combination_trading_blocked,
+                trustworthy_known_pairs,
+            )
+            from database.repositories.agent_combination_reliability_report_repository import (
+                AgentCombinationReliabilityReportRepository,
+            )
+            from database.repositories.app_settings_repository import AppSettingsRepository
+
+            settings_repo = AppSettingsRepository(self.session)
+            if settings_repo.get("agent_combination_gate_enabled") == "true":
+                min_win_rate_raw = settings_repo.get("agent_combination_gate_min_win_rate")
+                min_win_rate = float(min_win_rate_raw) if min_win_rate_raw else DEFAULT_MIN_WIN_RATE
+                report = AgentCombinationReliabilityReportRepository(self.session).get_latest()
+                if report and report.get("result"):
+                    known_pairs = trustworthy_known_pairs(report["result"].get("pairs") or [])
+                    agreeing_domains = agreeing_domains_for_decision(agent_opinions_data, direction)
+                    if is_agent_combination_trading_blocked(agreeing_domains, known_pairs, min_win_rate):
+                        opens_position = False
+
         # Backlog #17 — kullanıcı isteği: "tepeden/dipten kovalıyorsa"
         # (kritik bir seviyeden çok uzaktaysa) giriş engellensin. Gerçek
         # veriyle (450+ karar) kalibre edildi (bkz. analytics/pivot_

@@ -119,13 +119,27 @@
      "görülecek" belirgin bir şey yoksa göze fark etmiyor. Opaklık daha
      da düşürüldü (8%/18%/32%) VE body'nin arkasındaki renkli lekeler
      güçlendirildi (aşağıda) — cam etkisinin görünür olması için ikisi
-     birlikte gerekli. */
-  background: var(--glass-glow, none), radial-gradient(
-    130% 130% at 50% 40%,
-    color-mix(in srgb, var(--color-surface) 8%, transparent) 0%,
-    color-mix(in srgb, var(--color-surface) 18%, transparent) 55%,
-    color-mix(in srgb, var(--color-surface) 32%, transparent) 100%
-  );
+     birlikte gerekli.
+
+     Faz 367-devam — kullanıcı bulgusu: sidebar (position:fixed, altından
+     GERÇEK sayfa içeriği geçtiği için backdrop-filter'ın blurlayacağı
+     GERÇEK bir detay var) belirgin camsı görünüyor; ama normal akıştaki
+     kartların (StatCard, tablolar) arkasında sadece pürüzsüz bir sayfa
+     gradyanı var — blurlanacak "detay" olmadığı için backdrop-filter
+     teknik olarak çalışsa da göze düz/beyaz görünüyor (fiziksel bir
+     sınır, arka planı ne kadar renklendirsek de çözülmüyor). Çözüm: kartın
+     KENDİ içinde, arkasında ne olduğundan bağımsız, gerçek camın ışığı
+     üstten-sola yakalaması gibi bir diyagonal parlama katmanı — beyaz,
+     temaya göre değişmiyor (koyu temada da camın ışık yakalaması hep
+     hafif beyaz/parlak olur, bu evrensel bir glassmorphism deseni). */
+  background: var(--glass-glow, none),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0) 45%),
+    radial-gradient(
+      130% 130% at 50% 40%,
+      color-mix(in srgb, var(--color-surface) 8%, transparent) 0%,
+      color-mix(in srgb, var(--color-surface) 18%, transparent) 55%,
+      color-mix(in srgb, var(--color-surface) 32%, transparent) 100%
+    );
   backdrop-filter: blur(22px) saturate(180%);
   -webkit-backdrop-filter: blur(22px) saturate(180%);
 }
@@ -156,11 +170,23 @@ body {
      olduğu için) fark edilmiyordu — lekeler güçlendirildi (15-18%) ve
      üçüncü, ekranın ortasına yakın bir leke eklendi ki cam kartlar
      nerede olursa olsun arkalarında GERÇEKTEN görülecek bir renk
-     geçişi olsun, sabit (scroll ile kaymayan) bir arka plan. */
+     geçişi olsun, sabit (scroll ile kaymayan) bir arka plan.
+
+     Faz 367-devam — kullanıcı bulgusu: sidebar (position:fixed, altından
+     GERÇEK sayfa içeriği geçtiği için) belirgin şekilde "camsı" görünüyor
+     ama normal akıştaki StatCard/tablo kartları (arkalarında sadece bu
+     gradyan var, başka bir şey yok) düz kalıyordu — 3 köşe lekesi ekranın
+     ORTA-SAĞ içerik alanına (StatCard'ların asıl durduğu yer) yeterince
+     ulaşmıyordu. İlk düzeltme (kartın kendi içinde diyagonal parlama,
+     bkz. .glass-panel) kullanıcı tarafından fark edilmeyecek kadar
+     ince kaldı — bu ikinci geçiş, arka planın KENDİSİNİ çok daha güçlü
+     (opaklık ~2 kat, solma mesafesi %72'den %85'e) yapıyor ki blur
+     ekranın HER yerinde gerçekten görünür olsun, sadece köşelerde değil. */
   background:
-    radial-gradient(1200px 640px at 10% -10%, color-mix(in srgb, var(--color-accent) 18%, transparent), transparent 60%),
-    radial-gradient(1000px 560px at 100% 0%, color-mix(in srgb, var(--color-rise) 15%, transparent), transparent 60%),
-    radial-gradient(900px 700px at 50% 90%, color-mix(in srgb, var(--color-warn) 12%, transparent), transparent 65%),
+    radial-gradient(1700px 1100px at 12% 0%, color-mix(in srgb, var(--color-accent) 38%, transparent), transparent 85%),
+    radial-gradient(1600px 1100px at 100% 8%, color-mix(in srgb, var(--color-rise) 32%, transparent), transparent 85%),
+    radial-gradient(1500px 1200px at 55% 100%, color-mix(in srgb, var(--color-warn) 30%, transparent), transparent 85%),
+    radial-gradient(1400px 1100px at 62% 42%, color-mix(in srgb, var(--color-accent) 26%, transparent), transparent 82%),
     var(--color-canvas);
   background-attachment: fixed;
   color: var(--color-ink);

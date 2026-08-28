@@ -1,9 +1,79 @@
-# Mevcut Durum -- v1.108.0 (Faz 367-devam: MAE/MFE kova aç-kapa + onchain gerçek veri + execution layer zaten hazır bulundu)
+# Mevcut Durum -- v1.109.0 (Faz 367-devam: SHORT'u kilitleyen Adaptive Barrier bug'ı + Ajan Kombinasyonu genelleştirmesi + kaldıraç senkronizasyonu)
 
 **Tarih:** 2026-08-28
 **Branch:** main
-**Son commit (HEAD):** `d7a170d` (onchain borsa akışı + balina sinyali). Bu turun MAE/MFE kova aç-kapa işi (aşağıda) henüz commit edilmedi.
+**Son commit (HEAD):** `e7859e6` (kaldıraç senkronizasyonu + testnet sembol/filtre UI). Bu turun işleri (aşağıda) henüz commit edilmedi.
 **Servis durumu:** celery worker + celery beat + uvicorn + vite ÜÇÜ DE temiz yeniden başlatıldı, hatasız. tsc temiz.
+
+## Faz 367-devam — KRİTİK BUG: SHORT işlemleri 10 gündür fiilen kilitliydi (2026-08-28)
+
+Kullanıcı gözlemi: "piyasa yön değiştirdiğinde de sistem SHORT açmıyor,
+sessiz kalıyor — tasarımda hata var." Gerçek veriyle doğrulandı: son
+10 günde (18 Ağustos 21:57'den beri) GERÇEK AI-konseyi SHORT işlemi
+**SIFIR** (arbitraj/pump-fade hariç) — LONG ise günde onlarca/yüzlerce.
+Kök neden bulundu: `analytics/mae_mfe.py::compute_optimal_barrier()`
+(Adaptive Barrier Engine), `SHORT|bear_trend` kovalarının GERÇEK geçmiş
+verisinde ızgara taramasının bulabildiği EN İYİ (sl,tp) çifti bile
+NEGATİF EV'liydi (-%9.7/-%8.1) ama yine de döndürülüyordu — tp_pct
+neredeyse sıfıra (%0.04) düşünce, `services/decision_fusion.py`'nin EV
+kapısı bu kovaya düşen HER SHORT kararını (confidence %90+ dahil,
+gerçek veriyle doğrulandı — son 5 günde 15317 SHORT kararından en
+yükseği %90.28, hepsi `ev=0.0` ile reddedilmiş) yapısal olarak
+reddediyordu. Düzeltme: `compute_optimal_barrier()` artık en iyi bulunan
+çift bile kârsızsa (EV<=0) o kova için hiç sonuç döndürmüyor (örneklem-
+eşiği kontrolüyle AYNI fail-closed ilke) — çağıran (`RiskTargetStage`)
+None alıp her zaman geçilebilir statik 2.5/1.4 ATR oranına düşüyor.
+Canlı tablo elle yeniden inşa edildi (`build_and_save_barrier_table()`,
+normalde günlük) — bozuk 2 SHORT kova artık tabloda yok (10→8 anahtar).
+Yeni test: `test_optimal_barrier_excludes_a_bucket_whose_best_candidate_is_still_negative_ev`,
+`test_optimal_barrier_separates_groups_by_regime` güncellendi.
+
+## Faz 367-devam — Ajan Kombinasyonu Güvenilirliği: 2/3/4'lü genelleştirme + karar-kapısı (2026-08-28)
+
+Kullanıcı bulgusu: dashboard'daki 5 "onchain" çifti BİREBİR aynı
+%100.0/+29.4 puanı veriyordu — bağımsız bulgu değil, aynı işlemlerin
+tekrar sayımıydı (bir işlemde 5 ajan anlaşırsa C(5,2)=10 çiftin
+örneklemine BİRDEN giriyor). `analytics/agent_combination_reliability.py::
+compute_pairwise_combination_reliability` → `compute_combination_
+reliability`'e genelleştirildi: artık sabit ikili yerine 2/3/4'lü
+gruplar AYNI ANDA test ediliyor (`domain_a/domain_b` → `domains`+
+`combination_size`), VE her grubun domain paylaşan diğer gruplarla
+(boyuttan bağımsız) örtüşmesi (`max_shared_trade_overlap_pct`) hesaplanıp
+raporlanıyor — dashboard'da yeni "Örtüşme" sütunu.
+
+Ardından kullanıcı isteğiyle bu veri KARAR MEKANİZMASINA bağlandı:
+`analytics/agent_combination_reliability_gate.py` — bir kararın
+agreeing_domains'i, en son haftalık raporun FDR'ı geçmiş+düşük-örtüşmeli
+("trustworthy") bir grubuyla eşleşip win_rate eşiğin (varsayılan %74 —
+kullanıcı bulgusu: gerçek baseline ~%74'te) altındaysa pozisyon
+engelleniyor. Varsayılan KAPALI, `AgentCombinationReliability.tsx`'te
+yeni "Karar Kapısı" kartından (eşik + aç/kapa) yönetiliyor. decision_
+recorder.py'ye diğer gate'lerle AYNI desende wire edildi. 30 yeni test.
+
+## Faz 367-devam — UI: Transactions sekmeleri + toplu-kapat önizleme + sidebar tek toggle (2026-08-28)
+
+Transactions.tsx: Açık/Kapalı Pozisyonlar artık aynı anda değil, tıklanan
+kartın açıldığı iki sekme. "Kârdakileri Toplu Kapat" butonunun solunda
+tahmini realize edilecek PnL (`GET /positions/close-profitable/preview`,
+POST'un kullandığı AYNI `_scan_profitable_positions` fonksiyonunu
+paylaşıyor). Sidebar.tsx: gizle/göster için tek buton (eskiden 2 farklı
+buton vardı), menüyle birlikte sağa kayıp panelin kenarına yapışıyor.
+
+**Denenip bırakılan**: kartların "cam efekti" tutarsızlığı (StatCard/
+tablolar sidebar kadar camsı görünmüyor) — kök neden bulundu
+(backdrop-filter sadece GERÇEKTEN arkasında bir şey varsa görünür oluyor,
+normal akıştaki kartların arkasında sadece düz sayfa gradyanı var) ama
+2 deneme (arka planı güçlendirme, kartın kendi içinde diyagonal parlama)
+kullanıcı tarafından fark edilmedi — "sonra bakarız" denip bırakıldı.
+
+## Faz 367-devam — pump_fade lookback_hours araştırması (2026-08-28)
+
+`analytics/pump_fade_lookback_window_study.py` — gerçek Binance verisiyle
+(200 sembol örneklem) farklı tarama pencerelerinin (12-168 saat) fade
+isabet oranını karşılaştırdı. Sonuç: mevcut 48 saatlik ayar en sağlam
+nokta (%86.4 isabet, %13.6 patlama riski) — DEĞİŞTİRMEME kararı verildi,
+büyük örneklem küçük örneklemin (72 saat öne çıkmıştı) yanıltıcı
+sonucunu düzeltti.
 
 ## Faz 367-devam — MAE/MFE Kova Bazlı Aç-Kapa + 2 yan düzeltme (2026-08-28)
 

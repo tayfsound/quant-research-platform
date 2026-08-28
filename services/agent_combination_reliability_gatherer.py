@@ -5,7 +5,7 @@ saf (pure) kalıyor, gerçek veriye dokunan kod burada. pump_fade_v1 hariç
 Opportunity Quality/Agent Ablation ile AYNI dışlama."""
 from analytics.agent_combination_reliability import (
     agreeing_domains_for_decision,
-    compute_pairwise_combination_reliability,
+    compute_combination_reliability,
 )
 from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMENT_BUCKET
 
@@ -33,6 +33,6 @@ def gather_agent_combination_reliability() -> dict:
             continue
         records.append({"agreeing_domains": agreeing, "win": pnl > 0})
 
-    result = compute_pairwise_combination_reliability(records)
+    result = compute_combination_reliability(records)
     result["n_trades"] = len(records)
     return result

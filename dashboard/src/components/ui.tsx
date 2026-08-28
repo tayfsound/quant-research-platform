@@ -13,8 +13,14 @@ export function Card({
   opaque?: boolean;
 }) {
   return (
+    // Faz 367-devam — kullanıcı bulgusu: "arka plandan ayrı üç boyutlu
+    // gibi olması lazım." Varsayılan gölge shadow-layer-1 (çok hafif) idi,
+    // sadece hover'da shadow-layer-2'ye çıkıyordu — sidebar'ın (her zaman
+    // shadow-layer-2) yanında düz kalıyordu. Artık varsayılan da
+    // shadow-layer-2, hover shadow-layer-3 — sidebar'la AYNI temel
+    // yükseklik hissi, tasarım tutarlılığı.
     <div
-      className={`${opaque ? "modal-panel" : "glass-panel"} border border-line rounded-xl shadow-layer-1 hover:shadow-layer-2 min-w-0 overflow-hidden ${
+      className={`${opaque ? "modal-panel" : "glass-panel"} border border-line rounded-xl shadow-layer-2 hover:shadow-layer-3 min-w-0 overflow-hidden ${
         padded ? "p-5" : ""
       } ${className}`}
     >
