@@ -10,6 +10,7 @@ correctly against the real, already-locally-cached all-MiniLM-L6-v2 model,
 no network call needed after the first download. The fix is knowing NOT to
 apply the transformers auto-mock here (unlike every LLM-reasoner test), and
 proving that with a real, unmocked, real-DB integration test."""
+from unittest.mock import patch
 from uuid import uuid4
 
 from contracts.memory import Episode
@@ -26,6 +27,52 @@ def test_embedding_service_produces_real_normalized_vectors():
     assert len(vec) == 384
     norm = sum(v * v for v in vec) ** 0.5
     assert abs(norm - 1.0) < 1e-4  # normalize_embeddings=True
+
+
+def test_get_embedding_model_prefers_the_local_cache_with_no_network_call():
+    """Faz 368 — kullanıcı bulgusu (gerçek olay): "RuntimeError: Cannot
+    send a request, as the client has been closed", ~50dk'da 3 kez, her
+    seferinde bir trading cycle'ın tamamı kayboluyordu. Kök neden: model
+    zaten tam önbelleklenmiş olmasına rağmen her yüklemede yine de
+    HuggingFace Hub'a gereksiz bir ağ isteği atılıyordu — bu ağ
+    bağımlılığı, huggingface_hub'ın kendi HTTP istemcisindeki nadir bir
+    yarış durumuyla birleşince çöküyordu. local_files_only=True artık
+    ÖNCE deneniyor (önbellek varsa ağa HİÇ dokunmuyor) — bu testte
+    gerçekten O YOLUN kullanıldığını (ağ-destekli yola hiç düşülmediğini)
+    doğruluyoruz."""
+    import services.embedding_service as embedding_service_module
+
+    original_model = embedding_service_module._model
+    embedding_service_module._model = None
+    try:
+        with patch("services.embedding_service.SentenceTransformer") as mock_ctor:
+            mock_ctor.return_value = "fake-model"
+            result = embedding_service_module.get_embedding_model()
+
+        assert result == "fake-model"
+        mock_ctor.assert_called_once_with("all-MiniLM-L6-v2", device="cpu", local_files_only=True)
+    finally:
+        embedding_service_module._model = original_model
+
+
+def test_get_embedding_model_falls_back_when_local_cache_is_missing():
+    """Önbellek yoksa (ör. taze bir deploy) fail-closed DEĞİL — normal
+    (ağ destekli) yüklemeye düşülüyor, ilk kurulumda hâlâ çalışır."""
+    import services.embedding_service as embedding_service_module
+
+    original_model = embedding_service_module._model
+    embedding_service_module._model = None
+    try:
+        with patch("services.embedding_service.SentenceTransformer") as mock_ctor:
+            mock_ctor.side_effect = [OSError("not found in local cache"), "fake-model-from-network"]
+            result = embedding_service_module.get_embedding_model()
+
+        assert result == "fake-model-from-network"
+        assert mock_ctor.call_count == 2
+        mock_ctor.assert_any_call("all-MiniLM-L6-v2", device="cpu", local_files_only=True)
+        mock_ctor.assert_any_call("all-MiniLM-L6-v2", device="cpu")
+    finally:
+        embedding_service_module._model = original_model
 
 
 def test_semantic_search_finds_a_real_persisted_episode_by_embedding_similarity():

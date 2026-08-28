@@ -25,7 +25,28 @@ def get_embedding_model():
                 # 120s'lik cycle döngüsü için performans farkı önemsiz.
                 # MPS'e güvenmek yerine sabit CPU kullanmak bu çökme
                 # sınıfını tamamen ortadan kaldırıyor.
-                _model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
+                #
+                # Faz 368 — ikinci, farklı bir çökme sınıfı: gerçek olay
+                # ("RuntimeError: Cannot send a request, as the client has
+                # been closed"), ~50 dakikada 3 kez, her seferinde bir
+                # trading cycle'ın (~50 sembol) TAMAMI kayboluyordu. Kök
+                # neden: model dosyaları makinede ZATEN tam olarak
+                # önbelleklenmiş (~/.cache/huggingface/hub) ama varsayılan
+                # davranış her yüklemede yine de HuggingFace Hub'a
+                # "güncelleme var mı" diye bir ağ isteği atıyordu — bu
+                # gereksiz ağ bağımlılığı, huggingface_hub'ın kendi HTTP
+                # istemcisinde arada bir görülen bir yarış durumuyla
+                # ("client has been closed") birleşince tüm cycle'ı
+                # çökertiyordu. local_files_only=True ile önbellek varsa
+                # hiç ağa DOKUNULMUYOR — bu çökme sınıfı tamamen ortadan
+                # kalkıyor, üstelik yükleme de hızlanıyor (ağ round-trip'i
+                # yok). Önbellek YOKSA (ör. taze bir deploy) fail-closed
+                # DEĞİL — normal (ağ destekli) yüklemeye düşülüyor, ilk
+                # kurulumda hâlâ çalışır.
+                try:
+                    _model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu", local_files_only=True)
+                except Exception:
+                    _model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
     return _model
 
 class EmbeddingService:
