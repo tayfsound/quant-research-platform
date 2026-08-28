@@ -227,5 +227,15 @@ def snap_stop_to_confluence(
     # noktaya çeker.
     nearest = min(candidates, key=lambda z: abs(z["level"] - current_price))
     buffer = tolerance_pct / 2  # bölgenin TAM üstüne değil, hemen ÖTESİNE (koruma payı)
-    adjusted = nearest["level"] * (1 - buffer) if direction == "LONG" else nearest["level"] * (1 + buffer)
+    # Faz 368 — Hypothesis'in bulduğu gerçek bug: nearest["level"] adaylık
+    # filtresiyle stop_price'a YAKIN olabilir (fiyat ile ATR-stop arasında
+    # olma şartı sadece "kesinlikle içeride" der, "ne kadar içeride"
+    # demez) — buffer bu durumda level'i stop_price'ın ÖTESİNE (ATR-
+    # stop'tan bile daha uzağa) itebiliyordu, docstring'in "asla riski
+    # artırmaz" garantisini bozuyordu. max/min ile stop_price'a kelepçe —
+    # buffer HİÇBİR ZAMAN orijinal ATR-stop'u aşamaz.
+    if direction == "LONG":
+        adjusted = max(nearest["level"] * (1 - buffer), stop_price)
+    else:
+        adjusted = min(nearest["level"] * (1 + buffer), stop_price)
     return adjusted, nearest
