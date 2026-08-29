@@ -75,7 +75,28 @@ class BinanceAdapter(BaseExchangeAdapter):
         ]
 
     async def get_order_book(self, symbol: str, depth: int = 10) -> OrderBookSnapshot:
-        data = await self._get("/api/v3/depth", {"symbol": symbol, "limit": depth})
+        # Faz 371 — kullanıcı bulgusu: yeni eklenen tokenize hisse
+        # sembolleri (AAPLUSDT/MSFTUSDT/GOOGLUSDT/... — SADECE futures'ta
+        # var, spot'ta yok) için "AI bunlarla ilgili data göremiyor"
+        # şikayeti. Kök neden: fetch_ohlcv (Faz 368) spot 400 dönünce
+        # futures'a düşüyordu ama get_order_book bu yedeği hiç
+        # uygulamıyordu — spot 400 fırlatınca yakalanmadan yukarı
+        # patlıyordu, market_data/ingestion/pipeline.py::ingest_order_book
+        # bu istisnayı hiç yakalamadığı için order_book_snapshots
+        # tablosuna BU semboller için asla satır yazılmıyordu — order_flow
+        # ajanı gerçekten "no data" görüyordu. fetch_ohlcv ile AYNI
+        # spot-önce-futures-yedek deseni.
+        try:
+            data = await self._get("/api/v3/depth", {"symbol": symbol, "limit": depth})
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 400:
+                raise
+            await _throttle_binance_request()
+            resp = await self._client.get(
+                f"{FUTURES_BASE_URL}/fapi/v1/depth", params={"symbol": symbol, "limit": depth}
+            )
+            resp.raise_for_status()
+            data = resp.json()
         return OrderBookSnapshot(
             # Faz 231: kritik bulgu — yeni GET /health/signals'ı doğrularken
             # bulundu. order_book_snapshots.time naive datetime.now() (yerel
@@ -183,7 +204,19 @@ class BinanceAdapter(BaseExchangeAdapter):
         alıcı taker; True = agresif satış, satıcı taker). OrderFlowAgent'ın
         aggressive_buy_ratio girdisi buradan geliyor — önceden hep sabit
         0.5 (tam nötr) idi, gerçek veri kaynağı hiç yoktu."""
-        data = await self._get("/api/v3/trades", {"symbol": symbol, "limit": limit})
+        # Faz 371 — get_order_book ile AYNI spot-önce-futures-yedek gerekçesi
+        # (SADECE futures'ta olan tokenize hisse sembolleri için).
+        try:
+            data = await self._get("/api/v3/trades", {"symbol": symbol, "limit": limit})
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 400:
+                raise
+            await _throttle_binance_request()
+            resp = await self._client.get(
+                f"{FUTURES_BASE_URL}/fapi/v1/trades", params={"symbol": symbol, "limit": limit}
+            )
+            resp.raise_for_status()
+            data = resp.json()
         return [{"is_buyer_maker": bool(t["isBuyerMaker"])} for t in data]
 
     async def fetch_funding_rate(self, symbol: str) -> float:
