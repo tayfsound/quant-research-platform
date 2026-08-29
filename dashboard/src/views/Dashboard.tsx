@@ -393,11 +393,11 @@ export default function Dashboard() {
       // (o an 1074) hiç yansımıyordu. summary.open_count limitsiz, gerçek
       // toplam.
       .then((data) => setOpenCount(data.summary?.open_count ?? (data.positions || []).length));
-    fetch("/api/v1/positions/breakdown-by-type", { headers: authHeaders() })
+    fetch("/api/v1/positions/breakdown-by-type?exclude_experiment_bucket=pump_fade_v1", { headers: authHeaders() })
       .then((r) => r.json())
       .then((data) => setTypeBreakdown(data.breakdown || []))
       .catch(() => setTypeBreakdown([]));
-    fetch("/api/v1/trades/breakdown-by-type", { headers: authHeaders() })
+    fetch("/api/v1/trades/breakdown-by-type?exclude_experiment_bucket=pump_fade_v1", { headers: authHeaders() })
       .then((r) => r.json())
       .then((data) => setClosedTypeBreakdown(data.breakdown || []))
       .catch(() => setClosedTypeBreakdown([]));

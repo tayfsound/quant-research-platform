@@ -351,7 +351,9 @@ class DecisionPersistor:
         ).mappings().all()
         return [dict(r) for r in rows]
 
-    def open_position_breakdown_by_trade_type(self) -> list[dict]:
+    def open_position_breakdown_by_trade_type(
+        self, exclude_experiment_bucket: str | None = None
+    ) -> list[dict]:
         """Faz 268-sonrası — kullanıcı isteği: "scalp, gün içi, orta vade
         vs. farklı işlem türlerinin ne kadarı short ne kadarı long
         pozisyonmuş" dashboard'da bir tabloda görünsün. api/rest/
@@ -364,16 +366,20 @@ class DecisionPersistor:
         Faz 323'te "orta_vadeli" (timeframe'e bağımlı, kırılgan) kovası
         kaldırıldı) tekrarlanıyor — sonuç grup sayıları, tek tek pozisyon
         değil."""
-        return self._breakdown_by_trade_type("open")
+        return self._breakdown_by_trade_type("open", exclude_experiment_bucket)
 
-    def closed_trade_breakdown_by_trade_type(self) -> list[dict]:
+    def closed_trade_breakdown_by_trade_type(
+        self, exclude_experiment_bucket: str | None = None
+    ) -> list[dict]:
         """Kullanıcı isteği: "kapanmış işlemlerin olduğu kısıma ratioları
         eklememişsin oradaki bilgiye de ihtiyacım var" — açık pozisyonlar
         için yazılan open_position_breakdown_by_trade_type() ile AYNI
         agregasyon, sadece status='closed' üzerinde."""
-        return self._breakdown_by_trade_type("closed")
+        return self._breakdown_by_trade_type("closed", exclude_experiment_bucket)
 
-    def _breakdown_by_trade_type(self, status: str) -> list[dict]:
+    def _breakdown_by_trade_type(
+        self, status: str, exclude_experiment_bucket: str | None = None
+    ) -> list[dict]:
         # Faz 282 — kritik bulgu: bu agregasyon excluded_from_stats'ı hiç
         # kontrol etmiyordu — list_closed_trades/closed_trades_summary/
         # performance_by_period'ın (Faz 238'den beri) hepsi bilinen bug'
@@ -382,8 +388,7 @@ class DecisionPersistor:
         # sayıyordu — kullanıcı bulgusu: faz279/280/281'de excluded_from_
         # stats=true işaretlenen pump_fade/scalp/hedge satırları bu tabloda
         # hâlâ görünüyordu.
-        rows = self.session.execute(
-            text("""
+        query = """
                 SELECT trade_type, direction, count(*) AS position_count
                 FROM (
                     SELECT
@@ -409,9 +414,16 @@ class DecisionPersistor:
                 WHERE trade_type IS NOT NULL
                 GROUP BY trade_type, direction
                 ORDER BY trade_type, direction
-            """),
-            {"status": status},
-        ).mappings().all()
+            """
+        params = {"status": status}
+        if exclude_experiment_bucket is not None:
+            query = query.replace(
+                "WHERE status = :status AND excluded_from_stats = false",
+                "WHERE status = :status AND excluded_from_stats = false "
+                "AND (experiment_bucket IS NULL OR experiment_bucket != :exclude_experiment_bucket)",
+            )
+            params["exclude_experiment_bucket"] = exclude_experiment_bucket
+        rows = self.session.execute(text(query), params).mappings().all()
 
         return [dict(r) for r in rows]
 
@@ -907,7 +919,9 @@ class DecisionPersistor:
             "manual_full_count": row["manual_full_count"] or 0,
         }
 
-    def closed_trades_summary_by_direction(self) -> dict:
+    def closed_trades_summary_by_direction(
+        self, exclude_experiment_bucket: str | None = None
+    ) -> dict:
         """Faz 322 — kullanıcı isteği: "genel toplamda long/short kazanma
         oranı" — Dashboard'da hiçbir yerde LONG'un mu SHORT'un mu daha
         başarılı olduğu görünmüyordu. closed_trades_summary() ile AYNI
@@ -915,15 +929,18 @@ class DecisionPersistor:
         DAHİL, mevcut "Kazanma oranı" kartıyla AYNI kural, tutarlılık
         için ayrı bir filtre icat edilmiyor), sadece direction'a göre
         gruplanmış."""
-        rows = self.session.execute(
-            text(
-                "SELECT direction, count(*) AS trade_count, "
-                "sum(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS wins "
-                "FROM decisions WHERE status = 'closed' AND excluded_from_stats = false "
-                "AND direction IN ('LONG', 'SHORT') "
-                "GROUP BY direction"
-            )
-        ).mappings().all()
+        query = (
+            "SELECT direction, count(*) AS trade_count, "
+            "sum(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS wins "
+            "FROM decisions WHERE status = 'closed' AND excluded_from_stats = false "
+            "AND direction IN ('LONG', 'SHORT')"
+        )
+        params: dict = {}
+        if exclude_experiment_bucket is not None:
+            query += " AND (experiment_bucket IS NULL OR experiment_bucket != :exclude_experiment_bucket)"
+            params["exclude_experiment_bucket"] = exclude_experiment_bucket
+        query += " GROUP BY direction"
+        rows = self.session.execute(text(query), params).mappings().all()
         result = {
             "LONG": {"trade_count": 0, "win_count": 0, "loss_count": 0, "win_rate": 0.0},
             "SHORT": {"trade_count": 0, "win_count": 0, "loss_count": 0, "win_rate": 0.0},

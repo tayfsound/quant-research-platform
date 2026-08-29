@@ -229,7 +229,10 @@ def list_open_positions(
 
 
 @router.get("/positions/breakdown-by-type")
-def positions_breakdown_by_type(user: AuthContext = Depends(get_current_user)):
+def positions_breakdown_by_type(
+    exclude_experiment_bucket: str | None = None,
+    user: AuthContext = Depends(get_current_user),
+):
     """Faz 268-sonrası — kullanıcı isteği: "scalp, gün içi, orta vade vs.
     farklı işlem türlerinin ne kadarı short ne kadarı long pozisyonmuş."
     _classify_trade_type() ile AYNI sınıflandırma, ama TÜM açık
@@ -237,19 +240,26 @@ def positions_breakdown_by_type(user: AuthContext = Depends(get_current_user)):
     agregasyonu — bkz. decision_persistor.py::open_position_breakdown_
     by_trade_type()."""
     with SessionFactory.get_session() as session:
-        rows = DecisionPersistor(session).open_position_breakdown_by_trade_type()
+        rows = DecisionPersistor(session).open_position_breakdown_by_trade_type(
+            exclude_experiment_bucket=exclude_experiment_bucket
+        )
     return {"breakdown": rows}
 
 
 @router.get("/trades/breakdown-by-type")
-def trades_breakdown_by_type(user: AuthContext = Depends(get_current_user)):
+def trades_breakdown_by_type(
+    exclude_experiment_bucket: str | None = None,
+    user: AuthContext = Depends(get_current_user),
+):
     """Kullanıcı isteği: "kapanmış işlemlerin olduğu kısıma ratioları
     eklememişsin oradaki bilgiye de ihtiyacım var" — yukarıdaki açık
     pozisyon kırılımının kapanmış işlemler karşılığı, AYNI SQL
     agregasyonu (bkz. decision_persistor.py::closed_trade_breakdown_
     by_trade_type())."""
     with SessionFactory.get_session() as session:
-        rows = DecisionPersistor(session).closed_trade_breakdown_by_trade_type()
+        rows = DecisionPersistor(session).closed_trade_breakdown_by_trade_type(
+            exclude_experiment_bucket=exclude_experiment_bucket
+        )
     return {"breakdown": rows}
 
 
@@ -481,7 +491,9 @@ def performance_summary(user: AuthContext = Depends(get_current_user)):
             "monthly": monthly,
             "yearly": yearly,
             "by_trade_type": by_trade_type,
-            "by_direction": persistor.closed_trades_summary_by_direction(),
+            "by_direction": persistor.closed_trades_summary_by_direction(
+                exclude_experiment_bucket=excluded_bucket
+            ),
         }
 
 

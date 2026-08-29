@@ -102,6 +102,13 @@ celery_app.conf.beat_schedule = {
         "task": "close_due_positions_task",
         "schedule": 60.0,
     },
+    # Faz 279 cleanup — eski pump-fade açık pozisyonları production
+    # dashboard'undan ayırmak için gerçek fiyatla kapatır. Görev tekrar
+    # güvenlidir; temizlenen satırlar artık status='open' değildir.
+    "cleanup-stale-pump-fade-positions-every-minute": {
+        "task": "cleanup_stale_pump_fade_positions_task",
+        "schedule": 60.0,
+    },
     # Faz 339 — kullanıcı isteği: Transactions'ta "açık pozisyonların
     # yüzde kaçı karda/zararda" kartı. close_due_positions_task ile AYNI
     # cadence, ama AYRI/bağımsız bir kilit — bu görev sadece ölçüm/kayıt,
