@@ -1,9 +1,36 @@
-# Mevcut Durum -- v1.113.0 (Faz 372-375: SHORT Exploration deneyi + Agent Combination Reliability zenginleştirmesi + agreement-tier + Feature Intelligence Layer Faz B + 0.5266 instrumentation)
+# Mevcut Durum -- v1.114.0 (Faz 372-375: SHORT Exploration deneyi + Agent Combination Reliability zenginleştirmesi + agreement-tier + Feature Intelligence Layer Faz B (TAMAMLANDI, feature_independence dahil) + 0.5266 instrumentation)
 
 **Tarih:** 2026-08-29
 **Branch:** main
-**Son commit (HEAD):** `bd27f0a` — tüm turun işleri commitlendi, push edildi.
-**Servis durumu:** uvicorn + celery worker + celery beat en son (Faz 375) kodla yeniden başlatılıyor. NOT: arka planda bir `scripts/service_watchdog.sh` (Faz 334, PID 61155) uvicorn/celery-worker_default'u 60sn'de bir kontrol edip düşerse otomatik yeniden başlatıyor — beat'i YÖNETMİYOR, beat manuel takip edilmeli. Manuel restart sırasında watchdog'un AYNI anda kendi restart'ını tetikleyip duplicate process yaratma riski var (bugün bir kez yaşandı, fark edilip düzeltildi) — kill sonrası yeni süreci BAŞLATMADAN önce watchdog'un halletmesini beklemek (veya tek bir PID kill edip hemen ps ile doğrulamak) daha güvenli.
+**Son commit (HEAD):** `07b0bca` — tüm turun işleri commitlendi, push edildi.
+**Servis durumu:** uvicorn + celery worker + celery beat en son kodla çalışıyor, canlı üretim doğrulandı (decisions tablosuna ~30sn'de bir yeni karar düşüyor).
+
+**Faz B tamamlandı (2026-08-29, geç):** Opportunity Quality'nin kalite
+skoruna üçüncü çarpan (feature_independence) eklendi — analytics/
+opportunity_quality.py::_feature_independence_from_contributions,
+compute_redundancy_clusters'ın (Faz B'nin klik bulgusu) TEK KAYNAK
+olarak reuse edilmesiyle. Gerçek veri: "medium" kalite kovası 163'ten
+22'ye küçüldü ama expectancy $138→$213, profit_factor 4.12→15.50 —
+feature_independence gerçekten bağımsız kanıtlı kararları daha keskin
+ayırıyor.
+
+**Operasyonel olay (2026-08-29, geç) — worker gerçekten takılmıştı,
+sadece yavaş değil:** Bir restart sonrası worker 34+ dakika SIFIR yeni
+karar üretti (normal ~5-12 dakikalık cycle'ın çok üstünde). Teşhis:
+`lsof` ile dış bağlantı YOKTU (Binance'e takılı değildi) — yerel
+Postgres/Redis'e bağlıydı, ~%15 CPU ile "RN" durumda, embedding
+batch'leri düzenli tamamlanıyordu ama hiçbir "cognitive_cycle_
+completed" logu 30+ dakikadır yoktu. `py-spy` sudo gerektirdiği için
+stack trace alınamadı. Karar: kill -9 ile zorla sonlandırılıp watchdog'un
+temiz bir worker başlatmasına izin verildi — 20sn içinde normal üretime
+döndü. **Ders:** "graceful shutdown uzun sürüyor" ile "gerçekten
+takılmış" arasındaki fark `SELECT max(timestamp) FROM decisions` ile
+GERÇEK zaman farkına bakılarak ayırt edilmeli — "ortalama cycle süresi"
+varsayımına güvenip pasif beklemek yanıltıcı olabilir (kullanıcı bunu
+doğru şekilde sorguladı: "12.5 dk diyorsun ama yarım saat oldu").
+Kök neden (NEDEN takıldığı) hâlâ bilinmiyor — tekrarlarsa py-spy'ı
+sudo ile (kullanıcı parolasıyla) çalıştırıp gerçek stack trace almak
+gerekir.
 
 ## Faz 372-375 — Todo listesi turu (kullanıcı sıralaması: 5,2,3,4,6) (2026-08-29)
 
