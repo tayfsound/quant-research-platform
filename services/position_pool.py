@@ -18,6 +18,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import structlog
+from sqlalchemy import text
 
 from contracts.decision_event import DecisionEvent
 from database.repositories.app_settings_repository import AppSettingsRepository
@@ -275,6 +276,32 @@ def resolve_due_pool_windows() -> dict:
         exchange_stop_order_id = None
         exchange_tp_order_id = None
 
+        # Faz 372 — kullanıcı bulgusu (canlı, gerçek pozisyon üzerinden):
+        # "ajan oyları görünmüyor açıklamada" — bu fonksiyon SADECE pool-
+        # seçim metadata'sını (pooled_at/entry_price_at_pool vb.) yazıyordu,
+        # kararı ÜRETEN gerçek konsey oylarını (macro/technical/pattern/...)
+        # hiç taşımıyordu. O oylar KAYBOLMUYOR — ctx.decision.confidence'ı
+        # üreten orijinal cycle, try_pool_candidate()'ı çağırmadan hemen
+        # önce zaten TAM opinion listesiyle 'no_trade' olarak persist
+        # edilmiş oluyor (services/decision_recorder.py, aynı belief_
+        # snapshot_id ile) — sadece havuzun AÇTIĞI satırda hiç yoktu.
+        # Burada o orijinal satır belief_snapshot_id ile geri bulunup
+        # birleştiriliyor; bulunamazsa (fail-open) sadece pool metadata'sı
+        # kalır, davranış eskisiyle aynı.
+        original_opinions = []
+        if c["belief_snapshot_id"] is not None:
+            with SessionFactory.get_session() as session:
+                original_row = session.execute(
+                    text(
+                        "SELECT agent_contributions FROM decisions "
+                        "WHERE belief_snapshot_id = :bsid AND status = 'no_trade' "
+                        "ORDER BY timestamp DESC LIMIT 1"
+                    ),
+                    {"bsid": str(c["belief_snapshot_id"])},
+                ).fetchone()
+            if original_row and original_row[0]:
+                original_opinions = list(original_row[0])
+
         event = DecisionEvent(
             timestamp=now,
             symbol=c["symbol"],
@@ -282,7 +309,7 @@ def resolve_due_pool_windows() -> dict:
             final_action=c["direction"],
             final_size=quantity,
             confidence=c["confidence"],
-            agent_opinions=[{
+            agent_opinions=original_opinions + [{
                 "type": "position_pool_selection",
                 "data": {
                     "pooled_at": c["pooled_at"].isoformat(),

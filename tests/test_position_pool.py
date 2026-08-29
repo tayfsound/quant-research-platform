@@ -52,13 +52,14 @@ def _ctx(symbol, direction="LONG", confidence=0.8, final_size=0.5, entry_price=1
     return ctx
 
 
-def _add_candidate(symbol, confidence, window_closes_at, direction="LONG", status="pending") -> PositionPoolCandidateModel:
+def _add_candidate(symbol, confidence, window_closes_at, direction="LONG", status="pending", belief_snapshot_id=None) -> PositionPoolCandidateModel:
     row = PositionPoolCandidateModel(
         id=uuid4(), symbol=symbol, direction=direction, confidence=confidence,
         entry_price_at_pool=100.0, stop_loss_distance=5.0, take_profit_distance=10.0,
         planned_notional_usd=50.0, leverage=1.0,
         pooled_at=datetime.now(UTC) - timedelta(minutes=20),
         window_closes_at=window_closes_at, status=status,
+        belief_snapshot_id=belief_snapshot_id,
     )
     with SessionFactory.get_session() as session:
         PositionPoolRepository(session).add(row)
@@ -328,6 +329,59 @@ def test_resolve_due_pool_windows_uses_real_execution_service_when_symbol_is_tes
             mapping = json.loads(repo.get("execution_mode_symbols") or "{}")
             mapping.pop(symbol, None)
             repo.set("execution_mode_symbols", json.dumps(mapping), updated_by="test")
+
+
+def test_resolve_due_pool_windows_carries_forward_original_council_opinions(monkeypatch):
+    """Faz 372 — kullanıcı bulgusu (canlı, gerçek pozisyon): "ajan oyları
+    görünmüyor açıklamada" — resolve_due_pool_windows() önceden SADECE
+    pool-seçim metadata'sını yazıyordu, kararı ÜRETEN gerçek konsey
+    oylarını (macro/technical/...) hiç taşımıyordu. O oylar, orijinal
+    cycle'ın 'no_trade' olarak persist ettiği (AYNI belief_snapshot_id'li)
+    satırda duruyor — artık geri bulunup birleştiriliyor."""
+    monkeypatch.setattr("services.position_pool._fresh_price", lambda symbol: 100.0)
+    monkeypatch.setattr("services.position_pool._risk_headroom_ok", lambda symbol: True)
+
+    symbol = f"POOLTEST{uuid4().hex[:8]}"
+    belief_snapshot_id = uuid4()
+    due_at = datetime.now(UTC) - timedelta(seconds=1)
+    try:
+        # Orijinal cycle'ın gerçek konsey oylarıyla bıraktığı 'no_trade' satırı.
+        with SessionFactory.get_session() as session:
+            session.execute(
+                text(
+                    "INSERT INTO decisions (id, timestamp, symbol, direction, size, confidence, "
+                    "status, excluded_from_stats, leverage, belief_snapshot_id, agent_contributions) "
+                    "VALUES (:id, now(), :symbol, 'LONG', 0.5, 0.8, 'no_trade', false, 1.0, "
+                    ":bsid, CAST(:ac AS jsonb))"
+                ),
+                {
+                    "id": str(uuid4()), "symbol": symbol, "bsid": str(belief_snapshot_id),
+                    "ac": json.dumps([
+                        {"domain": "macro", "direction": "LONG", "confidence": 0.7},
+                        {"domain": "technical", "direction": "LONG", "confidence": 0.85},
+                    ]),
+                },
+            )
+            session.commit()
+
+        _set_pool_settings(max_confidence_mode_enabled="true", max_confidence_mode_top_k="3")
+        _add_candidate(symbol, confidence=0.9, window_closes_at=due_at, direction="LONG", belief_snapshot_id=belief_snapshot_id)
+
+        result = resolve_due_pool_windows()
+        assert result["opened"] == 1
+
+        with SessionFactory.get_session() as session:
+            row = session.execute(
+                text("SELECT agent_contributions FROM decisions WHERE symbol = :s AND status = 'open'"),
+                {"s": symbol},
+            ).fetchone()
+        types = [item.get("type") or item.get("domain") for item in row.agent_contributions]
+        assert "macro" in types
+        assert "technical" in types
+        assert "position_pool_selection" in types
+    finally:
+        _cleanup(symbol)
+        _set_pool_settings(max_confidence_mode_enabled="false")
 
 
 def test_resolve_due_pool_windows_ignores_candidates_still_within_window(monkeypatch):
