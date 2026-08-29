@@ -1,9 +1,25 @@
-# Mevcut Durum -- v1.111.0 (Faz 370-devam: auto-bench mimarisi yeniden tasarlandı — hard-zero yasak, çoklu pencere, histerezis, rejim-koşullu + RiskGateStage notional bug'ı + Kelly MIN_MULTIPLIER + quantdb_test kalıcı temizliği + Faz 369: Agent Interaction pairwise ablation + Faz 368: Feature Intelligence Layer Faz A)
+# Mevcut Durum -- v1.112.0 (Faz 370/371: canlı "işlem almıyor" olayı — 7 katmanlı kök neden zinciri: RiskGateStage + Kelly + auto-bench + threshold_optimizer SUM-bug'ı + canonical decision lineage + Position Pool gerçek emir göndermiyordu + 23 hisse token'ı eksikti)
 
 **Tarih:** 2026-08-29
 **Branch:** main
-**Son commit (HEAD):** `54839c3` — auto-bench paketi commitlendi, push bekleniyor.
-**Servis durumu:** uvicorn + celery worker + celery beat auto-bench fix'iyle yeniden başlatıldı; eski worker (PID 97807) graceful shutdown'ı tamamlandı, canlı doğrulama sürüyor.
+**Son commit (HEAD):** `0c6e32f` — tüm turun işleri commitlendi, push edildi.
+**Servis durumu:** uvicorn + celery worker + celery beat en son (Faz 371-devam, order book/trades futures yedeği) kodla yeniden başlatıldı, canlı doğrulama sürüyor.
+
+## Faz 370/371 — KRİTİK canlı olay, TAM ZİNCİR ÖZETİ: sistem işlem almıyordu, 7 ayrı gerçek kök neden bulundu (2026-08-29)
+
+Aynı günkü krizin ("AI hala canlıda işlem almıyor") çözümü TEK bir bug değil, art arda ortaya çıkan 7 BAĞIMSIZ katmandı — her biri bir öncekini düzeltince bir sonraki görünür oldu:
+
+1. **RiskGateStage notional bug** (`7c629cc`) — final_size (ham birim) $ limitiyle direkt kıyaslanıyordu, ucuz varlıklarda (meme coin) yanlış reddediyordu.
+2. **Kelly MIN_MULTIPLIER** (`247bc7b`) — `kelly_size_multiplier` literal 0.0'a inebiliyordu (diğer TÜM sizing gate'lerin "asla sıfıra inme" kuralının tek istisnası); MIN_MULTIPLIER=0.1 tabanı eklendi.
+3. **Auto-bench yeniden tasarımı** (`54839c3`) — `SourceReliabilityAgent` tek-pencere/tek-eşik/hard-zero'ydu; MIN_INFLUENCE=0.1 + 20/100/500 çoklu pencere + histerezis (bench 0.35/unbench 0.55) + rejim-koşullu güvenilirlik. Yol boyunca `AgentMemory.get_summary()`'nin `recent_accuracy`'sinin `window` parametresinden bağımsız SABİT `records[-20:]` olduğu bulundu, düzeltildi.
+4. **threshold_optimizer SUM-bug'ı** (`eebb0a4`) — `compute_suggested_thresholds` ödülü TOPLAM (sum) kullanıyordu; genel performans negatifken bu, eşik yükseldikçe (daha az işlem dahil oldukça) yapısal olarak en yüksek adaya (0.90) kilitleniyordu (sınırda sum→0, ki 0 her negatiften büyük). Canlıda act_threshold=0.9/reduce_threshold=0.6'ya kilitlenmiş bulundu, MEAN + MIN_CANDIDATE_SAMPLE_SIZE'a çevrildi, elle 0.7/0.4'e geri alındı.
+5. **Canonical Decision Lineage** (`9abdf13`) — TRUMPUSDT örneği: debate_result (agent_debate.py'nin ham, benching/weight-snapshot'tan habersiz kendi sentezi) SHORT/0.429 derken persist edilen decisions.direction=LONG/confidence=0.7939 (decision_fusion.py:138'in belief_engine'in weight-snapshot-ağırlıklı belief'inden SONRA sessizce üzerine yazdığı değer) çıkıyordu. 6 yeni sütun (council_direction/confidence, meta_decision, pre_fusion_confidence, final_ev, rejection_reason, faz370b migration) — artık hangi sayı hangi aşamadan geldiği SQL ile görülebiliyor.
+6. **Position Pool GERÇEK emir göndermiyordu** (`0b754c9`) — KRİTİK: kullanıcı "canlıda almamış, test modunda almış sadece" dedi. `max_confidence_mode_enabled=true` olduğu sürece TÜM açılışlar `position_pool.py::resolve_due_pool_windows()`'tan geçiyor — bu fonksiyon `DecisionRecorder.record()`'u (execution_mode/ExecutionService'in TEK bulunduğu yer) tamamen atlayıp direkt persist ediyordu, testnet-işaretli semboller bile sessizce simüle ediliyordu. Aynı execution_mode çözümü + ExecutionService.open_position() çağrısı eklendi.
+7. **23 gerçek Binance tokenize hisse eksikti** (`87402b4`, `0c6e32f`) — kullanıcı: "Binance future'da bir sürü hisse token'ı var oysaki, tamamen kaldırılmış görünüyor" + "sistem bunları token olarak yorumluyor, oysaki hisse senedi." fapi.binance.com'da GERÇEKTEN doğrulandı: AAPL/MSFT/GOOGL/AMZN/META/TSLA/NFLX/AMD/INTC/BRKB/JPM/WMT/DIS/GS/IBM/ORCL/CRM/ADBE/PYPL/UBER/COIN/MSTR/PLTR (23) watchlist'e eklendi, `_ASSET_CLASS_SYMBOLS`'a equity olarak kaydedildi (önceden crypto fallback'ine düşüyorlardı). 8'i testnet'te de gerçekten var, execution_mode_symbols'a testnet işaretlendi. Ayrıca `get_order_book`/`fetch_recent_trades`'e (SADECE `fetch_ohlcv`'de olan) spot→futures yedeği eklendi — "AI bunlarla ilgili data göremiyor" şikayeti buydu (order_book_snapshots'a bu semboller için hiç satır yazılamıyordu).
+
+**SHORT R:R yeniden ölçüldü, DEĞİŞTİRİLMEDİ (kullanıcı kararı):** SOLUSDT gibi sembollerde "SHORT sinyali geliyor ama hiç açılmıyor" şikayeti üzerine `analytics/mae_mfe.py::compute_optimal_barrier` güncel veriyle (1851 kapanmış işlem, 317 SHORT) yeniden çalıştırıldı — dominant SHORT kovası (bear_trend+low+crypto, n=255) en iyi ampirik SL/TP'de bile EV=-%8.17 çıktı (ayrıca distinct_days=4<5 eşiğini de geçemiyor). İki bağımsız ölçüm (1098 ve 1851 işlem) AYNI sonucu verdi — SHORT'un bu rejimde gerçek kenarı yok, bu bir bug değil. Kullanıcı R:R'ı GEVŞETMEME kararı verdi (1.8 sabit kalıyor) — "kanıt yeterince güçlü."
+
+**Sırada:** Strateji × Rejim Uyumu modülü, Agent Combination Reliability zenginleştirmesi, 0.5266/multi-timeframe cascade tam instrumentation — hiçbiri başlanmadı.
 
 ## Faz 370-devam — KRİTİK canlı olay 3. katman: auto-bench mimarisi yeniden tasarlandı (2026-08-29)
 
