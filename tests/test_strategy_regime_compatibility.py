@@ -191,3 +191,78 @@ def test_records_with_missing_fields_are_skipped():
     ]
     result = compute_strategy_regime_compatibility(records)
     assert result == {}
+
+
+def _contributions(votes: dict[str, int]) -> list[dict]:
+    """direction -> kaç ajanın o yönde oy verdiği (ör. {"LONG": 3, "WAIT": 6})."""
+    out = []
+    i = 0
+    for direction, count in votes.items():
+        for _ in range(count):
+            out.append({"domain": f"agent{i}", "direction": direction})
+            i += 1
+    return out
+
+
+def test_strategy_label_adds_agreement_tier_for_ai_council_only():
+    """Faz 374 — kullanıcı isteği: agreement-tier (low/medium/high,
+    analytics/opportunity_quality.py'nin ZATEN kurduğu tek kaynak eşik
+    ve formülle) SADECE ai_council'e ekleniyor — pump_fade/basis_arb
+    mekanik, gerçek ajan anlaşması kavramı yok."""
+    # Tam anlaşma (9/9 aynı yönde) -> agreement=1.0 -> "high".
+    full_agreement = _contributions({"LONG": 9})
+    assert _strategy_label("x", "LONG", 100.0, 90.0, full_agreement) == "ai_council_LONG_swing_high"
+
+    # Maksimum bölünmüşlük (3-3-3) -> agreement=0.0 -> "low".
+    split_votes = _contributions({"LONG": 3, "SHORT": 3, "WAIT": 3})
+    assert _strategy_label("x", "LONG", 100.0, 90.0, split_votes) == "ai_council_LONG_swing_low"
+
+    # pump_fade/basis_arb: agent_contributions verilse bile tier EKLENMEZ.
+    from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_BUCKET
+
+    assert _strategy_label(PUMP_FADE_BUCKET, "SHORT", None, None, full_agreement) == "pump_fade_SHORT"
+
+
+def test_strategy_label_omits_agreement_tier_when_no_real_votes():
+    """Gerçek ajan oyu yoksa (agent_contributions None/boş/domain'siz)
+    fail-closed — icat edilmiş bir 'orta' seviye asla eklenmez."""
+    assert _strategy_label("x", "LONG", None, None, None) == "ai_council_LONG"
+    assert _strategy_label("x", "LONG", None, None, []) == "ai_council_LONG"
+    assert _strategy_label("x", "LONG", None, None, [{"type": "market_snapshot"}]) == "ai_council_LONG"
+
+
+def test_gather_strategy_regime_compatibility_includes_agreement_tier_in_real_labels():
+    """Uçtan uca: gerçek bir 'closed' karar, gerçek agent_contributions'ıyla
+    (tam anlaşma) DB'ye yazılıp gather_strategy_regime_compatibility()'nin
+    ürettiği etikette agreement-tier'ın (bu durumda 'high') GERÇEKTEN
+    göründüğü doğrulanıyor."""
+    import json
+
+    from sqlalchemy import text as _text
+
+    from database.session_factory import SessionFactory
+    from services.strategy_regime_compatibility_gatherer import gather_strategy_regime_compatibility
+
+    symbol = f"STRATLABEL{uuid4().hex[:8]}"
+    try:
+        contributions = _contributions({"LONG": 9})
+        with SessionFactory.get_session() as session:
+            for _ in range(20):
+                session.execute(
+                    _text(
+                        "INSERT INTO decisions (id, timestamp, symbol, direction, size, confidence, "
+                        "status, excluded_from_stats, leverage, market_regime, pnl, entry_price, "
+                        "stop_loss_price, closed_at, agent_contributions) "
+                        "VALUES (:id, now(), :symbol, 'LONG', 1.0, 0.8, 'closed', false, 1.0, "
+                        "'bullish_high', 10.0, 100.0, 90.0, now(), CAST(:ac AS jsonb))"
+                    ),
+                    {"id": str(uuid4()), "symbol": symbol, "ac": json.dumps(contributions)},
+                )
+            session.commit()
+
+        result = gather_strategy_regime_compatibility()
+        assert "ai_council_LONG_swing_high" in result["by_strategy"]
+    finally:
+        with SessionFactory.get_session() as session:
+            session.execute(_text("DELETE FROM decisions WHERE symbol = :s"), {"s": symbol})
+            session.commit()

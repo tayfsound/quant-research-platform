@@ -373,7 +373,9 @@ class DecisionRecorder:
                 market_regime = (
                     f"{trend}_{features.get('volatility_regime', 'normal')}" if trend != "unknown" else None
                 )
-                strategy_label = _strategy_label(experiment_bucket, direction, entry_price, stop_loss_price)
+                strategy_label = _strategy_label(
+                    experiment_bucket, direction, entry_price, stop_loss_price, agent_opinions_data,
+                )
                 blocked_pairs = StrategyGateApprovalRepository(self.session).list_blocked_pairs()
                 if is_strategy_regime_gated(strategy_label, market_regime, blocked_pairs):
                     opens_position = False

@@ -18,7 +18,8 @@ def _fetch_records_sorted_by_time(limit: int) -> list[dict]:
         rows = session.execute(
             text(
                 """
-                SELECT experiment_bucket, market_regime, direction, pnl, entry_price, stop_loss_price
+                SELECT experiment_bucket, market_regime, direction, pnl, entry_price, stop_loss_price,
+                       agent_contributions
                 FROM decisions
                 WHERE status = 'closed' AND excluded_from_stats = false
                   AND market_regime IS NOT NULL
@@ -31,7 +32,9 @@ def _fetch_records_sorted_by_time(limit: int) -> list[dict]:
 
     return [
         {
-            "strategy": _strategy_label(r.experiment_bucket, r.direction, r.entry_price, r.stop_loss_price),
+            "strategy": _strategy_label(
+                r.experiment_bucket, r.direction, r.entry_price, r.stop_loss_price, r.agent_contributions,
+            ),
             "market_regime": r.market_regime,
             "win": (r.pnl or 0.0) > 0,
         }

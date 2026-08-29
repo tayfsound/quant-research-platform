@@ -31,7 +31,15 @@ basis_arb zaten kendi sabit stop-geometrisiyle mekanik, trade_type
 ayrımı bilgi katmıyor) — o yüzden SADECE council etiketine ekleniyor.
 Ayrıca basis_arb_v1 artık kendi ayrı temel etiketini alıyor (önceden
 yanlışlıkla "ai_council"a düşüyordu — gerçek agent oyu olmayan mekanik
-bir strateji, council'le karıştırılmamalı)."""
+bir strateji, council'le karıştırılmamalı).
+
+Faz 374 — kullanıcı isteği: eski oturumun "kalan doğal uzantı" notu —
+agreement-tier (low/medium/high, opportunity_quality.py'nin ZATEN
+kurduğu 0.34/0.67 eşiği ve compute_agent_agreement formülü — tek
+kaynak, ikinci bir tanım YOK) boyutu eklendi. trade_type ile AYNI ilke:
+SADECE ai_council'e (pump_fade/basis_arb mekanik, gerçek ajan oyu/
+anlaşma kavramı yok)."""
+from analytics.opportunity_quality import _agreement_bucket, agreement_from_contributions
 from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMENT_BUCKET
 
 # Faz 364 — basis_arb_v1 stratejisi tamamen kaldırıldı, ama geçmişte
@@ -57,6 +65,7 @@ def _trade_type(entry_price: float | None, stop_loss_price: float | None) -> str
 def _strategy_label(
     experiment_bucket: str | None, direction: str | None,
     entry_price: float | None, stop_loss_price: float | None,
+    agent_contributions: list[dict] | None = None,
 ) -> str:
     if experiment_bucket == PUMP_FADE_EXPERIMENT_BUCKET:
         base = "pump_fade"
@@ -73,6 +82,13 @@ def _strategy_label(
         if trade_type:
             label = f"{label}_{trade_type}"
 
+        # Faz 374 — kullanıcı isteği: agreement-tier boyutu. Gerçek ajan
+        # oyu yoksa (agent_contributions eksik/boş) fail-closed — icat
+        # edilmiş bir "orta" seviye asla eklenmiyor, etiket kısa kalır.
+        agreement = agreement_from_contributions(agent_contributions)
+        if agreement is not None:
+            label = f"{label}_{_agreement_bucket(agreement)}"
+
     return label
 
 
@@ -85,7 +101,8 @@ def gather_strategy_regime_compatibility() -> dict:
         rows = session.execute(
             text(
                 """
-                SELECT experiment_bucket, market_regime, direction, pnl, entry_price, stop_loss_price
+                SELECT experiment_bucket, market_regime, direction, pnl, entry_price, stop_loss_price,
+                       agent_contributions
                 FROM decisions
                 WHERE status = 'closed' AND excluded_from_stats = false
                   AND market_regime IS NOT NULL
@@ -98,7 +115,9 @@ def gather_strategy_regime_compatibility() -> dict:
 
     records = [
         {
-            "strategy": _strategy_label(r.experiment_bucket, r.direction, r.entry_price, r.stop_loss_price),
+            "strategy": _strategy_label(
+                r.experiment_bucket, r.direction, r.entry_price, r.stop_loss_price, r.agent_contributions,
+            ),
             "market_regime": r.market_regime,
             "win": (r.pnl or 0.0) > 0,
         }
