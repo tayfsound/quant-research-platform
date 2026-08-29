@@ -1,9 +1,71 @@
-# Mevcut Durum -- v1.112.0 (Faz 370/371: canlı "işlem almıyor" olayı — 7 katmanlı kök neden zinciri: RiskGateStage + Kelly + auto-bench + threshold_optimizer SUM-bug'ı + canonical decision lineage + Position Pool gerçek emir göndermiyordu + 23 hisse token'ı eksikti)
+# Mevcut Durum -- v1.113.0 (Faz 372-375: SHORT Exploration deneyi + Agent Combination Reliability zenginleştirmesi + agreement-tier + Feature Intelligence Layer Faz B + 0.5266 instrumentation)
 
 **Tarih:** 2026-08-29
 **Branch:** main
-**Son commit (HEAD):** `0c6e32f` — tüm turun işleri commitlendi, push edildi.
-**Servis durumu:** uvicorn + celery worker + celery beat en son (Faz 371-devam, order book/trades futures yedeği) kodla yeniden başlatıldı, canlı doğrulama sürüyor.
+**Son commit (HEAD):** `bd27f0a` — tüm turun işleri commitlendi, push edildi.
+**Servis durumu:** uvicorn + celery worker + celery beat en son (Faz 375) kodla yeniden başlatılıyor. NOT: arka planda bir `scripts/service_watchdog.sh` (Faz 334, PID 61155) uvicorn/celery-worker_default'u 60sn'de bir kontrol edip düşerse otomatik yeniden başlatıyor — beat'i YÖNETMİYOR, beat manuel takip edilmeli. Manuel restart sırasında watchdog'un AYNI anda kendi restart'ını tetikleyip duplicate process yaratma riski var (bugün bir kez yaşandı, fark edilip düzeltildi) — kill sonrası yeni süreci BAŞLATMADAN önce watchdog'un halletmesini beklemek (veya tek bir PID kill edip hemen ps ile doğrulamak) daha güvenli.
+
+## Faz 372-375 — Todo listesi turu (kullanıcı sıralaması: 5,2,3,4,6) (2026-08-29)
+
+- **Faz 372 — SHORT Exploration deneyi** (`b5e4f98`, `6aa1118`): analytics/
+  mae_mfe.py iki bağımsız ölçümde (1098 ve 1851 işlem) SHORT'un gerçek
+  kenarı olmadığını gösterdi, ama EV kapısı SHORT'u sürekli reddettiği
+  için YENİ veri hiç birikemiyordu (exploration/exploitation kilidi,
+  kullanıcı: "kanıt yok çünkü örnek üretme mekanizması kapalı"). Global
+  EV kapısı DEĞİŞMEDİ — services/short_exploration.py: dinamik P85
+  confidence eşiği + hard cap (eşzamanlı 2, haftada 10, sembol-cooldown
+  3 gün, kendi kill switch'i) + tiny size (%10) + experiment_bucket=
+  short_exploration_v1 ile TAM izole. services/position_pool.py ayrıca
+  düzeltildi: havuzdan açılan pozisyonlar ORİJİNAL konsey oylarını hiç
+  taşımıyordu (kullanıcı: "ajan oyları görünmüyor açıklamada") — artık
+  belief_snapshot_id ile geri bulunup birleştiriliyor.
+- **Faz 372 (madde 2, BehavioralAgent) — BLOKLU, kod sorunu değil**:
+  `services/binance_liquidation_listener.py` 3 gündür fstream.binance.com'
+  a bağlanıp ping/pong alıyor ama SIFIR gerçek veri alıyor — testnet
+  futures WS (stream.binancefuture.com) ve spot mainnet WS (stream.
+  binance.com) ÇALIŞIYOR. Kök neden: bu ortamın çıkış IP'si (Bosna
+  Hersek) için Binance'in mainnet FUTURES WebSocket veri akışı coğrafi/
+  regülasyon kısıtına takılıyor (bağlantı kabul ediliyor, veri
+  verilmiyor — bilinen bir compliance davranışı). Kodla düzeltilemez;
+  gerçek üretim sunucusu farklı bölgedeyse orada test edilmeli.
+- **Faz 373 — Agent Combination Reliability zenginleştirmesi** (`11664bb`):
+  effective_sample_size (örtüşme oranı kadar indirgenmiş "gerçek bağımsız
+  kanıt" sayısı) + incremental_value (bir grubun (N-1)-alt-kümelerinin
+  en iyisinden ne kadar daha iyi olduğu) + oos_survival (walk-forward,
+  embargo'lu erken/geç yarı testi) + gate_eligible (üçünün birleşimi).
+  Gerçek veri (1838 işlem, 64 aday): sadece 7'si gate_eligible=True —
+  "onchain'in 5 çifti hep %100" sorunu artık AÇIKÇA effective_sample_
+  size=5-14 (neredeyse hiç bağımsız kanıt) olarak görünüyor.
+- **Faz 374 — agreement-tier boyutu** (`795b8fb`): strategy_regime_
+  compatibility etiketlerine (SADECE ai_council) low/medium/high
+  agreement-tier eklendi (opportunity_quality.py'nin TEK KAYNAK eşiği/
+  formülü). Gerçek veri: ai_council_SHORT_swing_low (n=437, %9.15) —
+  SHORT/swing sorununu bu boyutta da doğruluyor.
+- **Faz B — Feature Intelligence Layer** (`d121c88`, `a7fdb3d`): (1)
+  Çoklu-değişkenli residualizasyon — Bron-Kerbosch KLİK bulma (gerçek
+  bulgu: bağlı-bileşen/union-find YANLIŞ yaklaşımdı, zincirleme 17
+  feature'lık dev bir "küme" üretip MAX_CLUSTER_SIZE'ı aşıp tamamen
+  atlanıyordu; klik'e geçilince 10 anlamlı küme çıktı). (2) Opportunity
+  Quality: agreement×reliability bileşik sürekli skor + expectancy/
+  median_pnl/profit_factor + rejim kırılımı. Gerçek veri (3281 işlem):
+  "low" kalite kovası (n=3118, %95'i) win_rate=%70 ama expectancy
+  NEGATİF (-3.47), profit_factor=0.95 — sadece win_rate'e bakmak bunu
+  TAMAMEN gizliyordu.
+- **Faz 375 — 0.5266/multi-timeframe cascade instrumentation** (`bd27f0a`):
+  services/orchestrator.py::propose_multi_timeframe()'in "timeframe_
+  belief" kaydı (15m/4h/medium-term + Bayesian birleştirme) GERÇEKTEN
+  confidence'ı etkiliyordu ama hiç persist edilmiyordu. decisions.
+  mtf_direction/mtf_confidence (yeni sütunlar) + tam ham veri artık
+  agent_contributions'da — Faz 370-devam'ın canonical decision lineage
+  şemasının (council_*/meta_*/mtf_*/final_*/rejection_reason) son eksik
+  parçası tamamlandı.
+
+**Kuyruğa alındı (henüz başlanmadı):** Trading cycle performans profillemesi
+— gerçek bir tam sweep ~12.5 dakika sürüyor (104 sembol), teorik paylaşılan-
+rate-limit hesabına göre ~12x yavaş; kullanıcı "kafama yatmadı" dedi, ayrı
+bir profilleme turu gerekiyor (hangi API çağrısı/ajan nerede zaman
+harcıyor). Ayrıca hâlâ bekleyen: MempoolAgent (BehavioralAgent ile aynı
+coğrafi WS kısıtı).
 
 ## Faz 370/371 — KRİTİK canlı olay, TAM ZİNCİR ÖZETİ: sistem işlem almıyordu, 7 ayrı gerçek kök neden bulundu (2026-08-29)
 
