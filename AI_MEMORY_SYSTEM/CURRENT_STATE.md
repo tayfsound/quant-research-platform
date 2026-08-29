@@ -66,8 +66,46 @@ oranı 1.64× (eşik 2.0'ın altında) → is_stable=True — GPT'nin "risk
 DOĞRULANMADI, sonuç block=5/10/20/30 arasında stabil. Karar hattına
 bağlanmadı, sadece ölçüm.
 
-**Sırada:** Direction Prediction v2 (Brier ayrıştırma + kalibrasyon
-revizyonu) → quantdb_test/tmp_test_memory kalıcı temizliği (kullanıcı:
+## Faz 370 — Direction Prediction v2: ham (raw) vs kalibre edilmiş Brier ayrımı (2026-08-29)
+
+GPT dış rapor önerisi (iş sırasının 3. maddesi), kendi son notu: "Brier
+score'u out-of-sample hesaplıyor musunuz? Aynı veri hem confidence
+üretmek hem Brier ölçmek için kullanılıyorsa şişmiş olabilir." Kod
+incelemesiyle GERÇEK bir sorun doğrulandı: `services/council_
+orchestrator.py:140` `opinion.confidence`'ı `calibrate_domain_
+confidence()` ile YERİNDE (in-place) üzerine yazıyordu — ham (kalibrasyon
+ÖNCESİ) değer HİÇBİR YERDE saklanmıyordu. Hem kalibrasyon eğrisi
+(`compute_domain_calibration_curves`) hem Brier skoru (`direction_
+prediction_v2_gatherer.py`) AYNI, zaten-kalibre edilmiş sayı üzerinde
+döngüsel çalışıyordu — "kalibrasyon gerçekten ham sinyali düzeltiyor mu,
+yoksa kendi kendini mi doğruluyor" sorusu hiç cevaplanamıyordu.
+
+Düzeltme: `contracts/agent.py::AgentOpinion.raw_confidence` (yeni alan,
+council_orchestrator.py overwrite'tan HEMEN önce dolduruluyor) →
+`contracts/agent_performance.py::AgentPerformanceRecord.raw_confidence`
+(services/learning_loop.py + services/position_closer.py'nin İKİ ayrı
+kayıt yolu da güncellendi) → yeni DB sütunu (`agent_performance_records.
+raw_confidence`, migration faz370, additive/nullable) → `direction_
+prediction_v2_gatherer.py` artık her domain için `raw_brier_score`'u da
+(kalibrasyon ÖNCESİ ham confidence'tan) hesaplıyor, yeterli örneklem
+yoksa fail-closed None. Dashboard'a "ham vs kalibre edilmiş" karşılaştırma
+kolonu eklendi. 6 yeni test (council_orchestrator/learning_loop/
+position_closer'ın raw_confidence'ı doğru aktardığı + gatherer'ın
+kalibrasyonun GERÇEKTEN işe yaradığını —ham skorun kalibre edilmişten
+daha kötü çıktığını— kanıtlayan sentetik senaryo dahil).
+
+Gerçek veriyle doğrulandı: mevcut (kalibre edilmiş) Brier skorları GPT'nin
+raporundaki rakamlarla birebir eşleşiyor (regresyon yok: macro/sentiment/
+order_flow/pattern/quant/technical hepsi aynı). `raw_brier_score` şu an
+TÜM domain'lerde null — beklenen, çünkü bu alan SADECE bu değişiklikten
+SONRAKİ yeni kararlarda dolacak (geçmiş ham değerler kurtarılamaz).
+GPT'nin önerdiği "confidence calibration layer" + "Feature quality +
+Interaction + Brier + Regime → Effective evidence → P(LONG)/SHORT/NO EDGE"
+büyük mimarisi BİLİNÇLİ olarak YAPILMADI — GPT'nin kendisi de "şu an karar
+motoruna bağlı olmamalı" diyor, ve bu zaten FIL planının Faz D'sinde
+(walk-forward meta-model, ayrı onay turu gerektiren) tanımlı.
+
+**Sırada:** quantdb_test/tmp_test_memory kalıcı temizliği (kullanıcı:
 "kırık test kabul etmiyorum," bkz. [[project_shared_test_state_bloat]]).
 
 ## Faz 368 — Feature Intelligence Layer, Faz A: Redundancy Matrix + Koşullu IC (2026-08-28)
