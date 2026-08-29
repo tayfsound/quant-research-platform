@@ -285,6 +285,18 @@ def test_asset_class_of_symbol_groups_gold_backed_tokens_together():
     assert _asset_class_of_symbol("SOMETHING_UNKNOWN") == "other"
 
 
+def test_asset_class_of_symbol_classifies_tokenized_stocks_as_equity_not_crypto():
+    """Faz 371 — kullanıcı bulgusu: "sistem bunları token olarak
+    yorumluyor, öyle etiketliyor, oysaki bunlar hisse senedi." AAPL/MSFT/
+    GOOGL/TSLA gibi tokenize hisse sözleşmeleri USDT suffix'i taşıdığı
+    için genel fallback'e (crypto) düşüyordu — artık _ASSET_CLASS_SYMBOLS'
+    ta AÇIKÇA "equity" olarak kayıtlı, genel fallback'ten önce yakalanıyor."""
+    from services.confidence_calibration import _asset_class_of_symbol
+
+    for symbol in ("AAPLUSDT", "MSFTUSDT", "GOOGLUSDT", "TSLAUSDT", "COINUSDT", "PLTRUSDT"):
+        assert _asset_class_of_symbol(symbol) == "equity", symbol
+
+
 def test_compute_asset_class_calibration_curves_separates_by_asset_class(tmp_path):
     """Faz 247 — kullanıcının getirdiği rapor gerçek veriyle doğrulandı:
     technical_agent'ın PAXG/XAUTUSDT'deki gerçek doğruluğu (%40, kötü),

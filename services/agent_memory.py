@@ -44,13 +44,29 @@ _ASSET_CLASS_SYMBOLS: dict[str, tuple[str, ...]] = {
     # tokenize sözleşme isimlerini kullanıyor (exchange_gateway/binance/
     # adapter.py::fetch_ohlcv artık futures'a otomatik düşebiliyor).
     # GC=F tamamen kaldırıldı — XAUTUSDT zaten aynı varlığı (altın)
-    # kapsıyor, iki ayrı isimle aynı sınıfı tekrarlamıyoruz. AAPL/MSFT
-    # kaldırıldı — Binance Futures TESTNET'te (gerçek testle doğrulandı)
-    # yok, sadece mainnet'te var; testnet'te asla gerçek emir alamayan
-    # bir sembolü izlemenin anlamı yok.
+    # kapsıyor, iki ayrı isimle aynı sınıfı tekrarlamıyoruz.
+    #
+    # Faz 371 — kullanıcı bulgusu (2026-08-29): "Binance future'da bir
+    # sürü hisse token'ı var oysaki, tamamen kaldırılmış görünüyor."
+    # Faz 368'in "AAPL/MSFT testnet'te yok" gerekçesi O GÜN doğruydu
+    # (gerçek testle doğrulanmıştı) ama Binance'in gerçek mainnet
+    # sözleşme listesi (fapi.binance.com/fapi/v1/exchangeInfo) kontrol
+    # edildiğinde 23 tokenize hisse GERÇEKTEN işlem görüyor — hepsi
+    # buraya (analiz/karar için) eklendi. Hangi 8'inin testnet'te de
+    # gerçekten emir alabildiği (GOOGL/AMZN/META/TSLA/INTC/COIN/MSTR/
+    # PLTR — testnet.binancefuture.com'dan doğrulandı) services/
+    # decision_recorder.py'nin execution_mode_symbols ayarında ayrıca
+    # işaretlendi; kalan 15'i (mainnet'te var, testnet'te yok) dürüstçe
+    # "simulated" kalıyor — asla uydurma bir testnet emri denenmiyor.
     "precious_metal_future": ("XAGUSDT",),
     "equity_index": ("QQQUSDT", "SPXUSDT"),
-    "equity": ("NVDAUSDT",),
+    "equity": (
+        "NVDAUSDT", "AAPLUSDT", "MSFTUSDT", "GOOGLUSDT", "AMZNUSDT",
+        "METAUSDT", "TSLAUSDT", "NFLXUSDT", "AMDUSDT", "INTCUSDT",
+        "BRKBUSDT", "JPMUSDT", "WMTUSDT", "DISUSDT", "GSUSDT",
+        "IBMUSDT", "ORCLUSDT", "CRMUSDT", "ADBEUSDT", "PYPLUSDT",
+        "UBERUSDT", "COINUSDT", "MSTRUSDT", "PLTRUSDT",
+    ),
 }
 _CRYPTO_QUOTE_SUFFIXES = ("USDT", "BUSD", "USDC", "FDUSD")
 
