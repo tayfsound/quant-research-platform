@@ -21,6 +21,7 @@ type CombinationPair = {
   domains: string[];
   combination_size: number;
   sample_size: number;
+  effective_sample_size: number;
   win_rate: number;
   win_rate_ci: { low: number; high: number; confidence_level: number };
   win_rate_delta_vs_baseline: number;
@@ -28,6 +29,9 @@ type CombinationPair = {
   max_shared_trade_overlap_pct: number;
   max_shared_trade_overlap_with: string[] | null;
   distinct_days: number | null;
+  oos_survival: boolean | null;
+  incremental_value: number | null;
+  gate_eligible: boolean;
 };
 
 type CombinationResult = {
@@ -156,7 +160,13 @@ export default function AgentCombinationReliability() {
           tekrar sayımı olabileceği anlamına gelir. "Gün sayısı" grubun işlemlerinin kaç FARKLI takvim gününe
           yayıldığını gösterir — düşük gün sayısı (ör. tüm işlemler 1-2 günlük tek bir dar pencereden), düşük
           örtüşmeye sahip bir grup için bile "bağımsız kanıt" yerine dar bir rejim/olay artefaktı olabileceğine
-          işaret eder.
+          işaret eder. "Bağımsız N" örneklemi örtüşme oranı kadar indirgeyip "gerçekte ne kadar bağımsız kanıt
+          var" sorusuna doğrudan cevap verir. "Zamanla tekrar" (OOS), grubun kendi kayıtları erken/geç yarıya
+          bölündüğünde örüntünün hiç görülmemiş geç yarıda da tekrarlanıp tekrarlanmadığını gösterir. "Ek katkı",
+          bir grubun kendi (N-1)-alt-kümelerinin en iyisinden ne kadar daha iyi olduğunu (varsa) gösterir —
+          pozitifse grup gerçekten yeni bilgi katıyor demektir. "Kapı uygun" üçünün (FDR + zamanla tekrar +
+          yeterli bağımsız N) birlikte sağlandığı tek bakışta okunabilir özet bayrak — hiçbir karara otomatik
+          bağlanmıyor, sadece işaret.
         </p>
 
         {loading ? (
@@ -170,7 +180,8 @@ export default function AgentCombinationReliability() {
               <strong>%{((live.baseline_win_rate ?? 0) * 100).toFixed(1)}</strong> ({live.baseline_sample_size} işlem).{" "}
               {live.pairs.length} grup yeterli örnekleme sahip, bunlardan{" "}
               <strong>{live.pairs.filter((p) => p.fdr_significant).length}</strong> tanesi çoklu-test düzeltmesinden
-              (FDR) sonra da anlamlı.
+              (FDR) sonra da anlamlı, <strong>{live.pairs.filter((p) => p.gate_eligible).length}</strong> tanesi
+              üç şartın (FDR + zamanla tekrar + yeterli bağımsız örneklem) hepsini birden karşılıyor.
             </p>
             <table className="w-full text-xs">
               <thead>
@@ -180,9 +191,13 @@ export default function AgentCombinationReliability() {
                   <th className="py-2 pr-4">Kazanma oranı</th>
                   <th className="py-2 pr-4">Baseline'a göre fark</th>
                   <th className="py-2 pr-4">Örneklem</th>
+                  <th className="py-2 pr-4">Bağımsız N</th>
                   <th className="py-2 pr-4">Örtüşme</th>
                   <th className="py-2 pr-4">Gün sayısı</th>
+                  <th className="py-2 pr-4">Zamanla tekrar</th>
+                  <th className="py-2 pr-4">Ek katkı</th>
                   <th className="py-2 pr-4">FDR sonrası</th>
+                  <th className="py-2 pr-4">Kapı uygun</th>
                 </tr>
               </thead>
               <tbody>
@@ -198,6 +213,11 @@ export default function AgentCombinationReliability() {
                       {(p.win_rate_delta_vs_baseline * 100).toFixed(1)} puan
                     </td>
                     <td className="py-2 pr-4 text-ink-soft">{p.sample_size}</td>
+                    <td className="py-2 pr-4">
+                      <span className={p.effective_sample_size < 20 ? "text-fall" : "text-ink-soft"}>
+                        {p.effective_sample_size}
+                      </span>
+                    </td>
                     <td className="py-2 pr-4">
                       {p.max_shared_trade_overlap_pct > 0 ? (
                         <span
@@ -218,7 +238,29 @@ export default function AgentCombinationReliability() {
                       )}
                     </td>
                     <td className="py-2 pr-4">
+                      {p.oos_survival === true ? (
+                        <Badge tone="rise">tekrarlandı ✓</Badge>
+                      ) : p.oos_survival === false ? (
+                        <Badge tone="fall">tekrarlanmadı</Badge>
+                      ) : (
+                        <span className="text-ink-faint">—</span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-4">
+                      {p.incremental_value != null ? (
+                        <span className={p.incremental_value > 0 ? "text-rise" : "text-ink-soft"}>
+                          {p.incremental_value >= 0 ? "+" : ""}
+                          {(p.incremental_value * 100).toFixed(1)} puan
+                        </span>
+                      ) : (
+                        <span className="text-ink-faint">—</span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-4">
                       {p.fdr_significant ? <Badge tone="rise">geçti ✓</Badge> : <Badge tone="neutral">elendi</Badge>}
+                    </td>
+                    <td className="py-2 pr-4">
+                      {p.gate_eligible ? <Badge tone="rise">uygun ✓</Badge> : <Badge tone="neutral">değil</Badge>}
                     </td>
                   </tr>
                 ))}

@@ -58,6 +58,14 @@ from analytics.collective_intelligence import compute_accuracy_confidence_interv
 
 MIN_GROUP_SIZE = 20
 DEFAULT_COMBINATION_SIZES = (2, 3, 4)
+# Faz 373 — kullanıcı isteği (kapsamlı tasarım, 2026-08-29): "effective_
+# sample_size + incremental_value + out_of_sample_survival" zenginleştirmesi.
+# strategy_hypothesis_scanner.py::validate_candidate_out_of_sample ile AYNI
+# temporal split deseni (walk_forward_validate'in ruhu) — erken yarıda
+# eğitilen bir örüntü, embargo boşluklu GEÇ yarıda da tekrarlanıyor mu.
+OOS_TRAIN_FRACTION = 0.5
+OOS_EMBARGO_FRACTION = 0.02
+MIN_OOS_TEST_SIZE = 8
 
 
 def agreeing_domains_for_decision(agent_contributions: list[dict], final_direction: str) -> frozenset[str] | None:
@@ -73,6 +81,30 @@ def agreeing_domains_for_decision(agent_contributions: list[dict], final_directi
     if not opinions:
         return None
     return frozenset(o.domain.value for o in opinions if o.direction == final_direction)
+
+
+def _compute_oos_survival(group: list[dict], baseline_win_rate: float) -> bool | None:
+    """strategy_hypothesis_scanner.py::validate_candidate_out_of_sample ile
+    AYNI walk-forward ruhu: grubun KENDİ kayıtları zaman sırasına göre
+    (closed_at) ikiye bölünür (embargo boşluklu), aday örüntü SADECE erken
+    yarıda değil hiç görülmemiş GEÇ yarıda da (win_rate > baseline) tekrar
+    ediyor mu. Yeterli veri yoksa (test yarısı MIN_OOS_TEST_SIZE'ın altında,
+    ya da closed_at eksikse) None — icat edilmiş bir sonuç üretilmez."""
+    dated = sorted(
+        (r for r in group if r.get("closed_at") is not None),
+        key=lambda r: r["closed_at"],
+    )
+    n = len(dated)
+    if n == 0:
+        return None
+    train_end = int(n * OOS_TRAIN_FRACTION)
+    test_start = train_end + int(n * OOS_EMBARGO_FRACTION)
+    test_records = dated[test_start:]
+    if len(test_records) < MIN_OOS_TEST_SIZE:
+        return None
+    test_wins = sum(1 for r in test_records if r["win"])
+    test_win_rate = test_wins / len(test_records)
+    return test_win_rate > baseline_win_rate
 
 
 def compute_combination_reliability(
@@ -148,15 +180,25 @@ def compute_combination_reliability(
                 max_overlap_pct = overlap
                 max_overlap_with = other_key
         closed_dates = {r["closed_at"].date() for r in group if r.get("closed_at") is not None}
+        # Faz 373 — kullanıcı isteği: "effective_sample_size" — max_shared_
+        # trade_overlap_pct'in HAM sample_size'ı değiştirmeden sadece
+        # yanında bir uyarı olarak durması, "kaç bağımsız bulgu var"
+        # sorusunu dolaylı bırakıyordu. Burada AÇIKÇA örtüşme oranı kadar
+        # indirgenmiş, "gerçekte ne kadar bağımsız kanıt var" sayısı —
+        # asla ham sample_size'ın üstüne çıkmaz, sadece küçültür.
+        effective_sample_size = round(len(group) * (1 - max_overlap_pct), 2)
+        oos_survival = _compute_oos_survival(group, baseline_win_rate)
         candidates.append({
             "domains": list(domains),
             "combination_size": len(domains),
             "sample_size": len(group),
+            "effective_sample_size": effective_sample_size,
             "win_rate": round(wins / len(group), 4),
             "win_rate_ci": compute_accuracy_confidence_interval(wins, len(group)),
             "max_shared_trade_overlap_pct": round(max_overlap_pct, 4),
             "max_shared_trade_overlap_with": list(max_overlap_with) if max_overlap_with else None,
             "distinct_days": len(closed_dates) if closed_dates else None,
+            "oos_survival": oos_survival,
             "_wins": wins,
         })
 
@@ -166,12 +208,44 @@ def compute_combination_reliability(
     ]
     fdr_flags = apply_fdr_correction(p_values)
 
+    # Faz 373 — kullanıcı isteği: "incremental_value" — bir GRUBUN (ör. bir
+    # 3'lü) kendi (N-1)-alt-kümelerinden (ör. onu oluşturan 2'liler) EN
+    # İYİSİNİ ne kadar geçtiği. agent_ablation.py'nin tekil-ajan pivot
+    # sorusunun grup-seviyesi analogu: "bu ek ajan/domain GERÇEKTEN yeni
+    # bilgi mi katıyor, yoksa zaten en güçlü alt-kümenin taşıdığı sinyali
+    # mi tekrarlıyor?" Karşılaştırılabilir bir alt-küme yoksa (ör. en
+    # küçük boyuttaki bir grup, ya da hiçbir (N-1)-alt-kümesi min_group_
+    # size'ı geçmediyse) None — icat edilmiş bir fark üretilmez.
+    win_rate_by_domains = {tuple(c["domains"]): c["win_rate"] for c in candidates}
+
     pairs = []
     for c, fdr_ok in zip(candidates, fdr_flags):
         c = dict(c)
         del c["_wins"]
         c["win_rate_delta_vs_baseline"] = round(c["win_rate"] - baseline_win_rate, 4)
         c["fdr_significant"] = fdr_ok
+
+        incremental_value = None
+        if c["combination_size"] > 1:
+            subset_win_rates = [
+                win_rate_by_domains[subset]
+                for subset in combinations(c["domains"], c["combination_size"] - 1)
+                if subset in win_rate_by_domains
+            ]
+            if subset_win_rates:
+                incremental_value = round(c["win_rate"] - max(subset_win_rates), 4)
+        c["incremental_value"] = incremental_value
+
+        # Faz 373 — kullanıcı isteği: "gate_eligible" — üç şartın (istatistiksel
+        # anlamlılık + zamansal tekrarlanabilirlik + yeterli bağımsız kanıt)
+        # HEPSİNİN birden karşılandığı TEK bir bakışta okunabilir bayrak.
+        # Kasıtlı olarak SADECE bir etiket — hiçbir gate/karar hattına
+        # otomatik bağlanmıyor, insan onayı hâlâ ayrı ve gerekli.
+        c["gate_eligible"] = bool(
+            fdr_ok
+            and c["oos_survival"] is True
+            and c["effective_sample_size"] >= min_group_size
+        )
         pairs.append(c)
 
     pairs.sort(key=lambda p: p["win_rate"], reverse=True)
