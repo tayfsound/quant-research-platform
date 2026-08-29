@@ -559,7 +559,7 @@ class DecisionPersistor:
     def close_stale_positions_for_experiment(
         self,
         experiment_bucket: str,
-        cutoff_at,
+        cutoff_at=None,
         current_prices: dict[str, float] | None = None,
         exit_reason: str = "legacy_cleanup",
     ) -> list[dict]:
@@ -568,15 +568,16 @@ class DecisionPersistor:
         status='open' ve experiment_bucket uyumlu satırlar işlenir; bu
         operasyon salt temizleme amacı taşıdığı için kapatma sonucu detayını
         döndürür."""
-        rows = self.session.execute(
-            text(
-                "SELECT * FROM decisions "
-                "WHERE status = 'open' AND experiment_bucket = :experiment_bucket "
-                "AND opened_at IS NOT NULL AND opened_at < :cutoff_at "
-                "ORDER BY opened_at ASC"
-            ),
-            {"experiment_bucket": experiment_bucket, "cutoff_at": cutoff_at},
-        ).mappings().all()
+        query = (
+            "SELECT * FROM decisions "
+            "WHERE status = 'open' AND experiment_bucket = :experiment_bucket"
+        )
+        params = {"experiment_bucket": experiment_bucket}
+        if cutoff_at is not None:
+            query += " AND opened_at IS NOT NULL AND opened_at < :cutoff_at"
+            params["cutoff_at"] = cutoff_at
+        query += " ORDER BY opened_at ASC"
+        rows = self.session.execute(text(query), params).mappings().all()
 
         if not rows:
             return []

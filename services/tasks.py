@@ -879,8 +879,6 @@ def cleanup_stale_pump_fade_positions_task() -> dict:
     pozisyonlarını güncel fiyatla kapatır ve istatistiklerden çıkarır.
     Kapanış tekrar çalıştırılsa bile repository yalnızca status='open'
     satırlarını güncellediği için aynı kayıt ikinci kez işlenmez."""
-    from datetime import UTC, datetime
-
     from database.repositories.decision_persistor import DecisionPersistor
     from database.session_factory import SessionFactory
     from market_data.ingestion.data_provider import RoutingProvider
@@ -888,7 +886,10 @@ def cleanup_stale_pump_fade_positions_task() -> dict:
     if _real_market_data_source_or_none() is None:
         return {"skipped": "non_binance_market_data_source"}
 
-    cutoff_at = datetime(2026, 8, 19, 8, 21, 15, tzinfo=UTC)
+    # Kullanıcı kararı: dashboard'da kalan mevcut pump-fade açık kayıtlarının
+    # tamamı kapatılmalı; tarih cutoff'u yalnızca migration kapsamı için
+    # kullanılmıştı ve sonradan açılmış açık kayıtları burada bırakmamalı.
+    cutoff_at = None
     with _CycleLock("lock:cleanup_stale_pump_fade_positions_task", ttl_seconds=600) as acquired:
         if not acquired:
             return {"skipped": "previous_run_still_in_progress"}
@@ -898,7 +899,7 @@ def cleanup_stale_pump_fade_positions_task() -> dict:
             stale = [
                 row
                 for row in repo.list_open_positions_for_experiment("pump_fade_v1")
-                if row.get("opened_at") is not None and row["opened_at"] < cutoff_at
+                if row.get("opened_at") is not None
             ]
             if not stale:
                 return {"closed_count": 0, "stale_count": 0}
