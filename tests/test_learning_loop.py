@@ -84,3 +84,34 @@ def test_apply_feedback_scores_each_agent_by_own_direction_and_tags_source(tmp_p
     assert len(macro_records) == 1
     assert macro_records[0].was_correct is False
     assert len(loop.agent_memory.get_filtered_records("sentiment")) == 0
+
+
+def test_apply_feedback_carries_raw_confidence_through_when_present(tmp_path):
+    """Faz 369-devam — bkz. contracts/agent.py::AgentOpinion.raw_confidence.
+    _apply_feedback, agent_opinions dict'indeki raw_confidence'ı (varsa)
+    AgentPerformanceRecord'a aktarmalı — eski (bu alan eklenmeden önceki)
+    kayıtlarda alan hiç yoksa None olarak düşmeli, hata fırlatmamalı."""
+    from unittest.mock import MagicMock
+
+    from services.agent_memory import AgentMemory
+    from services.learning_loop import LearningLoop
+
+    loop = LearningLoop()
+    loop.agent_memory = AgentMemory(storage_path=str(tmp_path / "agent_memory_history"))
+
+    event = MagicMock()
+    event.confidence = 0.6
+    event.final_action = "LONG"
+    event.symbol = "BTCUSDT"
+    event.market_snapshot = {"raw_snapshot": {"trend": "up"}}
+    event.agent_opinions = [
+        {"domain": "technical", "direction": "LONG", "confidence": 0.6, "raw_confidence": 0.85},
+        {"domain": "macro", "direction": "LONG", "confidence": 0.5},  # eski kayıt, alan hiç yok
+    ]
+
+    loop._apply_feedback(event, was_correct=True, pnl=50.0)
+
+    technical_records = loop.agent_memory.get_filtered_records("technical")
+    macro_records = loop.agent_memory.get_filtered_records("macro")
+    assert technical_records[0].raw_confidence == 0.85
+    assert macro_records[0].raw_confidence is None

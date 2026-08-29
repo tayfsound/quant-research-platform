@@ -27,6 +27,10 @@ class AgentPerformanceRecord(BaseModel):
 
     direction: str
     confidence: float
+    # Faz 369-devam — bkz. contracts/agent.py::AgentOpinion.raw_confidence.
+    # Kalibrasyon ÖNCESİ ham değer — SADECE bu alan eklendikten sonraki
+    # yeni kararlarda dolu, eski kayıtlarda None (geriye dönük kurtarılamaz).
+    raw_confidence: float | None = None
     was_correct: bool
 
     # Faz 248: backtest motorunu öğrenme döngüsüne bağlarken eklendi —

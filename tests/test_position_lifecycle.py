@@ -1552,3 +1552,33 @@ def test_excluded_from_stats_position_does_not_pollute_agent_learning_on_close()
 
     assert str(event.id) in {c["decision_id"] for c in closed}
     assert not record_spy.called
+
+
+def test_record_agent_learning_carries_raw_confidence_through_when_present():
+    """Faz 369-devam — bkz. contracts/agent.py::AgentOpinion.raw_confidence.
+    _record_agent_learning, agent_contributions'taki raw_confidence'ı
+    (varsa) AgentPerformanceRecord'a aktarmalı — eski (alan eklenmeden
+    önceki) kayıtlarda hiç yoksa None, hata fırlatmamalı."""
+    from unittest.mock import patch
+
+    from contracts.decision_event import DecisionEvent
+
+    symbol = f"POSRAWCONF{uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    event = DecisionEvent(
+        id=uuid4(), timestamp=now, symbol=symbol,
+        proposed_direction="LONG", final_action="LONG", final_size=1.0, confidence=0.7,
+        status="open", entry_price=100.0, quantity=1.0, opened_at=now,
+        stop_loss_price=90.0, take_profit_price=110.0,
+        agent_opinions=[{"domain": "technical", "direction": "LONG", "confidence": 0.6, "raw_confidence": 0.9}],
+    )
+    with SessionFactory.get_session() as session:
+        DecisionPersistor(session).persist(event)
+
+    closer = PositionCloser(_FixedPriceProvider(110.0), hold_seconds=3600)
+    with patch.object(closer.agent_memory, "record") as record_spy, SessionFactory.get_session() as session:
+        closer.close_due_positions(DecisionPersistor(session))
+
+    assert record_spy.called
+    recorded = record_spy.call_args[0][0]
+    assert recorded.raw_confidence == 0.9

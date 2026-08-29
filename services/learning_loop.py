@@ -68,6 +68,7 @@ class LearningLoop:
                     agent_domain=str(domain),
                     direction=opinion.get("direction", ""),
                     confidence=opinion.get("confidence", 0.0),
+                    raw_confidence=opinion.get("raw_confidence"),
                     was_correct=agent_was_correct,
                     pnl=pnl,
                     market_regime=regime,

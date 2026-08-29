@@ -83,6 +83,32 @@ def test_domain_confidence_calibration_is_applied_before_recalculate(monkeypatch
     assert abs(technical.intrinsic_trust - expected_intrinsic_trust) < 1e-9
 
 
+def test_deliberate_preserves_the_raw_confidence_before_calibration_overwrites_it(monkeypatch):
+    """Faz 369-devam — GPT dış rapor bulgusu: confidence kalibrasyon
+    ÖNCESİ hiçbir yerde saklanmıyordu, bu da Brier score'un (analytics/
+    direction_prediction_v2.py) hep zaten-kalibre edilmiş değer üzerinde
+    döngüsel çalışmasına yol açıyordu. deliberate()'in artık opinion.
+    raw_confidence'ı, opinion.confidence kalibre edilmiş değerle
+    ÜZERİNE YAZILMADAN ÖNCEKİ ham beyanla doldurduğunu doğruluyor."""
+    import services.council_orchestrator as co_module
+
+    monkeypatch.setattr(
+        co_module, "calibrate_domain_confidence",
+        lambda domain, raw, evidence_count=None, symbol=None: 0.01,
+    )
+
+    registry = AgentRegistry.create_default()
+    orchestrator = CouncilOrchestrator(registry)
+    ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs")
+
+    _, opinions = orchestrator.deliberate({AgentDomain.TECHNICAL: ctx})
+    technical = next(o for o in opinions if o.domain == AgentDomain.TECHNICAL)
+
+    assert technical.confidence == 0.01  # kalibre edilmiş (mock)
+    assert technical.raw_confidence is not None
+    assert technical.raw_confidence != 0.01  # ham değer kalibrasyondan FARKLI kalmalı
+
+
 def test_deliberate_passes_each_opinions_real_evidence_count_to_calibration(monkeypatch):
     """Faz 268e — gerçek bulgu: kalibrasyon TEK kanıtlı zayıf kararları da
     tam güçle yükseltiyordu (canlıda doğrulandı, quant_agent). deliberate()

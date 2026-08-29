@@ -152,7 +152,7 @@ def get_reliability_legacy_cutoff():
 # sütun listesini modelle senkron tutmak için tek yerde.
 _RECORD_COLUMNS = [
     "id", "agent_domain", "timestamp", "decision_opened_at", "direction",
-    "confidence", "was_correct", "source", "decision_score", "r_multiple",
+    "confidence", "raw_confidence", "was_correct", "source", "decision_score", "r_multiple",
     "pnl", "failure_type", "symbol", "market_regime", "timeframe",
     "volatility", "session", "spread", "funding", "leverage",
     "holding_time_minutes", "news_type", "reasoning", "error_analysis",

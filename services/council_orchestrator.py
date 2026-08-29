@@ -137,6 +137,10 @@ class CouncilOrchestrator:
             # altın-destekli token'lara aynen uyguluyordu. symbol
             # verilirse artık önce o sembolün varlık sınıfına özel eğriye
             # bakılır (yeterli örneklem varsa), yoksa global eğriye düşülür.
+            # Faz 369-devam — overwrite'tan HEMEN önce ham değeri koru
+            # (bkz. contracts/agent.py::AgentOpinion.raw_confidence
+            # docstring'i — Brier/kalibrasyon döngüselliği bulgusu).
+            opinion.raw_confidence = opinion.confidence
             opinion.confidence = calibrate_domain_confidence(
                 opinion.domain.value, opinion.confidence,
                 evidence_count=len(opinion.evidence), symbol=symbol,

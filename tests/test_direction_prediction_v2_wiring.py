@@ -70,3 +70,58 @@ def test_gather_direction_prediction_v2_computes_a_real_brier_score_from_agent_m
     finally:
         import shutil
         shutil.rmtree("test_direction_pred_v2_memory", ignore_errors=True)
+
+
+def test_gather_direction_prediction_v2_raw_brier_score_is_none_without_raw_confidence():
+    """Faz 369-devam — GPT önerisi: mevcut brier_score HER ZAMAN kalibre
+    edilmiş confidence'tan hesaplanıyordu, ham sinyal hiç ayrı
+    ölçülemiyordu. Eski kayıtlarda (raw_confidence eklenmeden önce
+    yazılmış) bu alan None — fail-closed, icat edilmiş bir sayı asla
+    üretilmez."""
+    from contracts.agent_performance import AgentPerformanceRecord
+    from services.agent_memory import AgentMemory
+    from services.direction_prediction_v2_gatherer import gather_direction_prediction_v2
+
+    memory = AgentMemory(storage_path="test_direction_pred_v2_memory_no_raw")
+    try:
+        for _ in range(15):
+            memory.record(AgentPerformanceRecord(
+                agent_domain="technical", direction="LONG", confidence=0.9, was_correct=True,
+            ))
+        result = gather_direction_prediction_v2(agent_memory=memory)
+        assert result["by_domain"]["technical"]["raw_brier_score"] is None
+    finally:
+        import shutil
+        shutil.rmtree("test_direction_pred_v2_memory_no_raw", ignore_errors=True)
+
+
+def test_gather_direction_prediction_v2_raw_brier_score_computed_when_raw_confidence_present():
+    """Faz 369-devam — raw_confidence dolu yeterli (>=10) kayıt birikince
+    raw_brier_score GERÇEKTEN hesaplanır — kalibre edilmiş ve ham skor
+    AYRI, bağımsız sayılar olabilir (burada kasıtlı FARKLI: ham her
+    zaman 0.95 (aşırı iddialı), kalibre edilmiş 0.6 (daha temkinli) —
+    ham Brier'in daha KÖTÜ çıkması beklenir, KALİBRASYONUN gerçekten
+    işe yaradığının kanıtı)."""
+    from contracts.agent_performance import AgentPerformanceRecord
+    from services.agent_memory import AgentMemory
+    from services.direction_prediction_v2_gatherer import gather_direction_prediction_v2
+
+    memory = AgentMemory(storage_path="test_direction_pred_v2_memory_with_raw")
+    try:
+        for i in range(15):
+            was_correct = i < 9  # %60 gerçek isabet
+            memory.record(AgentPerformanceRecord(
+                agent_domain="technical", direction="LONG",
+                confidence=0.6, raw_confidence=0.95, was_correct=was_correct,
+            ))
+        result = gather_direction_prediction_v2(agent_memory=memory)
+        raw_score = result["by_domain"]["technical"]["raw_brier_score"]
+        assert raw_score is not None
+        assert raw_score["sample_size"] == 15
+        # Ham (0.95, aşırı iddialı) %60 gerçek isabete karşı, kalibre
+        # edilmiş (0.6, gerçeğe çok daha yakın) olandan KESİNLİKLE daha
+        # kötü olmalı — kalibrasyonun gerçek etkisinin kanıtı.
+        assert raw_score["brier_score"] > result["by_domain"]["technical"]["brier_score"]
+    finally:
+        import shutil
+        shutil.rmtree("test_direction_pred_v2_memory_with_raw", ignore_errors=True)

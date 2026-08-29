@@ -224,6 +224,7 @@ class PositionCloser:
                 agent_domain=domain,
                 direction=item.get("direction", ""),
                 confidence=item.get("confidence", 0.0) or 0.0,
+                raw_confidence=item.get("raw_confidence"),
                 was_correct=was_correct,
                 pnl=pnl,
                 symbol=symbol,

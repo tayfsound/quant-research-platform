@@ -82,6 +82,22 @@ class AgentOpinion(BaseModel):
     direction: str = ""
 
     confidence: float = 0.0
+    # Faz 369-devam — GPT dış rapor önerisi (kullanıcı isteği): "Brier
+    # score'u out-of-sample hesaplıyor musunuz? Aynı veri hem confidence
+    # üretmek hem Brier ölçmek için kullanılıyorsa şişmiş olabilir."
+    # Gerçek bulgu: council_orchestrator.py confidence'ı calibrate_
+    # domain_confidence() ile KALİBRE EDİLMİŞ değere YERİNDE (in-place)
+    # üzerine yazıyordu — ham (kalibrasyon ÖNCESİ) değer HİÇBİR YERDE
+    # saklanmıyordu. Bu da hem kalibrasyon eğrisinin (compute_domain_
+    # calibration_curves) hem Brier skorunun AYNI, zaten-kalibre edilmiş
+    # sayı üzerinde döngüsel çalışmasına yol açıyordu — "kalibrasyon
+    # gerçekten ham sinyali düzeltiyor mu, yoksa kendi kendini mi
+    # doğruluyor" sorusu hiç cevaplanamıyordu. Bu alan kalibrasyon
+    # ÖNCESİ ham değeri koruyor (council_orchestrator.py:140'ta
+    # overwrite'tan HEMEN önce dolduruluyor) — SADECE bundan sonraki
+    # yeni kararlar için (geçmiş kayıtlarda None, geriye dönük
+    # kurtarılamaz, icat edilmez).
+    raw_confidence: float | None = None
     uncertainty: float = 0.0
     data_quality: float = 0.8
     evidence_strength: float = 0.5
