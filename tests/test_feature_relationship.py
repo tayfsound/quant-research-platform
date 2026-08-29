@@ -1,6 +1,11 @@
 """Feature Relationship (redundancy matrix + koşullu IC) testleri — Faz 368."""
 from analytics.feature_ic import compute_feature_ic
-from analytics.feature_relationship import compute_conditional_ic, compute_feature_redundancy
+from analytics.feature_relationship import (
+    compute_conditional_ic,
+    compute_feature_redundancy,
+    compute_multivariable_residualized_ic,
+    compute_redundancy_clusters,
+)
 
 
 def _trade(entry: float, exit: float, feature_contributions: dict[str, float], domain: str = "technical") -> dict:
@@ -138,3 +143,102 @@ def test_conditional_ic_skips_a_pair_missing_from_feature_ic():
     feature_ic = {"a": {"ic": 0.5, "p_value": 0.01, "sample_size": 50, "agent_domain": "technical"}}
     result = compute_conditional_ic([], redundancy, feature_ic)
     assert result == {}
+
+
+def test_redundancy_clusters_finds_true_cliques_not_transitive_chains():
+    """Gerçek bulgu (2026-08-29): a-b ve b-c yüksek ama a-c hiç ölçülmemiş
+    (ya da düşük) — bunlar "hepsi birbiriyle mutually redundant" (klik)
+    DEĞİL, sadece b üzerinden zincirlenmiş. Bron-Kerbosch bunu doğru
+    ayırmalı: {a,b} ve {b,c} AYRI maksimal klikler, {a,b,c} TEK bir küme
+    olarak ASLA dönmemeli. d-e-f ÜÇÜNÜN DE birbiriyle yüksek olduğu
+    (gerçek klik) durumda ise {d,e,f} TEK küme olarak dönmeli. g-h eşiğin
+    altında (0.3) — hiçbir kümeye girmemeli."""
+    redundancy = {
+        "a|b": {"correlation": 0.9, "sample_size": 50},
+        "b|c": {"correlation": 0.85, "sample_size": 50},
+        # a-c KASITLI OLARAK yok/düşük — {a,b,c} gerçek bir klik değil.
+        "d|e": {"correlation": 0.9, "sample_size": 50},
+        "d|f": {"correlation": 0.85, "sample_size": 50},
+        "e|f": {"correlation": 0.8, "sample_size": 50},  # üçü de mutually yüksek -> gerçek klik
+        "g|h": {"correlation": 0.3, "sample_size": 50},
+    }
+    clusters = compute_redundancy_clusters(redundancy, redundancy_threshold=0.7)
+    cluster_sets = [set(c) for c in clusters]
+
+    assert {"a", "b"} in cluster_sets
+    assert {"b", "c"} in cluster_sets
+    assert {"a", "b", "c"} not in cluster_sets  # zincir, klik değil
+
+    assert {"d", "e", "f"} in cluster_sets  # gerçek mutually-redundant klik
+
+    assert not any({"g", "h"} <= s for s in cluster_sets)
+
+
+def test_redundancy_clusters_empty_when_nothing_passes_threshold():
+    redundancy = {"a|b": {"correlation": 0.2, "sample_size": 50}}
+    assert compute_redundancy_clusters(redundancy, redundancy_threshold=0.7) == []
+
+
+def test_residualized_ic_shows_near_duplicate_carries_no_extra_info():
+    """dup1/dup2 neredeyse birebir aynı (gerçek veride bulunan r=1.000
+    örüntüsünün sentezi). 'real' ise dup1/dup2'den TAMAMEN bağımsız AMA
+    getiriyle gerçekten ilişkili. Beklenen: dup1'in residualized_ic'i
+    ~0'a yakın (dup2 zaten neredeyse tamamını açıklıyor), real'inki ise
+    ham korelasyonuna yakın kalmalı (dup1/dup2 real'i hiç açıklamıyor)."""
+    import numpy as np
+
+    rng = np.random.default_rng(7)
+    n = 60
+    dup1 = rng.normal(size=n)
+    dup2 = dup1 + rng.normal(scale=0.001, size=n)  # neredeyse birebir aynı
+    real = rng.normal(size=n)  # dup1/dup2'den bağımsız
+
+    raw_return = dup1 * 0.001 + real * 0.02  # her ikisi de getiriye gerçekten katkılı
+
+    trades = []
+    for i in range(n):
+        entry = 100.0
+        exit_price = entry * (1 + raw_return[i])
+        trades.append(_trade(entry, exit_price, {
+            "dup1": float(dup1[i]), "dup2": float(dup2[i]), "real": float(real[i]),
+        }))
+
+    cluster = [frozenset({"dup1", "dup2", "real"})]
+    result = compute_multivariable_residualized_ic(trades, cluster, min_sample_size=20)
+
+    assert "dup1" in result and "real" in result
+    assert abs(result["dup1"]["residualized_ic"]) < 0.3  # dup2 zaten açıklıyor
+    assert abs(result["real"]["residualized_ic"]) > 0.5  # gerçekten bağımsız katkı
+
+
+def test_residualized_ic_skips_clusters_above_max_size():
+    cluster = [frozenset({"a", "b", "c", "d", "e"})]  # MAX_CLUSTER_SIZE=4'ü aşıyor
+    trades = [_trade(100.0, 101.0, {"a": i, "b": i, "c": i, "d": i, "e": i}) for i in range(30)]
+    assert compute_multivariable_residualized_ic(trades, cluster) == {}
+
+
+def test_residualized_ic_skips_when_insufficient_common_sample():
+    cluster = [frozenset({"a", "b", "c"})]
+    trades = [_trade(100.0, 101.0, {"a": i, "b": i * 2, "c": i * 3}) for i in range(5)]  # min_sample_size'ın altında
+    assert compute_multivariable_residualized_ic(trades, cluster, min_sample_size=20) == {}
+
+
+def test_residualized_ic_skips_rank_deficient_design_matrix():
+    """Kümedeki tahmin ediciler (target HARİÇ) birbirinin doğrusal katıysa
+    (ör. p2 = 2*p1 tam olarak) tasarım matrisi ranksız — icat edilmiş bir
+    sonuç yerine dürüstçe atlanmalı."""
+    import numpy as np
+
+    rng = np.random.default_rng(3)
+    n = 30
+    target = rng.normal(size=n)
+    p1 = rng.normal(size=n)
+    p2 = p1 * 2.0  # p1 ile TAM doğrusal bağımlı -> [p1, p2, intercept] ranksız
+
+    trades = [
+        _trade(100.0, 100.0 * (1 + 0.01 * target[i]), {"target": float(target[i]), "p1": float(p1[i]), "p2": float(p2[i])})
+        for i in range(n)
+    ]
+    cluster = [frozenset({"target", "p1", "p2"})]
+    result = compute_multivariable_residualized_ic(trades, cluster, min_sample_size=20)
+    assert "target" not in result

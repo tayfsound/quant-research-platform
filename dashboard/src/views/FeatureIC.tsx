@@ -34,6 +34,21 @@ type FeatureICReport = {
 type RedundancyEntry = { correlation: number; sample_size: number };
 type ConditionalICEntry = { raw_ic: number; conditional_ic_given: Record<string, number | null> };
 
+// Faz B (2026-08-29) — Koşullu IC'nin (SADECE ikili) ötesine geçen
+// çoklu-değişkenli residualizasyon. compute_redundancy_clusters gerçek
+// KLİKLERİ (hepsi birbiriyle mutually yüksek redundant — zincirleme
+// DEĞİL) buluyor; bu feature'lar kümenin GERİ KALANINA göre birlikte
+// residualize ediliyor. 3-4 üyeli, neredeyse birebir çakışan kümeler
+// genelde rank-deficient çıkıp dürüstçe sonuç üretmiyor (tabloda hiç
+// görünmez) — sadece sayısal olarak GERÇEKTEN ayrıştırılabilen çiftler/
+// küçük kümeler görünür.
+type ResidualizedICEntry = { cluster: string[]; residualized_ic: number; p_value: number; sample_size: number };
+
+function residualizedIcTone(entry: ResidualizedICEntry): "rise" | "fall" | "neutral" {
+  if (entry.p_value >= 0.05) return "neutral";
+  return entry.residualized_ic >= 0 ? "rise" : "fall";
+}
+
 function redundancyTone(correlation: number): "fall" | "rise" | "neutral" {
   const abs = Math.abs(correlation);
   if (abs >= 0.9) return "fall"; // neredeyse birebir çakışma — kırmızı, dikkat
@@ -57,6 +72,8 @@ export default function FeatureIC() {
   const [reports, setReports] = useState<FeatureICReport[]>([]);
   const [redundancy, setRedundancy] = useState<Record<string, RedundancyEntry>>({});
   const [conditionalIC, setConditionalIC] = useState<Record<string, ConditionalICEntry>>({});
+  const [residualizedIC, setResidualizedIC] = useState<Record<string, ResidualizedICEntry>>({});
+  const [redundancyClusters, setRedundancyClusters] = useState<string[][]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,6 +90,8 @@ export default function FeatureIC() {
         setReports(history.reports || []);
         setRedundancy(relationship.redundancy || {});
         setConditionalIC(relationship.conditional_ic || {});
+        setResidualizedIC(relationship.residualized_ic || {});
+        setRedundancyClusters(relationship.redundancy_clusters || []);
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
@@ -224,6 +243,61 @@ export default function FeatureIC() {
                     </tr>
                   ))
                 )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <Card className="mb-6">
+        <h3 className="text-sm font-semibold text-ink mb-1">Çoklu-değişkenli residualizasyon</h3>
+        <p className="text-xs text-ink-soft mb-3">
+          Koşullu IC (yukarıda) SADECE ikili — bir feature'ı TEK bir komşusuna göre koşullandırıyor. Burada
+          gerçekten mutually-redundant (hepsi birbiriyle ≥0.7, zincirleme değil GERÇEK klik) küçük kümeler,
+          KENDİ kümelerinin TAMAMINA göre birlikte residualize ediliyor — kalan (residual) getiriyle
+          korelasyona giriyor. 3-4 üyeli, neredeyse birebir çakışan kümeler genelde sayısal olarak
+          ayrıştırılamaz (rank-deficient) ve dürüstçe tabloda hiç görünmez — bu, veri eksikliği değil,
+          feature'ların gerçekten ayırt edilemez olduğunun bir göstergesi.
+        </p>
+        {redundancyClusters.length > 0 && (
+          <p className="text-xs text-ink-faint mb-3">
+            Bulunan klikler:{" "}
+            {redundancyClusters.map((c, i) => (
+              <span key={i} className="font-mono">
+                {c.join(" + ")}
+                {i < redundancyClusters.length - 1 ? "; " : ""}
+              </span>
+            ))}
+          </p>
+        )}
+        {loading ? (
+          <Spinner />
+        ) : Object.keys(residualizedIC).length === 0 ? (
+          <EmptyState label="Sayısal olarak ayrıştırılabilen bir küme yok — kümeler ya çok küçük (henüz klik bulunamadı) ya da rank-deficient." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-ink-faint border-b border-line-soft">
+                  <th className="py-2 pr-4">Feature</th>
+                  <th className="py-2 pr-4">Küme</th>
+                  <th className="py-2 pr-4">Residualized IC</th>
+                  <th className="py-2 pr-4">p-değeri</th>
+                  <th className="py-2 pr-4">Örneklem</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(residualizedIC).map(([feature, entry]) => (
+                  <tr key={feature} className="border-b border-line-soft/50">
+                    <td className="py-2 pr-4 font-mono text-ink">{feature}</td>
+                    <td className="py-2 pr-4 font-mono text-ink-soft">{entry.cluster.join(" + ")}</td>
+                    <td className="py-2 pr-4">
+                      <Badge tone={residualizedIcTone(entry)}>{entry.residualized_ic.toFixed(4)}</Badge>
+                    </td>
+                    <td className="py-2 pr-4 text-ink-soft">{entry.p_value.toFixed(4)}</td>
+                    <td className="py-2 pr-4 text-ink-soft">{entry.sample_size}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
