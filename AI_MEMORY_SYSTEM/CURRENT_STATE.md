@@ -39,10 +39,36 @@ aynı trend bilgisini taşıyor olabilir" hipotezini nedensel (sadece
 korelasyonel değil) olarak destekliyor. Karar hattına bağlanmadı, sadece
 ölçüm.
 
-**Sırada:** Risk Simülatörü (block-size duyarlılığı + drawdown/loss-streak
-/CVaR) → Direction Prediction v2 (Brier ayrıştırma + kalibrasyon revizyonu)
-→ quantdb_test/tmp_test_memory kalıcı temizliği (kullanıcı: "kırık test
-kabul etmiyorum," bkz. [[project_shared_test_state_bloat]]).
+## Faz 369 — Risk Simülatörü: block-size duyarlılık testi + drawdown/loss-streak/CVaR (2026-08-29)
+
+GPT'nin Risk Simülatörü (Market World Model) önerisi, iş sırasının 2.
+maddesi: "En kritik eksik drawdown + loss streak + CVaR ve block-size
+sensitivity testi." analytics/market_world_model.py::compute_block_
+bootstrap_paths'e eklendi: `p1_cumulative_return`, `cvar_5_cumulative_
+return` (p5 sınırının ALTINDAKİ tüm yolların ortalaması — Expected
+Shortfall), `mean_max_drawdown`/`worst_max_drawdown` (her yolun kendi
+equity eğrisinden), `mean_loss_streak`/`worst_loss_streak` (en uzun
+ardışık negatif getiri serisi). Yeni `compute_block_size_sensitivity`:
+AYNI getiri dizisini block=5/10/20/30 ile ayrı ayrı simüle edip p5
+oranını karşılaştırıyor — ratio>2.0 ise "duyarlı" (GPT'nin kendi
+örneklerinden türetilen eşik), <2 tane başarılı block_size'da fail-closed
+None ("değerlendirilemedi", icat edilmiş bir True/False değil).
+services/market_world_model_gatherer.py AYNI (zaten çekilmiş) returns
+dizisini ek DB sorgusu olmadan besliyor — yeni contract/migration/task
+GEREKMEDİ (mevcut generic `result: dict` rapor şeması zaten kapsıyor).
+Dashboard'a yeni metrik kartları + block-size duyarlılık tablosu eklendi.
+10 yeni analytics testi (drawdown/loss-streak matematiği elle doğrulandı,
+duyarlılık senaryoları ampirik olarak bulundu) + 1 wiring testi.
+
+Gerçek veriyle (580 kapanmış işlem) doğrulandı: block-size duyarlılık
+oranı 1.64× (eşik 2.0'ın altında) → is_stable=True — GPT'nin "risk
+ölçümü block-size'a aşırı duyarlı olabilir" endişesi bu sistemde
+DOĞRULANMADI, sonuç block=5/10/20/30 arasında stabil. Karar hattına
+bağlanmadı, sadece ölçüm.
+
+**Sırada:** Direction Prediction v2 (Brier ayrıştırma + kalibrasyon
+revizyonu) → quantdb_test/tmp_test_memory kalıcı temizliği (kullanıcı:
+"kırık test kabul etmiyorum," bkz. [[project_shared_test_state_bloat]]).
 
 ## Faz 368 — Feature Intelligence Layer, Faz A: Redundancy Matrix + Koşullu IC (2026-08-28)
 
