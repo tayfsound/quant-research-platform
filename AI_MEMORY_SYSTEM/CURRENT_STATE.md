@@ -1,9 +1,34 @@
-# Mevcut Durum -- v1.110.0 (Faz 370: KRİTİK canlı "hiç işlem açılmıyor" olayı — RiskGateStage notional bug'ı düzeltildi + quantdb_test kalıcı temizliği + Faz 369: Agent Interaction pairwise ablation + Faz 368: Feature Intelligence Layer Faz A)
+# Mevcut Durum -- v1.111.0 (Faz 370-devam: auto-bench mimarisi yeniden tasarlandı — hard-zero yasak, çoklu pencere, histerezis, rejim-koşullu + RiskGateStage notional bug'ı + Kelly MIN_MULTIPLIER + quantdb_test kalıcı temizliği + Faz 369: Agent Interaction pairwise ablation + Faz 368: Feature Intelligence Layer Faz A)
 
 **Tarih:** 2026-08-29
 **Branch:** main
-**Son commit (HEAD):** `1dd0cb8` — bu turun tüm işleri commitlendi, push bekleniyor.
-**Servis durumu:** uvicorn + celery worker + celery beat RiskGateStage fix'iyle yeniden başlatıldı, canlı doğrulandı.
+**Son commit (HEAD):** `54839c3` — auto-bench paketi commitlendi, push bekleniyor.
+**Servis durumu:** uvicorn + celery worker + celery beat auto-bench fix'iyle yeniden başlatıldı; eski worker (PID 97807) graceful shutdown'ı tamamlandı, canlı doğrulama sürüyor.
+
+## Faz 370-devam — KRİTİK canlı olay 3. katman: auto-bench mimarisi yeniden tasarlandı (2026-08-29)
+
+RiskGateStage notional fix'i (aşağıda) VE Kelly MIN_MULTIPLIER tabanı (aşağıda) tek başlarına yetmedi — sistem hâlâ tıkanık kalmaya devam ediyordu. Kullanıcının kendi kök neden teşhisi genişledi: "Short işlem almıyor eskiden aldığı kötü işlemler kapanıyor sadece onlarda zarar ettiği için performansı giderek düşüyor. Düştüğü için sistem giderek kilitleniyor loopa girdi baya." — bu sefer `agents/source_reliability_agent.py`'nin (auto-bench mekanizması) kendisinde.
+
+**Bulunan gerçek bug:** `SourceReliabilityAgent` TEK pencereli (son 20 karar), TEK eşikli (0.35, histerezissiz), HARD-ZERO (`performance_weight=0.0`, `council_orchestrator.py`'de) bir tasarıma sahipti. Canlı veride doğrulandı: `macro` (GPT'nin harici olarak EN güvenilir bulduğu ajan, Brier=0.2346) VE `technical`, İKİSİ DE aynı anda tamamen susturulmuştu — 20 kararlık geçici kötü seri yüzünden. Susturulan bir ajanın oyu council'e hiç etkimediği için sonraki kararlar da onu güncelleyemiyor → kalıcı sessizlik → kendi kendini besleyen kilitlenme döngüsü (kullanıcının "loopa girdi" teşhisi doğru çıktı).
+
+**Kullanıcının istediği TAM paket** (bir MIN_MULTIPLIER'dan çok daha fazlası — 8 maddelik ayrıntılı eleştiri sonrası netleşti):
+1. `MIN_INFLUENCE=0.1` — `performance_weight` artık literal 0.0'a DEĞİL, bu tabana düşüyor (council_orchestrator.py).
+2. Çoklu pencere (20/100/500, ağırlık 0.5/0.3/0.2, `_blended_reliability`) — tek kötü kısa seri, 500 kararlık kanıtlanmış geçmişi silemiyor.
+3. Histerezis — `BENCH_THRESHOLD=0.35` (giriş) ≠ `UNBENCH_THRESHOLD=0.55` (çıkış), eşik civarında ping-pong önleniyor. Kalıcı durum `app_settings`'te, `AgentMemory.namespace`'in MD5 hash'iyle anahtarlanıyor (VARCHAR(64) limiti için).
+4. Rejim-koşullu güvenilirlik — `deliberate()` zaten `regime` taşıyordu, `annotate()`'e artık iletiliyor (`_summary_for`'un var olan regime→asset_class→global cascade'i reuse edildi).
+5. Beta-prior smoothing (PRIOR_STRENGTH=5) zaten vardı, korundu.
+
+**Yol boyunca bulunan İKİNCİ gerçek bug:** `AgentMemory.get_summary()`'nin `recent_accuracy` alanı `records[-20:]` ile SABİT kodluydu, `window` parametresinden tamamen bağımsız — `get_summary(window=100)` çağrısı `total_predictions`'ı doğru kapsıyordu ama `recent_accuracy` hâlâ sadece son-20'yi yansıtıyordu. Önceden görünmüyordu çünkü TEK çağıran (`SourceReliabilityAgent`, eski haliyle) hep `window=20` kullanıyordu. `_smoothed_reliability` artık doğru şekilde window-kapsamlı `overall_accuracy` kullanıyor.
+
+**Doğrulama:** `tests/test_source_reliability.py` 21/21 geçti (2 yeni dedike test: multi-window koruması + histerezis ping-pong önleme, gerçek sayılarla ampirik doğrulandı — hand-calculation değil). 9 ilgili test dosyasında regresyon YOK. Gerçek canlı veriyle: `macro`/`technical` reliability artık 0.588/0.583 (BENCH_THRESHOLD üstü) ama hâlâ AYRI bir mekanizma (`_domain_drift_detected`, concept-drift, değişmedi) tarafından `benched=True` — artık `performance_weight=MIN_INFLUENCE=0.1` alıyorlar, `0.0` değil. Servisler yeniden başlatıldı, eski worker'ın graceful shutdown'ı doğrulandı. **Canlı sonuç (trade açılışlarının gerçekten yeniden başlayıp başlamadığı) henüz doğrulanmadı — sıradaki adım.**
+
+**Bilinçli olarak ERTELENEN, bu paketin parçası DEĞİL:** "0.5266" — bir cycle'da 15 farklı sembolde neredeyse özdeş confidence gözlemi. Kısmen araştırıldı (portfolio_confidence_discount değil, BeliefEngine.synthesize gerçekten farklı belief.strength üretiyor [GRTUSDT=0.379 vs SEIUSDT=0.282] — muhtemel açıklama 3 katmanlı multi-timeframe cascade'in Bayesian kombinasyonu ama TAM olarak hangi satırda kesin tespit edilemedi). Kullanıcı: ayrı bir instrumentation/debug görevi olarak ele alınacak — her cascade katmanında (15m/4h/medium-term) prior/likelihood/posterior/evidence_sum/normalization_constant loglanacak.
+
+**Sırada (kullanıcı onayıyla, sıralama korunuyor):**
+1. Canlı doğrulama — bu 3. katman fix'inden sonra trade açılışları gerçekten başlıyor mu?
+2. Strateji × Rejim Uyumu modülü (GPT'nin önerdiği FDR→OOS→replication→candidate→human-review→gate pipeline; en güçlü aday LONG swing × bullish_high).
+3. Agent Combination Reliability zenginleştirmesi (effective_sample_size + incremental_value + out_of_sample_survival).
+4. 0.5266 instrumentation/debug (ayrı görev, yukarıda tanımlandı).
 
 ## Faz 370 — KRİTİK canlı olay: sistem 14+ saattir hiç işlem açmıyordu (2026-08-29)
 
@@ -37,17 +62,25 @@ belgelendi):**
    yeniden başlatma sonrası POST_FUSION_SIZE_EXCEEDED hatası düzinelerce
    semboldan 1'e düştü.
 
-**ÖNEMLİ dürüst not — fix TEK BAŞINA "sistem tekrar işlem açıyor" garantisi
-VERMİYOR:** Ayrı bir bulgu olarak son 500 kapanmış işlemin GERÇEK Sharpe
-oranı -0.046 (negatif) — kazanma oranı %52 ama ortalama kayıplar
-kazançlardan çok daha büyük. Bu, `services/kelly_sizing.py::kelly_size_
-multiplier`'ın BAZI confidence kovalarını (0.2/0.3/0.5) GERÇEK negatif
-tarihsel edge yüzünden 0.0 çarpana düşürmesine yol açıyor — bu MEŞRU,
-tasarım gereği çalışan bir temkin mekanizması (bug değil). Sistemin tekrar
-düzenli işlem açması, ya piyasa/performans doğal olarak iyileşene kadar
-zaman geçmesini ya da kullanıcının bu eşikleri/durumu bilinçli olarak
-gözden geçirmesini gerektirebilir — bu AYRI, daha büyük bir karar, tek
-taraflı müdahale edilmedi.
+**Devam — RiskGateStage fix'i TEK BAŞINA yetmedi (kullanıcı ısrarla
+sorguladı, haklı çıktı):** Fix'ten SONRA da sistem 5+ saat, SIFIR işlem
+açtı. Kullanıcının kendi kök neden teşhisi doğru çıktı: bu "meşru temkin"
+değil, ÇIKIŞSIZ bir kilitlenme döngüsüydü — son 500 kapanmış işlemin
+negatif Sharpe'ı (-0.046) bazı confidence kovalarını `kelly_size_
+multiplier`'da 0.0'a düşürüyordu; yeni işlem açılamayınca "son 500
+kapanmış" penceresi SADECE eski/kötü pozisyonlarla (ortalama tutma 3.25
+gün, kimi 21 gün) dolmaya devam etti, kendi kendini besleyen bir kısır
+döngü oluştu (SHORT son gerçek açılış 2.5 gün önce, LONG ~22 saat önce).
+
+**Gerçek düzeltme:** `services/kelly_sizing.py`'ye `MIN_MULTIPLIER=0.1`
+tabanı eklendi — diğer TÜM sizing gate'lerin (self_correction/self_model/
+pivotal_agent/symbol_performance/mae_mfe_bucket) zaten kullandığı "asla
+sıfıra inme, sadece küçült" mimarisiyle tutarlı hale getirildi. Çarpan
+artık ne kadar kötü bir kova olursa olsun asla 0.0'ın altına inmiyor —
+sistem her zaman küçük bir boyutla yeni/temiz veri üretip döngüyü
+kırabiliyor. `kelly_fraction()` (saf Kelly formülü) DEĞİŞMEDİ, taban
+sadece gerçek boyutlandırma girişinde uygulandı. Kullanıcı onayıyla
+uygulandı (AskUserQuestion), 2 test güncellendi/eklendi, deploy edildi.
 
 **Yan bulgular (tam suite koşusunda, aynı "no_trade" arayışı sırasında):**
 - quantdb_test kalıcı temizliği genelleştirildi (kullanıcı: "kırık test
