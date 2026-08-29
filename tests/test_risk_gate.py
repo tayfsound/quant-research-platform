@@ -28,6 +28,51 @@ def test_rejects_oversized():
     assert ctx.risk.evaluation.verdict == "rejected"
     assert any(r.code == "POST_FUSION_SIZE_EXCEEDED" for r in ctx.risk.evaluation.reasons)
 
+def test_cheap_asset_with_small_notional_is_not_rejected_for_a_large_unit_count():
+    """Faz 370-devam — canlı olay (2026-08-29): ARKMUSDT (~$0.11) için
+    final_size=5248.41 BİRİM (~$630 GERÇEK notional) "5248.41 > limit
+    5000.0" diye yanlışlıkla reddediliyordu — limit $ notional niyetliydi,
+    ham birim sayısıyla kıyaslanıyordu. Aynı $700'lük pozisyon BTC'de
+    (~$110k) 0.0064 birime denk geldiği için bu bug hiç görünmüyordu —
+    SADECE ucuz varlıklarda (bugün watchlist'e eklenen meme coin'ler)
+    ortaya çıktı. current_price verilince artık notional'a göre
+    değerlendiriliyor (birim sayısı DEĞİL)."""
+    stage = RiskGateStage(MagicMock())
+    ctx = CognitiveCycleContext()
+    ctx.decision.final_size = 5248.41167511  # ham birim (ARKM)
+    ctx.market.raw_snapshot = {"close": 0.12}  # ~$630 gerçek notional
+
+    class BigLimit:
+        value = 5000.0
+    ctx.risk.limits = {"max_position_size": BigLimit()}
+    ctx.risk.evaluation = FakeEval()
+    ctx.risk.current_drawdown = 0.0
+
+    ctx = stage.execute(ctx)
+
+    assert ctx.risk.evaluation.verdict == "approved"
+    assert ctx.decision.final_size == 5248.41167511
+
+
+def test_cheap_asset_still_rejected_when_notional_genuinely_exceeds_limit():
+    stage = RiskGateStage(MagicMock())
+    ctx = CognitiveCycleContext()
+    ctx.decision.final_size = 100000.0  # ham birim
+    ctx.market.raw_snapshot = {"close": 0.12}  # notional = 12000 > limit 5000
+
+    class BigLimit:
+        value = 5000.0
+    ctx.risk.limits = {"max_position_size": BigLimit()}
+    ctx.risk.evaluation = FakeEval()
+    ctx.risk.current_drawdown = 0.0
+
+    ctx = stage.execute(ctx)
+
+    assert ctx.risk.evaluation.verdict == "rejected"
+    assert ctx.decision.final_size == 0.0
+    assert any(r.code == "POST_FUSION_SIZE_EXCEEDED" for r in ctx.risk.evaluation.reasons)
+
+
 def test_approves_valid():
     stage = RiskGateStage(MagicMock())
     ctx = CognitiveCycleContext()

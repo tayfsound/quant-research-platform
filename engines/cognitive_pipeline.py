@@ -1289,11 +1289,27 @@ class RiskGateStage:
         final_size = getattr(ctx.decision, "final_size", 0.0)
         reasons = []
 
+        # Faz 370-devam — kritik bulgu (canlı olay, 2026-08-29): engines/
+        # risk_engine.py'nin ön kapısı (Faz 211'den beri) max_position_
+        # size'ı ($ notional tavanı) proposed_size*current_price ile
+        # karşılaştırıyordu — ama bu SON kapı final_size'ı (HAM birim
+        # sayısı) doğrudan aynı limitle kıyaslıyordu. Pahalı varlıklarda
+        # (BTC ~0.006 birim) bu asla tetiklenmiyordu, ama bugün watchlist'e
+        # eklenen ucuz meme coin'lerde (ör. ARKMUSDT ~$0.11) AYNI dolar
+        # tutarı binlerce birime denk geliyor — GERÇEK $630'luk bir
+        # pozisyon "final size 5248.41 > limit 5000.0" diye yanlışlıkla
+        # reddediliyordu (final_size ham birim, limit dolar niyetliydi).
+        # Ön kapıyla AYNI notional dönüşümü burada da uygulanıyor —
+        # current_price yoksa (bazı testler market verisi kurmuyor) eski
+        # ham karşılaştırmaya düşülüyor, geriye dönük uyumlu.
+        current_price = (ctx.market.raw_snapshot or {}).get("close")
+        final_size_notional = final_size * current_price if current_price else final_size
+
         max_size = limits.get("max_position_size")
-        if max_size and final_size > max_size.value:
+        if max_size and final_size_notional > max_size.value:
             reasons.append(RiskReason(
                 code="POST_FUSION_SIZE_EXCEEDED",
-                message="Final size " + str(final_size) + " > limit " + str(max_size.value),
+                message="Final size " + str(final_size_notional) + " > limit " + str(max_size.value),
                 severity="critical",
             ))
 
