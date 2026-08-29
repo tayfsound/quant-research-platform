@@ -95,3 +95,11 @@ class DecisionEvent(BaseModel):
     pre_fusion_confidence: float | None = None  # MetaStage'in confidence'ı, DecisionFusion'ın üzerine yazmasından ÖNCE
     final_ev: float | None = None  # DecisionFusion'ın hesapladığı gerçek EV (varsa)
     rejection_reason: str | None = None  # DecisionFusion'ın WAIT'e çevirme gerekçesi (varsa)
+    # Faz 375 — 0.5266/multi-timeframe cascade instrumentation: services/
+    # orchestrator.py::propose_multi_timeframe()'in üst zaman dilimi
+    # (15m/4h/medium-term) Bayesian birleştirmesinin SONUCU (per_timeframe
+    # kırılımının TAMAMI agent_opinions içinde "timeframe_belief" olarak
+    # ayrıca duruyor — bu iki alan sadece hızlı SQL sorgusu için özet).
+    # Cascade devre dışıysa (multi_timeframe_cascade_enabled=false) None.
+    mtf_direction: str | None = None
+    mtf_confidence: float | None = None

@@ -77,7 +77,9 @@ class DecisionPersistor:
                     meta_decision,
                     pre_fusion_confidence,
                     final_ev,
-                    rejection_reason
+                    rejection_reason,
+                    mtf_direction,
+                    mtf_confidence
                 )
                 VALUES (
                     :id,
@@ -113,7 +115,9 @@ class DecisionPersistor:
                     :meta_decision,
                     :pre_fusion_confidence,
                     :final_ev,
-                    :rejection_reason
+                    :rejection_reason,
+                    :mtf_direction,
+                    :mtf_confidence
                 )
                 ON CONFLICT (id, timestamp) DO NOTHING
             """),
@@ -165,6 +169,8 @@ class DecisionPersistor:
                 "pre_fusion_confidence": event.pre_fusion_confidence,
                 "final_ev": event.final_ev,
                 "rejection_reason": event.rejection_reason,
+                "mtf_direction": event.mtf_direction,
+                "mtf_confidence": event.mtf_confidence,
             },
         )
 
