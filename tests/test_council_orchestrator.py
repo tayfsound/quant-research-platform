@@ -416,7 +416,7 @@ _BULLISH_TECHNICAL = TechnicalContext(
 )
 
 
-def _unbenched_annotate(opinions: list[dict], symbol: str | None = None) -> list[dict]:
+def _unbenched_annotate(opinions: list[dict], symbol: str | None = None, regime: str | None = None) -> list[dict]:
     # Canlı DB'deki gerçek auto-bench durumundan (technical_agent şu an
     # gerçekten benched) İZOLE test: bu testler MoE tilt'inin KENDİSİNİ
     # doğruluyor, benching etkileşimini değil (o ayrı, zaten mevcut testlerle

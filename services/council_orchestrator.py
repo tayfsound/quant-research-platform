@@ -110,6 +110,7 @@ class CouncilOrchestrator:
         annotated = self.reliability_annotator.annotate(
             [{"domain": o.domain.value, "confidence": o.confidence, "direction": o.direction} for o in opinions],
             symbol=symbol,
+            regime=regime,
         )
         for opinion, info in zip(opinions, annotated):
             # Faz 268al — "İsabeti artırmanın yolu daha akıllı kullanım"
@@ -158,20 +159,26 @@ class CouncilOrchestrator:
                 opinion.freshness = data_freshness
             opinion.source_reliability = info["source_reliability"]
             if info.get("benched"):
-                # Auto-bench: bu domain'in GERÇEK, kalıcı (AgentMemory'den
-                # okunan) son 20 yönlü kararının isabet oranı eşiğin altında.
-                # Metafor değil — performance_weight=0 effective_influence'ı
-                # (intrinsic_trust * performance_weight) gerçekten sıfırlar,
-                # yani bu oy nihai karara hiç katkı vermiyor. Opinion listede
-                # KALIYOR (sessizce yutulmuyor, explainability zincirinde
-                # görünür) ve gerçekten yeni, isabetli kararlar birikince
-                # otomatik geri döner (bkz. agents/source_reliability_agent.py).
-                opinion.performance_weight = 0.0
+                # Faz 370-devam — KRİTİK canlı olay (kullanıcı teşhisi):
+                # performance_weight=0.0 (tam susturma) kendi kendini
+                # besleyen bir kilitlenme döngüsüne açıktı — "0, ajanın
+                # kalıcı olarak kötü olduğu anlamına gelmiyor, son (küçük)
+                # bir pencerede kötü performans gördük demek." Artık MIN_
+                # INFLUENCE'a iniyor — ajan HÂLÂ konuşuyor (küçük ağırlıkla,
+                # tamamen yok sayılmıyor) ama bağırmıyor. reliability
+                # (op["source_reliability"]) dürüst kalıyor, sadece OY
+                # AĞIRLIĞI asla tam sıfıra inmiyor. Opinion listede KALIYOR
+                # (sessizce yutulmuyor, explainability zincirinde görünür)
+                # ve gerçekten yeni, isabetli kararlar birikince (artık üç
+                # pencerenin — 20/100/500 — ağırlıklı ortalaması + histerezis
+                # ile, bkz. agents/source_reliability_agent.py) otomatik
+                # geri döner.
+                opinion.performance_weight = self.reliability_annotator.agent.MIN_INFLUENCE
                 opinion.caveats.append(
-                    f"Devre dışı (benched): {opinion.domain.value} ajanının gerçek son isabet oranı "
-                    f"(son {self.reliability_annotator.agent.WINDOW} yönlü karar) "
-                    f"{self.reliability_annotator.agent.BENCH_THRESHOLD} eşiğinin altında — "
-                    f"gerçek isabetli kararlar birikene kadar oy ağırlığı sıfırlandı."
+                    f"Devre dışı (benched): {opinion.domain.value} ajanının gerçek yakın-dönem isabet "
+                    f"oranı (20/100/500 kararlık ağırlıklı ortalama) eşiğin altında — "
+                    f"gerçek isabetli kararlar birikene kadar oy ağırlığı "
+                    f"{self.reliability_annotator.agent.MIN_INFLUENCE}'a düşürüldü (tamamen sıfırlanmadı)."
                 )
             opinion.recalculate()
 

@@ -19,6 +19,30 @@ def _seed(memory: AgentMemory, domain: str, n: int, was_correct: bool, confidenc
         ))
 
 
+def _seed_ordered(
+    memory: AgentMemory, domain: str, n: int, was_correct: bool, start_time: datetime, confidence: float = 0.9,
+) -> datetime:
+    """_seed ile AYNI ama recency-BAĞIMLI testler (çoklu pencere/histerezis)
+    için AÇIK, kesin artan decision_opened_at atar — datetime.now()'a
+    (varsayılan) güvenmek, hızlı bir döngüde (mikrosaniyeler arası)
+    çözünürlük yetersizliği yüzünden "en yeni N kayıt" sıralamasını
+    GÜVENİLMEZ kılıyordu (Faz 370-devam'da ampirik olarak bulundu — bu
+    test dosyasının KENDİSİ bu sınıf bug'ı ilk kez ortaya çıkardı).
+    start_time GERÇEK, kayan (get_reliability_legacy_cutoff()'un HER ZAMAN
+    gerisinde kalan sabit bir tarih DEĞİL) bir taban olmalı — çağıran
+    genelde datetime.now() - timedelta(...) ile başlar. Zincirlenebilir
+    bir sonraki zaman döndürür ki ardışık _seed_ordered çağrıları (ör.
+    önce 'iyi', sonra 'kötü' seri) kesin, çakışmasız bir sıra korusun."""
+    t = start_time
+    for _ in range(n):
+        memory.record(AgentPerformanceRecord(
+            agent_domain=domain, direction="LONG", confidence=confidence, was_correct=was_correct,
+            decision_opened_at=t,
+        ))
+        t += timedelta(seconds=1)
+    return t
+
+
 def test_reliability_reflects_real_accuracy_not_confidence(tmp_path):
     """Kritik ayrım: ajan HEP yüksek confidence (0.95) bildiriyor ama
     GERÇEKTE hep yanlış çıkıyor — reliability düşük olmalı, yüksek değil."""
@@ -75,6 +99,69 @@ def test_small_sample_high_accuracy_is_smoothed_not_fully_trusted(tmp_path):
     # Yine de nötrün (0.5) üzerinde kalmalı — gerçekten pozitif bir sinyal
     # var, sadece abartılı güvenle değil.
     assert 0.5 < result[0]["source_reliability"] < raw_accuracy
+
+
+def test_multi_window_blend_protects_a_proven_track_record_from_a_single_bad_short_window(tmp_path, monkeypatch):
+    """Faz 370-devam — KRİTİK canlı olay (kullanıcı teşhisi): "20 karar
+    gibi çok küçük bir pencereden gelen geçici kötü performans -> ajan
+    tamamen susturuluyor -> ... -> kendi kendini besleyen bir feedback
+    loop." 100 GERÇEK kapanmış işlemlik SAĞLAM bir geçmiş (%100 isabet)
+    olan bir ajanın SADECE en son 20 kararında kötü bir seri (%0 isabet)
+    yaşaması — TEK BAŞINA WINDOW=20 kullanılsaydı bu benched'e düşerdi
+    (smoothed=(0+5)/(20+10)=0.167 < 0.35), ama 20/100/500 pencerelerinin
+    ağırlıklı ortalaması eski, kanıtlanmış geçmişi de hesaba katıp
+    ajanı eşiğin ÜZERİNDE tutmalı.
+
+    Concept Drift (_domain_drift_detected — AYRI, kasıtlı olarak DAHA
+    hassas bir mekanizma, kendi testleriyle zaten kapsanıyor) BİLEREK
+    devre dışı bırakıldı: %100'den %0'a keskin bir düşüş TANIM GEREĞİ
+    istatistiksel olarak anlamlı bir drift'tir — bu test o AYRI kapıyı
+    değil, SADECE multi-window blend'in kendisini izole test ediyor."""
+    memory = AgentMemory(storage_path=str(tmp_path))
+    t = _seed_ordered(memory, "macro", 100, was_correct=True, start_time=datetime.now() - timedelta(hours=1))
+    _seed_ordered(memory, "macro", 20, was_correct=False, start_time=t)
+
+    agent = SourceReliabilityAgent(memory=memory)
+    monkeypatch.setattr(agent, "_domain_drift_detected", lambda *a, **k: False)
+    result = agent.annotate([{"domain": "macro", "confidence": 0.7}])
+
+    assert result[0]["benched"] is False
+    # Yine de düşüşü YANSITMALI (kör bir tam güven değil) — sadece TEK
+    # BAŞINA kısa pencerenin dediği kadar sert değil.
+    assert 0.35 <= result[0]["source_reliability"] < 0.9
+
+
+def test_hysteresis_keeps_a_benched_domain_silent_until_it_clears_the_higher_unbench_bar(tmp_path):
+    """Faz 370-devam — KRİTİK canlı olay (kullanıcı teşhisi): tek eşikli
+    bench/unbench eşik civarında salınıma (ping-pong) açık. Histerezis:
+    BENCH_THRESHOLD (0.35) altına düşünce susturuluyor, ama geri açılmak
+    için DAHA YÜKSEK bir bar (UNBENCH_THRESHOLD, 0.55) geçmesi gerekiyor
+    — 0.35 ile 0.55 arasındaki bir "kısmi toparlanma" tek başına yeterli
+    DEĞİL, hâlâ benched kalmalı."""
+    memory = AgentMemory(storage_path=str(tmp_path))
+    agent = SourceReliabilityAgent(memory=memory)
+    t = datetime.now() - timedelta(hours=1)
+
+    # 1. Açıkça kötü — ilk kez benched'e düşer (henüz kalıcı durum yok,
+    #    normal/düşük BENCH_THRESHOLD uygulanıyor).
+    t = _seed_ordered(memory, "technical", 15, was_correct=False, start_time=t)
+    result = agent.annotate([{"domain": "technical", "confidence": 0.7}])
+    assert result[0]["benched"] is True
+
+    # 2. Kısmi toparlanma — reliability artık ~0.46 (BENCH_THRESHOLD'un
+    #    ÜZERİNDE ama UNBENCH_THRESHOLD'un ALTINDA). Histerezis OLMASAYDI
+    #    (tek eşik) bu unbench ederdi — histerezisle HÂLÂ benched kalmalı.
+    t = _seed_ordered(memory, "technical", 12, was_correct=True, start_time=t)
+    result = agent.annotate([{"domain": "technical", "confidence": 0.7}])
+    assert 0.35 <= result[0]["source_reliability"] < 0.55
+    assert result[0]["benched"] is True
+
+    # 3. Gerçek, güçlü bir toparlanma — UNBENCH_THRESHOLD'u (0.55) açıkça
+    #    geçiyor, artık gerçekten unbench edilmeli.
+    _seed_ordered(memory, "technical", 8, was_correct=True, start_time=t)
+    result = agent.annotate([{"domain": "technical", "confidence": 0.7}])
+    assert result[0]["source_reliability"] >= 0.55
+    assert result[0]["benched"] is False
 
 
 def test_insufficient_real_samples_is_neutral_not_benched(tmp_path):

@@ -2,12 +2,14 @@
 tracker.py) doğrudan devamı, kullanıcı isteği: "Benched ajan itirazını
 gölge pozisyon testi."
 
-agents/source_reliability_agent.py bir ajanın gerçek son isabet oranı
-eşiğin altına düşünce onu "benched" işaretliyor — oy ağırlığı (performance_
-weight) sıfırlanıyor, ama opinion listede KALIYOR (services/
-council_orchestrator.py'nin "Devre dışı (benched)" caveat'ı, bkz. o
-dosyadaki yorum). Bu, gerçek bir soruyu açık bırakıyor: "benching kararı
-gerçekten doğru muydu, yoksa iyi bir sinyali mi susturduk?"
+agents/source_reliability_agent.py bir ajanın gerçek yakın-dönem isabet
+oranı eşiğin altına düşünce onu "benched" işaretliyor — oy ağırlığı
+(performance_weight) Faz 370-devam'dan beri MIN_INFLUENCE'a (tam sıfıra
+DEĞİL — kendi kendini besleyen kilitlenme döngüsü bulgusu) düşürülüyor,
+ama opinion listede KALIYOR (services/council_orchestrator.py'nin "Devre
+dışı (benched)" caveat'ı, bkz. o dosyadaki yorum). Bu, gerçek bir soruyu
+açık bırakıyor: "benching kararı gerçekten doğru muydu, yoksa iyi bir
+sinyali mi susturduk?"
 
 macro_shadow_tracker.py ile AYNI izolasyon felsefesi — council'in GERÇEK
 kararını hiç etkilemez, `decisions` tablosunu hiç kullanmaz, sanal (paper)

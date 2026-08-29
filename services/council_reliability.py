@@ -7,5 +7,5 @@ class ReliabilityAnnotator:
     def __init__(self):
         self.agent = SourceReliabilityAgent()
 
-    def annotate(self, opinions: list[dict], symbol: str | None = None) -> list[dict]:
-        return self.agent.annotate(opinions, symbol=symbol)
+    def annotate(self, opinions: list[dict], symbol: str | None = None, regime: str | None = None) -> list[dict]:
+        return self.agent.annotate(opinions, symbol=symbol, regime=regime)
