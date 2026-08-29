@@ -79,3 +79,19 @@ class DecisionEvent(BaseModel):
     # fiyat — normal (kademesiz) pozisyonlarda ikisi de None kalır.
     staged_entry_add_pending: bool | None = None
     staged_entry_low_price: float | None = None
+    # Faz 370-devam — KRİTİK canlı bulgu: "canonical decision integrity" —
+    # kullanıcı, aynı kararın direction'ının (belief_engine'in weight-
+    # snapshot-ağırlıklı sentezi, MetaStage'de sabitlenir) ve confidence'ının
+    # (services/decision_fusion.py'nin SONRADAN yeniden kalibre edip üzerine
+    # yazdığı değer) FARKLI aşamalardan geldiğini, ama bunun hiçbir yerde
+    # açıkça görünmediğini tespit etti (TRUMPUSDT: council SHORT/0.429 iken
+    # kaydedilen LONG/0.7939). Bu alanlar "hangi sayı hangi aşamadan geldi"
+    # sorusunu SQL ile (JSON arkeolojisi gerekmeden) cevaplanabilir kılar —
+    # hiçbiri karar mantığını DEĞİŞTİRMİYOR, sadece zaten hesaplanan ara
+    # değerleri ayrı ayrı kaydediyor.
+    council_direction: str | None = None  # agent_debate.py'nin ham, benching/weight-snapshot'tan habersiz oyu
+    council_confidence: float | None = None
+    meta_decision: str | None = None  # MetaStage'in ACT/REDUCE/WAIT kararı, DecisionFusion ÇALIŞMADAN ÖNCE
+    pre_fusion_confidence: float | None = None  # MetaStage'in confidence'ı, DecisionFusion'ın üzerine yazmasından ÖNCE
+    final_ev: float | None = None  # DecisionFusion'ın hesapladığı gerçek EV (varsa)
+    rejection_reason: str | None = None  # DecisionFusion'ın WAIT'e çevirme gerekçesi (varsa)

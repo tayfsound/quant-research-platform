@@ -483,6 +483,35 @@ class DecisionRecorder:
                 # asla yarım bir emir denemesi yapılmıyor.
                 execution_mode = "simulated"
 
+        # Faz 370-devam — bkz. contracts/decision_event.py'deki ilgili
+        # alanların üstündeki not. Üçü de zaten hesaplanmış ara değerler —
+        # burada sadece ayrı, sorgulanabilir sütunlara çıkarılıyor.
+        council_direction = None
+        council_confidence = None
+        if debate_result is not None:
+            debate_data = (
+                debate_result.model_dump() if hasattr(debate_result, "model_dump") else debate_result
+            )
+            council_direction = debate_data.get("final_direction")
+            council_confidence = debate_data.get("final_confidence")
+
+        meta_decision = None
+        pre_fusion_confidence = None
+        if hasattr(ctx, "cognition"):
+            for item in reversed(ctx.cognition.relevant_knowledge):
+                if item.get("type") == "pre_fusion_snapshot":
+                    meta_decision = item["data"].get("meta_decision")
+                    pre_fusion_confidence = item["data"].get("pre_fusion_confidence")
+                    break
+
+        final_ev = None
+        rejection_reason = None
+        for entry in (decision_fusion_entries or []):
+            if "rejection" in entry:
+                rejection_reason = entry.get("rejection")
+                final_ev = entry.get("ev")
+                break
+
         event = DecisionEvent(
             id=ctx.cycle_id,
             timestamp=ctx.timestamp,
@@ -528,6 +557,12 @@ class DecisionRecorder:
             exchange_client_order_id=exchange_client_order_id,
             exchange_stop_order_id=exchange_stop_order_id,
             exchange_tp_order_id=exchange_tp_order_id,
+            council_direction=council_direction,
+            council_confidence=council_confidence,
+            meta_decision=meta_decision,
+            pre_fusion_confidence=pre_fusion_confidence,
+            final_ev=final_ev,
+            rejection_reason=rejection_reason,
         )
 
         self.persistor.persist(event)

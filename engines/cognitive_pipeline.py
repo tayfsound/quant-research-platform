@@ -491,6 +491,33 @@ class MetaStage:
 
         ctx.decision.proposed_direction = belief.direction
 
+        # Faz 370-devam — KRİTİK canlı bulgu (kullanıcı: "aynı kararın farklı
+        # katmanlarda farklı karar olarak temsil edilmesi"): TRUMPUSDT örneği
+        # — debate_result.final_direction=SHORT/0.429 (services/agent_debate.py'
+        # nin ham confidence-ağırlıklı, benching/weight-snapshot'tan HABERSİZ
+        # kendi sentezi) iken persist edilen decisions.direction=LONG,
+        # confidence=0.7939 (services/decision_fusion.py:138'in belief_engine'in
+        # weight-snapshot-ağırlıklı belief'inden SONRA yeniden kalibre edip
+        # ctx.decision.confidence'ı SESSİZCE ÜZERİNE YAZDIĞI değer) çıktı —
+        # ikisi aynı karar nesnesinden gelmiyormuş GİBİ görünüyordu. Gerçekte
+        # ikisi de gerçek ama FARKLI aşamaların çıktısı; sorun bunların
+        # ayrı ayrı, açıkça KAYDEDİLMEMİŞ olmasıydı. Bu anlık görüntü,
+        # MetaStage'in ACT/REDUCE/WAIT kararını VERDİĞİ ANDAKİ confidence'ı
+        # (DecisionFusion'ın SONRADAN üzerine yazacağı değerden ÖNCE) kalıcı
+        # olarak yakalıyor — services/decision_recorder.py bunu ve debate_
+        # result'ı ayrı sütunlara (council_direction/council_confidence,
+        # meta_decision/pre_fusion_confidence) yazıyor, "hangi sayı hangi
+        # aşamadan geldi" artık JSON arkeolojisi gerektirmeden SQL ile
+        # sorgulanabiliyor.
+        ctx.cognition.relevant_knowledge.append({
+            "type": "pre_fusion_snapshot",
+            "data": {
+                "meta_decision": meta["decision"],
+                "pre_fusion_confidence": meta["confidence"],
+                "belief_direction": belief.direction,
+            },
+        })
+
         return ctx
 
 

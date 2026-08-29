@@ -71,7 +71,13 @@ class DecisionPersistor:
                     exchange_stop_order_id,
                     exchange_tp_order_id,
                     staged_entry_add_pending,
-                    staged_entry_low_price
+                    staged_entry_low_price,
+                    council_direction,
+                    council_confidence,
+                    meta_decision,
+                    pre_fusion_confidence,
+                    final_ev,
+                    rejection_reason
                 )
                 VALUES (
                     :id,
@@ -101,7 +107,13 @@ class DecisionPersistor:
                     :exchange_stop_order_id,
                     :exchange_tp_order_id,
                     :staged_entry_add_pending,
-                    :staged_entry_low_price
+                    :staged_entry_low_price,
+                    :council_direction,
+                    :council_confidence,
+                    :meta_decision,
+                    :pre_fusion_confidence,
+                    :final_ev,
+                    :rejection_reason
                 )
                 ON CONFLICT (id, timestamp) DO NOTHING
             """),
@@ -147,6 +159,12 @@ class DecisionPersistor:
                 "exchange_tp_order_id": event.exchange_tp_order_id,
                 "staged_entry_add_pending": event.staged_entry_add_pending,
                 "staged_entry_low_price": event.staged_entry_low_price,
+                "council_direction": event.council_direction,
+                "council_confidence": event.council_confidence,
+                "meta_decision": event.meta_decision,
+                "pre_fusion_confidence": event.pre_fusion_confidence,
+                "final_ev": event.final_ev,
+                "rejection_reason": event.rejection_reason,
             },
         )
 
