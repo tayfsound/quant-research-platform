@@ -10,6 +10,7 @@ correctly.
 """
 
 import json
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import text
@@ -504,6 +505,123 @@ class DecisionPersistor:
         ).mappings().all()
         return [dict(r) for r in rows]
 
+    def close_and_exclude_from_stats(
+        self,
+        decision_id: str,
+        *,
+        exit_price: float,
+        pnl: float,
+        closed_at,
+        outcome: dict | None = None,
+        exit_reason: str = "legacy_cleanup",
+    ) -> bool:
+        """Faz 279/2026-08-28 — geçmişte açık kalmış pump_fade_v1 pozisyonları
+        temizlenirken, açılan gerçek veri ayrı bir kategoride kalmalı; kapatma
+        işlemi sadece kapatmaz, aynı anda istatistiklerden de çıkarılır. Burada
+        satır silinmez, event sourcing korunur; sadece status='closed',
+        excluded_from_stats=true işaretlenir ve kapanış bilgisi yazılır."""
+        result = self.session.execute(
+            text("""
+                UPDATE decisions
+                SET
+                    status = 'closed',
+                    exit_price = :exit_price,
+                    pnl = :pnl,
+                    closed_at = :closed_at,
+                    outcome = CAST(:outcome AS jsonb),
+                    excluded_from_stats = true,
+                    market_regime = COALESCE(market_regime, 'legacy_cleanup')
+                WHERE id = :id AND status = 'open'
+            """),
+            {
+                "id": decision_id,
+                "exit_price": exit_price,
+                "pnl": pnl,
+                "closed_at": closed_at,
+                "outcome": json.dumps({**(outcome or {}), "exit_reason": exit_reason}, default=str),
+            },
+        )
+        self.session.commit()
+        return result.rowcount > 0
+
+    def close_stale_positions_for_experiment(
+        self,
+        experiment_bucket: str,
+        cutoff_at,
+        current_prices: dict[str, float] | None = None,
+        exit_reason: str = "legacy_cleanup",
+    ) -> list[dict]:
+        """Bu deneyin, verilen tarih öncesinden kalan açık pozisyonlarını
+        mevcut fiyatlarına göre kapatıp istatistiklerden çıkartır. Sadece
+        status='open' ve experiment_bucket uyumlu satırlar işlenir; bu
+        operasyon salt temizleme amacı taşıdığı için kapatma sonucu detayını
+        döndürür."""
+        rows = self.session.execute(
+            text(
+                "SELECT * FROM decisions "
+                "WHERE status = 'open' AND experiment_bucket = :experiment_bucket "
+                "AND opened_at IS NOT NULL AND opened_at < :cutoff_at "
+                "ORDER BY opened_at ASC"
+            ),
+            {"experiment_bucket": experiment_bucket, "cutoff_at": cutoff_at},
+        ).mappings().all()
+
+        if not rows:
+            return []
+
+        if current_prices is None:
+            from services.position_closer import fetch_current_prices_by_symbol
+
+            current_prices = fetch_current_prices_by_symbol({row["symbol"] for row in rows})
+
+        closed: list[dict] = []
+        for row in rows:
+            symbol = row["symbol"]
+            exit_price = current_prices.get(symbol)
+            if exit_price is None or exit_price <= 0:
+                continue
+
+            entry_price = row.get("entry_price")
+            quantity = float(row.get("quantity") or 0.0)
+            if entry_price is None or quantity <= 0:
+                continue
+
+            direction = (row.get("direction") or "").upper()
+            if direction == "LONG":
+                pnl = (exit_price - entry_price) * quantity
+            elif direction == "SHORT":
+                pnl = (entry_price - exit_price) * quantity
+            else:
+                pnl = 0.0
+
+            outcome = {
+                "exit_reason": exit_reason,
+                "closed_via": "legacy_cleanup",
+                "entry_price": entry_price,
+                "exit_price": exit_price,
+                "quantity": quantity,
+                "gross_pnl": pnl,
+                "excluded_from_stats": True,
+            }
+            if self.close_and_exclude_from_stats(
+                str(row["id"]),
+                exit_price=exit_price,
+                pnl=pnl,
+                closed_at=row.get("closed_at") or datetime.now(UTC),
+                outcome=outcome,
+                exit_reason=exit_reason,
+            ):
+                closed.append({
+                    "decision_id": str(row["id"]),
+                    "symbol": symbol,
+                    "direction": direction,
+                    "exit_price": exit_price,
+                    "pnl": pnl,
+                    "opened_at": row.get("opened_at").isoformat() if row.get("opened_at") else None,
+                })
+
+        return closed
+
     def total_pnl_for_experiment(self, experiment_bucket: str, min_opened_at=None) -> float:
         """Faz 332 — pump_fade'in zarar-bazlı devre kesicisi için: SADECE
         gerçekleşmiş (kapanmış, excluded_from_stats hariç) kâr/zarar.
@@ -697,7 +815,7 @@ class DecisionPersistor:
 
         return [dict(r) for r in rows]
 
-    def closed_trades_summary(self) -> dict:
+    def closed_trades_summary(self, exclude_experiment_bucket: str | None = None) -> dict:
         """Faz 224: kritik bulgu — kullanıcı: "sürekli işlem alıyor kapatıyor
         ama kapanmış işlem sayısı 100 görünüyor, bir ara 400 küsürdü... bu
         dashboarda güvenemiyorum." Kök neden: GET /trades'in summary'si
@@ -709,7 +827,12 @@ class DecisionPersistor:
         aynı isimli iki sayı farklı gerçek kümelerden geliyordu. Bu metod
         TABLOYU limitlemeden, gerçek toplam üzerinden tek bir SQL
         agregasyonuyla hesaplıyor — hem /trades hem /performance artık
-        AYNI, gerçek toplamı kullanabilir."""
+        AYNI, gerçek toplamı kullanabilir.
+
+        `exclude_experiment_bucket`, dashboard'un sadece AI council / production
+        katmanını saymasını sağlamak için opsiyonel olarak kullanılır. Bu, satırları
+        silmez; sadece o mekanik deneyin (ör. pump_fade_v1) istatistiklere karışmasını
+        engeller."""
         # Faz 238: excluded_from_stats=true işaretli (kirli/aşırı-test)
         # satırlar agregata hiç girmiyor.
         #
@@ -723,46 +846,53 @@ class DecisionPersistor:
         # kaldıraç (1x/5x/10x/25x) notional'ı orantısız şişiriyordu, ROI'yi
         # kaotik/anlamsız kılan tam olarak buydu. deployed_notional artık
         # gerçek marjini (notional/leverage) topluyor.
-        row = self.session.execute(
-            text(
-                "SELECT count(*) AS trade_count, "
-                "sum(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS wins, "
-                "sum(pnl) AS total_pnl, "
-                "sum(entry_price * quantity / COALESCE(NULLIF(leverage, 0), 1)) AS deployed_notional, "
-                # Faz 268-sonrası — kullanıcı isteği: manuel kapatılan
-                # işlemler (exit_reason='manual_full' — genelde sinyal
-                # tersine döndüğü için sistemin erken kapattığı işlemler)
-                # ayrı bir "manuel" kovasında gösterilmesin, kârlıysa TP
-                # gibi, zarardaysa SL gibi sayılsın — kapanış MEKANİZMASI
-                # değil, GERÇEK sonuç (kâr/zarar) önemli.
-                # Faz 291 — kullanıcı bulgusu (gerçek CHIPUSDT örneği):
-                # trailing_stop_profit (bkz. position_closer.py) da GERÇEK
-                # bir kâr kapanışı — mekanizması "stop" ama sonucu "hedef"
-                # gibi, aynı manual_full ilkesiyle burada da TP sayılıyor.
-                "sum(CASE WHEN outcome ->> 'exit_reason' IN ('take_profit', 'trailing_stop_profit') "
-                "OR (outcome ->> 'exit_reason' = 'manual_full' AND pnl > 0) THEN 1 ELSE 0 END) AS tp_count, "
-                "sum(CASE WHEN outcome ->> 'exit_reason' = 'stop_loss' "
-                "OR (outcome ->> 'exit_reason' = 'manual_full' AND pnl <= 0) THEN 1 ELSE 0 END) AS sl_count, "
-                # manual_partial SADECE status='open' kalan (miktarı
-                # azaltılmış) satırlarda görülür — closed satırlarda hiç
-                # oluşmaz, bu yüzden closed özetinde manual_count her
-                # zaman 0'a yakınsar (bkz. position_closer.py).
-                "sum(CASE WHEN outcome ->> 'exit_reason' = 'manual_partial' THEN 1 ELSE 0 END) AS manual_count, "
-                # Faz 311 — kullanıcı isteği (uzun süredir bekleyen todo):
-                # "toplam manuel kapanan işlem" kartı. manual_count'un
-                # (yukarıda) AYRI ve neredeyse hep sıfır olan manual_partial
-                # ile karıştırılmaması için AYRI bir alan — kullanıcının
-                # ELLE tamamen kapattığı (manual_full) işlemlerin GERÇEK
-                # toplam sayısı, sonucundan (kâr/zarar) BAĞIMSIZ. tp_count/
-                # sl_count'un manual_full'u sonucuna göre kendi içine
-                # katması (yukarıdaki Faz 268-sonrası ilkesi) DEĞİŞMİYOR —
-                # bu SADECE ek, bilgilendirici bir toplam.
-                "sum(CASE WHEN outcome ->> 'exit_reason' = 'manual_full' THEN 1 ELSE 0 END) AS manual_full_count "
-                "FROM decisions WHERE status = 'closed' AND excluded_from_stats = false"
-            )
-        ).mappings().one()
+        query = (
+            "SELECT count(*) AS trade_count, "
+            "sum(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS wins, "
+            "sum(pnl) AS total_pnl, "
+            "sum(entry_price * quantity / COALESCE(NULLIF(leverage, 0), 1)) AS deployed_notional, "
+            # Faz 268-sonrası — kullanıcı isteği: manuel kapatılan
+            # işlemler (exit_reason='manual_full' — genelde sinyal
+            # tersine döndüğü için sistemin erken kapattığı işlemler)
+            # ayrı bir "manuel" kovasında gösterilmesin, kârlıysa TP
+            # gibi, zarardaysa SL gibi sayılsın — kapanış MEKANİZMASI
+            # değil, GERÇEK sonuç (kâr/zarar) önemli.
+            # Faz 291 — kullanıcı bulgusu (gerçek CHIPUSDT örneği):
+            # trailing_stop_profit (bkz. position_closer.py) da GERÇEK
+            # bir kâr kapanışı — mekanizması "stop" ama sonucu "hedef"
+            # gibi, aynı manual_full ilkesiyle burada da TP sayılıyor.
+            "sum(CASE WHEN outcome ->> 'exit_reason' IN ('take_profit', 'trailing_stop_profit') "
+            "OR (outcome ->> 'exit_reason' = 'manual_full' AND pnl > 0) THEN 1 ELSE 0 END) AS tp_count, "
+            "sum(CASE WHEN outcome ->> 'exit_reason' = 'stop_loss' "
+            "OR (outcome ->> 'exit_reason' = 'manual_full' AND pnl <= 0) THEN 1 ELSE 0 END) AS sl_count, "
+            # manual_partial SADECE status='open' kalan (miktarı
+            # azaltılmış) satırlarda görülür — closed satırlarda hiç
+            # oluşmaz, bu yüzden closed özetinde manual_count her
+            # zaman 0'a yakınsar (bkz. position_closer.py).
+            "sum(CASE WHEN outcome ->> 'exit_reason' = 'manual_partial' THEN 1 ELSE 0 END) AS manual_count, "
+            # Faz 311 — kullanıcı isteği (uzun süredir bekleyen todo):
+            # "toplam manuel kapanan işlem" kartı. manual_count'un
+            # (yukarıda) AYRI ve neredeyse hep sıfır olan manual_partial
+            # ile karıştırılmaması için AYRI bir alan — kullanıcının
+            # ELLE tamamen kapattığı (manual_full) işlemlerin GERÇEK
+            # toplam sayısı, sonucundan (kâr/zarar) BAĞIMSIZ. tp_count/
+            # sl_count'un manual_full'u sonucuna göre kendi içine
+            # katması (yukarıdaki Faz 268-sonrası ilkesi) DEĞİŞMİYOR —
+            # bu SADECE ek, bilgilendirici bir toplam.
+            "sum(CASE WHEN outcome ->> 'exit_reason' = 'manual_full' THEN 1 ELSE 0 END) AS manual_full_count "
+            "FROM decisions WHERE status = 'closed' AND excluded_from_stats = false"
+        )
+        params: dict = {}
+        if exclude_experiment_bucket is not None:
+            query += " AND (experiment_bucket IS NULL OR experiment_bucket != :exclude_experiment_bucket)"
+            params["exclude_experiment_bucket"] = exclude_experiment_bucket
+        row = self.session.execute(text(query), params).mappings().one()
         excluded_count = self.session.execute(
-            text("SELECT count(*) FROM decisions WHERE status = 'closed' AND excluded_from_stats = true")
+            text(
+                "SELECT count(*) FROM decisions WHERE status = 'closed' AND excluded_from_stats = true "
+                "AND (:exclude_experiment_bucket IS NULL OR experiment_bucket != :exclude_experiment_bucket)"
+            ),
+            {"exclude_experiment_bucket": exclude_experiment_bucket},
         ).scalar()
         trade_count = row["trade_count"] or 0
         return {
@@ -819,19 +949,21 @@ class DecisionPersistor:
     # üstüne biniyor — veri olmayan kovalar artık 0 ile açıkça görünüyor.
     _PERIOD_TO_INTERVAL = {"day": "1 day", "week": "1 week", "month": "1 month", "year": "1 year"}
 
-    def performance_by_period(self, period: str, limit: int = 200) -> list[dict]:
+    def performance_by_period(self, period: str, limit: int = 200, exclude_experiment_bucket: str | None = None) -> list[dict]:
         """Faz 215: kullanıcı isteği — "dün ne kadar ROI yapmış, haftalık/
         aylık/yıllık ne olmuş" dashboard'da hiç görünmüyordu. period:
         Postgres date_trunc'ın kabul ettiği bir değer (day/week/month/year).
         Her kova için gerçek kapanmış işlemlerden pnl toplamı/işlem
         sayısı/win rate — icat edilmiş bir sayı değil. Veri olmayan kovalar
-        da (yukarıdaki not) artık kesiksiz döner, sessizce atlanmaz."""
+        da (yukarıdaki not) artık kesiksiz döner, sessizce atlanmaz.
+
+        `exclude_experiment_bucket` opsiyonel olarak verilir; örn. pump_fade_v1
+        gibi mekanik deneyler sadece dashboard'ı kirletmesin diye dışarıda tutulur."""
         if period not in ("day", "week", "month", "year"):
             raise ValueError(f"invalid period: {period}")
         interval = self._PERIOD_TO_INTERVAL[period]
-
-        rows = self.session.execute(
-            text(f"""
+        params = {"limit": limit}
+        query = f"""
                 WITH real_data AS (
                     SELECT
                         date_trunc('{period}', closed_at) AS bucket,
@@ -841,6 +973,11 @@ class DecisionPersistor:
                         sum(entry_price * quantity / COALESCE(NULLIF(leverage, 0), 1)) AS deployed_notional
                     FROM decisions
                     WHERE status = 'closed' AND closed_at IS NOT NULL AND excluded_from_stats = false
+                """
+        if exclude_experiment_bucket is not None:
+            query += " AND (experiment_bucket IS NULL OR experiment_bucket != :exclude_experiment_bucket)"
+            params["exclude_experiment_bucket"] = exclude_experiment_bucket
+        query += f"""
                     GROUP BY bucket
                 ),
                 buckets AS (
@@ -859,9 +996,8 @@ class DecisionPersistor:
                 FROM buckets b
                 LEFT JOIN real_data r ON r.bucket = b.bucket
                 ORDER BY b.bucket DESC
-            """),
-            {"limit": limit},
-        ).mappings().all()
+            """
+        rows = self.session.execute(text(query), params).mappings().all()
 
         return [dict(r) for r in rows]
 

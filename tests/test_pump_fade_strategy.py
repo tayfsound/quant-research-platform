@@ -2,12 +2,13 @@
 Kullanıcı isteği: AI konsey/confidence sisteminden tamamen yalıtık, test
 amaçlı mekanik bir strateji ("son iki günde %100 yapmış coinleri short'la,
 kasanın %5'i kadar 5x pozisyona gir, %100 kâr ettiğinde çık")."""
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
 
+from contracts.decision_event import DecisionEvent
 from database.repositories.app_settings_repository import AppSettingsRepository
 from database.repositories.decision_persistor import DecisionPersistor
 from database.repositories.risk_limit_repository import RiskLimitModel, RiskLimitRepository
@@ -81,6 +82,33 @@ def _cleanup_density_events() -> None:
     with SessionFactory.get_session() as session:
         session.execute(text("DELETE FROM system_events WHERE event_type = 'pump_fade_candidate_density'"))
         session.commit()
+
+
+def test_close_stale_positions_for_experiment_marks_rows_excluded_from_stats():
+    cutoff = datetime.now(UTC)
+    with SessionFactory.get_session() as session:
+        repo = DecisionPersistor(session)
+        event = DecisionEvent(
+            symbol="PUMPUSDT",
+            final_action="SHORT",
+            status="open",
+            entry_price=100.0,
+            quantity=2.0,
+            opened_at=cutoff - timedelta(days=5),
+            experiment_bucket=EXPERIMENT_BUCKET,
+            confidence=0.9,
+        )
+        repo.persist(event)
+        closed = repo.close_stale_positions_for_experiment(
+            EXPERIMENT_BUCKET,
+            cutoff_at=cutoff,
+            current_prices={"PUMPUSDT": 110.0},
+        )
+        assert len(closed) == 1
+        row = repo.get_by_id(str(event.id))
+        assert row["status"] == "closed"
+        assert row["excluded_from_stats"] is True
+        assert row["pnl"] == pytest.approx(-20.0)
 
 
 def _set_pump_fade_settings(**overrides) -> None:
