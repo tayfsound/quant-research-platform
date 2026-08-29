@@ -37,12 +37,21 @@ def test_calibrate_above_curve_range_clamps_to_last_observed_rate():
     assert calibrate_confidence(0.9, curve=curve) == 0.3
 
 
-def test_compute_calibration_curve_excludes_pump_fade_and_basis_arb(tmp_path):
+def test_compute_calibration_curve_excludes_pump_fade_and_basis_arb():
     """Faz 363 — bkz. tests/test_kelly_sizing.py::test_compute_confidence_
     bucket_payoff_stats_excludes_pump_fade_and_basis_arb ile AYNI gerçek
     veri bulgusu: bu eğri DecisionFusion'ın EV hesabında GERÇEKTEN
     kullanıldığı için (calibrate_confidence), pump_fade_v1'in dev boyutlu
-    zararının HİÇ sızmadığını doğrulamak özellikle kritik."""
+    zararının HİÇ sızmadığını doğrulamak özellikle kritik.
+
+    Faz 370-devam — kritik düzeltme: bu test ÖNCEDEN paylaşımlı quantdb_
+    test'te 0.9 kovasında zaten >=50 (_MIN_BUCKET_SAMPLES) ambient/sızıntı
+    kayıt birikmiş olmasına GİZLİCE bağımlıydı (conftest.py'nin artık
+    session başında TÜM test tablolarını temizlemesiyle bu varsayım
+    çöktü — kırık/izole-olmayan bir test ortaya çıktı). Artık kendi
+    yeterli (>=50), GERÇEK (pump_fade/basis_arb OLMAYAN) 0.9 kovalı
+    temel çizgisini KENDİSİ üretiyor — hiçbir ambient duruma bağımlı
+    değil."""
     from datetime import UTC, datetime
     from uuid import uuid4
 
@@ -51,14 +60,28 @@ def test_compute_calibration_curve_excludes_pump_fade_and_basis_arb(tmp_path):
     from database.session_factory import SessionFactory
     from services import confidence_calibration
 
-    symbol = f"CALPUMPFADE{uuid4().hex[:6]}"
     now = datetime.now(UTC)
+
+    # Kendi 0.9 kova temel çizgisi: 60 GERÇEK (AI konseyi, pump_fade/
+    # basis_arb OLMAYAN) kapanmış karar, %70 kazanma oranıyla.
+    baseline_symbol = f"CALBASE{uuid4().hex[:6]}"
+    for i in range(60):
+        pnl = 10.0 if i < 42 else -10.0  # 42/60 = %70 kazanma
+        event = DecisionEvent(
+            id=uuid4(), symbol=baseline_symbol, proposed_direction="LONG", final_action="LONG",
+            final_size=1.0, confidence=0.9, status="open", entry_price=100.0, quantity=1.0,
+        )
+        with SessionFactory.get_session() as session:
+            repo = DecisionPersistor(session)
+            repo.persist(event)
+            repo.close_position(decision_id=str(event.id), exit_price=100.0 + pnl, pnl=pnl, closed_at=now)
 
     before = dict(confidence_calibration.compute_calibration_curve())
 
+    pump_fade_symbol = f"CALPUMPFADE{uuid4().hex[:6]}"
     for _ in range(30):
         event = DecisionEvent(
-            id=uuid4(), symbol=symbol, proposed_direction="SHORT", final_action="SHORT",
+            id=uuid4(), symbol=pump_fade_symbol, proposed_direction="SHORT", final_action="SHORT",
             final_size=1.0, confidence=0.9, status="open", entry_price=100.0, quantity=1.0,
             experiment_bucket="pump_fade_v1",
         )
@@ -73,12 +96,12 @@ def test_compute_calibration_curve_excludes_pump_fade_and_basis_arb(tmp_path):
 
     before_rate = before.get(0.9)
     after_rate = after.get(0.9)
+    assert before_rate is not None
     assert after_rate is not None
-    if before_rate is not None:
-        # 30 tam-kayıp pump_fade_v1 kaydı gerçekten karışsaydı, gözlenen
-        # kazanma oranı anlamlı ölçüde düşerdi (paylaşılan DB'de zaten
-        # kayıtlı örneklem sayısına göre en az birkaç puan).
-        assert abs(after_rate - before_rate) < 0.05
+    assert abs(before_rate - 0.7) < 1e-9
+    # 30 tam-kayıp pump_fade_v1 kaydı gerçekten karışsaydı, gözlenen
+    # kazanma oranı anlamlı ölçüde düşerdi.
+    assert abs(after_rate - before_rate) < 0.05
 
 
 def test_compute_calibration_curve_ignores_buckets_below_min_samples():

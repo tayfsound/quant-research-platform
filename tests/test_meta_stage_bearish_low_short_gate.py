@@ -33,6 +33,20 @@ def _mock_healthy_self_reliability(monkeypatch):
         "services.self_model_gatherer.get_cached_self_reliability_snapshot",
         lambda: {"inputs": {"recent_dsr": 0.99, "ece": 0.02}},
     )
+    # Faz 370-devam — kritik bulgu: is_direction_paused (regime_reversal_
+    # guardian.py) burada mock'lanmıyordu ve GERÇEK quantdb_test.decisions
+    # tablosunu sorguluyordu — tam pytest suite'i çalıştırıldığında AYNI
+    # oturumdaki BAŞKA testlerin bıraktığı ardışık SHORT kayıpları bu
+    # testleri (bearish_low harici SHORT senaryolarını "WAIT'e
+    # zorlanmamalı" diye bekleyenleri) yanlışlıkla kırıyordu — testler
+    # TEK BAŞINA her zaman geçiyordu (izole çalıştırıldığında), sadece
+    # sırada başka testlerin ürettiği paylaşılan durumla çakışıyordu. Bu
+    # dosyanın kapsamı SADECE bearish_low+SHORT gate'i — ilgisiz bir
+    # paylaşılan mekanizmaya bağımlı olmamalı.
+    monkeypatch.setattr(
+        "services.regime_reversal_guardian.is_direction_paused",
+        lambda direction: False,
+    )
 
 
 def _ctx(trend: str | None, volatility_regime: str | None) -> CognitiveCycleContext:

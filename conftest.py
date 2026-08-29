@@ -62,39 +62,56 @@ os.environ["AGENT_CONFIDENCE_MODEL_STORAGE_PATH"] = "tmp_test_memory/confidence_
 import pytest
 
 
+# Faz 370-devam — kullanıcı kararı (2026-08-29, "ben kırık test kabul
+# etmiyorum hiçbir şekilde"): Faz 363'ün satır-bazlı, iki kalıba özel
+# purge'ü ("pump_fade_v1"/"basis_arb_v1"/testnet-open) SADECE decisions
+# tablosunu ve SADECE o iki bilinen kirlilik türünü kapsıyordu. Gerçek
+# ölçüm (2026-08-29): quantdb_test'te agent_performance_records 5093
+# satır/156 namespace (3 GÜNDE, Faz 319'un Postgres'e taşımasından beri
+# HİÇ temizlenmemiş — her pytest çalışması kendi benzersiz namespace'ini
+# alıyor ama ESKİ namespace'ler sonsuza dek birikiyor), decisions 1853
+# satır (11 günde, sadece iki kalıp temizleniyordu, DİĞER her testin
+# try/finally'i atlanmış/başarısız olmuş satırları hâlâ birikiyordu).
+# Bu SADECE iki tabloya özel değil — bu oturumda eklenen her yeni haftalık
+# rapor tablosu (feature_relationship_reports, agent_pairwise_ablation_
+# snapshots, vb.) da AYNI şekilde, HİÇ silinmeden birikiyor.
+#
+# Çözüm: kalıp-bazlı iki satır yerine, tablo-seviyesinde KAPSAMLI bir
+# TRUNCATE — quantdb_test'in KENDİSİ zaten yalıtılmış (gerçek quantdb'den
+# TAMAMEN ayrı bir Postgres veritabanı, bu dosyanın en üstünde ortam
+# değişkenleriyle garanti ediliyor), yani içindeki HER satır test
+# çalıştırmalarından geliyor — GERÇEK üretim verisi asla buraya yazmıyor.
+# Sadece 5 tablo KORUNUYOR (migration durumu + config/auth seed verisi —
+# bunlar boşsa sistem SESSİZCE bozulur, bkz. risk_limits olayı):
+# alembic_version, app_settings, risk_limits, users, api_keys. Geri kalan
+# HER public şema tablosu (yeni eklenenler DAHİL — allowlist değil
+# denylist, gelecekte unutulmaya karşı otomatik kapsıyor) session
+# BAŞINDA (henüz hiçbir test çalışmadan) temizleniyor — bu andaki HER
+# satır mantık gereği önceki, yarım kalmış oturumlardan kalmış olabilir,
+# güvenle silinir.
+_PROTECTED_TABLES = frozenset({"alembic_version", "app_settings", "risk_limits", "users", "api_keys"})
+
+
 @pytest.fixture(scope="session", autouse=True)
-def _purge_orphaned_test_decisions_at_session_start():
-    """Faz 363 — kritik bulgu: testlerin çoğu kendi ürettiği decisions
-    satırlarını try/finally ile temizliyor (bkz. tests/test_pump_fade_
-    strategy.py::_cleanup_symbol, tests/test_decision_recorder_execution_
-    mode.py) ama bu SADECE süreç normal bitince çalışır — pytest süreci
-    dıştan öldürülürse (Bash araç zaman aşımı, Ctrl+C) finally hiç
-    çalışmaz, satır paylaşımlı quantdb_test'te KALICI kalır. Gerçek olay:
-    8 günde (18-26 Ağustos) 548 satırlık pump_fade_v1 birikimi (-$3M
-    toplam), pump_fade'in gerçek devre kesicisini HER pytest oturumunda
-    yanlışlıkla tetikleyip 16 ilgisiz testi kırıyordu; ayrı bir birikim
-    (execution_mode='testnet' AND status='open') ise close_due_positions()
-    gibi TÜM açık pozisyonları tarayan testlerin gerçek Binance testnet
-    API'sine bağlanıp "Invalid symbol" ile patlamasına yol açıyordu
-    (tests/test_position_lifecycle.py + tests/test_pump_fade_strategy.py'de
-    46 ilgisiz test). Session BAŞINDA (henüz hiçbir test çalışmadan) bu
-    satırlar mantık gereği SADECE önceki, yarım kalmış oturumlardan
-    kalabilir — güvenle silinir. Session İÇİNDEKİ testlerin kendi
-    temizliği (normal bitişte) değişmeden çalışmaya devam eder."""
+def _purge_all_test_generated_tables_at_session_start():
     from sqlalchemy import text
 
     from database.session_factory import SessionFactory
 
     with SessionFactory.get_session() as session:
-        session.execute(
-            text("DELETE FROM decisions WHERE execution_mode = 'testnet' AND status = 'open'")
-        )
-        session.execute(
-            text(
-                "DELETE FROM decisions WHERE status = 'closed' "
-                "AND experiment_bucket IN ('pump_fade_v1', 'basis_arb_v1')"
-            )
-        )
+        table_names = [
+            row[0]
+            for row in session.execute(
+                text(
+                    "SELECT table_name FROM information_schema.tables "
+                    "WHERE table_schema = 'public' AND table_type = 'BASE TABLE'"
+                )
+            ).fetchall()
+            if row[0] not in _PROTECTED_TABLES
+        ]
+        if table_names:
+            quoted = ", ".join(f'"{t}"' for t in table_names)
+            session.execute(text(f"TRUNCATE TABLE {quoted} CASCADE"))
         session.commit()
     yield
 
