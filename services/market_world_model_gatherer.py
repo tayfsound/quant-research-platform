@@ -41,7 +41,7 @@ performance_gatherer.py'nin AYNI notu): multi_timeframe_cascade_v1 (A/B
 deneyi) de basis_arb_v1 ile AYNI şekilde hariç tutuluyor — bu modülün
 amacı "gerçek AI konseyi getiri dağılımı"nı simüle etmek, deneysel
 varyansı değil (basis_arb_v1 zaten aynı gerekçeyle hariçti)."""
-from analytics.market_world_model import compute_block_bootstrap_paths
+from analytics.market_world_model import compute_block_bootstrap_paths, compute_block_size_sensitivity
 from services.asset_class_performance_gatherer import _is_production_ai_council
 from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMENT_BUCKET
 
@@ -52,6 +52,12 @@ DEFAULT_PATH_LENGTH = 50
 def gather_market_world_model(
     block_size: int = DEFAULT_BLOCK_SIZE, path_length: int = DEFAULT_PATH_LENGTH,
 ) -> dict:
+    """Faz 369-devam — GPT dış rapor önerisi: "block=10 seçimi sonucu
+    ciddi etkileyebilir, block=5/10/20/30 ile ayrı ayrı simülasyon yapıp
+    karşılaştırmak isterim." AYNI (zaten çekilmiş) returns dizisi, ek bir
+    DB sorgusu OLMADAN, block_size_sensitivity taramasına da besleniyor —
+    canlı sayfanın "block=10'daki tek nokta ne kadar güvenilir" sorusuna
+    her istekte taze cevap vermesi için."""
     from database.repositories.app_settings_repository import AppSettingsRepository
     from database.repositories.decision_persistor import DecisionPersistor
     from database.session_factory import SessionFactory
@@ -76,9 +82,11 @@ def gather_market_world_model(
                 returns.append(pnl / starting_capital)
 
     paths = compute_block_bootstrap_paths(returns, block_size=block_size, path_length=path_length)
+    block_size_sensitivity = compute_block_size_sensitivity(returns, path_length=path_length)
     return {
         "block_size": block_size,
         "path_length": path_length,
         "n_returns": len(returns),
         "paths": paths,
+        "block_size_sensitivity": block_size_sensitivity,
     }

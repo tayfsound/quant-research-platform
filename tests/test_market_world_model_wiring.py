@@ -59,3 +59,18 @@ def test_gather_market_world_model_reads_real_closed_trades():
     result = gather_market_world_model()
     assert "n_returns" in result
     assert result["n_returns"] >= 0
+
+
+def test_gather_market_world_model_includes_block_size_sensitivity():
+    """Faz 369-devam — GPT önerisi: block=10 tek noktasının yanına
+    block=5/10/20/30 taraması AYNI canlı gather çağrısında eklenmeli,
+    ayrı bir uç nokta/sorgu gerektirmemeli."""
+    from services.market_world_model_gatherer import gather_market_world_model
+
+    result = gather_market_world_model()
+    assert "block_size_sensitivity" in result
+    sensitivity = result["block_size_sensitivity"]
+    if sensitivity is not None:
+        assert "by_block_size" in sensitivity
+        assert "is_stable" in sensitivity
+        assert "p5_sensitivity_ratio" in sensitivity
