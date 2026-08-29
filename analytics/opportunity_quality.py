@@ -88,6 +88,140 @@ def _agreement_bucket(agreement: float) -> str:
     return "high"
 
 
+# Faz B (2026-08-29) — Feature Intelligence Layer'ın kullanıcı tasarımı:
+# ham "kaç ajan anlaştı" (agreement) yerine, anlaşan ajanların GERÇEKTEN
+# GÜVENİLİR olup olmadığını da hesaba katan sürekli bir kalite skoru.
+# İlke: "9 ajan aynı yönde oy verdi" ile "9 ajan aynı yönde oy verdi VE
+# hepsi tarihsel olarak isabetli" AYNI şey değil — birincisi büyük bir
+# kalabalığın gürültüsü olabilir, ikincisi gerçek bir kanıt.
+def _reliability_from_contributions(
+    contributions: list[dict] | None, final_direction: str,
+) -> float | None:
+    """Nihai yönle AYNI yönde oy veren ajanların GERÇEK source_reliability'
+    lerinin (agents/source_reliability_agent.py'nin 20/100/500 pencereli,
+    histerezisli hesabı — TEK kaynak, burada YENİDEN hesaplanmıyor, zaten
+    her opinion'a gömülü) ortalaması. Anlaşan ajan yoksa ya da hiçbirinin
+    source_reliability'si kayıtlı değilse (eski kayıtlar) None — icat
+    edilmiş bir "nötr" güvenilirlik asla üretilmez."""
+    if final_direction not in ("LONG", "SHORT"):
+        return None
+    reliabilities = []
+    for item in (contributions or []):
+        if not isinstance(item, dict) or "domain" not in item:
+            continue
+        if (item.get("direction") or "").upper() != final_direction:
+            continue
+        r = item.get("source_reliability")
+        if r is not None:
+            reliabilities.append(r)
+    if not reliabilities:
+        return None
+    return sum(reliabilities) / len(reliabilities)
+
+
+def compute_quality_score(agreement: float, mean_reliability: float) -> float:
+    """Sürekli kalite skoru: agreement × mean_reliability, ikisi de [0,1]
+    aralığında olduğu için çarpım da [0,1] aralığında kalır. Bilinçli
+    olarak SADECE iki çarpan — üçüncü bir "feature_independence" çarpanı
+    (aynı kararda anlaşan ajanların kaç bağımsız feature'a dayandığı,
+    analytics/feature_relationship.py'nin redundancy kümeleriyle
+    çapraz-referanslanarak) sağlam bir karar-bazlı hesap gerektiriyor —
+    henüz yazılmadı, gelecekteki bir genişleme olarak not düşülüyor,
+    icat edilmiş/kırılgan bir yaklaşık değer burada eklenmedi."""
+    return round(agreement * mean_reliability, 4)
+
+
+def _quality_score_bucket(score: float) -> str:
+    if score < 0.34:
+        return "low"
+    if score < 0.67:
+        return "medium"
+    return "high"
+
+
+def _profit_factor(pnls: list[float]) -> float | None:
+    """Toplam kazanç / |toplam kayıp|. Hiç kayıp yoksa (payda=0) None —
+    icat edilmiş bir sonsuz/aşırı büyük sayı asla dönmez."""
+    gains = sum(p for p in pnls if p > 0)
+    losses = sum(p for p in pnls if p < 0)
+    if losses == 0:
+        return None
+    return round(gains / abs(losses), 4)
+
+
+def _median(values: list[float]) -> float:
+    s = sorted(values)
+    n = len(s)
+    mid = n // 2
+    if n % 2 == 1:
+        return s[mid]
+    return (s[mid - 1] + s[mid]) / 2
+
+
+def _summarize_quality_group(group: list[dict]) -> dict:
+    wins = sum(1 for t in group if t["win"])
+    n = len(group)
+    pnls = [t["pnl"] for t in group]
+    return {
+        "sample_size": n,
+        "win_rate": round(wins / n, 4),
+        "win_rate_ci": compute_accuracy_confidence_interval(wins, n),
+        # Faz B — kullanıcı isteği: win_rate TEK BAŞINA büyüklüğü
+        # görmüyor (çok sayıda küçük kazanç + az sayıda dev kayıp aynı
+        # win_rate'i verebilir). expectancy (işlem başına ORTALAMA pnl),
+        # median_pnl (aşırı uç değerlere daha dayanıklı) ve profit_factor
+        # (kazanç/kayıp oranı) bunu tamamlıyor.
+        "expectancy": round(sum(pnls) / n, 4),
+        "median_pnl": round(_median(pnls), 4),
+        "profit_factor": _profit_factor(pnls),
+    }
+
+
+def compute_opportunity_quality_by_score(
+    trades: list[dict],
+    min_group_size: int = MIN_GROUP_SIZE,
+) -> dict:
+    """trades: her biri 'quality_score' (compute_quality_score'un ürettiği,
+    0-1 arası), 'win' (bool), 'pnl' (float) ve opsiyonel 'market_regime'
+    (str) alanı olan GERÇEK kapanmış işlemler. compute_opportunity_
+    quality_by_agreement ile AYNI [0.34, 0.67) kova sınırları — ama artık
+    ham anlaşma yerine anlaşma×güvenilirlik bileşik skoruna uygulanıyor.
+
+    Döner: {bucket: {"overall": {...}, "by_regime": {regime: {...}}}}.
+    "overall" HER ZAMAN min_group_size şartına tabi; "by_regime" alt-
+    kırılımları AYRICA kendi min_group_size'larını geçmeli (rejim
+    başına örneklem doğal olarak küçülür, fail-closed disiplin aynı)."""
+    groups: dict[str, list[dict]] = defaultdict(list)
+    for t in trades:
+        score = t.get("quality_score")
+        if score is None or t.get("win") is None or t.get("pnl") is None:
+            continue
+        groups[_quality_score_bucket(score)].append(t)
+
+    results: dict[str, dict] = {}
+    for bucket, group_trades in groups.items():
+        if len(group_trades) < min_group_size:
+            continue
+
+        by_regime_records: dict[str, list[dict]] = defaultdict(list)
+        for t in group_trades:
+            regime = t.get("market_regime")
+            if regime is not None:
+                by_regime_records[regime].append(t)
+
+        by_regime = {
+            regime: _summarize_quality_group(regime_trades)
+            for regime, regime_trades in by_regime_records.items()
+            if len(regime_trades) >= min_group_size
+        }
+
+        results[bucket] = {
+            "overall": _summarize_quality_group(group_trades),
+            "by_regime": by_regime,
+        }
+    return results
+
+
 def compute_opportunity_quality_by_agreement(
     trades: list[dict],
     min_group_size: int = MIN_GROUP_SIZE,

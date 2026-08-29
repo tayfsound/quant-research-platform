@@ -10,8 +10,11 @@ deseni) LONG/SHORT/WAIT sayımı yapılır, compute_agent_agreement ile
 0-1 arası bir anlaşma skoruna çevrilir — pump_fade_v1 hariç (mekanik
 strateji, council oylaması hiç yok)."""
 from analytics.opportunity_quality import (
+    _reliability_from_contributions,
     agreement_from_contributions,
     compute_opportunity_quality_by_agreement,
+    compute_opportunity_quality_by_score,
+    compute_quality_score,
 )
 from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMENT_BUCKET
 
@@ -42,6 +45,7 @@ def gather_opportunity_quality() -> dict:
         )
 
     trades = []
+    score_trades = []
     for t in closed_trades:
         agreement = _agreement_for_decision(t)
         pnl = t.get("pnl")
@@ -49,5 +53,26 @@ def gather_opportunity_quality() -> dict:
             continue
         trades.append({"agent_agreement": agreement, "win": pnl > 0})
 
+        # Faz B (2026-08-29) — kullanıcı isteği: ham agreement yerine
+        # anlaşma×güvenilirlik bileşik skoru. Güvenilirlik hesaplanamıyorsa
+        # (ör. eski kayıtlarda source_reliability hiç yoktu) bu karar
+        # sürekli-skor tablosundan fail-closed dışlanır — icat edilmiş bir
+        # "nötr" güvenilirlik asla varsayılmaz (ama eski agreement-only
+        # tabloyu etkilemez, o hâlâ tüm kayıtları kapsıyor).
+        mean_reliability = _reliability_from_contributions(t.get("agent_contributions"), t.get("direction"))
+        if mean_reliability is not None:
+            score_trades.append({
+                "quality_score": compute_quality_score(agreement, mean_reliability),
+                "win": pnl > 0,
+                "pnl": pnl,
+                "market_regime": t.get("market_regime"),
+            })
+
     by_agreement = compute_opportunity_quality_by_agreement(trades)
-    return {"by_agreement_bucket": by_agreement, "n_trades": len(trades)}
+    by_quality_score = compute_opportunity_quality_by_score(score_trades)
+    return {
+        "by_agreement_bucket": by_agreement,
+        "by_quality_score_bucket": by_quality_score,
+        "n_trades": len(trades),
+        "n_trades_with_reliability": len(score_trades),
+    }
