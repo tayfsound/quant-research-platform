@@ -38,6 +38,29 @@ def is_enabled() -> bool:
         return AppSettingsRepository(session).get("max_confidence_mode_enabled") == "true"
 
 
+def _resolve_execution_mode(symbol: str) -> str:
+    """services/decision_recorder.py::_resolve_execution_mode ile BİREBİR
+    AYNI mantık — Faz 370-devam KRİTİK canlı bulgu (kullanıcı: "canlıda
+    işlem almamış, test modunda almış sadece"): bu modül GERÇEK Binance
+    Testnet/live emri hiç göndermiyordu, execution_mode'u hiç
+    okumuyordu — havuzdan açılan HER pozisyon, execution_mode_symbols'ta
+    "testnet" olarak işaretlenmiş bir sembol bile olsa, sessizce daima
+    simüle ediliyordu. max_confidence_mode_enabled=true olduğu sürece
+    (şu an öyle) bu, HAVUZ ÜZERİNDEN açılan TÜM pozisyonların gerçek
+    borsaya hiç ulaşmaması demekti."""
+    import json
+
+    try:
+        with SessionFactory.get_session() as session:
+            repo = AppSettingsRepository(session)
+            raw_map = repo.get("execution_mode_symbols")
+            global_mode = repo.get("execution_mode") or "simulated"
+        mapping = json.loads(raw_map) if raw_map else {}
+        return mapping.get(symbol, global_mode)
+    except Exception:
+        return "simulated"
+
+
 def _symbol_leverage(symbol: str) -> float:
     """services/decision_recorder.py::_symbol_leverage ile AYNI kaynak/
     mantık — havuzlama, council'in NORMAL leverage ayarını kullanır,
@@ -238,6 +261,20 @@ def resolve_due_pool_windows() -> dict:
             stop_loss_price = fresh_price + c["stop_loss_distance"]
             take_profit_price = fresh_price - c["take_profit_distance"]
 
+        # Faz 370-devam — KRİTİK canlı bulgu: bu fonksiyon güncellenene
+        # kadar HİÇBİR ExecutionService çağrısı yoktu, decision_id'nin
+        # oluşturulmasından ÖNCE gerçek emir gönderilemiyordu (event.id
+        # client_order_id'ye gömülüyor — bkz. ExecutionService). Şimdi
+        # önce id'si sabit bir event nesnesi kuruluyor, GERÇEK emir
+        # (varsa) bu id ile gönderiliyor, sonra entry_price/quantity/
+        # exchange alanları gerçek dolum sonucuna göre güncelleniyor —
+        # services/decision_recorder.py::record() ile AYNI desen.
+        execution_mode = _resolve_execution_mode(c["symbol"])
+        exchange_order_id = None
+        exchange_client_order_id = None
+        exchange_stop_order_id = None
+        exchange_tp_order_id = None
+
         event = DecisionEvent(
             timestamp=now,
             symbol=c["symbol"],
@@ -266,6 +303,47 @@ def resolve_due_pool_windows() -> dict:
             belief_snapshot_id=c["belief_snapshot_id"],
             experiment_bucket=EXPERIMENT_BUCKET,
         )
+
+        if execution_mode == "testnet":
+            from services.execution_service import ExecutionService
+
+            execution_service = ExecutionService()
+            if execution_service.is_configured():
+                exec_result = execution_service.open_position(
+                    decision_id=event.id,
+                    symbol=c["symbol"],
+                    direction=c["direction"],
+                    quantity=quantity,
+                    stop_loss_price=stop_loss_price,
+                    take_profit_price=take_profit_price,
+                    leverage=leverage,
+                )
+                if exec_result is None:
+                    # Faz 315'teki AYNI fail-closed ilke: emir teyit
+                    # edilemezse asla uydurma bir "open" satırı yazılmaz.
+                    with SessionFactory.get_session() as session:
+                        PositionPoolRepository(session).mark_resolved(c["id"], "failed", now)
+                    logger.warning(
+                        "position_pool_testnet_execution_failed",
+                        symbol=c["symbol"], candidate_id=str(c["id"]),
+                    )
+                    failed += 1
+                    continue
+                event.execution_mode = "testnet"
+                event.entry_price = exec_result.entry_price
+                event.quantity = exec_result.executed_qty
+                event.exchange_order_id = exec_result.exchange_order_id
+                event.exchange_client_order_id = exec_result.exchange_client_order_id
+                event.exchange_stop_order_id = exec_result.exchange_stop_order_id
+                event.exchange_tp_order_id = exec_result.exchange_tp_order_id
+            else:
+                # resolved_execution_mode "testnet" olsa bile gerçek anahtar
+                # yoksa (is_configured() False) fail-closed "simulated" —
+                # services/decision_recorder.py ile AYNI davranış.
+                event.execution_mode = "simulated"
+        else:
+            event.execution_mode = "simulated"
+
         with SessionFactory.get_session() as session:
             DecisionPersistor(session).persist(event)
             PositionPoolRepository(session).mark_resolved(

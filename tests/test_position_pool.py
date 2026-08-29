@@ -2,6 +2,7 @@
 
 bkz. services/position_pool.py, database/repositories/position_pool_repository.py,
 services/decision_recorder.py (çağrı noktası)."""
+import json
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -258,6 +259,75 @@ def test_resolve_due_pool_windows_marks_failed_when_risk_headroom_gone(monkeypat
     finally:
         _cleanup(symbol)
         _set_pool_settings(max_confidence_mode_enabled="false")
+
+
+def test_resolve_due_pool_windows_uses_real_execution_service_when_symbol_is_testnet(monkeypatch):
+    """Faz 370-devam — KRİTİK canlı bulgu regresyon testi (kullanıcı:
+    "canlıda işlem almamış, test modunda almış sadece"): resolve_due_
+    pool_windows() önceden ExecutionService'i hiç çağırmıyordu — havuzdan
+    açılan HER pozisyon, execution_mode_symbols'ta "testnet" işaretli bir
+    sembol bile olsa sessizce simüle ediliyordu. max_confidence_mode_
+    enabled=true iken (üretimde şu an öyle) bu, GERÇEK borsaya hiç emir
+    gitmemesi demekti. Artık gerçekten çağrılıyor mu ve dolum sonucu
+    (entry_price/quantity/exchange_order_id) gerçekten kullanılıyor mu
+    doğrulanıyor."""
+    from services.execution_service import OpenPositionResult
+
+    class _FakeExecutionService:
+        calls = []
+
+        def is_configured(self) -> bool:
+            return True
+
+        def open_position(self, **kwargs):
+            _FakeExecutionService.calls.append(kwargs)
+            return OpenPositionResult(
+                entry_price=101.5, executed_qty=0.4931,
+                exchange_order_id="9001", exchange_client_order_id="pool-1",
+                exchange_stop_order_id="9002", exchange_tp_order_id="9003",
+            )
+
+    monkeypatch.setattr("services.execution_service.ExecutionService", _FakeExecutionService)
+    monkeypatch.setattr("services.position_pool._fresh_price", lambda symbol: 100.0)
+    monkeypatch.setattr("services.position_pool._risk_headroom_ok", lambda symbol: True)
+
+    symbol = f"POOLTEST{uuid4().hex[:8]}"
+    due_at = datetime.now(UTC) - timedelta(seconds=1)
+    try:
+        with SessionFactory.get_session() as session:
+            repo = AppSettingsRepository(session)
+            mapping = json.loads(repo.get("execution_mode_symbols") or "{}")
+            mapping[symbol] = "testnet"
+            repo.set("execution_mode_symbols", json.dumps(mapping), updated_by="test")
+
+        _set_pool_settings(max_confidence_mode_enabled="true", max_confidence_mode_top_k="3")
+        _add_candidate(symbol, confidence=0.9, window_closes_at=due_at, direction="LONG")
+
+        result = resolve_due_pool_windows()
+        assert result["opened"] == 1
+        assert len(_FakeExecutionService.calls) == 1
+        assert _FakeExecutionService.calls[0]["symbol"] == symbol
+
+        with SessionFactory.get_session() as session:
+            row = session.execute(
+                text(
+                    "SELECT execution_mode, entry_price, quantity, exchange_order_id "
+                    "FROM decisions WHERE symbol = :s AND status = 'open'"
+                ),
+                {"s": symbol},
+            ).fetchone()
+        assert row.execution_mode == "testnet"
+        assert row.entry_price == 101.5  # ExecutionService'in GERÇEK dolum fiyatı, 100.0 (fresh_price) DEĞİL
+        assert abs(row.quantity - 0.4931) < 1e-9
+        assert row.exchange_order_id == "9001"
+    finally:
+        _cleanup(symbol)
+        _set_pool_settings(max_confidence_mode_enabled="false")
+        with SessionFactory.get_session() as session:
+            repo = AppSettingsRepository(session)
+            mapping = json.loads(repo.get("execution_mode_symbols") or "{}")
+            mapping.pop(symbol, None)
+            repo.set("execution_mode_symbols", json.dumps(mapping), updated_by="test")
 
 
 def test_resolve_due_pool_windows_ignores_candidates_still_within_window(monkeypatch):
