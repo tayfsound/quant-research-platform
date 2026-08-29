@@ -1,9 +1,76 @@
-# Mevcut Durum -- v1.110.0 (Faz 369: Agent Interaction pairwise ablation + Faz 368: Feature Intelligence Layer Faz A + Adaptive Barrier asset_class segmentasyonu + LONG/SHORT manuel anahtar + Grok raporu doğrulaması + kolektif zeka n=20 bug'ı)
+# Mevcut Durum -- v1.110.0 (Faz 370: KRİTİK canlı "hiç işlem açılmıyor" olayı — RiskGateStage notional bug'ı düzeltildi + quantdb_test kalıcı temizliği + Faz 369: Agent Interaction pairwise ablation + Faz 368: Feature Intelligence Layer Faz A)
 
 **Tarih:** 2026-08-29
 **Branch:** main
-**Son commit (HEAD):** `c73c813` (Faz 368 seti pushlandı) — bu dosyadaki Faz 369 bölümü (Agent Interaction pairwise ablation) HENÜZ commit edilmedi, kullanıcı onayı bekleniyor.
-**Servis durumu:** uvicorn + celery worker + celery beat Faz 369 ile yeniden başlatılacak (aşağıya bkz.). Migration faz369 hem quantdb hem quantdb_test'e uygulandı. tsc temiz.
+**Son commit (HEAD):** `1dd0cb8` — bu turun tüm işleri commitlendi, push bekleniyor.
+**Servis durumu:** uvicorn + celery worker + celery beat RiskGateStage fix'iyle yeniden başlatıldı, canlı doğrulandı.
+
+## Faz 370 — KRİTİK canlı olay: sistem 14+ saattir hiç işlem açmıyordu (2026-08-29)
+
+Kullanıcı bulgusu: "AI hala canlıda işlem almıyor... sabahtan beri bir tane
+işlem aldıramadık test modunda alırken orada almaması daha da garip."
+
+**Kök neden araştırması (çok katmanlı, yanlış teşhisler dahil dürüstçe
+belgelendi):**
+1. İlk hipotez (YANLIŞ): self_reliability_gate (recent_dsr<0.3 iken WAIT'e
+   zorlayan Cognitive Core 3.0 mekanizması, Faz 362'de zaten bir kez bu
+   TAM senaryoyla tetiklenmiş ve `self_reliability_gate_enabled` ayarıyla
+   kapatılabilir hale getirilmişti). Kontrol edince ayarın ZATEN `false`
+   olduğu görüldü (2026-08-25'ten beri) — bu YOL çıkmaz sokaktı, düzeltme
+   gerekmedi.
+2. 150 gerçek `no_trade` kararı geri sarılıp sınıflandırıldı: ~%24
+   strong_dissent (benched ama hâlâ >%70 güvenli `technical` dissent —
+   meşru, technical'ın gerçekten kötü Brier'i [0.334] yüzünden), ~%19
+   confidence<0.4 (meşru), ~%11 SHORT+bearish+low (Faz 342, kasıtlı) —
+   toplam ~%54 zaten MEŞRU, tasarım gereği çalışan mekanizmalar.
+3. Kalan ~%31'lik "matematiksel olarak sıfır olmaması gereken ama sıfır
+   çıkan" dilimde GERÇEK bir bug bulundu: `engines/cognitive_pipeline.py::
+   RiskGateStage` post-fusion kontrolü `final_size`'ı (HAM birim sayısı)
+   `max_position_size` limitiyle ($ notional niyetli) DOĞRUDAN
+   kıyaslıyordu — `engines/risk_engine.py`'nin ön kapısı (Faz 211'den
+   beri) notional'a (final_size*current_price) çeviriyordu ama bu SON
+   kapı (Faz 262'de eklendi) o dönüşümü hiç almamıştı. Pahalı varlıklarda
+   (BTC ~0.006 birim) hiç görünmüyordu — bugün watchlist'e eklenen ucuz
+   meme coin'lerde (ARKMUSDT ~$0.11) AYNI $700'lük pozisyon binlerce
+   birime denk gelip "5248.41 > limit 5000.0" diye yanlışlıkla
+   reddediliyordu. Düzeltildi (2 yeni regresyon testi), canlı doğrulandı:
+   yeniden başlatma sonrası POST_FUSION_SIZE_EXCEEDED hatası düzinelerce
+   semboldan 1'e düştü.
+
+**ÖNEMLİ dürüst not — fix TEK BAŞINA "sistem tekrar işlem açıyor" garantisi
+VERMİYOR:** Ayrı bir bulgu olarak son 500 kapanmış işlemin GERÇEK Sharpe
+oranı -0.046 (negatif) — kazanma oranı %52 ama ortalama kayıplar
+kazançlardan çok daha büyük. Bu, `services/kelly_sizing.py::kelly_size_
+multiplier`'ın BAZI confidence kovalarını (0.2/0.3/0.5) GERÇEK negatif
+tarihsel edge yüzünden 0.0 çarpana düşürmesine yol açıyor — bu MEŞRU,
+tasarım gereği çalışan bir temkin mekanizması (bug değil). Sistemin tekrar
+düzenli işlem açması, ya piyasa/performans doğal olarak iyileşene kadar
+zaman geçmesini ya da kullanıcının bu eşikleri/durumu bilinçli olarak
+gözden geçirmesini gerektirebilir — bu AYRI, daha büyük bir karar, tek
+taraflı müdahale edilmedi.
+
+**Yan bulgular (tam suite koşusunda, aynı "no_trade" arayışı sırasında):**
+- quantdb_test kalıcı temizliği genelleştirildi (kullanıcı: "kırık test
+  kabul etmiyorum") — bkz. [[project_shared_test_state_bloat]].
+- Bu değişiklik test_confidence_calibration.py'de GERÇEK bir izole-olmayan
+  test bulup düzeltti (ambient paylaşılan veriye gizlice bağımlıydı).
+- Tam suite koşusunda 3 tane daha aynı kategoriden (regime_reversal_
+  guardian.is_direction_paused mock'lanmamış, paylaşılan SHORT kaybı
+  verisinden etkileniyordu) bulundu, düzeltildi — tests/test_meta_stage_
+  bearish_low_short_gate.py.
+- Bilinen, dokunulmayan 1 flake kaldı: test_failure_classifier.py::
+  test_summarize_loss_breakdown_pct_reflects_a_dominant_category (izole
+  çalıştırıldığında geçiyor, tam suite'te ara sıra order-dependent
+  pollution'dan etkileniyor — pre-existing, bu turda değişmedi).
+
+**Sırada (kullanıcı onayıyla, bu sıra ile):**
+1. Strateji × Rejim Uyumu modülü — GPT'nin önerdiği kapsamda (FDR → temporal
+   OOS → replication → candidate → human review → gate, OTOMATİK canlı
+   bağlanmadan). En güçlü aday: LONG swing × bullish_high (%61.7 vs %90.6,
+   OOS'ta %55.6 ile tekrarlanmış).
+2. Agent Combination Reliability zenginleştirmesi — effective_sample_size +
+   incremental_value + out_of_sample_survival (fdr_pass/overlap/days/ESS/
+   oos_survival/incremental_lift/gate_eligible şeması).
 
 ## Faz 369 — Agent Interaction: pairwise ablation ("A+B birlikte yokken ne olur?") (2026-08-29)
 
