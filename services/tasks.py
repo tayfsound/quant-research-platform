@@ -121,7 +121,20 @@ def run_trading_cycle_task(symbol: str | None = None) -> dict:
     # Faz 199: bu, run_portfolio_aware_cycle'ın 2+ sembol eşzamanlı yönlü
     # öneri gördüğünde gerçek portföy VaR'ına göre ölçeklendirme yapabilmesi
     # için şart (tek tek ayrı orchestrator'larla mümkün değil).
-    with _CycleLock("lock:run_trading_cycle_task", ttl_seconds=600) as acquired:
+    #
+    # Faz 377 — kullanıcı bulgusu: 2.5 saat hiç işlem alınmadı. Kök neden
+    # GERÇEK veriyle doğrulandı: bu, sistemdeki EN AĞIR döngü (tüm watchlist,
+    # 207+ sembol) ama TTL'i küçük/hızlı görevlerle (close_due_positions_task
+    # vb.) AYNI 600sn idi — halbuki bugün ölçülen gerçek ortalama çalışma
+    # süresi ~12.5 dk (750sn), TTL'in ÜSTÜNDE. TTL süresi dolduğunda kilit
+    # Python kodu hâlâ çalışırken Redis'ten siliniyor, bu da beat'in bir
+    # SONRAKİ çağrısının aynı anda İKİNCİ bir döngüyü başlatıp öncekiyle
+    # çakışmasına yol açıyor — kendi kendini besleyen bir yavaşlama sarmalı
+    # (tam olarak run_medium_term_cycle_task'ın (1800sn) ve run_pump_fade_
+    # cycle_task'ın (1500sn) TTL'lerini neden zaten daha yüksek tuttuğunun
+    # gerekçesiyle aynı sınıf hata). Gerçek watchlist boyutuna güvenli bir
+    # marj bırakacak şekilde 1800sn'ye çıkarıldı.
+    with _CycleLock("lock:run_trading_cycle_task", ttl_seconds=1800) as acquired:
         if not acquired:
             return {"skipped": "previous_cycle_still_running"}
 
