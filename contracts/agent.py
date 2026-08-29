@@ -115,6 +115,18 @@ class AgentOpinion(BaseModel):
     # katkı asla raporlanmaz).
     feature_contributions: dict[str, float] = Field(default_factory=dict)
     timestamp: datetime = Field(default_factory=datetime.now)
+    # Faz 376 — kullanıcı bulgusu (kararı açıklama ekranı üzerinden, canlı
+    # bir örnekle): "raw confidence → calibrated confidence → reliability
+    # weight → regime multiplier → debate penalty → final effective
+    # contribution" zincirinin HİÇBİR adımı yapılandırılmış (structured)
+    # olarak saklanmıyordu — sadece serbest-metin caveats'ta ("x0.50
+    # ayarladı" gibi) gömülüydü, tam zincirin geriye dönük yeniden
+    # inşası regex-ayrıştırma gerektiriyordu. Her adım burada ayrı bir
+    # {"step", "before", "after", "detail"} girdisi olarak birikiyor —
+    # caveats KALDIRILMADI (insan-okunur özet olarak duruyor), bu SADECE
+    # aynı bilginin makine-okunur/kesin versiyonu. Boş liste = bu karar
+    # hiçbir ağırlık ayarlamasına uğramadı (ör. benched değil, MoE yok).
+    weight_adjustments: list[dict] = Field(default_factory=list)
 
     # Epistemik katmanlar: intrinsic_trust, performance_weight, effective_influence
     intrinsic_trust: float = 0.0

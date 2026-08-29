@@ -88,11 +88,17 @@ class CouncilOrchestrator:
                     if domain_value in FEATURE_SCHEMAS:
                         multiplier = predict_confidence_multiplier(domain_value, ctx.model_dump())
                         if multiplier != 1.0:
+                            before = opinion.confidence
                             opinion.confidence = round(min(opinion.confidence * multiplier, 0.95), 3)
                             opinion.caveats.append(
                                 f"Confidence kalibrasyon modeli x{multiplier:.2f} ayarladı "
                                 f"(bu tür durumlarda ajanın gerçek doğruluğuna göre)"
                             )
+                            opinion.weight_adjustments.append({
+                                "step": "situational_confidence_model",
+                                "before": before, "after": opinion.confidence, "multiplier": round(multiplier, 4),
+                                "detail": "Ajanın kendi ham skoru, bu tür durumlarda GEÇMİŞTE ne kadar isabetli çıktığına göre öğrenilmiş bir modelle ayarlandı.",
+                            })
 
                 opinions.append(opinion)
 
@@ -142,10 +148,18 @@ class CouncilOrchestrator:
             # (bkz. contracts/agent.py::AgentOpinion.raw_confidence
             # docstring'i — Brier/kalibrasyon döngüselliği bulgusu).
             opinion.raw_confidence = opinion.confidence
+            _pre_calibration_confidence = opinion.confidence
             opinion.confidence = calibrate_domain_confidence(
                 opinion.domain.value, opinion.confidence,
                 evidence_count=len(opinion.evidence), symbol=symbol,
             )
+            if opinion.confidence != _pre_calibration_confidence:
+                opinion.weight_adjustments.append({
+                    "step": "empirical_calibration_curve",
+                    "before": _pre_calibration_confidence, "after": opinion.confidence,
+                    "detail": "Bu domain'in GERÇEK kapanmış işlemlerden çıkarılan ampirik "
+                              "isabet eğrisinden geçirildi — çarpan DEĞİL, eğri lookup + kanıt-sayısı-ağırlıklı harmanlama.",
+                })
             # Faz 268-sonrası — kritik bulgu: her ajan freshness'ı kendi
             # analyze()'inde SABİT bir değerle (0.85/0.90 gibi) bildiriyordu
             # — hiçbir ajan gerçek veri yaşını ölçmüyordu. Artık GERÇEK,
@@ -173,6 +187,7 @@ class CouncilOrchestrator:
                 # pencerenin — 20/100/500 — ağırlıklı ortalaması + histerezis
                 # ile, bkz. agents/source_reliability_agent.py) otomatik
                 # geri döner.
+                _pre_bench_weight = opinion.performance_weight
                 opinion.performance_weight = self.reliability_annotator.agent.MIN_INFLUENCE
                 opinion.caveats.append(
                     f"Devre dışı (benched): {opinion.domain.value} ajanının gerçek yakın-dönem isabet "
@@ -180,6 +195,12 @@ class CouncilOrchestrator:
                     f"gerçek isabetli kararlar birikene kadar oy ağırlığı "
                     f"{self.reliability_annotator.agent.MIN_INFLUENCE}'a düşürüldü (tamamen sıfırlanmadı)."
                 )
+                opinion.weight_adjustments.append({
+                    "step": "benching_floor",
+                    "before": _pre_bench_weight, "after": opinion.performance_weight,
+                    "detail": f"source_reliability ({opinion.source_reliability}) eşiğin altında — "
+                              f"oy ağırlığı MIN_INFLUENCE'a sabitlendi (tamamen sıfır DEĞİL).",
+                })
             opinion.recalculate()
 
         self.last_debate_result = self.debate.run_debate(
@@ -198,11 +219,18 @@ class CouncilOrchestrator:
         for opinion in opinions:
             penalty = self.last_debate_result.unanswered_challenge_penalties.get(opinion.domain.value)
             if penalty is not None and penalty < 1.0:
+                _pre_penalty_weight = opinion.performance_weight
                 opinion.performance_weight = round(opinion.performance_weight * penalty, 4)
                 opinion.caveats.append(
                     f"Cevapsız risk itirazı, {opinion.domain.value} oy ağırlığını "
                     f"%{round((1 - penalty) * 100, 1)} azalttı (itirazı savunacak bir yanıtlayıcı kayıtlı değil)."
                 )
+                opinion.weight_adjustments.append({
+                    "step": "unanswered_debate_challenge",
+                    "before": _pre_penalty_weight, "after": opinion.performance_weight,
+                    "multiplier": round(penalty, 4),
+                    "detail": "Risk ajanının itirazına savunacak bir yanıtlayıcı kayıtlı değildi.",
+                })
                 opinion.recalculate()
 
         # Faz 353 — Mixture-of-Experts Regime Router (kullanıcı isteği:
@@ -228,11 +256,18 @@ class CouncilOrchestrator:
                 else:
                     continue
                 if tilt != 1.0:
+                    _pre_moe_weight = opinion.performance_weight
                     opinion.performance_weight = round(opinion.performance_weight * tilt, 4)
                     opinion.caveats.append(
                         f"MoE rejim router'ı ({moe['regime']}, hurst={hurst:.2f}) oy ağırlığını "
                         f"x{tilt:.2f} ayarladı."
                     )
+                    opinion.weight_adjustments.append({
+                        "step": "moe_regime_router",
+                        "before": _pre_moe_weight, "after": opinion.performance_weight,
+                        "multiplier": round(tilt, 4),
+                        "detail": f"Mixture-of-Experts rejim router'ı ({moe['regime']}, hurst={hurst:.2f}).",
+                    })
                     opinion.recalculate()
 
         if self.pinned_weight_snapshot_id is not None:

@@ -49,6 +49,13 @@ def test_persistently_wrong_domain_gets_benched_and_reduced_not_zeroed(tmp_path)
     assert technical.effective_influence > 0.0
     assert any("benched" in c.lower() for c in technical.caveats)
 
+    # Faz 376 — kullanıcı isteği: "decision decomposition" için ham/
+    # kalibre edilmiş/güvenilirlik/rejim/itiraz zincirinin YAPILANDIRILMIŞ
+    # (serbest-metin caveats DEĞİL) olarak da kayıtlı olması.
+    bench_step = next(a for a in technical.weight_adjustments if a["step"] == "benching_floor")
+    assert bench_step["after"] == SourceReliabilityAgent.MIN_INFLUENCE
+    assert bench_step["before"] > bench_step["after"]
+
 
 def test_benched_domain_recovers_after_real_correct_track_record(tmp_path):
     orchestrator = CouncilOrchestrator(AgentRegistry.create_default())

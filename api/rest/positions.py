@@ -280,6 +280,33 @@ def explain_position(decision_id: str, user: AuthContext = Depends(get_current_u
         i["data"] for i in contributions if isinstance(i, dict) and i.get("type") == "portfolio_confidence_discount"
     ]
 
+    # Faz 376 — kullanıcı bulgusu (canlı bir PYPLUSDT LONG %65.7 örneği
+    # üzerinden, çok detaylı bir inceleme): "LONG kararı var, ama sistemin
+    # en güçlü kanıt kaynakları büyük ölçüde susturulmuş — bunu görmenin
+    # yolu yoktu." Her yönde (LONG/SHORT) TOPLAM effective_influence'ı,
+    # hiç ayarlanmamış ("aktif") ajanlarla en az bir ağırlık ayarlaması
+    # geçirmiş ("bastırılmış") ajanları ayrı ayrı gösteren bir özet —
+    # "kararın gerçek gücünü kim taşıyor, kim sadece susturulmuş"
+    # sorusunun tek bakışta cevabı.
+    net_evidence_by_direction: dict[str, dict] = {}
+    for v in agent_votes:
+        direction = v.get("direction")
+        if direction not in ("LONG", "SHORT"):
+            continue
+        bucket = net_evidence_by_direction.setdefault(
+            direction, {"total_effective_influence": 0.0, "active_agents": [], "suppressed_agents": []}
+        )
+        influence = v.get("effective_influence") or 0.0
+        bucket["total_effective_influence"] = round(bucket["total_effective_influence"] + influence, 6)
+        entry = {"domain": v.get("domain"), "confidence": v.get("confidence"), "effective_influence": influence}
+        if v.get("weight_adjustments"):
+            bucket["suppressed_agents"].append(entry)
+        else:
+            bucket["active_agents"].append(entry)
+    for bucket in net_evidence_by_direction.values():
+        bucket["active_agents"].sort(key=lambda e: -(e["effective_influence"] or 0.0))
+        bucket["suppressed_agents"].sort(key=lambda e: -(e["effective_influence"] or 0.0))
+
     return {
         "id": str(row["id"]),
         "symbol": row["symbol"],
@@ -291,13 +318,25 @@ def explain_position(decision_id: str, user: AuthContext = Depends(get_current_u
                 "domain": v.get("domain"),
                 "direction": v.get("direction"),
                 "confidence": v.get("confidence"),
+                # Faz 376 — kullanıcı isteği: "raw confidence → calibrated
+                # confidence → reliability weight → regime multiplier →
+                # debate penalty → final effective contribution" zincirinin
+                # HER adımı — raw_confidence/source_reliability/
+                # intrinsic_trust zaten vardı ama açıklama ekranına hiç
+                # taşınmıyordu; weight_adjustments (Faz 376, yeni) tam
+                # zinciri yapılandırılmış olarak taşıyor.
+                "raw_confidence": v.get("raw_confidence"),
+                "source_reliability": v.get("source_reliability"),
+                "intrinsic_trust": v.get("intrinsic_trust"),
                 "effective_influence": v.get("effective_influence"),
                 "performance_weight": v.get("performance_weight"),
+                "weight_adjustments": v.get("weight_adjustments") or [],
                 "evidence": v.get("evidence"),
                 "caveats": v.get("caveats"),
             }
             for v in agent_votes
         ],
+        "net_evidence_by_direction": net_evidence_by_direction,
         "council_belief": council_belief,
         "debate_result": debate_result,
         "inner_critic": inner_critic,

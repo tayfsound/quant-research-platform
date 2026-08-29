@@ -1,9 +1,65 @@
-# Mevcut Durum -- v1.114.0 (Faz 372-375: SHORT Exploration deneyi + Agent Combination Reliability zenginleştirmesi + agreement-tier + Feature Intelligence Layer Faz B (TAMAMLANDI, feature_independence dahil) + 0.5266 instrumentation)
+# Mevcut Durum -- v1.115.0 (Faz 376: "decision decomposition" — weight_adjustments + net_evidence_by_direction)
 
 **Tarih:** 2026-08-29
 **Branch:** main
-**Son commit (HEAD):** `07b0bca` — tüm turun işleri commitlendi, push edildi.
-**Servis durumu:** uvicorn + celery worker + celery beat en son kodla çalışıyor, canlı üretim doğrulandı (decisions tablosuna ~30sn'de bir yeni karar düşüyor).
+**Son commit (HEAD):** Faz 376 commit'i bu turda atılacak (bkz. aşağı).
+**Servis durumu:** Faz 376 sonrası worker + uvicorn yeniden başlatılacak (contracts/agent.py ve services/council_orchestrator.py CANLI karar hattını etkiliyor, sadece dashboard/API değil).
+
+**Faz 376 (2026-08-29) — kullanıcı bulgusu, canlı bir PYPLUSDT LONG %65.7
+kararı üzerinden çok detaylı bir teknik eleştiri getirdi:** Kalibrasyon ×
+benching × itiraz-cezası × MoE çarpan zincirinin technical'in LONG
+kanıtını aşırı bastırdığını, order_flow'un daha zayıf ham güvene rağmen
+baskın kaldığını; "ajan güvenilirliği" ile "ajan etkisi"nin gereğinden
+sıkı bağlı olduğunu (son dönem kötü performansın "belirsizlik artırıcı/
+ağırlık yumuşatıcı" olması gerektiğini, hard multiplicative suppression
+DEĞİL) belirtti. Somut, düşük-riskli isteği: mevcut explain ekranını
+BOZMADAN, her ajan için raw confidence → calibrated confidence →
+reliability weight → regime multiplier → debate penalty → final
+effective contribution zincirini ayrı ayrı gösteren bir "decision
+decomposition" debug ekranı + "LONG yönündeki net kanıtı hangi ajan/
+feature taşıyor, hangileri sadece bastırılmış" sorusuna cevap.
+
+Doğrulama: PYPLUSDT kararının GERÇEK verisiyle zincir tek tek sorgulandı
+— kullanıcının "×0.50 sonra daha da düşürüldü" okuması kısmen yanlış
+çıktı: kalibrasyon adımı (empirical_calibration_curve) technical'in
+güvenini AZALTMADI, 0.218'den 0.6961'e YÜKSELTTİ (bucket-tabanlı eğri +
+evidence-count ağırlıklı blend, temiz bir çarpan değil). Asıl bastırma
+performance_weight zincirinde: benched floor (MIN_INFLUENCE=0.1) ×
+cevapsız itiraz cezası (×0.70) × MoE rejim tilt'i (×0.79) = 0.055 —
+order_flow'un gerçek etkisi technical'in ~9.4 katı çıktı, düşük ham
+güvenine rağmen. Bu ayrım kullanıcıya netleştirildi.
+
+Uygulanan (backend tam, dashboard tam, test edilmiş):
+- `contracts/agent.py::AgentOpinion.weight_adjustments: list[dict]` — her
+  girdi `{step, before, after, multiplier?, detail}`, migration GEREKMEDİ
+  (agent_contributions zaten JSONB blob).
+- `services/council_orchestrator.py` — 5 gerçek ayarlama noktası
+  (situational_confidence_model, empirical_calibration_curve,
+  benching_floor, unanswered_debate_challenge, moe_regime_router) artık
+  serbest-metin caveats'a EK OLARAK yapılandırılmış before/after/multiplier
+  kaydediyor.
+- `api/rest/positions.py::explain_position` — her ajan oyuna raw_confidence/
+  source_reliability/intrinsic_trust/weight_adjustments eklendi; yeni
+  `net_evidence_by_direction` alanı yöne göre `active_agents` (hiç
+  ayarlama görmemiş) / `suppressed_agents` (en az 1 ayarlama) ayrımını,
+  `total_effective_influence` ile birlikte döndürüyor.
+- `dashboard/src/views/Transactions.tsx` — explain modal'a "Net kanıt
+  (yön bazında)" paneli (aktif/bastırılmış ajan listesi) + ajan oyları
+  tablosuna "Zincir (ham → etkili)" sütunu (raw→calibrated + her
+  weight_adjustments adımı before→after) eklendi. Ekran BOZULMADI, sadece
+  zenginleştirildi (kullanıcının açık isteği).
+- Test: `pytest tests/test_council_orchestrator.py tests/
+  test_agent_auto_bench.py tests/test_source_reliability.py tests/
+  test_position_explain_api.py -q` → 48 passed. `tsc --noEmit` temiz.
+
+**Kasıtlı olarak YAPILMADI (kullanıcı bunları "değerlendirin" dedi,
+"uygulayın" demedi — feedback_new_complexity_must_prove_its_edge +
+feedback_wait_for_problem_before_optimizing):** (a) reliability'yi hard
+multiplicative suppression'dan uncertainty-artırıcı/soft-weighting
+mekanizmasına çevirmek; (b) her ajanın iç kanıtını (trend/exhaustion/
+üst-timeframe-çelişki) ayrı akışlara ayırmak. Bunlar büyük, OOS
+doğrulama gerektiren mimari revizeler — tek bir örnek üzerinden
+yapılmayacak.
 
 **Faz B tamamlandı (2026-08-29, geç):** Opportunity Quality'nin kalite
 skoruna üçüncü çarpan (feature_independence) eklendi — analytics/

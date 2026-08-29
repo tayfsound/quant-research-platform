@@ -366,14 +366,47 @@ function ClosedTradeRow({
 // zaten kayıtlı olan veriyi GET /positions/{id}/explain ayrıştırıp
 // döndürüyor — burada Tokens.tsx'in kaldıraç modalıyla AYNI overlay
 // deseni (fixed inset-0 + Card) kullanılıyor, tasarım tutarlılığı için.
+// Faz 376 — kullanıcı bulgusu (çok detaylı, canlı bir örnek üzerinden):
+// "raw confidence → calibrated confidence → reliability weight → regime
+// multiplier → debate penalty → final effective contribution" zincirinin
+// hiçbir adımı yapılandırılmış görünmüyordu, sadece serbest-metin
+// caveats'ta gömülüydü. weight_adjustments (contracts/agent.py, yeni)
+// bu zinciri makine-okunur olarak taşıyor.
+type WeightAdjustment = {
+  step: string;
+  before: number;
+  after: number;
+  multiplier?: number;
+  detail: string;
+};
+
+const WEIGHT_ADJUSTMENT_STEP_LABEL: Record<string, string> = {
+  situational_confidence_model: "Durumsal confidence modeli",
+  empirical_calibration_curve: "Ampirik kalibrasyon eğrisi",
+  benching_floor: "Benching (güvenilirlik tabanı)",
+  unanswered_debate_challenge: "Cevapsız risk itirazı",
+  moe_regime_router: "MoE rejim router'ı",
+};
+
 type ExplainVote = {
   domain: string;
   direction: string;
   confidence: number;
+  raw_confidence: number | null;
+  source_reliability: number | null;
+  intrinsic_trust: number | null;
   effective_influence: number | null;
   performance_weight: number | null;
+  weight_adjustments: WeightAdjustment[];
   evidence: string[];
   caveats: string[];
+};
+
+type NetEvidenceEntry = { domain: string; confidence: number; effective_influence: number };
+type NetEvidenceSummary = {
+  total_effective_influence: number;
+  active_agents: NetEvidenceEntry[];
+  suppressed_agents: NetEvidenceEntry[];
 };
 
 type ExplainData = {
@@ -382,6 +415,7 @@ type ExplainData = {
   final_direction: string;
   final_confidence: number | null;
   agent_votes: ExplainVote[];
+  net_evidence_by_direction: Record<string, NetEvidenceSummary>;
   council_belief: Record<string, unknown> | null;
   debate_result: Record<string, unknown> | null;
   inner_critic: { risk_flags?: string[]; objections?: string[] } | null;
@@ -451,6 +485,37 @@ function ExplainModal({ decisionId, onClose }: { decisionId: string; onClose: ()
                 </div>
               </div>
 
+              {Object.keys(data.net_evidence_by_direction || {}).length > 0 && (
+                <div>
+                  <p className="text-xs text-ink-faint mb-2">
+                    Yöne göre net kanıt — hangi ajanlar gerçekten etkili, hangileri sadece bastırılmış
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {Object.entries(data.net_evidence_by_direction).map(([direction, summary]) => (
+                      <div key={direction} className="border border-line-soft rounded-lg p-2.5">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <Badge tone={direction === "LONG" ? "rise" : "fall"}>{direction}</Badge>
+                          <span className="text-xs font-mono text-ink-soft">
+                            toplam etki: {summary.total_effective_influence.toFixed(3)}
+                          </span>
+                        </div>
+                        {summary.active_agents.length > 0 && (
+                          <p className="text-xs text-ink-soft">
+                            <span className="text-ink-faint">Aktif:</span>{" "}
+                            {summary.active_agents.map((a) => `${a.domain} (${a.effective_influence.toFixed(3)})`).join(", ")}
+                          </p>
+                        )}
+                        {summary.suppressed_agents.length > 0 && (
+                          <p className="text-xs text-ink-faint">
+                            Bastırılmış: {summary.suppressed_agents.map((a) => `${a.domain} (${a.effective_influence.toFixed(3)})`).join(", ")}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {data.portfolio_confidence_discounts.length > 0 && (
                 <div className="bg-canvas-soft rounded-lg p-2.5 border border-line-soft">
                   <p className="text-xs text-ink-faint mb-1.5">
@@ -479,6 +544,7 @@ function ExplainModal({ decisionId, onClose }: { decisionId: string; onClose: ()
                           <th className="py-1 pr-3">Yön</th>
                           <th className="py-1 pr-3">Güven</th>
                           <th className="py-1 pr-3">Etki</th>
+                          <th className="py-1 pr-3">Zincir (ham → etkili)</th>
                           <th className="py-1 pr-3">Kanıt / Not</th>
                         </tr>
                       </thead>
@@ -494,6 +560,24 @@ function ExplainModal({ decisionId, onClose }: { decisionId: string; onClose: ()
                             <td className="py-1.5 pr-3 font-mono text-ink-soft">{(v.confidence * 100).toFixed(0)}%</td>
                             <td className="py-1.5 pr-3 font-mono text-ink-soft">
                               {v.effective_influence != null ? v.effective_influence.toFixed(3) : "—"}
+                            </td>
+                            <td className="py-1.5 pr-3 text-ink-soft">
+                              {v.raw_confidence != null && (
+                                <div className="font-mono">
+                                  ham %{(v.raw_confidence * 100).toFixed(1)} → kalibre %{(v.confidence * 100).toFixed(1)}
+                                  {v.source_reliability != null && ` · güvenilirlik ${v.source_reliability.toFixed(3)}`}
+                                </div>
+                              )}
+                              {v.weight_adjustments?.length > 0 ? (
+                                v.weight_adjustments.map((a, j) => (
+                                  <div key={`w${j}`} className="text-ink-faint">
+                                    {WEIGHT_ADJUSTMENT_STEP_LABEL[a.step] ?? a.step}: {a.before.toFixed(3)} → {a.after.toFixed(3)}
+                                    {a.multiplier != null && ` (×${a.multiplier})`}
+                                  </div>
+                                ))
+                              ) : v.raw_confidence != null ? (
+                                <div className="text-ink-faint">ayarlama yok — aktif</div>
+                              ) : null}
                             </td>
                             <td className="py-1.5 pr-3 text-ink-soft">
                               {v.evidence?.map((e, j) => <div key={`e${j}`}>{e}</div>)}

@@ -103,6 +103,61 @@ def test_explain_separates_agent_votes_from_special_entries():
     }]
 
 
+def test_explain_summarizes_net_evidence_by_direction_and_carries_weight_adjustments():
+    """Faz 376 — kullanıcı bulgusu (canlı bir PYPLUSDT LONG %65.7 örneği):
+    "Sistem şu anda sadece 'kanıta göre karar vermiyor'; kanıtın kendisini
+    çok katmanlı cezalarla yeniden şekillendiriyor... hangi ajan/feature
+    sadece bastırılmış durumda?" — net_evidence_by_direction bunu tek
+    bakışta gösteriyor: yönü aynı olan ajanları "aktif" (hiç ayarlama
+    görmemiş) ve "bastırılmış" (en az bir weight_adjustments girdisi
+    olan) diye ayırıyor."""
+    now = datetime.now(UTC)
+    event = DecisionEvent(
+        id=uuid4(), timestamp=now, symbol="PYPLUSDT",
+        proposed_direction="LONG", final_action="LONG", final_size=0.2, confidence=0.657,
+        status="open", entry_price=100.0, quantity=0.2, opened_at=now,
+        stop_loss_price=95.0, take_profit_price=105.0,
+        agent_opinions=[
+            {
+                "domain": "technical", "direction": "LONG", "confidence": 0.696,
+                "raw_confidence": 0.218, "source_reliability": 0.524, "intrinsic_trust": 0.739,
+                "effective_influence": 0.028, "performance_weight": 0.055,
+                "weight_adjustments": [
+                    {"step": "benching_floor", "before": 1.0, "after": 0.1, "detail": "..."},
+                    {"step": "unanswered_debate_challenge", "before": 0.1, "after": 0.07, "multiplier": 0.7},
+                ],
+                "evidence": ["Bullish trend"], "caveats": ["Devre dışı (benched)"],
+            },
+            {
+                "domain": "order_flow", "direction": "LONG", "confidence": 0.55,
+                "raw_confidence": 0.429, "source_reliability": 0.529, "intrinsic_trust": 0.693,
+                "effective_influence": 0.267, "performance_weight": 0.70,
+                "weight_adjustments": [],
+                "evidence": ["Aggressive buying"], "caveats": [],
+            },
+        ],
+    )
+    with SessionFactory.get_session() as session:
+        DecisionPersistor(session).persist(event)
+
+    client = _client()
+    response = client.get(f"/api/v1/positions/{event.id}/explain", headers=make_authed_headers(Role.VIEWER))
+    assert response.status_code == 200
+    body = response.json()
+
+    technical_vote = next(v for v in body["agent_votes"] if v["domain"] == "technical")
+    assert technical_vote["raw_confidence"] == 0.218
+    assert len(technical_vote["weight_adjustments"]) == 2
+    assert technical_vote["weight_adjustments"][0]["step"] == "benching_floor"
+
+    long_summary = body["net_evidence_by_direction"]["LONG"]
+    assert abs(long_summary["total_effective_influence"] - 0.295) < 1e-6
+    assert {a["domain"] for a in long_summary["active_agents"]} == {"order_flow"}
+    assert {a["domain"] for a in long_summary["suppressed_agents"]} == {"technical"}
+    # En büyük gerçek etkiyi taşıyan (order_flow) listenin başında olmalı.
+    assert long_summary["active_agents"][0]["domain"] == "order_flow"
+
+
 def test_explain_handles_a_decision_with_no_agent_contributions_gracefully():
     now = datetime.now(UTC)
     event = DecisionEvent(
