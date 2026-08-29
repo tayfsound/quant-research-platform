@@ -142,13 +142,68 @@ class DecisionFusion:
         ev = confidence * win - (1 - confidence) * loss
 
         if ev <= 0:
-            ctx.decision.action = ActionType.WAIT
-            ctx.decision.final_size = 0.0
-            ctx.cognition.relevant_knowledge.append({
-                "type": "decision_fusion",
-                "data": {"rejection": "Negatif beklenen değer (EV)", "ev": round(ev, 6)},
-            })
-            return ctx
+            # Faz 372 — SHORT Exploration deneyi (kullanıcı tasarımı,
+            # 2026-08-29): analytics/mae_mfe.py iki bağımsız ölçümde
+            # SHORT'un gerçek bir kenarı olmadığını gösterdi, ama BU KAPI
+            # SHORT'u sürekli reddettiği için yeni outcome verisi hiç
+            # birikemiyor — klasik exploration/exploitation kilidi. Global
+            # EV kapısı BURADA DEĞİŞMİYOR (normal SHORT/LONG davranışı
+            # birebir aynı) — sadece, TP/SL'i GERÇEKTEN hesaplanmış
+            # (win>0 veya loss>0 — MetaStage zaten WAIT dediyse RiskTargetStage
+            # hiç çalışmamış olur, o durumda exploration da anlamsız),
+            # dinamik üst-yüzdelikte (P85) confidence'a sahip, sıkı hard-
+            # cap'li (eşzamanlı/haftalık/sembol-cooldown/kendi kill switch'i
+            # — bkz. services/short_exploration.py) bir SHORT adayı için
+            # AYRI, izole, çok küçük boyutlu bir "keşif" penceresi açılıyor.
+            # experiment_bucket=short_exploration_v1 ile TAM izole —
+            # decision_recorder.py'nin "experiment_bucket is None" şartlı
+            # TÜM post-hoc gate'leri bu kovayı hiç görmez, saf bir örneklem
+            # kalır (normal model performans istatistiklerine karışmaz).
+            direction = (ctx.decision.proposed_direction or "").upper()
+            explored = False
+            if direction == "SHORT" and (win > 0 or loss > 0):
+                from services.short_exploration import (
+                    EXPERIMENT_BUCKET as _SHORT_EXPLORATION_BUCKET,
+                )
+                from services.short_exploration import (
+                    SIZE_MULTIPLIER as _SHORT_EXPLORATION_SIZE_MULTIPLIER,
+                )
+                from services.short_exploration import is_eligible as _short_exploration_is_eligible
+
+                eligible, reason = _short_exploration_is_eligible(ctx.market.symbol or "", confidence)
+                if eligible:
+                    explored = True
+                    ctx.decision.action = ActionType.ENTER_SHORT
+                    ctx.decision.final_size = abs(ctx.decision.proposed_size) * _SHORT_EXPLORATION_SIZE_MULTIPLIER
+                    ctx.cognition.relevant_knowledge.append({
+                        "type": "experiment_bucket",
+                        "data": {"bucket": _SHORT_EXPLORATION_BUCKET},
+                    })
+                    ctx.cognition.relevant_knowledge.append({
+                        "type": "decision_fusion",
+                        "data": {
+                            "adjustment": "SHORT exploration — EV negatif ama kontrollü keşif penceresinden geçti",
+                            "predicted_ev": round(ev, 6),
+                            "confidence": round(confidence, 4),
+                        },
+                    })
+                else:
+                    ctx.cognition.relevant_knowledge.append({
+                        "type": "decision_fusion",
+                        "data": {
+                            "rejection": "Negatif beklenen değer (EV)", "ev": round(ev, 6),
+                            "short_exploration_rejected_reason": reason,
+                        },
+                    })
+            if not explored:
+                ctx.decision.action = ActionType.WAIT
+                ctx.decision.final_size = 0.0
+                if direction != "SHORT" or not (win > 0 or loss > 0):
+                    ctx.cognition.relevant_knowledge.append({
+                        "type": "decision_fusion",
+                        "data": {"rejection": "Negatif beklenen değer (EV)", "ev": round(ev, 6)},
+                    })
+                return ctx
 
         # Faz 210: kullanıcı bulgusu — ilk gerçek kapanan işlemler (PAXGUSDT,
         # XAUTUSDT) gerçekten take_profit hedefine ulaştı ama komisyon
