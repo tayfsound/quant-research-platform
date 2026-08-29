@@ -34,6 +34,21 @@ _HALF_KELLY_FACTOR = 0.5
 _cache: dict = {"stats": None, "computed_at": 0.0}
 _regime_cache: dict = {"stats": None, "computed_at": 0.0}
 
+# Faz 370-devam — KRİTİK canlı olay (2026-08-29, kullanıcı bulgusu):
+# çarpan literal 0.0'a inebiliyordu — bu modülün DIŞINDAKİ TÜM diğer
+# boyutlandırma kapıları (self_correction/self_model/pivotal_agent/
+# symbol_performance/mae_mfe_bucket) "asla sıfıra inme, sadece küçült"
+# ilkesiyle bir MIN_MULTIPLIER tabanı kullanıyordu — kelly_size_
+# multiplier bu tutarlılığın DIŞINDA kalmıştı. Gerçek sonuç: son 500
+# kapanmış işlemin negatif Sharpe'ı (-0.046) bazı confidence kovalarını
+# 0.0'a düşürünce sistem HİÇ yeni işlem açamadı — ve yeni işlem
+# açılmayınca "son 500 kapanmış" penceresi SADECE eski, kötü kapanan
+# pozisyonlarla dolmaya devam etti, kendi kendini besleyen bir kilitlenme
+# döngüsü oluştu (5+ saat, sıfır açılış). Taban, sistemin KENDİ yeni,
+# temiz verisini üretip bu döngüyü kırabilmesi için gerekli — 0 asla
+# "güvenlik" değil, çıkışsız bir kilit.
+MIN_MULTIPLIER = 0.1
+
 
 def compute_confidence_bucket_payoff_stats() -> dict[float, dict]:
     """Gerçek kapanmış (kirli olarak işaretlenmemiş) kararlardan, beyan
@@ -234,11 +249,11 @@ def kelly_size_multiplier(confidence: float, regime: str | None = None) -> float
         regime_stats = get_regime_confidence_bucket_payoff_stats().get((regime, bucket))
         if regime_stats:
             f = kelly_fraction(regime_stats["win_rate"], regime_stats["avg_win"], regime_stats["avg_loss"])
-            return max(0.0, min(f * _HALF_KELLY_FACTOR, 1.0))
+            return max(MIN_MULTIPLIER, min(f * _HALF_KELLY_FACTOR, 1.0))
 
     bucket_stats = get_confidence_bucket_payoff_stats().get(bucket)
     if not bucket_stats:
         return 1.0
     f = kelly_fraction(bucket_stats["win_rate"], bucket_stats["avg_win"], bucket_stats["avg_loss"])
     half_kelly = f * _HALF_KELLY_FACTOR
-    return max(0.0, min(half_kelly, 1.0))
+    return max(MIN_MULTIPLIER, min(half_kelly, 1.0))

@@ -76,6 +76,32 @@ def test_kelly_size_multiplier_rounds_confidence_to_nearest_bucket(monkeypatch):
 # 2026-08-19): Kelly boyutlandırma önceden SADECE confidence kovasına
 # bakıyordu.
 
+def test_kelly_size_multiplier_never_drops_below_the_min_multiplier_floor(monkeypatch):
+    """Faz 370-devam — KRİTİK canlı olay (2026-08-29, kullanıcı bulgusu):
+    çarpan literal 0.0'a inebiliyordu — diğer TÜM sizing gate'lerin
+    (self_correction/self_model/pivotal_agent/symbol_performance/mae_mfe_
+    bucket) aksine, onlar hep bir MIN_MULTIPLIER tabanı kullanıyordu.
+    Gerçek sonuç: negatif Sharpe döneminde bazı confidence kovaları 0.0'a
+    düşünce sistem HİÇ yeni işlem açamadı — yeni işlem olmayınca "son N
+    kapanmış" penceresi eski/kötü verilerle dolu kalmaya devam etti,
+    kendi kendini besleyen bir kilitlenme döngüsü oluştu (5+ saat, sıfır
+    açılış). Taban artık kelly_fraction NE KADAR negatif çıkarsa çıksın
+    çarpanı asla 0.0'ın altına düşürmüyor — sistem her zaman KÜÇÜK bir
+    boyutla yeni, temiz veri üretip döngüyü kırabiliyor."""
+    from services import kelly_sizing
+
+    # Çok kötü bir kova (win_rate düşük, kayıplar kazançlardan büyük) —
+    # kelly_fraction kesinlikle 0.0 döner, ama kelly_size_multiplier
+    # HÂLÂ MIN_MULTIPLIER'ı vermeli, literal 0.0 değil.
+    monkeypatch.setattr(
+        kelly_sizing, "get_confidence_bucket_payoff_stats",
+        lambda: {0.5: {"win_rate": 0.1, "avg_win": 1.0, "avg_loss": 100.0, "sample_count": 500}},
+    )
+    result = kelly_size_multiplier(0.5)
+    assert result == kelly_sizing.MIN_MULTIPLIER
+    assert result > 0.0
+
+
 def test_kelly_size_multiplier_prefers_regime_specific_stats_when_available(monkeypatch):
     from services import kelly_sizing
 
@@ -91,7 +117,11 @@ def test_kelly_size_multiplier_prefers_regime_specific_stats_when_available(monk
         lambda: {("bearish_high", 0.8): {"win_rate": 0.2, "avg_win": 1.0, "avg_loss": 5.0, "sample_count": 30}},
     )
     result = kelly_size_multiplier(0.8, regime="bearish_high")
-    assert result == 0.0  # negatif kenar, fail-closed sıfır
+    # Faz 370-devam — negatif kenar artık literal 0.0 DEĞİL, MIN_MULTIPLIER
+    # (0.1) tabanına düşüyor — sistemin tamamen kilitlenip yeni veri
+    # üretemez hale gelmesini önlemek için (bkz. kelly_sizing.py üstündeki
+    # not, canlı kilitlenme olayı).
+    assert result == kelly_sizing.MIN_MULTIPLIER
 
 
 def test_kelly_size_multiplier_falls_back_to_global_bucket_when_regime_data_insufficient(monkeypatch):
