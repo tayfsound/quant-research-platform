@@ -873,6 +873,50 @@ def close_due_positions_task() -> dict:
     return {"closed_count": len(closed), "closed": closed}
 
 
+@celery_app.task(name="cleanup_stale_pump_fade_positions_task")
+def cleanup_stale_pump_fade_positions_task() -> dict:
+    """Bir defalık/tekrar güvenli bakım görevi: eski pump_fade_v1 açık
+    pozisyonlarını güncel fiyatla kapatır ve istatistiklerden çıkarır.
+    Kapanış tekrar çalıştırılsa bile repository yalnızca status='open'
+    satırlarını güncellediği için aynı kayıt ikinci kez işlenmez."""
+    from datetime import UTC, datetime
+
+    from database.repositories.decision_persistor import DecisionPersistor
+    from database.session_factory import SessionFactory
+    from market_data.ingestion.data_provider import RoutingProvider
+
+    if _real_market_data_source_or_none() is None:
+        return {"skipped": "non_binance_market_data_source"}
+
+    cutoff_at = datetime(2026, 8, 19, 8, 21, 15, tzinfo=UTC)
+    with _CycleLock("lock:cleanup_stale_pump_fade_positions_task", ttl_seconds=600) as acquired:
+        if not acquired:
+            return {"skipped": "previous_run_still_in_progress"}
+
+        with SessionFactory.get_session() as session:
+            repo = DecisionPersistor(session)
+            stale = [
+                row
+                for row in repo.list_open_positions_for_experiment("pump_fade_v1")
+                if row.get("opened_at") is not None and row["opened_at"] < cutoff_at
+            ]
+            if not stale:
+                return {"closed_count": 0, "stale_count": 0}
+
+        from services.position_closer import fetch_current_prices_by_symbol
+
+        prices = fetch_current_prices_by_symbol({row["symbol"] for row in stale})
+        with SessionFactory.get_session() as session:
+            closed = DecisionPersistor(session).close_stale_positions_for_experiment(
+                "pump_fade_v1",
+                cutoff_at=cutoff_at,
+                current_prices=prices,
+                exit_reason="legacy_cleanup",
+            )
+
+    return {"stale_count": len(stale), "closed_count": len(closed), "closed": closed}
+
+
 @celery_app.task(name="refresh_open_position_pnl_summary_task")
 def refresh_open_position_pnl_summary_task() -> dict:
     """Faz 339 — kullanıcı isteği: Transactions'ta "açık pozisyonların

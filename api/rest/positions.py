@@ -3,6 +3,8 @@
 Binance tarzı "my trades" görünümü için gerekli tek gerçek kaynak — decisions
 tablosundaki status='open'/'closed' satırları, services/position_closer.py
 tarafından gerçek zaman geçtikten sonra gerçek fiyatla kapatılıyor."""
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -227,7 +229,10 @@ def list_open_positions(
 
 
 @router.get("/positions/breakdown-by-type")
-def positions_breakdown_by_type(user: AuthContext = Depends(get_current_user)):
+def positions_breakdown_by_type(
+    exclude_experiment_bucket: str | None = None,
+    user: AuthContext = Depends(get_current_user),
+):
     """Faz 268-sonrası — kullanıcı isteği: "scalp, gün içi, orta vade vs.
     farklı işlem türlerinin ne kadarı short ne kadarı long pozisyonmuş."
     _classify_trade_type() ile AYNI sınıflandırma, ama TÜM açık
@@ -235,19 +240,26 @@ def positions_breakdown_by_type(user: AuthContext = Depends(get_current_user)):
     agregasyonu — bkz. decision_persistor.py::open_position_breakdown_
     by_trade_type()."""
     with SessionFactory.get_session() as session:
-        rows = DecisionPersistor(session).open_position_breakdown_by_trade_type()
+        rows = DecisionPersistor(session).open_position_breakdown_by_trade_type(
+            exclude_experiment_bucket=exclude_experiment_bucket
+        )
     return {"breakdown": rows}
 
 
 @router.get("/trades/breakdown-by-type")
-def trades_breakdown_by_type(user: AuthContext = Depends(get_current_user)):
+def trades_breakdown_by_type(
+    exclude_experiment_bucket: str | None = None,
+    user: AuthContext = Depends(get_current_user),
+):
     """Kullanıcı isteği: "kapanmış işlemlerin olduğu kısıma ratioları
     eklememişsin oradaki bilgiye de ihtiyacım var" — yukarıdaki açık
     pozisyon kırılımının kapanmış işlemler karşılığı, AYNI SQL
     agregasyonu (bkz. decision_persistor.py::closed_trade_breakdown_
     by_trade_type())."""
     with SessionFactory.get_session() as session:
-        rows = DecisionPersistor(session).closed_trade_breakdown_by_trade_type()
+        rows = DecisionPersistor(session).closed_trade_breakdown_by_trade_type(
+            exclude_experiment_bucket=exclude_experiment_bucket
+        )
     return {"breakdown": rows}
 
 
@@ -362,9 +374,10 @@ def list_closed_trades(
     gerçek toplamı yansıttığı için frontend sayfa sayısını hesaplayabiliyor."""
     with SessionFactory.get_session() as session:
         persistor = DecisionPersistor(session)
-        rows = persistor.list_closed_trades(limit=limit, offset=offset)
+        excluded_bucket = "pump_fade_v1"
+        rows = persistor.list_closed_trades(limit=limit, offset=offset, exclude_experiment_bucket=excluded_bucket)
         trades = [_serialize(r) for r in rows]
-        summary = persistor.closed_trades_summary()
+        summary = persistor.closed_trades_summary(exclude_experiment_bucket=excluded_bucket)
         return {
             "trades": trades,
             "summary": {
@@ -388,6 +401,7 @@ def performance_summary(user: AuthContext = Depends(get_current_user)):
     with SessionFactory.get_session() as session:
         starting_capital = float(AppSettingsRepository(session).get("starting_capital"))
         persistor = DecisionPersistor(session)
+        excluded_bucket = "pump_fade_v1"
 
         def _bucket(rows):
             result = []
@@ -412,10 +426,10 @@ def performance_summary(user: AuthContext = Depends(get_current_user)):
                 })
             return result
 
-        daily = _bucket(persistor.performance_by_period("day"))
-        weekly = _bucket(persistor.performance_by_period("week"))
-        monthly = _bucket(persistor.performance_by_period("month"))
-        yearly = _bucket(persistor.performance_by_period("year"))
+        daily = _bucket(persistor.performance_by_period("day", exclude_experiment_bucket=excluded_bucket))
+        weekly = _bucket(persistor.performance_by_period("week", exclude_experiment_bucket=excluded_bucket))
+        monthly = _bucket(persistor.performance_by_period("month", exclude_experiment_bucket=excluded_bucket))
+        yearly = _bucket(persistor.performance_by_period("year", exclude_experiment_bucket=excluded_bucket))
 
         # Faz 224: kritik bulgu — burası önceden list_closed_trades(limit=
         # 10000) ile Python'da topluyordu, GET /trades ise limit=100 ile
@@ -423,7 +437,7 @@ def performance_summary(user: AuthContext = Depends(get_current_user)):
         # görünüyor, Performance'da farklıydı" şikayetinin kök nedeni.
         # Artık ikisi de AYNI, limitsiz SQL agregasyonunu (closed_trades_
         # summary) kullanıyor — tek gerçek kaynak.
-        summary = persistor.closed_trades_summary()
+        summary = persistor.closed_trades_summary(exclude_experiment_bucket=excluded_bucket)
         total_pnl = summary["total_pnl"]
         deployed_notional = summary["deployed_notional"]
 
@@ -431,7 +445,7 @@ def performance_summary(user: AuthContext = Depends(get_current_user)):
         # işlem tiplerinden hangileri başarılı olmuş, dashboard'a otomatik
         # yansısın." limit=100_000 — sayfa boyutuyla değil, GERÇEK
         # toplamla sınırlı (close-profitable'ın kullandığı aynı desen).
-        all_closed = persistor.list_closed_trades(limit=100_000)
+        all_closed = persistor.list_closed_trades(limit=100_000, exclude_experiment_bucket=excluded_bucket)
         type_buckets: dict[str, dict] = {}
         for row in all_closed:
             trade_type = _classify_trade_type(row)
@@ -477,7 +491,9 @@ def performance_summary(user: AuthContext = Depends(get_current_user)):
             "monthly": monthly,
             "yearly": yearly,
             "by_trade_type": by_trade_type,
-            "by_direction": persistor.closed_trades_summary_by_direction(),
+            "by_direction": persistor.closed_trades_summary_by_direction(
+                exclude_experiment_bucket=excluded_bucket
+            ),
         }
 
 
@@ -494,6 +510,50 @@ def close_due_positions(
     with SessionFactory.get_session() as session:
         closed = closer.close_due_positions(DecisionPersistor(session))
     return {"closed_count": len(closed), "closed": closed}
+
+
+@router.post("/positions/pump-fade/cleanup-stale")
+def cleanup_stale_pump_fade_positions(
+    cutoff: datetime | None = None,
+    dry_run: bool = False,
+    user: AuthContext = Depends(require_role(Role.ADMIN)),
+):
+    """Faz 279/2026-08-28 — pump_fade_v1 deneyinin eski, hâlâ açık kalmış
+    pozisyonlarını temizler. Bu satırlar silinmez, gerçek audit trail korunur;
+    sadece status='closed', excluded_from_stats=true işaretlenir ve dashboard
+    toplamlarına karışmazlar. `dry_run=true` ile sadece etki önizlemesi
+    döndürülür, gerçek kapanış yapılmaz."""
+    cutoff_at = cutoff or datetime(2026, 8, 19, 8, 21, 15, tzinfo=UTC)
+    with SessionFactory.get_session() as session:
+        repo = DecisionPersistor(session)
+        stale_rows = [
+            row for row in repo.list_open_positions_for_experiment("pump_fade_v1")
+            if row.get("opened_at") is not None and row["opened_at"] < cutoff_at
+        ]
+        if dry_run:
+            return {
+                "dry_run": True,
+                "experiment_bucket": "pump_fade_v1",
+                "cutoff_at": cutoff_at.isoformat(),
+                "stale_count": len(stale_rows),
+                "decision_ids": [str(row["id"]) for row in stale_rows],
+            }
+
+        prices = _fetch_current_prices({row["symbol"] for row in stale_rows})
+        closed = repo.close_stale_positions_for_experiment(
+            "pump_fade_v1",
+            cutoff_at=cutoff_at,
+            current_prices=prices,
+            exit_reason="legacy_cleanup",
+        )
+        return {
+            "dry_run": False,
+            "experiment_bucket": "pump_fade_v1",
+            "cutoff_at": cutoff_at.isoformat(),
+            "stale_count": len(stale_rows),
+            "closed_count": len(closed),
+            "closed": closed,
+        }
 
 
 class PartialCloseRequest(BaseModel):
