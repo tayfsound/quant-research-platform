@@ -119,16 +119,65 @@ def _reliability_from_contributions(
     return sum(reliabilities) / len(reliabilities)
 
 
-def compute_quality_score(agreement: float, mean_reliability: float) -> float:
-    """Sürekli kalite skoru: agreement × mean_reliability, ikisi de [0,1]
-    aralığında olduğu için çarpım da [0,1] aralığında kalır. Bilinçli
-    olarak SADECE iki çarpan — üçüncü bir "feature_independence" çarpanı
-    (aynı kararda anlaşan ajanların kaç bağımsız feature'a dayandığı,
-    analytics/feature_relationship.py'nin redundancy kümeleriyle
-    çapraz-referanslanarak) sağlam bir karar-bazlı hesap gerektiriyor —
-    henüz yazılmadı, gelecekteki bir genişleme olarak not düşülüyor,
-    icat edilmiş/kırılgan bir yaklaşık değer burada eklenmedi."""
-    return round(agreement * mean_reliability, 4)
+def compute_quality_score(
+    agreement: float, mean_reliability: float, feature_independence: float = 1.0,
+) -> float:
+    """Sürekli kalite skoru: agreement × mean_reliability × feature_
+    independence — üçü de [0,1] aralığında olduğu için çarpım da [0,1]
+    aralığında kalır. feature_independence VARSAYILAN 1.0 (nötr, hiç
+    ceza yok) — hesaplanamadığında (feature verisi yoksa) geriye dönük
+    uyumluluk için mevcut iki-çarpanlı davranışa aynen düşer.
+
+    feature_independence'ın kendisi _feature_independence_from_
+    contributions() ile hesaplanır (bkz. o fonksiyonun notu) —
+    analytics/feature_relationship.py::compute_redundancy_clusters'ın
+    (Faz B, TEK KAYNAK) ürettiği GERÇEK klikleri kullanır, burada ikinci
+    bir redundancy tanımı icat edilmiyor."""
+    return round(agreement * mean_reliability * feature_independence, 4)
+
+
+def _feature_independence_from_contributions(
+    contributions: list[dict] | None,
+    final_direction: str,
+    clusters: list[frozenset[str]],
+) -> float | None:
+    """Nihai yönle AYNI yönde oy veren ajanların ateşlediği feature'ların
+    (her opinion'ın feature_contributions anahtarları) kaç BAĞIMSIZ bilgi
+    birimine karşılık geldiğini ölçer — "9 feature ateşlendi" ile "9
+    feature ateşlendi ama hepsi AYNI latent bilginin 9 farklı ismi"
+    (bu turda gerçek veride bulunan r=1.000 örüntüsü) arasındaki farkı
+    yakalamak için. clusters: compute_redundancy_clusters()'ın ürettiği
+    maksimal klikler (TEK KAYNAK, burada YENİDEN hesaplanmıyor) — her
+    kliğin İÇİNDEKİ feature'lar TEK bir bilgi birimi sayılır (hepsi aynı
+    latent bilgiyi taşıyor varsayılır), kliğe girmeyen her feature kendi
+    başına ayrı bir birim. Sonuç: units / len(fired_features), 1.0
+    (hepsi bağımsız) ile 1/len(fired_features) (hepsi tek bir kliğin
+    içinde, minimum bağımsızlık) arasında. Feature verisi yoksa
+    (fail-closed) None — icat edilmiş bir "tam bağımsız" varsayılmaz."""
+    if final_direction not in ("LONG", "SHORT"):
+        return None
+    fired_features: set[str] = set()
+    for item in (contributions or []):
+        if not isinstance(item, dict) or "domain" not in item:
+            continue
+        if (item.get("direction") or "").upper() != final_direction:
+            continue
+        fired_features |= set((item.get("feature_contributions") or {}).keys())
+    if not fired_features:
+        return None
+
+    covered: set[str] = set()
+    units = 0
+    for f in fired_features:
+        if f in covered:
+            continue
+        cluster_match = next((c for c in clusters if f in c), None)
+        if cluster_match is not None:
+            covered |= (cluster_match & fired_features)
+        else:
+            covered.add(f)
+        units += 1
+    return round(units / len(fired_features), 4)
 
 
 def _quality_score_bucket(score: float) -> str:

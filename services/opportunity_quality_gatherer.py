@@ -9,7 +9,9 @@ oylarından (api/rest/positions.py::explain_position ile AYNI çıkarım
 deseni) LONG/SHORT/WAIT sayımı yapılır, compute_agent_agreement ile
 0-1 arası bir anlaşma skoruna çevrilir — pump_fade_v1 hariç (mekanik
 strateji, council oylaması hiç yok)."""
+from analytics.feature_relationship import compute_feature_redundancy, compute_redundancy_clusters
 from analytics.opportunity_quality import (
+    _feature_independence_from_contributions,
     _reliability_from_contributions,
     agreement_from_contributions,
     compute_opportunity_quality_by_agreement,
@@ -44,6 +46,14 @@ def gather_opportunity_quality() -> dict:
             limit=None, exclude_experiment_bucket=PUMP_FADE_EXPERIMENT_BUCKET
         )
 
+    # Faz 375-devam (2026-08-29) — kullanıcı isteği: "feature_independence"
+    # çarpanı. analytics/feature_relationship.py::compute_redundancy_
+    # clusters (Faz B, TEK KAYNAK) AYNI closed_trades'ten GLOBAL redundancy
+    # kümelerini bir KEZ hesaplıyor — her karar için yeniden hesaplanmıyor
+    # (pahalı olurdu), aynı klikler tüm kararlara uygulanıyor.
+    redundancy = compute_feature_redundancy(closed_trades)
+    clusters = compute_redundancy_clusters(redundancy)
+
     trades = []
     score_trades = []
     for t in closed_trades:
@@ -54,15 +64,24 @@ def gather_opportunity_quality() -> dict:
         trades.append({"agent_agreement": agreement, "win": pnl > 0})
 
         # Faz B (2026-08-29) — kullanıcı isteği: ham agreement yerine
-        # anlaşma×güvenilirlik bileşik skoru. Güvenilirlik hesaplanamıyorsa
-        # (ör. eski kayıtlarda source_reliability hiç yoktu) bu karar
-        # sürekli-skor tablosundan fail-closed dışlanır — icat edilmiş bir
-        # "nötr" güvenilirlik asla varsayılmaz (ama eski agreement-only
-        # tabloyu etkilemez, o hâlâ tüm kayıtları kapsıyor).
+        # anlaşma×güvenilirlik×bağımsızlık bileşik skoru. Güvenilirlik
+        # hesaplanamıyorsa (ör. eski kayıtlarda source_reliability hiç
+        # yoktu) bu karar sürekli-skor tablosundan fail-closed dışlanır —
+        # icat edilmiş bir "nötr" güvenilirlik asla varsayılmaz (ama eski
+        # agreement-only tabloyu etkilemez, o hâlâ tüm kayıtları kapsıyor).
+        # feature_independence ise hesaplanamazsa (feature verisi yoksa)
+        # nötr 1.0'a düşer — ham feature verisi olmayan eski kayıtları
+        # dışlamak yerine, sadece o boyutta ceza/ödül uygulamaz.
         mean_reliability = _reliability_from_contributions(t.get("agent_contributions"), t.get("direction"))
         if mean_reliability is not None:
+            feature_independence = _feature_independence_from_contributions(
+                t.get("agent_contributions"), t.get("direction"), clusters,
+            )
             score_trades.append({
-                "quality_score": compute_quality_score(agreement, mean_reliability),
+                "quality_score": compute_quality_score(
+                    agreement, mean_reliability,
+                    feature_independence if feature_independence is not None else 1.0,
+                ),
                 "win": pnl > 0,
                 "pnl": pnl,
                 "market_regime": t.get("market_regime"),

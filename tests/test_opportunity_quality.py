@@ -176,3 +176,67 @@ def test_opportunity_quality_by_score_excludes_trades_without_score():
 
     trades = [{"win": True, "pnl": 10.0} for _ in range(20)]  # quality_score yok
     assert compute_opportunity_quality_by_score(trades, min_group_size=20) == {}
+
+
+def test_feature_independence_all_units_independent_when_no_clusters():
+    from analytics.opportunity_quality import _feature_independence_from_contributions
+
+    contributions = [
+        {"domain": "technical", "direction": "LONG", "feature_contributions": {"rsi": 0.5, "macd": 0.3}},
+        {"domain": "macro", "direction": "LONG", "feature_contributions": {"liquidity": 0.7}},
+    ]
+    result = _feature_independence_from_contributions(contributions, "LONG", clusters=[])
+    assert result == 1.0  # klik yok, 3 feature = 3 bağımsız birim
+
+
+def test_feature_independence_collapses_features_within_the_same_clique():
+    """5 feature ateşlenmiş ama hepsi AYNI kliğin (mutually redundant)
+    içinde — TEK bir bilgi birimi sayılmalı, feature_independence düşük
+    çıkmalı (bu turda gerçek veride bulunan trend/ema_alignment/momentum/
+    vwap_confirm/adx_strong_confirm örüntüsünün sentezi)."""
+    from analytics.opportunity_quality import _feature_independence_from_contributions
+
+    contributions = [{
+        "domain": "technical", "direction": "LONG",
+        "feature_contributions": {
+            "trend": 0.7, "ema_alignment": 0.7, "momentum": 0.7,
+            "vwap_confirm": 0.7, "adx_strong_confirm": 0.7,
+        },
+    }]
+    clique = frozenset({"trend", "ema_alignment", "momentum", "vwap_confirm", "adx_strong_confirm"})
+    result = _feature_independence_from_contributions(contributions, "LONG", clusters=[clique])
+    assert result == 0.2  # 1 birim / 5 feature
+
+
+def test_feature_independence_mixes_clustered_and_independent_features():
+    from analytics.opportunity_quality import _feature_independence_from_contributions
+
+    contributions = [{
+        "domain": "technical", "direction": "LONG",
+        "feature_contributions": {"trend": 0.7, "ema_alignment": 0.7, "rsi": 0.4},
+    }]
+    clique = frozenset({"trend", "ema_alignment"})  # rsi kliğe girmiyor, ayrı birim
+    result = _feature_independence_from_contributions(contributions, "LONG", clusters=[clique])
+    assert result == round(2 / 3, 4)  # {trend,ema_alignment}=1 birim + rsi=1 birim, 3 feature
+
+
+def test_feature_independence_none_without_feature_data():
+    from analytics.opportunity_quality import _feature_independence_from_contributions
+
+    contributions = [{"domain": "technical", "direction": "LONG"}]  # feature_contributions yok
+    assert _feature_independence_from_contributions(contributions, "LONG", clusters=[]) is None
+
+
+def test_quality_score_defaults_feature_independence_to_neutral_one():
+    from analytics.opportunity_quality import compute_quality_score
+
+    assert compute_quality_score(0.8, 0.5) == compute_quality_score(0.8, 0.5, feature_independence=1.0)
+
+
+def test_quality_score_with_low_feature_independence_lowers_the_score():
+    from analytics.opportunity_quality import compute_quality_score
+
+    full = compute_quality_score(0.8, 0.9, feature_independence=1.0)
+    collapsed = compute_quality_score(0.8, 0.9, feature_independence=0.2)
+    assert collapsed < full
+    assert abs(collapsed - 0.144) < 1e-9
