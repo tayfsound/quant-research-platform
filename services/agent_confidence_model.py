@@ -78,7 +78,7 @@ class ConfidenceModelRepository:
 
     def __init__(self, storage_path: str = _DEFAULT_STORAGE_PATH):
         self.storage_path = Path(storage_path)
-        self.storage_path.mkdir(exist_ok=True)
+        self.storage_path.mkdir(parents=True, exist_ok=True)
 
     def save(self, model: AgentConfidenceModel) -> AgentConfidenceModel:
         filename = self.storage_path / f"{model.domain}_latest.json"

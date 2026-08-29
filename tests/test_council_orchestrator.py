@@ -407,6 +407,37 @@ def test_technical_confidence_model_adjusts_opinion_confidence_when_saved():
             model_file.unlink()
 
 
+def test_calibration_failure_does_not_drop_the_agents_already_computed_opinion(monkeypatch):
+    """Faz 378 — kullanıcı bulgusu (dış bir rapor, kod üzerinde doğrulandı):
+    daha önce predict_confidence_multiplier (situational_confidence_model
+    adımı) patlarsa — ör. ConfidenceModelRepository'nin depolama dizinini
+    oluşturamaması (gerçek, ayrıca düzeltilen bir bug: mkdir eksik
+    parents=True) — ajanın analyze()'ı ZATEN başarıyla tamamlanmış olsa
+    bile opinion hiç eklenmiyordu (aynı try bloğu içindeydi). Artık
+    kalibrasyon kendi try/except'inde: patlarsa sadece bu adım atlanır,
+    ajanın gerçek oyu yine de sayılır."""
+    import services.agent_confidence_model as acm_module
+
+    def _boom(domain, features):
+        raise FileNotFoundError("simulated: storage dir missing parents=True")
+
+    monkeypatch.setattr(acm_module, "predict_confidence_multiplier", _boom)
+
+    registry = AgentRegistry.create_default()
+    orchestrator = CouncilOrchestrator(registry)
+    ctx = TechnicalContext(
+        trend="bullish", momentum="strengthening", market_structure="higher_highs",
+        ema_alignment="bullish_aligned", volume_confirmation=True,
+        adx=30.0, di_plus=30.0, di_minus=10.0,
+    )
+
+    _, opinions = orchestrator.deliberate({AgentDomain.TECHNICAL: ctx})
+
+    technical = next((o for o in opinions if o.domain == AgentDomain.TECHNICAL), None)
+    assert technical is not None, "kalibrasyon hatası ajanın oyunu düşürmemeli"
+    assert technical.direction == "LONG"
+
+
 # Faz 353 — Mixture-of-Experts Regime Router. Gerçek 4410 kapalı kararla
 # doğrulandı (bkz. council_orchestrator.py'deki wiring yorumu): mean-
 # reversion rejiminde technical_agent'ı izlemek quant_agent'ı izlemekten

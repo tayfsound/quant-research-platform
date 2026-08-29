@@ -8,7 +8,7 @@ from contracts.agent_weight_snapshot import AgentWeightSnapshot
 class WeightRepository:
     def __init__(self, storage_path: str = "weight_history"):
         self.storage_path = Path(storage_path)
-        self.storage_path.mkdir(exist_ok=True)
+        self.storage_path.mkdir(parents=True, exist_ok=True)
 
     def save(self, snapshot: AgentWeightSnapshot) -> AgentWeightSnapshot:
         filename = self.storage_path / f"snapshot_{snapshot.id}.json"

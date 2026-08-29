@@ -71,14 +71,33 @@ class CouncilOrchestrator:
 
             try:
                 opinion = agent.analyze(ctx)
+            except Exception as e:
+                import structlog
 
-                # Faz 264: kullanıcı isteği — ajanın kendi yön/skor mantığı
-                # (agent.analyze) DEĞİŞMİYOR, ama gerçek kapanmış işlemlerden
-                # kayan pencereyle periyodik öğrenilen bir model, bu ajanın
-                # BU ÖZEL durumda ne kadar güvenilir çıktığına göre
-                # confidence'ı ayarlıyor. Henüz eğitilmiş bir model yoksa
-                # (ör. yeterli veri birikmediyse) çarpan 1.0 — no-op,
-                # fail-closed.
+                structlog.get_logger().warning("council_agent_analyze_failed", domain=str(domain), error=str(e))
+                continue
+
+            # Faz 264: kullanıcı isteği — ajanın kendi yön/skor mantığı
+            # (agent.analyze) DEĞİŞMİYOR, ama gerçek kapanmış işlemlerden
+            # kayan pencereyle periyodik öğrenilen bir model, bu ajanın
+            # BU ÖZEL durumda ne kadar güvenilir çıktığına göre
+            # confidence'ı ayarlıyor. Henüz eğitilmiş bir model yoksa
+            # (ör. yeterli veri birikmediyse) çarpan 1.0 — no-op,
+            # fail-closed.
+            #
+            # Faz 378 — kullanıcı bulgusu (council_orchestrator.py'nin bu
+            # bölümünü inceleyen dış bir rapor, kod üzerinde doğrulandı):
+            # bu kalibrasyon adımı DAHA ÖNCE analyze()'ı saran AYNI try
+            # bloğu içindeydi — kalibrasyon patlarsa (ör. agent_confidence_
+            # model.py'nin depolama dizini oluşturulamazsa), analyze() zaten
+            # BAŞARIYLA tamamlanmış olsa da ajanın oyu opinions listesine
+            # hiç eklenmiyordu (opinions.append() try bloğunun İÇİNDE, bu
+            # adımdan SONRAYDI) — ajan sessizce council'den düşüyordu. Artık
+            # ayrı bir try/except: kalibrasyon başarısız olursa sadece bu
+            # adım atlanır (zaten var olan fail-closed varsayılan — çarpan
+            # 1.0 — ile aynı sonuç), ajanın GERÇEK, başarıyla hesaplanmış
+            # oyu yine de sayılır.
+            try:
                 if opinion.direction in ("LONG", "SHORT"):
                     from services.agent_confidence_model import (
                         FEATURE_SCHEMAS,
@@ -99,11 +118,14 @@ class CouncilOrchestrator:
                                 "before": before, "after": opinion.confidence, "multiplier": round(multiplier, 4),
                                 "detail": "Ajanın kendi ham skoru, bu tür durumlarda GEÇMİŞTE ne kadar isabetli çıktığına göre öğrenilmiş bir modelle ayarlandı.",
                             })
-
-                opinions.append(opinion)
-
             except Exception as e:
-                print(f"[Council] {domain} agent failed: {e}")
+                import structlog
+
+                structlog.get_logger().warning(
+                    "council_situational_confidence_model_failed", domain=str(domain), error=str(e),
+                )
+
+            opinions.append(opinion)
 
         if not opinions:
             self.last_debate_result = None
