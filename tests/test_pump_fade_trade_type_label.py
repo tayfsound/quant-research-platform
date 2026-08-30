@@ -3,8 +3,13 @@ göremedim." Kök neden: pump_fade_strategy.py işlemleri experiment_bucket=
 "pump_fade_v1" ile etiketliyordu ama api/rest/positions.py bu sütunu hiç
 okumuyordu — pump-fade işlemleri stop-mesafesi sezgiselliğine (scalp/gün
 içi/swing) düşüp normal AI işlemlerinden ayırt edilemiyordu. Bu testler
-GET /positions ve GET /trades'in artık trade_type="pump_fade" döndürdüğünü,
-ve bunun stop-mesafesi tabanlı sınıflandırmadan ÖNCE geldiğini doğruluyor."""
+GET /positions'ın (açık pozisyonlar) trade_type="pump_fade" döndürdüğünü
+ve bunun stop-mesafesi tabanlı sınıflandırmadan ÖNCE geldiğini doğruluyor.
+
+2026-08-29 — "dashboard contamination" düzeltmesi sonrası GET /trades
+(kapalı işlemler) artık pump_fade_v1'i BİLİNÇLİ OLARAK hariç tutuyor
+(exclude_experiment_bucket) — bu dosyadaki ilgili test buna göre
+güncellendi (INCLUDE değil EXCLUDE doğrulanıyor)."""
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -52,7 +57,14 @@ def test_open_pump_fade_position_is_labeled_in_positions_api(client):
     assert positions[symbol]["trade_type"] == "pump_fade"
 
 
-def test_closed_pump_fade_trade_is_labeled_in_trades_api(client):
+def test_closed_pump_fade_trade_is_excluded_from_trades_api(client):
+    """2026-08-29 — "pump-fade dashboard contamination" düzeltmesi (bkz.
+    api/rest/positions.py::list_closed_trades — exclude_experiment_bucket=
+    "pump_fade_v1" artık HER ZAMAN uygulanıyor) sonrası bu testin ESKİ
+    beklentisi (pump_fade kapalı işleminin GET /trades'te GÖRÜNMESİ)
+    kasıtlı olarak TERSİNE döndü — pump_fade artık ana AI performans
+    istatistiklerini kirletmesin diye bilinçli olarak hariç tutuluyor.
+    GET /positions (açık pozisyonlar) etkilenmedi, bkz. yukarıdaki test."""
     symbol = f"PFCLOSED{uuid4().hex[:8]}"
     event = _open_pump_fade_position(symbol)
     with SessionFactory.get_session() as session:
@@ -64,7 +76,7 @@ def test_closed_pump_fade_trade_is_labeled_in_trades_api(client):
     assert response.status_code == 200
     trades = {t["symbol"]: t for t in response.json()["trades"]}
 
-    assert trades[symbol]["trade_type"] == "pump_fade"
+    assert symbol not in trades
 
 
 def test_normal_ai_position_is_not_labeled_pump_fade(client):
