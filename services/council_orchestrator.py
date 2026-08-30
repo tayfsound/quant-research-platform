@@ -3,6 +3,11 @@ from agents.critics.alter_ego import AlterEgoChallenger
 from agents.critics.risk_challenger import RiskChallenger
 from contracts.agent import AgentDomain, AgentOpinion, DebateResult
 from services.agent_debate import AgentDebate
+from services.agent_reliability_weighting import (
+    compute_challenge_uncertainty,
+    compute_performance_weight,
+    compute_reliability_uncertainty,
+)
 from services.belief_engine import Belief, BeliefEngine
 from services.confidence_calibration import calibrate_domain_confidence
 from services.council_reliability import ReliabilityAnnotator
@@ -140,6 +145,16 @@ class CouncilOrchestrator:
             symbol=symbol,
             regime=regime,
         )
+        # Faz 381 — kullanıcı bulgusu: benching floor ve unanswered-debate-
+        # challenge cezası SIRALI ÇARPIM olarak birleşiyordu (0.1×0.7×...),
+        # her biri makul görünse de birlikte aşırı küçük bir sonuca
+        # ulaşıyordu. Artık her ikisi de "uncertainty" katkısına çevrilip
+        # TOPLANIYOR (bkz. services/agent_reliability_weighting.py) — bu
+        # yüzden benching adımında hesaplanan reliability_uncertainty,
+        # debate döngüsünde challenge_uncertainty ile BİRLEŞTİRİLMEK üzere
+        # burada saklanıyor.
+        reliability_uncertainty_by_domain: dict = {}
+
         for opinion, info in zip(opinions, annotated):
             # Faz 268al — "İsabeti artırmanın yolu daha akıllı kullanım"
             # yol haritasının A fazı (Confidence Kalibrasyonu). Her ajan
@@ -194,34 +209,40 @@ class CouncilOrchestrator:
             if data_freshness is not None:
                 opinion.freshness = data_freshness
             opinion.source_reliability = info["source_reliability"]
-            if info.get("benched"):
+            benched = bool(info.get("benched"))
+            reliability_uncertainty = compute_reliability_uncertainty(
+                opinion.source_reliability, self.reliability_annotator.agent.BENCH_THRESHOLD, benched,
+            )
+            reliability_uncertainty_by_domain[opinion.domain] = reliability_uncertainty
+            if benched:
                 # Faz 370-devam — KRİTİK canlı olay (kullanıcı teşhisi):
                 # performance_weight=0.0 (tam susturma) kendi kendini
-                # besleyen bir kilitlenme döngüsüne açıktı — "0, ajanın
-                # kalıcı olarak kötü olduğu anlamına gelmiyor, son (küçük)
-                # bir pencerede kötü performans gördük demek." Artık MIN_
-                # INFLUENCE'a iniyor — ajan HÂLÂ konuşuyor (küçük ağırlıkla,
-                # tamamen yok sayılmıyor) ama bağırmıyor. reliability
-                # (op["source_reliability"]) dürüst kalıyor, sadece OY
-                # AĞIRLIĞI asla tam sıfıra inmiyor. Opinion listede KALIYOR
-                # (sessizce yutulmuyor, explainability zincirinde görünür)
-                # ve gerçekten yeni, isabetli kararlar birikince (artık üç
-                # pencerenin — 20/100/500 — ağırlıklı ortalaması + histerezis
-                # ile, bkz. agents/source_reliability_agent.py) otomatik
-                # geri döner.
+                # besleyen bir kilitlenme döngüsüne açıktı. Faz 381 —
+                # kullanıcı bulgusu (sistem genelinde 642/642 karar
+                # reddi): DÜZ bir floor (MIN_INFLUENCE) de sorunluydu —
+                # eşiğin az altındaki bir ajan ile katastrofik derecede
+                # kötü bir ajan AYNI floor'a düşüyordu. Artık reliability
+                # açığına ORANTILI bastırılıyor (bkz. services/agent_
+                # reliability_weighting.py) — eşiğin hemen altındaki bir
+                # ajan neredeyse hiç bastırılmaz, gerçekten kötü olan
+                # (source_reliability→0) hâlâ eski floor'a (~0.1) yakın
+                # susturulur. Opinion listede KALIYOR (sessizce
+                # yutulmuyor), gerçekten yeni, isabetli kararlar birikince
+                # (üç pencerenin — 20/100/500 — ağırlıklı ortalaması +
+                # histerezis ile) otomatik geri döner.
                 _pre_bench_weight = opinion.performance_weight
-                opinion.performance_weight = self.reliability_annotator.agent.MIN_INFLUENCE
+                opinion.performance_weight = compute_performance_weight(reliability_uncertainty, 0.0)
                 opinion.caveats.append(
                     f"Devre dışı (benched): {opinion.domain.value} ajanının gerçek yakın-dönem isabet "
-                    f"oranı (20/100/500 kararlık ağırlıklı ortalama) eşiğin altında — "
-                    f"gerçek isabetli kararlar birikene kadar oy ağırlığı "
-                    f"{self.reliability_annotator.agent.MIN_INFLUENCE}'a düşürüldü (tamamen sıfırlanmadı)."
+                    f"oranı (20/100/500 kararlık ağırlıklı ortalama) eşiğin altında — oy ağırlığı "
+                    f"eşiğe uzaklığa ORANTILI bastırıldı ({_pre_bench_weight:.3f} → "
+                    f"{opinion.performance_weight:.3f}, tamamen sıfırlanmadı)."
                 )
                 opinion.weight_adjustments.append({
                     "step": "benching_floor",
                     "before": _pre_bench_weight, "after": opinion.performance_weight,
                     "detail": f"source_reliability ({opinion.source_reliability}) eşiğin altında — "
-                              f"oy ağırlığı MIN_INFLUENCE'a sabitlendi (tamamen sıfır DEĞİL).",
+                              f"oy ağırlığı reliability açığına orantılı bastırıldı (hard floor DEĞİL, Faz 381).",
                 })
             opinion.recalculate()
 
@@ -241,17 +262,30 @@ class CouncilOrchestrator:
         for opinion in opinions:
             penalty = self.last_debate_result.unanswered_challenge_penalties.get(opinion.domain.value)
             if penalty is not None and penalty < 1.0:
+                # Faz 381 — kullanıcı bulgusu: bu adım eskiden performance_
+                # weight'i (bench floor'dan SONRAKİ hâlini) DOĞRUDAN çarpıyordu
+                # — iki bağımsız bastırma kaynağı sıralı çarpım oluyordu.
+                # Artık debate cezası (1-penalty, DebateResult zaten kendi
+                # içinde birden fazla itirazı çarpımsal birleştiriyor —
+                # agent_debate.py'nin kendi, ayrı, dar kapsamlı mekanizması,
+                # bu turda dokunulmuyor) TEK bir "uncertainty" kaynağı olarak
+                # benching'in reliability_uncertainty'siyle TOPLANIYOR
+                # (odds-uzayı), sıralı çarpılmıyor.
                 _pre_penalty_weight = opinion.performance_weight
-                opinion.performance_weight = round(opinion.performance_weight * penalty, 4)
+                reliability_uncertainty = reliability_uncertainty_by_domain.get(opinion.domain, 0.0)
+                challenge_uncertainty = compute_challenge_uncertainty([1 - penalty])
+                opinion.performance_weight = compute_performance_weight(reliability_uncertainty, challenge_uncertainty)
                 opinion.caveats.append(
                     f"Cevapsız risk itirazı, {opinion.domain.value} oy ağırlığını "
-                    f"%{round((1 - penalty) * 100, 1)} azalttı (itirazı savunacak bir yanıtlayıcı kayıtlı değil)."
+                    f"{_pre_penalty_weight:.3f} → {opinion.performance_weight:.3f} indirdi "
+                    f"(itirazı savunacak bir yanıtlayıcı kayıtlı değil)."
                 )
                 opinion.weight_adjustments.append({
                     "step": "unanswered_debate_challenge",
                     "before": _pre_penalty_weight, "after": opinion.performance_weight,
                     "multiplier": round(penalty, 4),
-                    "detail": "Risk ajanının itirazına savunacak bir yanıtlayıcı kayıtlı değildi.",
+                    "detail": "Risk ajanının itirazına savunacak bir yanıtlayıcı kayıtlı değildi "
+                              "(benching ile birlikte odds-uzayında toplanıyor, sıralı çarpım DEĞİL).",
                 })
                 opinion.recalculate()
 
