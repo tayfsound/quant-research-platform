@@ -192,6 +192,7 @@ class DecisionFusion:
                         "type": "decision_fusion",
                         "data": {
                             "rejection": "Negatif beklenen değer (EV)", "ev": round(ev, 6),
+                            "confidence": round(confidence, 4), "win": round(win, 6), "loss": round(loss, 6),
                             "short_exploration_rejected_reason": reason,
                         },
                     })
@@ -199,9 +200,19 @@ class DecisionFusion:
                 ctx.decision.action = ActionType.WAIT
                 ctx.decision.final_size = 0.0
                 if direction != "SHORT" or not (win > 0 or loss > 0):
+                    # Faz 380 — teşhis: kullanıcı bulgusu ("el çok sıkı,
+                    # canlıda hiç açmamış") — win/loss/confidence olmadan
+                    # sadece "ev" görmek, hangi bileşenin EV'yi negatife
+                    # çektiğini (düşük confidence mi, dar hedef mi, geniş
+                    # stop mu) ayırt etmeyi imkansız kılıyordu. Geçici DEĞİL
+                    # — decision decomposition ekranındaki AYNI ilke
+                    # (Faz 376), kalıcı bir teşhis alanı.
                     ctx.cognition.relevant_knowledge.append({
                         "type": "decision_fusion",
-                        "data": {"rejection": "Negatif beklenen değer (EV)", "ev": round(ev, 6)},
+                        "data": {
+                            "rejection": "Negatif beklenen değer (EV)", "ev": round(ev, 6),
+                            "confidence": round(confidence, 4), "win": round(win, 6), "loss": round(loss, 6),
+                        },
                     })
                 return ctx
 
