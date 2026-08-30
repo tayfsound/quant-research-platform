@@ -879,6 +879,8 @@ def cleanup_stale_pump_fade_positions_task() -> dict:
     pozisyonlarını güncel fiyatla kapatır ve istatistiklerden çıkarır.
     Kapanış tekrar çalıştırılsa bile repository yalnızca status='open'
     satırlarını güncellediği için aynı kayıt ikinci kez işlenmez."""
+    from datetime import UTC, datetime
+
     from database.repositories.decision_persistor import DecisionPersistor
     from database.session_factory import SessionFactory
     from market_data.ingestion.data_provider import RoutingProvider
@@ -886,10 +888,30 @@ def cleanup_stale_pump_fade_positions_task() -> dict:
     if _real_market_data_source_or_none() is None:
         return {"skipped": "non_binance_market_data_source"}
 
-    # Kullanıcı kararı: dashboard'da kalan mevcut pump-fade açık kayıtlarının
-    # tamamı kapatılmalı; tarih cutoff'u yalnızca migration kapsamı için
-    # kullanılmıştı ve sonradan açılmış açık kayıtları burada bırakmamalı.
-    cutoff_at = None
+    # Faz 379 — kullanıcı bulgusu ("dün Copilot bir şey yarım bırakmış
+    # olabilir, kontrol eder misin"): 2026-08-29 gecesi bir Copilot
+    # oturumu (commit e6af612) cutoff_at'i TAMAMEN kaldırıp None yaptı —
+    # "mevcut kayıtların tamamı kapatılsın" niyeti doğruydu (9 gerçek
+    # zombi pozisyon, 9+ gündür açık, gerçek zarar taşıyor, başarıyla
+    # temizlendi) ama bu task celery beat'te HER 60 SANİYEDE BİR çalışan
+    # KALICI bir görev (services/celery_app.py) — cutoff kaldırılınca artık
+    # pump_fade_enabled=true olduğu için run_pump_fade_cycle_task'ın
+    # normal şekilde açtığı HER YENİ pozisyonu da anında (<1dk) kapatmaya
+    # başladı. Gerçek veriyle doğrulandı: CLOUSDT'de 2026-08-29 23:43'ten
+    # bu yana 6 pozisyon açılıp 1-54 saniye içinde zorla kapatılmış
+    # (stop/hedefine hiç ulaşamadan). Docstring'in kendisi de zaten "bir
+    # defalık/tekrar güvenli bakım görevi" diyor — kalıcı bir "her açık
+    # pump_fade pozisyonunu her zaman kapat" politikası hiç amaçlanmamıştı.
+    # Tek-seferlik temizlik zaten tamamlandığı için cutoff SABİT bir
+    # zamana (bu düzeltmenin devreye alındığı an) çekiliyor — datetime.
+    # now(UTC) YAZILMADI çünkü bu görev 60sn'de bir çalışıyor: dinamik
+    # "şimdi" kullanılsaydı her çağrıda yeniden hesaplanıp AYNI bug'ı
+    # (her açık pozisyon her zaman "cutoff'tan önce" kalır) sürdürürdü.
+    # Bu andan önce açılmış (bug'ın kendisi yüzünden açılıp anında
+    # kapatılanlar dahil, hepsi zaten kapalı) hiçbir şey kalmadı; bundan
+    # SONRA run_pump_fade_cycle_task'ın açtığı gerçek pozisyonlar artık
+    # bu görev tarafından hiç dokunulmayacak.
+    cutoff_at = datetime(2026, 8, 30, 9, 17, 0, tzinfo=UTC)
     with _CycleLock("lock:cleanup_stale_pump_fade_positions_task", ttl_seconds=600) as acquired:
         if not acquired:
             return {"skipped": "previous_run_still_in_progress"}
@@ -899,7 +921,7 @@ def cleanup_stale_pump_fade_positions_task() -> dict:
             stale = [
                 row
                 for row in repo.list_open_positions_for_experiment("pump_fade_v1")
-                if row.get("opened_at") is not None
+                if row.get("opened_at") is not None and row["opened_at"] < cutoff_at
             ]
             if not stale:
                 return {"closed_count": 0, "stale_count": 0}

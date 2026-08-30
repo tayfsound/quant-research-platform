@@ -111,6 +111,43 @@ def test_close_stale_positions_for_experiment_marks_rows_excluded_from_stats():
         assert row["pnl"] == pytest.approx(-20.0)
 
 
+def test_cleanup_stale_pump_fade_positions_task_leaves_freshly_opened_positions_untouched(monkeypatch):
+    """Faz 379 — kullanıcı bulgusu ("dün Copilot bir şey yarım bırakmış
+    olabilir"): bir Copilot commit'i (e6af612) bu görevin cutoff_at'ini
+    None yapmıştı — görev HER 60 SANİYEDE BİR çalıştığı için bu, henüz
+    stop/hedefine hiç ulaşamamış TAZE pump_fade_v1 pozisyonlarını da
+    (run_pump_fade_cycle_task'ın normal şekilde açtığı) anında zorla
+    kapatıyordu. Gerçek üretimde doğrulandı: CLOUSDT'de 6 pozisyon 1-54
+    saniye içinde kapanmış. Bu test, düzeltmenin (sabit cutoff_at) az
+    önce açılmış bir pozisyona DOKUNMADIĞINI kilitliyor."""
+    monkeypatch.setenv("MARKET_DATA_SOURCE", "binance")
+    from services.tasks import cleanup_stale_pump_fade_positions_task
+
+    with SessionFactory.get_session() as session:
+        repo = DecisionPersistor(session)
+        event = DecisionEvent(
+            symbol="PUMPUSDT",
+            final_action="SHORT",
+            status="open",
+            entry_price=100.0,
+            quantity=2.0,
+            opened_at=datetime.now(UTC),
+            experiment_bucket=EXPERIMENT_BUCKET,
+            confidence=0.9,
+        )
+        repo.persist(event)
+
+    try:
+        result = cleanup_stale_pump_fade_positions_task()
+        assert result == {"closed_count": 0, "stale_count": 0}
+
+        with SessionFactory.get_session() as session:
+            row = DecisionPersistor(session).get_by_id(str(event.id))
+        assert row["status"] == "open"
+    finally:
+        _cleanup_symbol("PUMPUSDT")
+
+
 def _set_pump_fade_settings(**overrides) -> None:
     defaults = {
         "pump_fade_enabled": "false",
