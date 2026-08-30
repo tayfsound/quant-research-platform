@@ -1085,12 +1085,41 @@ class CognitiveOrchestrator:
             shortfall = (MIN_EFFECTIVE_BETS - enb_result["effective_number_of_bets"]) / MIN_EFFECTIVE_BETS
             shortfall = min(max(shortfall, 0.0), 1.0)
             enb_multiplier = 1.0 - shortfall * MAX_ENB_DISCOUNT
-            for sym in returns:
-                if sym not in directional:
-                    continue
-                # Faz 355 — bkz. same_direction_correlation döngüsündeki AYNI not.
-                if directional[sym]["ctx"].decision.action not in (ActionType.ENTER_LONG, ActionType.ENTER_SHORT, ActionType.REDUCE):
-                    continue
+
+            # Faz 382 — kullanıcı bulgusu: bu indirim eskiden TÜM eşzamanlı
+            # adaylara aynı çarpanı uyguluyordu ("10 sembol de korele ise
+            # hepsi ~1-2 bahis kadar riskli" niyeti doğru, ve AZ sayıda
+            # (<=MIN_EFFECTIVE_BETS) aday varken hâlâ bu şekilde — bkz.
+            # tests/test_portfolio_fusion_wiring.py'nin BUNU doğrulayan,
+            # bilinçli 2-sembollük testleri, dokunulmadı) — ama Faz 381
+            # sonrası artık bir cycle'da onlarca sembol aynı anda ACT/
+            # REDUCE'a ulaşabiliyor, ve HEPSİNE aynı ~%30 indirim uygulanınca
+            # zaten eşiğe yakın olan çoğu birden act_threshold'un altına
+            # düşüp TÜM cycle'ı kilitleyebiliyordu ("kilitlenir yoksa" —
+            # kullanıcı uyarısı). Aday sayısı MIN_EFFECTIVE_BETS'i (3)
+            # GERÇEKTEN AŞTIĞINDA, indirim sadece bu hedefin ÖTESİNDEKİ, en
+            # düşük confidence'lı (portföyün zaten en güçlü ~3 fikri
+            # DIŞINDaki, gerçekten fazlalık/korele) adaylara uygulanıyor —
+            # sistem her zaman en iyi ~3 fikrini bastırmadan açabiliyor,
+            # "47 sembolde aynı yöne yayılma" yerine gerçekten en iyi
+            # birkaçını seçiyor.
+            eligible_syms = [
+                sym for sym in returns
+                if sym in directional
+                and directional[sym]["ctx"].decision.action in (
+                    ActionType.ENTER_LONG, ActionType.ENTER_SHORT, ActionType.REDUCE,
+                )
+            ]
+            exempt_count = round(MIN_EFFECTIVE_BETS)
+            if len(eligible_syms) > exempt_count:
+                ranked_syms = sorted(
+                    eligible_syms, key=lambda s: directional[s]["ctx"].decision.confidence or 0.0, reverse=True,
+                )
+                discounted_syms = set(ranked_syms[exempt_count:])
+            else:
+                discounted_syms = set(eligible_syms)
+
+            for sym in discounted_syms:
                 ctx = directional[sym]["ctx"]
                 before = ctx.decision.confidence or 0.0
                 ctx.decision.confidence = round(before * enb_multiplier, 4)

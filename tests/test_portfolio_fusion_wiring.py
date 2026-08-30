@@ -306,6 +306,67 @@ def test_apply_portfolio_fusion_discounts_confidence_when_effective_number_of_be
         assert directional["ETHUSDT"]["ctx"].decision.confidence < 0.8
 
 
+def test_apply_portfolio_fusion_exempts_top_candidates_from_enb_discount_when_many_are_correlated():
+    """Faz 382 — kullanıcı bulgusu ("kilitlenir yoksa"): Faz 381 sonrası
+    bir cycle'da onlarca sembol aynı anda ACT/REDUCE'a ulaşabiliyor.
+    Hepsine AYNI ENB indirimi uygulanırsa (eski davranış, yukarıdaki
+    2-sembollük testlerde HÂLÂ doğru — az sayıda aday varken değişmedi)
+    zaten eşiğe yakın onlarca karar birden WAIT'e dönüp TÜM cycle'ı
+    kilitleyebiliyordu. Aday sayısı MIN_EFFECTIVE_BETS'i (3) gerçekten
+    aşınca artık en yüksek confidence'lı 3 aday indirimden MUAF —
+    portföy her zaman en iyi ~3 fikrini açabiliyor, gerçekten fazlalık
+    olan geri kalanı bastırılıyor."""
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        orch = CognitiveOrchestrator()
+
+        # test_apply_portfolio_fusion_discounts_confidence_when_effective_
+        # number_of_bets_is_low ile AYNI desen: ENB doğrudan mock'lanıyor,
+        # bar verisi GENUINELY düşük-korele (same_direction_correlation
+        # filtresi tetiklenmesin diye) — bu SADECE ENB katmanının kendi
+        # muafiyet mantığını izole test eder.
+        return_patterns = [
+            [0.01, -0.02, 0.03, -0.01, 0.02, 0.015, -0.005, 0.008, -0.012, 0.02],
+            [0.01, 0.02, -0.03, 0.015, -0.01, -0.005, 0.02, -0.008, 0.012, -0.02],
+            [-0.02, 0.01, 0.015, -0.03, 0.02, 0.008, -0.012, 0.02, -0.005, 0.01],
+            [0.02, -0.01, -0.02, 0.03, -0.005, 0.012, -0.008, 0.015, 0.02, -0.01],
+            [-0.01, 0.02, 0.008, -0.005, 0.03, -0.02, 0.01, -0.012, -0.02, 0.015],
+            [0.015, -0.008, 0.02, 0.01, -0.03, 0.02, -0.02, 0.005, -0.01, 0.012],
+        ]
+        symbols = [f"SYM{i}USDT" for i in range(6)]
+        # Confidence'a göre AÇIKÇA sıralanabilir olsun diye her sembole
+        # farklı bir confidence veriliyor — en yüksek 3'ün (SYM0,1,2)
+        # muaf tutulduğunu doğrulamak için.
+        confidences = {sym: 0.9 - i * 0.05 for i, sym in enumerate(symbols)}
+        directional = {
+            sym: {
+                "ctx": _fake_ctx(sym, "LONG", 0.01, confidence=confidences[sym]),
+                "data": _bars_from_returns(100.0, return_patterns[i]),
+                "direction": "LONG",
+            }
+            for i, sym in enumerate(symbols)
+        }
+
+        with patch("database.repositories.app_settings_repository.AppSettingsRepository.get") as mock_get:
+            mock_get.side_effect = lambda key: {"max_confidence_mode_enabled": "false", "starting_capital": "1000000", "max_portfolio_var_pct": "0.5", "act_threshold": "0.01"}[key]
+            with patch(
+                "analytics.portfolio_intelligence.compute_effective_number_of_bets",
+                return_value={"effective_number_of_bets": 1.2, "position_count": 6, "diversification_ratio": 0.2},
+            ):
+                orch._apply_portfolio_fusion(directional)
+
+        ranked = sorted(symbols, key=lambda s: confidences[s], reverse=True)
+        exempt, discounted = ranked[:3], ranked[3:]
+
+        for sym in exempt:
+            assert directional[sym]["ctx"].decision.confidence == confidences[sym], (
+                f"{sym} muaf tutulmalıydı, indirim uygulanmamalıydı"
+            )
+        for sym in discounted:
+            assert directional[sym]["ctx"].decision.confidence < confidences[sym], (
+                f"{sym} gerçekten fazlalık olan aday, indirilmeliydi"
+            )
+
+
 def test_apply_portfolio_fusion_does_not_discount_confidence_when_effective_number_of_bets_is_sufficient():
     with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
         orch = CognitiveOrchestrator()
