@@ -71,13 +71,6 @@ def _validate(key: str, value: str) -> None:
                 raise ValueError
         except ValueError:
             raise HTTPException(400, f"{key} must be a number in (0, 1]")
-    elif key == "min_profit_target_pct":
-        try:
-            v = float(value)
-            if not (0 <= v < 1):
-                raise ValueError
-        except ValueError:
-            raise HTTPException(400, "min_profit_target_pct must be a number in [0, 1)")
     elif key == "candle_timeframe":
         if value not in CANDLE_TIMEFRAMES:
             raise HTTPException(400, f"candle_timeframe must be one of {list(CANDLE_TIMEFRAMES)}")

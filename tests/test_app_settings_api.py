@@ -163,7 +163,6 @@ def test_reset_defaults_restores_the_reasoned_trading_economics_values():
                 repo = AppSettingsRepository(session)
                 assert repo.get("starting_capital") == DEFAULTS["starting_capital"]
                 assert repo.get("candle_timeframe") == DEFAULTS["candle_timeframe"]
-                assert repo.get("min_profit_target_pct") == DEFAULTS["min_profit_target_pct"]
         finally:
             with SessionFactory.get_session() as session:
                 AppSettingsRepository(session).set(

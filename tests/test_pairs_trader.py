@@ -206,39 +206,6 @@ def test_leg_size_is_dollar_based_and_consistent_across_wildly_different_prices(
             assert 90 < notional < 110
 
 
-def test_leg_is_skipped_when_target_is_below_min_profit_target_pct(monkeypatch):
-    """Faz 268-sonrası — kritik bulgu: hedge bacakları DecisionFusion'dan
-    hiç geçmediği için ana AI'ın min_profit_target_pct korumasını
-    atlıyordu — bazı bacaklar take_profit'e ulaşıp yine de komisyonu
-    karşılamayan net zararla kapanıyordu. Artık aynı kontrol burada da var."""
-    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
-        sym_a, sym_b = f"TINYA{uuid4().hex[:6]}USDT", f"TINYB{uuid4().hex[:6]}USDT"
-        bars_a, bars_b = _cointegrated_bars(diverge_last=3.0)
-        provider = _FakeProvider({sym_a: bars_a, sym_b: bars_b})
-
-        with SessionFactory.get_session() as session:
-            AppSettingsRepository(session).set("ai_enabled", "true", updated_by="test")
-            AppSettingsRepository(session).set("trading_mode", "test", updated_by="test")
-            AppSettingsRepository(session).set("max_capital_pct", "1000000", updated_by="test")
-            AppSettingsRepository(session).set("max_concurrent_positions", "100000", updated_by="test")
-            AppSettingsRepository(session).set("kill_switch_consecutive_losses", "0", updated_by="test")
-            # Fiilen ulaşılamaz bir minimum hedef — her bacak hedefin
-            # altında kalıp atlanmalı.
-            AppSettingsRepository(session).set("min_profit_target_pct", "0.99", updated_by="test")
-
-        trader = PairsTrader(data_provider=provider)
-        try:
-            result = trader._check_pair(sym_a, sym_b)
-        finally:
-            with SessionFactory.get_session() as session:
-                repo = AppSettingsRepository(session)
-                repo.set("max_capital_pct", DEFAULTS["max_capital_pct"], updated_by="test")
-                repo.set("max_concurrent_positions", DEFAULTS["max_concurrent_positions"], updated_by="test")
-                repo.set("min_profit_target_pct", DEFAULTS["min_profit_target_pct"], updated_by="test")
-
-        assert result.get("opened_legs") == []
-
-
 def test_uncointegrated_pair_is_reported_as_such():
     with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
         sym_a, sym_b = f"INDA{uuid4().hex[:6]}USDT", f"INDB{uuid4().hex[:6]}USDT"

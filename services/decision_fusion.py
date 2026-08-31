@@ -216,35 +216,11 @@ class DecisionFusion:
                     })
                 return ctx
 
-        # Faz 210: kullanıcı bulgusu — ilk gerçek kapanan işlemler (PAXGUSDT,
-        # XAUTUSDT) gerçekten take_profit hedefine ulaştı ama komisyon
-        # (round-trip ~%0.1) o hedefin ($ olarak, ATR-tabanlı) fiyata oranını
-        # (%0.07) aşıyordu — hedefe ulaşmak net zarar demekti. min_profit_
-        # target_pct (app_settings, kullanıcı ayarlanabilir), hedefin fiyatın
-        # en az bu yüzdesi kadar olmasını zorunlu kılıyor; EV pozitif olsa
-        # bile (win/loss oranı üzerinden hesaplanıyor, mutlak $ büyüklüğünü
-        # görmüyor) çok küçük bir hedefin komisyonu karşılamadan "kazandırdı"
-        # sayılmasını engelliyor.
-        current_price = (ctx.market.raw_snapshot or {}).get("close")
-        if current_price:
-            from database.repositories.app_settings_repository import AppSettingsRepository
-            from database.session_factory import SessionFactory
-
-            with SessionFactory.get_session() as session:
-                min_profit_target_pct = float(AppSettingsRepository(session).get("min_profit_target_pct"))
-
-            if win / current_price < min_profit_target_pct:
-                ctx.decision.action = ActionType.WAIT
-                ctx.decision.final_size = 0.0
-                ctx.cognition.relevant_knowledge.append({
-                    "type": "decision_fusion",
-                    "data": {
-                        "rejection": "Hedef, min_profit_target_pct'in altında",
-                        "target_pct": round(win / current_price, 6),
-                        "min_profit_target_pct": min_profit_target_pct,
-                    },
-                })
-                return ctx
+        # Faz 391 — kullanıcı isteği: min_profit_target_pct kaldırıldı.
+        # SL/TP artık dinamik/otomatik (Adaptive Barrier Engine + TP/SL
+        # Confluence + min_stop_pct tabanı) belirlendiği için bu statik
+        # komisyon-tabanı kontrolü (Faz 210) redundant hale geldi —
+        # min_stop_pct tabanı zaten hedefleri orantılı geniş tutuyor.
 
         if critique["size_multiplier"] < 1.0:
             ctx.decision.final_size *= critique["size_multiplier"]

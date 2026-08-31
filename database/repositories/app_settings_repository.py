@@ -300,26 +300,6 @@ DEFAULTS: dict[str, str] = {
     # varsayılanlar kullanılıyor.
     "act_threshold": "0.7",
     "reduce_threshold": "0.4",
-    # Faz 210: kullanıcı bulgusu — ilk gerçek kapanan iki işlem (PAXGUSDT,
-    # XAUTUSDT) gerçekten take_profit hedefine ulaştı ama net PnL yine de
-    # eksiye düştü, çünkü RiskTargetStage'in ATR-tabanlı hedefi (2x ATR)
-    # bu fiyat seviyesinde (~4270) round-trip komisyona (~%0.1) kıyasla
-    # çok küçüktü (%0.07).
-    #
-    # Faz 214: gerçek geçmiş veriyle backtest edince (bkz. commit mesajı)
-    # %0.5'in KATASTROFİK derecede yanlış kalibre olduğu ortaya çıktı —
-    # 1m mumda BTCUSDT'nin 2x ATR hedefi medyan %0.036 (%0.5'in ~14 katı
-    # altında), yani gerçek Binance verisiyle 133 yönlü sinyalin
-    # TAMAMI reddediliyordu, hiç işlem açılamıyordu. Gerçek ölçüm: 5m
-    # mumda BTCUSDT medyan hedef %0.147 — round-trip komisyonu (~%0.1)
-    # rahat aşıyor. Bu yüzden hem candle_timeframe varsayılanı 5m'e
-    # çekildi (aşağıda) hem de bu eşik gerçek round-trip komisyonun
-    # hemen üstüne (%0.1) indirildi — "hedefi tutturmak zaten net kâr
-    # demek" ilkesini koruyor ama artık gerçek sinyalleri boğmuyor.
-    # Faz 215: gerçek round-trip komisyonun (%0.1) hemen üstüne, 15m'nin
-    # gerçek medyan hedefinin (%0.3485) rahatça altında — hedefi
-    # tutturan işlemlerin çoğu gerçekten net kâr etsin diye.
-    "min_profit_target_pct": "0.0015",
     # Faz 215: 5m'de fiyat hareketi komisyonu zar zor karşılıyordu (net
     # kâr çok küçük kalıyordu); 1d çok yavaş (günde ~1 sinyal). 15m gerçek
     # ölçümde ikisi arasında iyi bir denge — hem makul sıklıkta sinyal
@@ -826,7 +806,7 @@ class AppSettingsRepository:
         reset_keys = keys or [
             "max_concurrent_positions", "max_capital_pct", "starting_capital",
             "act_threshold", "reduce_threshold",
-            "min_profit_target_pct", "candle_timeframe", "candle_lookback",
+            "candle_timeframe", "candle_lookback",
         ]
         for key in reset_keys:
             if key in DEFAULTS:

@@ -162,18 +162,8 @@ class PairsTrader:
             ctx.decision.stop_loss_distance = entry_price * stop_pct
             ctx.decision.take_profit_distance = entry_price * target_pct
 
-        # Faz 268-sonrası — kritik bulgu, kullanıcı bulgusu: bu bacaklar
-        # DecisionFusion'dan hiç geçmiyordu — ana AI'ın "hedef, komisyonu
-        # karşılamayacak kadar küçükse açma" korumasını (min_profit_
-        # target_pct) tamamen atlıyordu. Gerçek veride görüldü: bazı
-        # hedge bacakları "take_profit"e ulaşıp yine de NET ZARARLA
-        # kapandı (küçük hedef, round-trip komisyonu karşılamadı). Artık
-        # AYNI kontrol burada da uygulanıyor.
-        if ctx.decision.take_profit_distance:
-            with SessionFactory.get_session() as session:
-                min_profit_target_pct = float(AppSettingsRepository(session).get("min_profit_target_pct"))
-            if ctx.decision.take_profit_distance / entry_price < min_profit_target_pct:
-                return False
+        # Faz 391 — kullanıcı isteği: min_profit_target_pct kaldırıldı
+        # (bkz. services/decision_fusion.py'deki AYNI gerekçe).
 
         # Faz 268-sonrası — gerçek bulgu: burada RiskEngine() secret'sız
         # çağrılıyordu (cognitive_engine.py/execution_router.py'nin
