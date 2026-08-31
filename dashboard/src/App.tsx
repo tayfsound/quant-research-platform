@@ -21,6 +21,7 @@ import OpportunityQuality from './views/OpportunityQuality';
 import AgentAblation from './views/AgentAblation';
 import TpSlConfluence from './views/TpSlConfluence';
 import AgentCombinationReliability from './views/AgentCombinationReliability';
+import HistoricalAnalogs from './views/HistoricalAnalogs';
 import StrategyRegimeCompatibility from './views/StrategyRegimeCompatibility';
 import StrategyHypothesisScanner from './views/StrategyHypothesisScanner';
 import ResearchSummary from './views/ResearchSummary';
@@ -103,6 +104,7 @@ function App() {
           {view === 'agent-ablation' && <AgentAblation />}
           {view === 'tp-sl-confluence' && <TpSlConfluence />}
           {view === 'agent-combination-reliability' && <AgentCombinationReliability />}
+          {view === 'historical-analogs' && <HistoricalAnalogs />}
           {view === 'strategy-regime-compatibility' && <StrategyRegimeCompatibility />}
           {view === 'strategy-hypothesis-scanner' && <StrategyHypothesisScanner />}
           {view === 'research-summary' && <ResearchSummary onNavigate={setView} />}

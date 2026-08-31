@@ -25,6 +25,7 @@ from api.rest import (
     feature_ic,
     feature_registry,
     feature_relationship,
+    historical_analogs,
     liquidity_var,
     mae_mfe_confidence,
     market_data,
@@ -139,6 +140,7 @@ app.include_router(calibration.router, prefix="/api/v1")
 app.include_router(self_model.router, prefix="/api/v1")
 app.include_router(causal_inference.router, prefix="/api/v1")
 app.include_router(agent_combination_reliability.router, prefix="/api/v1")
+app.include_router(historical_analogs.router, prefix="/api/v1")
 app.include_router(collective_intelligence.router, prefix="/api/v1")
 app.include_router(mae_mfe_confidence.router, prefix="/api/v1")
 app.include_router(meta_learning_effectiveness.router, prefix="/api/v1")

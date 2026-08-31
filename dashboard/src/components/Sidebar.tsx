@@ -28,6 +28,7 @@ const GROUPS: { label: string; items: { key: string; label: string }[] }[] = [
       { key: "agent-ablation", label: "Agent Ablation" },
       { key: "tp-sl-confluence", label: "TP/SL Confluence" },
       { key: "agent-combination-reliability", label: "Ajan Kombinasyonu Güvenilirliği" },
+      { key: "historical-analogs", label: "Tarihsel Analog Motoru" },
       { key: "strategy-regime-compatibility", label: "Strateji × Rejim Uyumu" },
       { key: "strategy-hypothesis-scanner", label: "Strateji Hipotez Tarayıcı" },
     ],

@@ -83,13 +83,19 @@ def agreeing_domains_for_decision(agent_contributions: list[dict], final_directi
     return frozenset(o.domain.value for o in opinions if o.direction == final_direction)
 
 
-def _compute_oos_survival(group: list[dict], baseline_win_rate: float) -> bool | None:
+def compute_oos_survival(group: list[dict], baseline_win_rate: float) -> bool | None:
     """strategy_hypothesis_scanner.py::validate_candidate_out_of_sample ile
     AYNI walk-forward ruhu: grubun KENDİ kayıtları zaman sırasına göre
     (closed_at) ikiye bölünür (embargo boşluklu), aday örüntü SADECE erken
     yarıda değil hiç görülmemiş GEÇ yarıda da (win_rate > baseline) tekrar
     ediyor mu. Yeterli veri yoksa (test yarısı MIN_OOS_TEST_SIZE'ın altında,
-    ya da closed_at eksikse) None — icat edilmiş bir sonuç üretilmez."""
+    ya da closed_at eksikse) None — icat edilmiş bir sonuç üretilmez.
+
+    FIL Faz D (2026-08-31) — analytics/historical_analog_engine.py'de de
+    AYNEN yeniden kullanılıyor, bu yüzden public (underscore'suz) hâle
+    getirildi: bu bir private implementation detail değil, projenin
+    doğrulanmış OOS-doğrulama yöntemi (strategy_hypothesis_scanner.py'nin
+    canlıda başarılı olmuş tek gerçek örneğiyle AYNI mantık)."""
     dated = sorted(
         (r for r in group if r.get("closed_at") is not None),
         key=lambda r: r["closed_at"],
@@ -187,7 +193,7 @@ def compute_combination_reliability(
         # indirgenmiş, "gerçekte ne kadar bağımsız kanıt var" sayısı —
         # asla ham sample_size'ın üstüne çıkmaz, sadece küçültür.
         effective_sample_size = round(len(group) * (1 - max_overlap_pct), 2)
-        oos_survival = _compute_oos_survival(group, baseline_win_rate)
+        oos_survival = compute_oos_survival(group, baseline_win_rate)
         candidates.append({
             "domains": list(domains),
             "combination_size": len(domains),
@@ -203,7 +209,7 @@ def compute_combination_reliability(
         })
 
     p_values = [
-        _two_proportion_p_value(c["_wins"], c["sample_size"], baseline_wins, len(valid))
+        two_proportion_p_value(c["_wins"], c["sample_size"], baseline_wins, len(valid))
         for c in candidates
     ]
     fdr_flags = apply_fdr_correction(p_values)
@@ -256,7 +262,7 @@ def compute_combination_reliability(
     }
 
 
-def _two_proportion_p_value(wins_a: int, n_a: int, wins_b: int, n_b: int) -> float:
+def two_proportion_p_value(wins_a: int, n_a: int, wins_b: int, n_b: int) -> float:
     """İki bağımsız oranın (both_agree kovası vs TÜM örneklem — örtüşmeleri
     testi muhafazakarlaştırır, ideal iki-bağımsız-örneklem değildir ama
     ucuz/kararlı bir tarama içindir) eşit olduğu sıfır hipotezi için
