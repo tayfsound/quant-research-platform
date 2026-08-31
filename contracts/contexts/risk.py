@@ -53,12 +53,6 @@ class RiskContext(BaseModel):
     # hesaplamak için gerçek starting_capital'a ihtiyaç duyuyor (capital_
     # used_pct gibi zaten oranlanmış bir değer değil).
     starting_capital: float | None = None
-    # Faz 189: "stopsuz işlem yapmasın test modunda bile olsa" — bu ikisi
-    # trading_mode="test" iken bile ATLANMAZ (aşağıdaki diğerlerinin
-    # tersine), çünkü amaç sermaye riskini sınırlamak değil, art arda
-    # anlamsız/gürültülü işlem açılmasını engellemek.
-    seconds_since_last_trade: float | None = None
-    min_seconds_between_trades: int | None = None
     # Faz 190: dashboard Start/Stop düğmesi — False iken yeni pozisyon
     # açılmaz, mevcut açık pozisyonlar (PositionCloser, ayrı bir yol)
     # bundan etkilenmez.

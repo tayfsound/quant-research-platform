@@ -38,12 +38,6 @@ def _validate(key: str, value: str) -> None:
                 raise ValueError
         except ValueError:
             raise HTTPException(400, "starting_capital must be a positive number")
-    elif key == "min_seconds_between_trades":
-        try:
-            if int(value) < 0:
-                raise ValueError
-        except ValueError:
-            raise HTTPException(400, "min_seconds_between_trades must be a non-negative integer")
     elif key == "ai_enabled":
         if value not in ("true", "false"):
             raise HTTPException(400, "ai_enabled must be 'true' or 'false'")

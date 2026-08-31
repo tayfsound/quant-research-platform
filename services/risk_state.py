@@ -120,7 +120,6 @@ def load_position_risk_state(
         # (starting_capital*max_capital_pct/max_concurrent_positions)
         # YERİNE geçen, opsiyonel sabit $ tutarı. 0/boş = devre dışı.
         fixed_position_size_usd = float(settings_repo.get("fixed_position_size_usd") or "0")
-        min_seconds_between_trades = int(settings_repo.get("min_seconds_between_trades"))
         ai_enabled = settings_repo.get("ai_enabled") == "true"
         kill_switch_consecutive_losses = int(settings_repo.get("kill_switch_consecutive_losses"))
         legacy_cutoff_raw = settings_repo.get("kill_switch_legacy_cutoff_at")
@@ -215,16 +214,6 @@ def load_position_risk_state(
         elif exclude_timeframe is not None:
             open_positions = [p for p in open_positions if p.get("timeframe") != exclude_timeframe]
 
-        seconds_since_last_trade = None
-        if symbol:
-            last_opened_at = decision_repo.get_last_opened_at(symbol)
-            if last_opened_at is not None:
-                now = datetime.now(UTC)
-                if last_opened_at.tzinfo is None:
-                    seconds_since_last_trade = (now.replace(tzinfo=None) - last_opened_at).total_seconds()
-                else:
-                    seconds_since_last_trade = (now - last_opened_at).total_seconds()
-
     open_count = len(open_positions)
     # Faz 330 — kritik bulgu: quantity zaten kaldıraçla çarpılmış (bkz.
     # decision_recorder.py: "quantity = quantity * leverage"), yani
@@ -250,8 +239,6 @@ def load_position_risk_state(
         "capital_used_pct": capital_used_pct,
         "max_capital_pct": max_capital_pct,
         "starting_capital": starting_capital,
-        "seconds_since_last_trade": seconds_since_last_trade,
-        "min_seconds_between_trades": min_seconds_between_trades,
         "ai_enabled": ai_enabled,
         "consecutive_losses": consecutive_losses,
         "kill_switch_consecutive_losses": kill_switch_consecutive_losses,

@@ -95,27 +95,11 @@ class RiskEngine:
             risk_rejections_total.labels(reason="CIRCUIT_BREAKER_CONSECUTIVE_LOSSES").inc()
             return ctx
 
-        # Faz 189: "stopsuz işlem yapmasın test modunda bile olsa" — bu
-        # kontrol trading_mode="test" iken de uygulanır (aşağıdaki bypass'ın
-        # DIŞINDA), çünkü amaç sermaye riski değil, art arda anlamsız işlem
-        # açılmasını engellemek.
-        if (
-            ctx.risk.seconds_since_last_trade is not None
-            and ctx.risk.min_seconds_between_trades is not None
-            and ctx.risk.seconds_since_last_trade < ctx.risk.min_seconds_between_trades
-        ):
-            ctx.risk.evaluation.verdict = "rejected"
-            ctx.risk.evaluation.reasons = [RiskReason(
-                code="COOLDOWN_ACTIVE",
-                message=(
-                    f"{ctx.risk.seconds_since_last_trade:.0f}s < "
-                    f"{ctx.risk.min_seconds_between_trades}s cooldown"
-                ),
-                severity="info",
-            )]
-            risk_decisions_total.labels(verdict="rejected", symbol=symbol).inc()
-            risk_rejections_total.labels(reason="COOLDOWN_ACTIVE").inc()
-            return ctx
+        # Faz 389 — kullanıcı isteği: min_seconds_between_trades cooldown
+        # kontrolü (COOLDOWN_ACTIVE) kaldırıldı. Gerçek döngü süresi zaten
+        # ~20-30dk'ya çıktığı için (104 sembol × multi-timeframe cascade),
+        # kullanıcının manuel ayarladığı 60-300sn'lik değerler yapısal
+        # olarak asla tetiklenemiyordu — anlamsız bir ayardı.
 
         # Faz 262 — kritik bulgu: Faz 188'in "test modunda ai sınırsız
         # takılabilsin" kararı (aşağıdaki bypass, artık kaldırıldı) kasa/

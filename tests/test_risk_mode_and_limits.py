@@ -119,30 +119,6 @@ def test_ai_stopped_rejects_even_in_test_mode():
     assert any(r.code == "AI_STOPPED" for r in result.risk.evaluation.reasons)
 
 
-def test_cooldown_rejects_even_in_test_mode():
-    ctx = _ctx()
-    ctx.risk.trading_mode = "test"
-    ctx.risk.seconds_since_last_trade = 5.0
-    ctx.risk.min_seconds_between_trades = 60
-
-    result = RiskEngine().execute(ctx)
-
-    assert result.risk.evaluation.verdict == "rejected"
-    assert any(r.code == "COOLDOWN_ACTIVE" for r in result.risk.evaluation.reasons)
-
-
-def test_cooldown_passes_once_enough_time_has_elapsed():
-    ctx = _ctx()
-    ctx.risk.trading_mode = "test"
-    ctx.risk.seconds_since_last_trade = 120.0
-    ctx.risk.min_seconds_between_trades = 60
-    ctx.risk.limits = {"max_position_size": RiskLimitEntry(value=10.0)}
-
-    result = RiskEngine().execute(ctx)
-
-    assert result.risk.evaluation.verdict == "approved"
-
-
 def test_default_trading_mode_is_live_when_not_explicitly_set():
     """RiskContext'in kendi Pydantic varsayılanı 'live' olmalı — mevcut testler
     (services/risk_state.py çağırmadan ctx.risk'i elle kuran) hâlâ tam

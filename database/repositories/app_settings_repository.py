@@ -38,9 +38,6 @@ DEFAULTS: dict[str, str] = {
     # yönden bağımsız) tam olarak bu $ notional'ı hedefler. Bkz. services/
     # orchestrator.py::_build_context.
     "fixed_position_size_usd": "0",
-    # Faz 189: "stopsuz işlem yapmasın test modunda bile olsa" — aynı sembol
-    # için art arda iki işlem açılışı arasında zorunlu minimum bekleme.
-    "min_seconds_between_trades": "60",
     # Faz 190: dashboard'daki Start/Stop düğmesi. "false" iken AI yeni
     # pozisyon AÇMAZ ama mevcut açık pozisyonlar (PositionCloser) tamamen
     # bağımsız çalışmaya devam eder — hedefine ulaşan/vadesi dolan pozisyon

@@ -1328,22 +1328,9 @@ class RiskGateStage:
             )]
             return ctx
 
-        # Faz 189: cooldown, test modunda bile atlanmaz (bkz. risk_engine.py).
-        if (
-            ctx.risk.seconds_since_last_trade is not None
-            and ctx.risk.min_seconds_between_trades is not None
-            and ctx.risk.seconds_since_last_trade < ctx.risk.min_seconds_between_trades
-        ):
-            ctx.risk.evaluation.verdict = "rejected"
-            ctx.risk.evaluation.reasons = [RiskReason(
-                code="COOLDOWN_ACTIVE",
-                message=(
-                    f"{ctx.risk.seconds_since_last_trade:.0f}s < "
-                    f"{ctx.risk.min_seconds_between_trades}s cooldown"
-                ),
-                severity="info",
-            )]
-            return ctx
+        # Faz 389 — kullanıcı isteği: min_seconds_between_trades cooldown
+        # kontrolü kaldırıldı (bkz. risk_engine.py'deki AYNI gerekçe) —
+        # gerçek döngü süresi zaten dakikalar sürdüğü için anlamsızdı.
 
         # Faz 262 — kritik bulgu: bu "test modunda devre dışı" bypass'ı
         # RiskEngine.execute() (ön kapı) için kaldırılmıştı ("kasa %15.9'a,

@@ -399,24 +399,6 @@ export default function Settings() {
         </Card>
 
         <Card>
-          <h3 className="text-sm font-semibold text-ink mb-1">İki işlem arası min. bekleme (sn)</h3>
-          <p className="text-xs text-ink-soft mb-3">Test modunda bile geçerli — AI aynı sembolde art arda anlamsız işlem açmasın.</p>
-          <div className="flex gap-2">
-            <Input
-              type="number"
-              value={draft.min_seconds_between_trades ?? ""}
-              onChange={(v) => setDraft((d) => ({ ...d, min_seconds_between_trades: v }))}
-            />
-            <Button
-              disabled={saving === "min_seconds_between_trades"}
-              onClick={() => save("min_seconds_between_trades", draft.min_seconds_between_trades)}
-            >
-              {saved === "min_seconds_between_trades" ? "Kaydedildi ✓" : "Kaydet"}
-            </Button>
-          </div>
-        </Card>
-
-        <Card>
           <h3 className="text-sm font-semibold text-ink mb-1">Kill switch — ardışık kayıp eşiği</h3>
           <p className="text-xs text-ink-soft mb-3">
             Bu sayıya ulaşan ardışık kayıp serisinde AI kendini otomatik durdurur (dashboard'daki manuel

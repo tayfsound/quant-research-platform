@@ -129,8 +129,6 @@ class PairsTrader:
         ctx.risk.max_concurrent_positions = risk_state["max_concurrent_positions"]
         ctx.risk.capital_used_pct = risk_state["capital_used_pct"]
         ctx.risk.max_capital_pct = risk_state["max_capital_pct"]
-        ctx.risk.seconds_since_last_trade = risk_state["seconds_since_last_trade"]
-        ctx.risk.min_seconds_between_trades = risk_state["min_seconds_between_trades"]
         ctx.risk.ai_enabled = risk_state["ai_enabled"]
         ctx.risk.consecutive_losses = risk_state["consecutive_losses"]
         ctx.risk.kill_switch_consecutive_losses = risk_state["kill_switch_consecutive_losses"]
