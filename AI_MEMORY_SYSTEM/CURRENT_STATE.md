@@ -1,9 +1,59 @@
-# Mevcut Durum -- v1.125.0 (FIL Faz C/D tamamlandı + 7 sessiz kapıya görünürlük eklendi)
+# Mevcut Durum -- v1.129.0 (Faz 396: futures emir miktarı artık borsanın gerçek LOT_SIZE step'ine yuvarlanıyor)
 
-**Tarih:** 2026-08-31
+**Tarih:** 2026-09-01
 **Branch:** main
-**Son commit (HEAD):** 7 sessiz kapı görünürlüğü (bu turda commitlenecek) — bkz. git log.
-**Servis durumu:** uvicorn + celery worker, watchdog orphan-detection düzeltmesi (Faz 390) sonrası doğru şekilde yeniden başlatıldı, aktif çalışıyor.
+**Son commit (HEAD):** `00c2f76` Faz 396 — futures emirlerinde miktarı borsanın gerçek LOT_SIZE step'ine yuvarla.
+**Servis durumu:** Faz 396 push edildi, worker+uvicorn yeniden başlatılacak (bu turda).
+
+**Faz 393-396 özet (2026-09-01, aynı marathon oturumunun devamı — 392'den sonra):**
+- Faz 393: yfinance'in `history()` çağrısı kendi `timeout=10` parametresini
+  yoksayıp crumb/çerez adımında askıda kalabiliyordu — gerçek 819sn'lik bir
+  boşluk AMDUSDT↔INTCUSDT arasında ölçüldü. `ThreadPoolExecutor` + hard
+  15sn timeout ile düzeltildi (`with` KULLANILMADI — context manager'ın
+  `shutdown(wait=True)`'ı timeout'u etkisiz kılıyordu, `pool.shutdown(wait=False)`
+  ile askıdaki thread gerçekten terk ediliyor).
+- Faz 392-devam: ENB (Effective Number of Bets) portföy indirimi TAMAMEN
+  kaldırıldı ("zaten havuz yapabiliyoruz, ENB indirimine gerek yok" —
+  kullanıcı) — `analytics/portfolio_intelligence.py` silindi.
+- Faz 394: "Historical Analog Override" — `HistoricalAnalogOverrideStage`
+  (CouncilStage'den hemen sonra), gate_eligible bir örüntü eşleşirse
+  `belief.strength`'i o örüntünün GERÇEK ampirik win_rate'iyle DOĞRUDAN
+  override ediyor (cluster/crowding/coverage skorlaması o kararda atlanıyor).
+  Haftalık rapor persist altyapısı (migration/repository/Celery task/
+  `/reports` endpoint) tam kuruldu. **Varsayılan KAPALI**
+  (`historical_analog_override_enabled`), kullanıcı henüz açmadı.
+- Faz 395: `signal_persistence_gate` TAMAMEN kaldırıldı ("döngü süresi çok
+  üzüyor, sistem aksiyon alamıyor" — kullanıcı) — `is_fresh_signal_blocked`
+  ve iki ayarı silindi; `consistent_direction_run_length` ve "Genel Özet"
+  ölçüm paneli (gerçekten farklı amaç) korundu.
+- **Faz 396 (bu turda) — kök neden bulundu ve düzeltildi: hisse/emtia
+  sınıfı semboller (PLTRUSDT/NVDAUSDT/QQQUSDT/TSLAUSDT/vb.) testnet'te
+  GERÇEKTEN hiç işlem açamıyordu.** Kullanıcı: "Kök nedeni bulalım önemli
+  bu emtia hisse senedi vs.. işlem almıyor gerçekten de." Canlı Python
+  reprodüksiyonuyla (`orch.finalize_proposal(...)`) gerçek log satırı
+  yakalandı: `execution_open_entry_failed ... error='Binance error -1111:
+  Precision is over the maximum defined for this asset.'`. Kök sebep:
+  `exchange_gateway/binance/futures_execution_adapter.py` emir miktarını
+  (AI'nin hesapladığı, kripto-tipi 8 ondalıklı bir değer, ör. 0.00922463)
+  borsanın o sembol için GERÇEK LOT_SIZE step'ine (çok daha kaba, ör.
+  0.001) hiç yuvarlamadan gönderiyordu — Binance her seferinde -1111 ile
+  reddediyordu. `services/decision_recorder.py` bu başarısızlığı zaten
+  fail-closed ele alıyordu (`opens_position=False`) — DAVRANIŞ DOĞRUYDU,
+  ama emir borsada hiç kabul edilmediği için bu semboller testnet
+  modunda hiçbir zaman gerçek bir pozisyon açamıyordu. Düzeltme:
+  exchangeInfo'dan LOT_SIZE `stepSize`'ı sembol başına önbelleklenip
+  (process ömrü boyunca, tek istekte tüm semboller) hem
+  `_place_regular_order` hem `_place_algo_order`'da gönderim öncesi
+  miktar bu step'e (Decimal ile, HEP AŞAĞI — AI kendi risk boyutunu asla
+  genişletmiyor) yuvarlanıyor. exchangeInfo isteği başarısız olursa
+  fail-closed: miktar eski davranışta olduğu gibi yuvarlanmadan
+  gönderiliyor (yeni bir hataya yol açmıyor). Test: `pytest tests/
+  test_futures_execution_adapter.py tests/test_execution_service.py
+  tests/test_decision_recorder.py -q` → 39 passed (9 yeni test dahil).
+  Bu, PLTRUSDT'nin engellenme nedenlerinden SADECE biriydi — 26 Ağustos'ta
+  kullanıcı onayıyla kalıcı engellenen `strategy_gate_approvals` kaydı
+  (`ai_council_LONG_swing × bullish_high`) hâlâ ayrı ve aktif, bkz.
+  [[project_open_items_2026_08_31]].
 
 **7 sessiz kapıya görünürlük (2026-08-31, kullanıcı isteği) — "sistem hâlâ cimri davranıyor" araştırmasının sonucu:**
 Kullanıcının acil bulgusu üzerine son 2.5 saatteki 105 kararın TAMAMINI (`agent_contributions` JSONB'sini elle) inceledim: %83'ü gerçekten negatif EV (bug değil), %13'ü portföy ENB/korelasyon indirimiyle geri çevrilmiş, ama %4'ü (4 karar) DecisionFusion'ın GERÇEK boyutla onayladığı, hiçbir ret nedeni kaydedilmemiş kararlar — yine de açılmamış. Kök neden: `services/decision_recorder.py`'de **7 ayrı kapı** (`strategy_regime_gate`, `signal_persistence_gate`, `pivot_distance_gate`, `mae_mfe_bucket_trading_gate`, `regime_trading_gate`, `direction_trading_gate`, `asset_class_trading_gate`) hiçbir açıklama bırakmadan `opens_position=False` yapıyordu — "neden açılmadı" sorusu SADECE elle DB kazarak (ve gerçek dünyada, her gate'in kendi mantığını tek tek elden geçirerek) cevaplanabiliyordu. Somut örnekler: PLTRUSDT (26 Ağustos'ta kullanıcı onayıyla kalıcı engellenmiş `ai_council_LONG_swing × bullish_high`, hâlâ aktif), BATUSDT (signal_persistence — son 4 döngüde yön tutarsız).
