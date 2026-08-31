@@ -25,7 +25,16 @@ is_uvicorn_alive() {
 }
 
 is_celery_default_alive() {
-    pgrep -f "celery -A services.celery_app worker -Q celery --loglevel=info -n worker_default" > /dev/null 2>&1
+    # Faz 389 — gerçek olay: worker_default'un ANA (master) süreci
+    # kaybolup çocukları PPID=1'e (init) yetim kaldığı bir durumda, bu
+    # kontrol SADECE `pgrep -f` ile TÜM eşleşen süreçleri (yetimler
+    # DAHİL) buluyordu — yetim çocuklar da AYNI komut satırıyla eşleştiği
+    # için watchdog "worker zaten sağlıklı" sanıp 3+ saat hiç yeniden
+    # başlatmadı, hiçbir yeni görev işlenmedi. Artık SADECE bu watchdog
+    # script'inin (`$$`) DOĞRUDAN çocuğu olan bir eşleşme "sağlıklı"
+    # sayılıyor — start_celery_default()'ın `nohup ... &` ile başlattığı
+    # gerçek master'ın PPID'i her zaman $$ olur, yetim çocuklarınki 1.
+    pgrep -f "celery -A services.celery_app worker -Q celery --loglevel=info -n worker_default" -P $$ > /dev/null 2>&1
 }
 
 # Faz 360 — kullanıcı isteği: pozisyon kapatmada kaymayı azaltmak için
@@ -61,6 +70,11 @@ start_uvicorn() {
 
 start_celery_default() {
     log "celery worker_default DOWN -- yeniden başlatılıyor"
+    # Faz 389 — is_celery_default_alive artık yetimleri "ölü" sayıyor,
+    # ama onları burada da temizlemezsek eski master'ın bıraktığı
+    # sonlandırılmamış çocuklar süresiz birikip kaynak tüketmeye devam
+    # eder (yeni master onları hiç bilmez/yönetmez).
+    pkill -f "celery -A services.celery_app worker -Q celery --loglevel=info -n worker_default" 2>/dev/null
     cd "$REPO_DIR" || return
     nohup .venv/bin/celery -A services.celery_app worker -Q celery --loglevel=info -n worker_default@%h > /tmp/celery_default_watchdog.log 2>&1 &
     disown
