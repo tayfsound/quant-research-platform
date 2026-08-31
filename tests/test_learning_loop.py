@@ -65,7 +65,7 @@ def test_apply_feedback_scores_each_agent_by_own_direction_and_tags_source(tmp_p
     event.confidence = 0.6
     event.final_action = "LONG"
     event.symbol = "BTCUSDT"
-    event.market_snapshot = {"raw_snapshot": {"trend": "up"}}
+    event.market_snapshot = {"features": {"trend": "bullish", "volatility_regime": "high"}}
     event.agent_opinions = [
         {"domain": "technical", "direction": "LONG", "confidence": 0.7},
         {"domain": "macro", "direction": "SHORT", "confidence": 0.5},
@@ -85,6 +85,12 @@ def test_apply_feedback_scores_each_agent_by_own_direction_and_tags_source(tmp_p
     assert macro_records[0].was_correct is False
     assert len(loop.agent_memory.get_filtered_records("sentiment")) == 0
 
+    # Faz 386 — kullanıcı bulgusu: market_regime "raw_snapshot"tan (OHLC/
+    # mikroyapı verisi, "trend" alanı hiç taşımıyordu) değil "features"ten
+    # (trend + volatility_regime) okunmalı, position_closer.py::
+    # _extract_market_regime ile AYNI "trend_volatility" formatında.
+    assert technical_records[0].market_regime == "bullish_high"
+
 
 def test_apply_feedback_carries_raw_confidence_through_when_present(tmp_path):
     """Faz 369-devam — bkz. contracts/agent.py::AgentOpinion.raw_confidence.
@@ -103,7 +109,7 @@ def test_apply_feedback_carries_raw_confidence_through_when_present(tmp_path):
     event.confidence = 0.6
     event.final_action = "LONG"
     event.symbol = "BTCUSDT"
-    event.market_snapshot = {"raw_snapshot": {"trend": "up"}}
+    event.market_snapshot = {"features": {"trend": "bullish", "volatility_regime": "high"}}
     event.agent_opinions = [
         {"domain": "technical", "direction": "LONG", "confidence": 0.6, "raw_confidence": 0.85},
         {"domain": "macro", "direction": "LONG", "confidence": 0.5},  # eski kayıt, alan hiç yok

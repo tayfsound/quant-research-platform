@@ -28,8 +28,20 @@ class LearningLoop:
             event.confidence,
             was_correct,
         )
-        raw = event.market_snapshot.get("raw_snapshot", {})
-        regime = raw.get("trend", "unknown")
+        # Faz 386 — kullanıcı bulgusu (macro ajanının rejime göre çok
+        # farklı isabet gösterdiğinin doğrulanması sırasında bulundu):
+        # "raw_snapshot" (ctx.market.raw_snapshot — OHLC/mikroyapı verisi)
+        # hiçbir zaman "trend" alanı TAŞIMIYOR, bu her zaman "unknown"a
+        # düşüyordu. trend/volatility_regime "features" alanında (ctx.
+        # market.features) — position_closer.py::_extract_market_regime
+        # zaten doğru yerden okuyor, burası atlanmış. Şu an bu metod
+        # (LearningLoop.record) canlı akıştan hiç ÇAĞRILMIYOR (bkz.
+        # cognitive_engine.py — sadece agent_memory referansı paylaşılıyor)
+        # — bu yüzden bugüne dek gerçek etkisi yoktu, ama ileride tekrar
+        # bağlanırsa doğru rejim etiketiyle kaydetsin diye düzeltildi.
+        features = event.market_snapshot.get("features", {}) or {}
+        trend = features.get("trend", "unknown")
+        regime = trend if trend == "unknown" else f"{trend}_{features.get('volatility_regime', 'normal')}"
         # Faz 248: kritik bulgu — bu yol (services/orchestrator.py::
         # finalize_proposal, ForwardOutcome ile AYNI cycle'da geriye dönük
         # bir "n-bar" hesabı yapıyor, gerçekten zaman geçmesini beklemiyor)
