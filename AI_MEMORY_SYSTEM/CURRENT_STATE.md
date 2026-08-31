@@ -5,6 +5,15 @@
 **Son commit (HEAD):** `f5f3731` Faz 397 — strategy_regime_gate test modunda işlem alımına engel olmasın.
 **Servis durumu:** Faz 396+397 push edildi, worker+uvicorn yeniden başlatılacak (bu turda).
 
+**`same_direction_correlation` doğrulaması (bu turda, kullanıcı sorusu,
+kod değişikliği DEĞİL — saf analiz):** Önceki bir turda yapılan hızlı
+kontrol (n=69, ham PnL) yanıltıcı çıkmıştı, tersini gösteriyordu. Tam
+veri + boyuttan arındırılmış (birim-başına getiri) analizle GERÇEKTEN
+doğrulandı: indirim uygulanmamış 5268 kapanmış kararda %61.3 kazanma /
+medyan +%0.56 birim getiri; indirim uygulanmış 767 kararda %43.4 kazanma
+/ medyan -%0.20 birim getiri (z=9.42, p≈0). Mekanizma gerçekten işe
+yarıyor, dokunulmadı.
+
 **Faz 397 (bu turda) — strategy_regime_gate test modunda artık işlem
 alımına engel olmuyor:** Kullanıcı: "strategy_gate_approvals bunlar test
 modunda işlem alımına engel olmasın ama." `strategy_gate_approvals`
