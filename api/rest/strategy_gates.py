@@ -10,13 +10,13 @@ from database.repositories.strategy_gate_approval_repository import (
     StrategyGateApprovalRepository,
 )
 from database.session_factory import SessionFactory
-from services.auth_service import AuthContext, require_role
+from services.auth_service import AuthContext, get_current_user, require_role
 
 router = APIRouter(prefix="/strategy-gates", tags=["strategy-gates"])
 
 
 @router.get("/pending")
-def list_pending(limit: int = 10):
+def list_pending(limit: int = 10, user: AuthContext = Depends(get_current_user)):
     with SessionFactory.get_session() as session:
         repo = StrategyGateApprovalRepository(session)
         rows = repo.get_pending(limit=limit)
@@ -41,7 +41,7 @@ def list_pending(limit: int = 10):
 
 
 @router.get("/blocked")
-def list_blocked():
+def list_blocked(user: AuthContext = Depends(get_current_user)):
     with SessionFactory.get_session() as session:
         rows = (
             session.query(StrategyGateApprovalModel)

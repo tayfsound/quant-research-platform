@@ -6,12 +6,12 @@ from fastapi import APIRouter, Depends
 from contracts.auth import Role
 from database.repositories.weight_approval_repository import WeightApprovalModel, WeightApprovalRepository
 from database.session_factory import SessionFactory
-from services.auth_service import AuthContext, require_role
+from services.auth_service import AuthContext, get_current_user, require_role
 
 router = APIRouter(prefix="/weights", tags=["weights"])
 
 @router.get("/pending")
-def list_pending(limit: int = 10):
+def list_pending(limit: int = 10, user: AuthContext = Depends(get_current_user)):
     with SessionFactory.get_session() as session:
         repo = WeightApprovalRepository(session)
         rows = repo.get_pending(limit=limit)
@@ -80,7 +80,7 @@ def auto_reject_stale(max_age_hours: float = 24, user: AuthContext = Depends(req
 
 
 @router.get("/metrics")
-def approval_metrics():
+def approval_metrics(user: AuthContext = Depends(get_current_user)):
     """Approval latency metrics."""
     with SessionFactory.get_session() as session:
         repo = WeightApprovalRepository(session)

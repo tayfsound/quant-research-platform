@@ -102,7 +102,7 @@ def test_pending_endpoint_includes_regime_field():
         WeightApprovalRepository(session).save(approval)
 
     client = TestClient(app)
-    response = client.get("/api/v1/weights/pending?limit=50")
+    response = client.get("/api/v1/weights/pending?limit=50", headers=make_authed_headers(Role.VIEWER))
     assert response.status_code == 200
     match = next(a for a in response.json()["pending"] if a["id"] == str(approval.id))
     assert match["regime"] == "bearish_low"
@@ -129,7 +129,7 @@ def test_pending_endpoint_returns_timestamp_and_max_delta_for_readable_ui():
         WeightApprovalRepository(session).save(approval)
 
     client = TestClient(app)
-    response = client.get("/api/v1/weights/pending?limit=50")
+    response = client.get("/api/v1/weights/pending?limit=50", headers=make_authed_headers(Role.VIEWER))
     assert response.status_code == 200
     rows = {r["id"]: r for r in response.json()["pending"]}
     row = rows[str(approval.id)]
@@ -137,3 +137,30 @@ def test_pending_endpoint_returns_timestamp_and_max_delta_for_readable_ui():
     assert row["max_delta"] == 0.2
     assert row["previous"] == {"technical": 1.0}
     assert row["proposed"] == {"technical": 1.3}
+
+
+def test_pending_endpoint_requires_auth():
+    """Faz 384 — todo listesi madde 4 (iki ayrı dış raporda bulundu):
+    GET /weights/pending hiç auth koruması yoktu, aynı dosyadaki approve/
+    reject zaten require_role(Role.OPERATOR) ile korunuyordu."""
+    from fastapi.testclient import TestClient
+
+    from api.main import app
+
+    client = TestClient(app)
+    response = client.get("/api/v1/weights/pending?limit=50")
+    assert response.status_code in (401, 403)
+
+
+def test_approval_metrics_requires_auth_then_succeeds():
+    from fastapi.testclient import TestClient
+
+    from api.main import app
+
+    client = TestClient(app)
+    response = client.get("/api/v1/weights/metrics")
+    assert response.status_code in (401, 403)
+
+    response = client.get("/api/v1/weights/metrics", headers=make_authed_headers(Role.VIEWER))
+    assert response.status_code == 200
+    assert "pending_count" in response.json()
