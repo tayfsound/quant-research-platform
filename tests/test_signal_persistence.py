@@ -5,7 +5,6 @@ from analytics.signal_persistence import (
     find_optimal_persistence_threshold,
     find_optimal_reversal_exit_threshold,
     is_belief_reversal_exit_triggered,
-    is_fresh_signal_blocked,
 )
 
 
@@ -31,18 +30,6 @@ def test_run_length_stops_at_first_disagreement():
 def test_run_length_all_agree():
     prior = [{"direction": "LONG"}] * 5
     assert consistent_direction_run_length(prior, "LONG") == 5
-
-
-def test_is_fresh_signal_blocked_below_threshold():
-    assert is_fresh_signal_blocked(3, min_required_cycles=4)
-
-
-def test_is_fresh_signal_blocked_at_threshold_is_not_blocked():
-    assert not is_fresh_signal_blocked(4, min_required_cycles=4)
-
-
-def test_is_fresh_signal_blocked_above_threshold_is_not_blocked():
-    assert not is_fresh_signal_blocked(10, min_required_cycles=4)
 
 
 def test_find_optimal_threshold_empty_input_fails_closed():

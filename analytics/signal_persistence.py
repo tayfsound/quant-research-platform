@@ -43,12 +43,6 @@ def consistent_direction_run_length(prior_decisions_desc: list[dict], direction:
     return run
 
 
-def is_fresh_signal_blocked(consistent_run_length: int, min_required_cycles: int) -> bool:
-    """True dönerse bu giriş, sinyal henüz yeterince tutarlı/sürdürülmüş
-    olmadığı için (taze dönüş, gürültü olma ihtimali yüksek) engellenmeli."""
-    return consistent_run_length < min_required_cycles
-
-
 def find_optimal_persistence_threshold(
     run_length_and_pnl: list[tuple[int, float]], max_n: int = 20
 ) -> dict:

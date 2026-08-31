@@ -130,50 +130,20 @@ class DecisionRecorder:
         # güncel kapanış fiyatına düş — hiçbir zaman uydurma bir sayı değil.
         entry_price = getattr(ctx.decision, "filled_price", None) or (ctx.market.raw_snapshot or {}).get("close")
 
-        # Faz 362 — kullanıcı bulgusu: "council'in ara sıra bir cycle'da
-        # tersine dönmesi çoğunlukla gerçek bir trend değişimi değil,
-        # gürültü — bu gürültüye güvenerek yeni pozisyonlara da girebilir."
-        # Gerçek 3619 kapanmış pozisyonla (10-24 Ağustos, mekanik
-        # stratejiler hariç) doğrulandı: girişten hemen önce o sembol/
-        # yönde 0-3 ardışık tutarlı cycle varken işlemler TEK TEK ortalama
-        # ZARAR ediyordu (run=0: -$4.96, run=3: -$11.89) — run=4'te İLK kez
-        # net pozitif (+$5.03) oluyor. TOPLAM kârı (hacim×kalite dengesini
-        # doğru yakalayan tek metrik) maksimize eden eşik de bağımsız
-        # olarak AYNI noktaya (N=4, $116,335 — N=5-7 istatistiksel
-        # ayırt edilemez şekilde platoluyor, sonrası düşüyor) işaret etti
-        # (bkz. analytics/signal_persistence.py, services/signal_
-        # persistence_gatherer.py — optimum N veri büyüdükçe değişebilir
-        # diye Genel Özet panelinde SÜREKLİ yeniden ölçülüyor, ama canlı
-        # eşik burada AYRI bir ayarla — kullanıcı bilinçli karar vermeden
-        # otomatik kaymasın diye).
-        if opens_position and experiment_bucket is None:
-            from analytics.signal_persistence import (
-                consistent_direction_run_length,
-                is_fresh_signal_blocked,
-            )
-            from database.repositories.app_settings_repository import AppSettingsRepository
-
-            settings_repo = AppSettingsRepository(self.session)
-            if settings_repo.get("signal_persistence_gate_enabled") == "true":
-                min_required = int(settings_repo.get("signal_persistence_min_consistent_cycles"))
-                prior = self.persistor.list_recent_directions_for_symbol(ctx.market.symbol, limit=min_required)
-                run_length = consistent_direction_run_length(prior, direction)
-                if is_fresh_signal_blocked(run_length, min_required):
-                    opens_position = False
-                    # Kullanıcı isteği (2026-08-31): bu ve aşağıdaki 6 kapı
-                    # hiçbir açıklama bırakmadan sessizce engelliyordu —
-                    # "neden açılmadı" sorusunun cevabı sadece elle DB
-                    # kazarak bulunabiliyordu. decision_fusion/portfolio_
-                    # confidence_discount ile AYNI desen, tek ortak "type".
-                    agent_opinions_data.append({
-                        "type": "gate_block",
-                        "data": {
-                            "gate": "signal_persistence_gate",
-                            "reason": "fresh_signal_not_yet_persistent",
-                            "run_length": run_length,
-                            "min_required": min_required,
-                        },
-                    })
+        # Faz 362 — signal_persistence_gate BURADAYDI (girişten önce N
+        # ardışık tutarlı cycle şartı). Faz 395 (2026-09-01) — kullanıcı
+        # isteği: "Kaldıralım evet. Döngü süresi çok üzüyor sistem aksiyon
+        # alamıyor problem." Bir döngü ~15-30dk sürdüğü için 4 ardışık
+        # tutarlı döngü şartı, bir sembolün açılabilmesi için saatlerce
+        # fikrini değiştirmemesini gerektiriyordu — döngü süresiyle
+        # BİRLEŞİNCE aşırı kısıtlayıcı hale geliyordu. Tamamen kaldırıldı.
+        # `analytics/signal_persistence.py::consistent_direction_run_
+        # length` ve ölçüm panelinin (services/signal_persistence_
+        # gatherer.py, Genel Özet'teki "Sinyal Tutarlılığı Eşiği" kartı)
+        # KENDİSİ DOKUNULMADI — hâlâ "veriye göre optimum ne olurdu"
+        # sorusuna cevap veriyor, sadece artık canlı bir gate'e bağlı
+        # değil. `is_fresh_signal_blocked` (SADECE bu gate'in tüketicisiydi)
+        # analytics/signal_persistence.py'den de kaldırıldı.
 
         # Faz 350 — Pozisyon Havuzu / Max Confidence Modu: normal council
         # yolunda (deneysel bucket'sız) risk-onaylı bir açılış, ayar

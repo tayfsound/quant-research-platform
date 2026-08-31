@@ -116,22 +116,3 @@ def _purge_all_test_generated_tables_at_session_start():
     yield
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _disable_signal_persistence_gate_by_default():
-    """Faz 362 — signal_persistence_gate_enabled canlıda varsayılan AÇIK
-    (gerçek veriyle doğrulanmış, koruyucu bir mekanizma) ama pyramid_
-    regime_gate'in aksine (sadece zaten AÇIK bir pozisyon varken devreye
-    girer, testleri doğal olarak etkilemez) bu kapı HER yeni pozisyon
-    açılışına (geçmişi olmayan taze test sembolleri dahil) uygulanıyor —
-    onlarca mevcut testin "fresh sembol -> pozisyon açılır" varsayımını
-    bozar. Test ortamında bilerek kapalı; sadece bunu bizzat test eden
-    testler (tests/test_decision_recorder.py) kendi scope'unda elle
-    açıp kapatıyor."""
-    from database.repositories.app_settings_repository import AppSettingsRepository
-    from database.session_factory import SessionFactory
-
-    with SessionFactory.get_session() as session:
-        AppSettingsRepository(session).set(
-            "signal_persistence_gate_enabled", "false", updated_by="conftest"
-        )
-    yield

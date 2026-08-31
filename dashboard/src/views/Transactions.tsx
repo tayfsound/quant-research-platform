@@ -459,7 +459,6 @@ type ExplainData = {
 
 const GATE_LABELS: Record<string, string> = {
   strategy_regime_gate: "Strateji × Rejim Kapısı",
-  signal_persistence_gate: "Sinyal Tutarlılığı Kapısı",
   pivot_distance_gate: "Pivot Mesafesi Kapısı",
   mae_mfe_bucket_trading_gate: "MAE/MFE Kova Kapısı",
   regime_trading_gate: "Rejim Aç/Kapa",

@@ -734,19 +734,12 @@ DEFAULTS: dict[str, str] = {
     # aktivasyon ilkesi).
     "historical_analog_override_enabled": "false",
 
-    # Faz 362 — kullanıcı bulgusu: "council'in ara sıra bir cycle'da
-    # tersine dönmesi çoğunlukla gürültü — bu gürültüye güvenerek yeni
-    # pozisyonlara da girebilir." Gerçek 3619 kapanmış pozisyonla (10-24
-    # Ağustos) ölçüldü: girişten önce 0-3 ardışık tutarlı cycle varken
-    # işlemler TEK TEK ortalama zarar ediyordu, run=4'te İLK kez net
-    # pozitif oldu — TOPLAM kârı maksimize eden eşik de (hacim×kalite
-    # dengesi) bağımsız olarak aynı N=4'e işaret etti (bkz. analytics/
-    # signal_persistence.py). Varsayılan AÇIK — koruyucu bir mekanizma.
-    # Optimum N veri büyüdükçe değişebilir (services/signal_persistence_
-    # gatherer.py Genel Özet panelinde sürekli yeniden ölçüyor) ama bu
-    # ayar OTOMATİK kaymaz — kullanıcı bilinçli olarak günceller.
-    "signal_persistence_gate_enabled": "true",
-    "signal_persistence_min_consistent_cycles": "4",
+    # Faz 362 — signal_persistence_gate BURADAYDI. Faz 395 (2026-09-01) —
+    # kullanıcı isteği: "Kaldıralım evet. Döngü süresi çok üzüyor sistem
+    # aksiyon alamıyor problem." Döngü ~15-30dk sürdüğü için 4 ardışık
+    # tutarlı cycle şartı bir sembolün saatlerce açılamamasına yol
+    # açıyordu — tamamen kaldırıldı. Ölçüm paneli (services/signal_
+    # persistence_gatherer.py, Genel Özet) dokunulmadı.
 
     # Faz 362-devam — kullanıcı fikri, ilk (dar örneklem) ölçümde
     # reddedilmiş ama kullanıcının sorgulamasıyla geniş pencerede (10-24
