@@ -34,7 +34,12 @@ is_celery_default_alive() {
     # script'inin (`$$`) DOĞRUDAN çocuğu olan bir eşleşme "sağlıklı"
     # sayılıyor — start_celery_default()'ın `nohup ... &` ile başlattığı
     # gerçek master'ın PPID'i her zaman $$ olur, yetim çocuklarınki 1.
-    pgrep -f "celery -A services.celery_app worker -Q celery --loglevel=info -n worker_default" -P $$ > /dev/null 2>&1
+    #
+    # DİKKAT — macOS pgrep'te bayrak SIRASI önemli: `-P` pattern'den SONRA
+    # gelirse SESSİZCE YOK SAYILIYOR (ilk denemede bu yüzden hâlâ TÜM
+    # eşleşenleri buluyordu, yetimler dahil — elle doğrulandı). `-P` HER
+    # ZAMAN pattern'den ÖNCE gelmeli.
+    pgrep -P $$ -f "celery -A services.celery_app worker -Q celery --loglevel=info -n worker_default" > /dev/null 2>&1
 }
 
 # Faz 360 — kullanıcı isteği: pozisyon kapatmada kaymayı azaltmak için
