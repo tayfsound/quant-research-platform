@@ -92,17 +92,13 @@ def test_apply_portfolio_fusion_leaves_sizes_unchanged_when_within_var_limit():
 
         with patch("database.repositories.app_settings_repository.AppSettingsRepository.get") as mock_get:
             # Faz 355 — act_threshold kasıtlı olarak çok düşük: bu testin
-            # amacı VaR-tabanlı fusion'ı izole test etmek, ENB indiriminin
-            # (sadece 2 sembol olduğu için HER ZAMAN tetiklenir, bkz.
-            # test_apply_portfolio_fusion_discounts_confidence_when_
-            # effective_number_of_bets_is_low) WAIT'e çevirmesini engellemek.
+            # amacı VaR-tabanlı fusion'ı izole test etmek.
             mock_get.side_effect = lambda key: {"max_confidence_mode_enabled": "false", "starting_capital": "1000000", "max_portfolio_var_pct": "0.5", "act_threshold": "0.01"}[key]
             orch._apply_portfolio_fusion(directional)
 
-        # ENB indirimi (sadece 2 bahis olduğu için) confidence'ı ve final_size'ı
-        # meşru şekilde biraz küçültüyor artık (bkz. Faz 355) — bu test'in asıl
-        # amacı olan "VaR limiti içindeyken fusion boyutu ÇÖKERTMESİN" hâlâ
-        # geçerli: orijinal 0.01'e yakın kalmalı, sıfıra/near-zero'ya değil.
+        # Zıt yönlü (LONG/SHORT) bir çift — same_direction_correlation hiç
+        # tetiklenmez. Bu test'in asıl amacı olan "VaR limiti içindeyken
+        # fusion boyutu ÇÖKERTMESİN" geçerli: orijinal 0.01'e yakın kalmalı.
         assert directional["BTCUSDT"]["ctx"].decision.final_size > 0.005
         assert directional["ETHUSDT"]["ctx"].decision.final_size > 0.005
 
@@ -130,10 +126,6 @@ def test_apply_portfolio_fusion_discounts_confidence_for_highly_correlated_same_
 
         with patch("database.repositories.app_settings_repository.AppSettingsRepository.get") as mock_get:
             # Gevşek bir VaR limiti — bu testin amacı boyut değil confidence.
-            # act_threshold kasıtlı olarak çok düşük: bu testin amacı iki
-            # indirimin ZİNCİRLENMESİ, WAIT'e dönme davranışı DEĞİL (o ayrı
-            # bir testte, bkz. test_apply_portfolio_fusion_reverts_to_wait_
-            # when_discount_drops_below_act_threshold).
             mock_get.side_effect = lambda key: {"max_confidence_mode_enabled": "false", "starting_capital": "1000000", "max_portfolio_var_pct": "0.5", "act_threshold": "0.01"}[key]
             orch._apply_portfolio_fusion(directional)
 
@@ -142,19 +134,16 @@ def test_apply_portfolio_fusion_discounts_confidence_for_highly_correlated_same_
 
         # Kullanıcı bulgusu: explain sayfası "%74 güvenli bir ajan varken
         # nihai karar neden %28 çıktı" sorusuna cevap veremiyordu — bu
-        # indirim(ler) artık relevant_knowledge'a (ve oradan agent_
-        # contributions'a) neden/öncesi/sonrasıyla kaydediliyor. Bu
-        # senaryoda 2 sembol hem yüksek korele HEM de (sadece 2 bahis
-        # olduğu için) düşük ENB'li — ikisi de tetiklenip zincirleniyor.
+        # indirim artık relevant_knowledge'a (ve oradan agent_contributions'a)
+        # neden/öncesi/sonrasıyla kaydediliyor.
         btc_discounts = [
             item["data"] for item in directional["BTCUSDT"]["ctx"].cognition.relevant_knowledge
             if item.get("type") == "portfolio_confidence_discount"
         ]
-        assert len(btc_discounts) == 2
+        assert len(btc_discounts) == 1
         assert btc_discounts[0]["reason"] == "same_direction_correlation"
         assert btc_discounts[0]["confidence_before"] == 0.8
-        assert btc_discounts[1]["reason"] == "low_effective_number_of_bets"
-        assert btc_discounts[1]["confidence_after"] == directional["BTCUSDT"]["ctx"].decision.confidence
+        assert btc_discounts[0]["confidence_after"] == directional["BTCUSDT"]["ctx"].decision.confidence
 
 
 def test_apply_portfolio_fusion_shrinks_final_size_not_just_confidence():
@@ -256,11 +245,7 @@ def test_apply_portfolio_fusion_does_not_discount_confidence_for_uncorrelated_sy
 
         # Faz 355 — bu testin asıl amacı same_direction_correlation'ın
         # (korelasyona bakan mekanizma) anti-korele sembollerde tetiklen-
-        # MEMESİ; ENB (Effective Number of Bets, korelasyondan bağımsız,
-        # SADECE sembol sayısına bakan AYRI bir mekanizma) burada yine de
-        # tetiklenebilir (2 bahis her zaman MIN_EFFECTIVE_BETS=3'ün altında)
-        # — bu test onu kapsamıyor, bkz. test_apply_portfolio_fusion_
-        # discounts_confidence_when_effective_number_of_bets_is_low.
+        # MEMESİ.
         for symbol in ("BTCUSDT", "ETHUSDT"):
             reasons = [
                 item["data"]["reason"]
@@ -268,132 +253,7 @@ def test_apply_portfolio_fusion_does_not_discount_confidence_for_uncorrelated_sy
                 if item.get("type") == "portfolio_confidence_discount"
             ]
             assert "same_direction_correlation" not in reasons
-
-
-def test_apply_portfolio_fusion_discounts_confidence_when_effective_number_of_bets_is_low():
-    """Faz 268-sonrası — Effective Number of Bets (Cognitive Core 2.0/M6):
-    Cross-Symbol Correlation Filter'ın aksine (tek sembol çiftine bakar),
-    ENB PORTFÖYÜN GENELİNİ ölçer. Buradaki iki sembol birbirine düşük
-    korele (Cross-Symbol filtresi TETİKLENMEZ — max_corr <= 0.7 eşiğinin
-    altında kalacak şekilde seçildi) ama ENB doğrudan mock'lanarak düşük
-    (1.0 < MIN_EFFECTIVE_BETS=3.0) döndürülüyor — bu SADECE ENB katmanının
-    kendi indirimini izole test eder."""
-    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
-        orch = CognitiveOrchestrator()
-
-        base_returns = [0.01, -0.02, 0.03, -0.01, 0.02, 0.015, -0.005, 0.008, -0.012, 0.02]
-        low_corr_returns = [0.01, 0.02, -0.03, 0.015, -0.01, -0.005, 0.02, -0.008, 0.012, -0.02]
-        directional = {
-            "BTCUSDT": {
-                "ctx": _fake_ctx("BTCUSDT", "LONG", 0.01, confidence=0.8),
-                "data": _bars_from_returns(100.0, base_returns), "direction": "LONG",
-            },
-            "ETHUSDT": {
-                "ctx": _fake_ctx("ETHUSDT", "LONG", 0.01, confidence=0.8),
-                "data": _bars_from_returns(100.0, low_corr_returns), "direction": "LONG",
-            },
-        }
-
-        with patch("database.repositories.app_settings_repository.AppSettingsRepository.get") as mock_get:
-            mock_get.side_effect = lambda key: {"max_confidence_mode_enabled": "false", "starting_capital": "1000000", "max_portfolio_var_pct": "0.5", "act_threshold": "0.65"}[key]
-            with patch(
-                "analytics.portfolio_intelligence.compute_effective_number_of_bets",
-                return_value={"effective_number_of_bets": 1.0, "position_count": 2, "diversification_ratio": 0.5},
-            ):
-                orch._apply_portfolio_fusion(directional)
-
-        assert directional["BTCUSDT"]["ctx"].decision.confidence < 0.8
-        assert directional["ETHUSDT"]["ctx"].decision.confidence < 0.8
-
-
-def test_apply_portfolio_fusion_exempts_top_candidates_from_enb_discount_when_many_are_correlated():
-    """Faz 382 — kullanıcı bulgusu ("kilitlenir yoksa"): Faz 381 sonrası
-    bir cycle'da onlarca sembol aynı anda ACT/REDUCE'a ulaşabiliyor.
-    Hepsine AYNI ENB indirimi uygulanırsa (eski davranış, yukarıdaki
-    2-sembollük testlerde HÂLÂ doğru — az sayıda aday varken değişmedi)
-    zaten eşiğe yakın onlarca karar birden WAIT'e dönüp TÜM cycle'ı
-    kilitleyebiliyordu. Aday sayısı MIN_EFFECTIVE_BETS'i (3) gerçekten
-    aşınca artık en yüksek confidence'lı 3 aday indirimden MUAF —
-    portföy her zaman en iyi ~3 fikrini açabiliyor, gerçekten fazlalık
-    olan geri kalanı bastırılıyor."""
-    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
-        orch = CognitiveOrchestrator()
-
-        # test_apply_portfolio_fusion_discounts_confidence_when_effective_
-        # number_of_bets_is_low ile AYNI desen: ENB doğrudan mock'lanıyor,
-        # bar verisi GENUINELY düşük-korele (same_direction_correlation
-        # filtresi tetiklenmesin diye) — bu SADECE ENB katmanının kendi
-        # muafiyet mantığını izole test eder.
-        return_patterns = [
-            [0.01, -0.02, 0.03, -0.01, 0.02, 0.015, -0.005, 0.008, -0.012, 0.02],
-            [0.01, 0.02, -0.03, 0.015, -0.01, -0.005, 0.02, -0.008, 0.012, -0.02],
-            [-0.02, 0.01, 0.015, -0.03, 0.02, 0.008, -0.012, 0.02, -0.005, 0.01],
-            [0.02, -0.01, -0.02, 0.03, -0.005, 0.012, -0.008, 0.015, 0.02, -0.01],
-            [-0.01, 0.02, 0.008, -0.005, 0.03, -0.02, 0.01, -0.012, -0.02, 0.015],
-            [0.015, -0.008, 0.02, 0.01, -0.03, 0.02, -0.02, 0.005, -0.01, 0.012],
-        ]
-        symbols = [f"SYM{i}USDT" for i in range(6)]
-        # Confidence'a göre AÇIKÇA sıralanabilir olsun diye her sembole
-        # farklı bir confidence veriliyor — en yüksek 3'ün (SYM0,1,2)
-        # muaf tutulduğunu doğrulamak için.
-        confidences = {sym: 0.9 - i * 0.05 for i, sym in enumerate(symbols)}
-        directional = {
-            sym: {
-                "ctx": _fake_ctx(sym, "LONG", 0.01, confidence=confidences[sym]),
-                "data": _bars_from_returns(100.0, return_patterns[i]),
-                "direction": "LONG",
-            }
-            for i, sym in enumerate(symbols)
-        }
-
-        with patch("database.repositories.app_settings_repository.AppSettingsRepository.get") as mock_get:
-            mock_get.side_effect = lambda key: {"max_confidence_mode_enabled": "false", "starting_capital": "1000000", "max_portfolio_var_pct": "0.5", "act_threshold": "0.01"}[key]
-            with patch(
-                "analytics.portfolio_intelligence.compute_effective_number_of_bets",
-                return_value={"effective_number_of_bets": 1.2, "position_count": 6, "diversification_ratio": 0.2},
-            ):
-                orch._apply_portfolio_fusion(directional)
-
-        ranked = sorted(symbols, key=lambda s: confidences[s], reverse=True)
-        exempt, discounted = ranked[:3], ranked[3:]
-
-        for sym in exempt:
-            assert directional[sym]["ctx"].decision.confidence == confidences[sym], (
-                f"{sym} muaf tutulmalıydı, indirim uygulanmamalıydı"
-            )
-        for sym in discounted:
-            assert directional[sym]["ctx"].decision.confidence < confidences[sym], (
-                f"{sym} gerçekten fazlalık olan aday, indirilmeliydi"
-            )
-
-
-def test_apply_portfolio_fusion_does_not_discount_confidence_when_effective_number_of_bets_is_sufficient():
-    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
-        orch = CognitiveOrchestrator()
-
-        base_returns = [0.01, -0.02, 0.03, -0.01, 0.02, 0.015, -0.005, 0.008, -0.012, 0.02]
-        low_corr_returns = [0.01, 0.02, -0.03, 0.015, -0.01, -0.005, 0.02, -0.008, 0.012, -0.02]
-        directional = {
-            "BTCUSDT": {
-                "ctx": _fake_ctx("BTCUSDT", "LONG", 0.01, confidence=0.8),
-                "data": _bars_from_returns(100.0, base_returns), "direction": "LONG",
-            },
-            "ETHUSDT": {
-                "ctx": _fake_ctx("ETHUSDT", "LONG", 0.01, confidence=0.8),
-                "data": _bars_from_returns(100.0, low_corr_returns), "direction": "LONG",
-            },
-        }
-
-        with patch("database.repositories.app_settings_repository.AppSettingsRepository.get") as mock_get:
-            mock_get.side_effect = lambda key: {"max_confidence_mode_enabled": "false", "starting_capital": "1000000", "max_portfolio_var_pct": "0.5", "act_threshold": "0.65"}[key]
-            with patch(
-                "analytics.portfolio_intelligence.compute_effective_number_of_bets",
-                return_value={"effective_number_of_bets": 5.0, "position_count": 2, "diversification_ratio": 2.5},
-            ):
-                orch._apply_portfolio_fusion(directional)
-
-        assert directional["BTCUSDT"]["ctx"].decision.confidence == 0.8
-        assert directional["ETHUSDT"]["ctx"].decision.confidence == 0.8
+            assert reasons == []
 
 
 def test_apply_portfolio_fusion_does_not_collapse_realistic_quantities_to_near_zero():
@@ -424,16 +284,11 @@ def test_apply_portfolio_fusion_does_not_collapse_realistic_quantities_to_near_z
 
         with patch("database.repositories.app_settings_repository.AppSettingsRepository.get") as mock_get:
             # Faz 355 — act_threshold çok düşük: bu test VaR/birim
-            # ölçeklendirmesini izole ediyor, ENB'nin (2 sembol olduğu için
-            # her zaman tetiklenen, meşru) confidence indiriminin WAIT'e
-            # çevirmesini istemiyoruz.
+            # ölçeklendirmesini izole ediyor.
             mock_get.side_effect = lambda key: {"max_confidence_mode_enabled": "false", "starting_capital": "1000", "max_portfolio_var_pct": "0.5", "act_threshold": "0.01"}[key]
             orch._apply_portfolio_fusion(directional)
 
         # Gevşek VaR limitinde eski birim hatasındaki gibi ~30'a çökmemeli.
-        # Faz 355'ten sonra ENB indirimi miktarı meşru şekilde biraz daha
-        # küçültüyor (10000'den ~300-400'e) — asıl korunan şey eski birim
-        # hatasının payı (30), o yüzden eşik 5000'den 100'e çekildi.
         assert directional["VETUSDT"]["ctx"].decision.final_size > 100.0
         assert directional["ALGOUSDT"]["ctx"].decision.final_size > 100.0
 

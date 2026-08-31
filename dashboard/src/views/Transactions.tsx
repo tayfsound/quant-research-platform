@@ -426,7 +426,6 @@ type ExplainData = {
     confidence_before: number;
     confidence_after: number;
     multiplier: number;
-    effective_number_of_bets?: number;
   }[];
   // FIL Faz C — kullanıcı isteği: Causal Inference'in (Granger causality,
   // BTC/ETH → bu sembol) visibility-only bağlamı. Çoğu kararda BOŞ olur
@@ -457,7 +456,6 @@ const GATE_LABELS: Record<string, string> = {
 
 const PORTFOLIO_DISCOUNT_REASON_LABELS: Record<string, string> = {
   same_direction_correlation: "Aynı yönde, birbirine yüksek korele semboller",
-  low_effective_number_of_bets: "Portföyün genel çeşitlendirme kalitesi düşük (ENB)",
 };
 
 function ExplainModal({ decisionId, onClose }: { decisionId: string; onClose: () => void }) {
@@ -550,7 +548,6 @@ function ExplainModal({ decisionId, onClose }: { decisionId: string; onClose: ()
                     <p key={i} className="text-xs text-ink-soft">
                       {PORTFOLIO_DISCOUNT_REASON_LABELS[d.reason] ?? d.reason}: %{(d.confidence_before * 100).toFixed(1)} → %
                       {(d.confidence_after * 100).toFixed(1)}
-                      {d.effective_number_of_bets != null && ` (ENB: ${d.effective_number_of_bets.toFixed(2)})`}
                     </p>
                   ))}
                 </div>
