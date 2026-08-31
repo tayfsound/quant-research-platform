@@ -290,6 +290,11 @@ def explain_position(decision_id: str, user: AuthContext = Depends(get_current_u
     cross_asset_context = [
         i["data"] for i in contributions if isinstance(i, dict) and i.get("type") == "cross_asset_context"
     ]
+    # Kullanıcı isteği (2026-08-31): decision_recorder.py'deki 7 "sessiz"
+    # kapı (strategy_regime/signal_persistence/pivot_distance/mae_mfe_
+    # bucket/regime_trading/direction_trading/asset_class_trading) artık
+    # burada görünür — "neden açılmadı" sorusuna DB kazmadan cevap.
+    gate_blocks = [i["data"] for i in contributions if isinstance(i, dict) and i.get("type") == "gate_block"]
     # Kullanıcı bulgusu: "%74 güvenli bir ajan varken nihai karar neden
     # %28 çıktı?" — bu indirim MetaStage'in ACT/REDUCE kararından SONRA
     # uygulanıyor (services/orchestrator.py::_apply_portfolio_fusion),
@@ -360,6 +365,7 @@ def explain_position(decision_id: str, user: AuthContext = Depends(get_current_u
         "inner_critic": inner_critic,
         "decision_fusion": decision_fusion_entries,
         "cross_asset_context": cross_asset_context,
+        "gate_blocks": gate_blocks,
         "weight_snapshot_id": (weight_snapshot or {}).get("id"),
     }
 

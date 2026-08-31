@@ -437,6 +437,22 @@ type ExplainData = {
     best_p_value: number;
     sample_size: number;
   }[];
+  // Kullanıcı isteği (2026-08-31): decision_recorder.py'deki 7 sessiz
+  // kapının (strategy_regime/signal_persistence/pivot_distance/mae_mfe_
+  // bucket/regime_trading/direction_trading/asset_class_trading) artık
+  // burada da görünmesi — önceden "neden açılmadı" sorusu DB kazmadan
+  // cevaplanamıyordu.
+  gate_blocks: Record<string, unknown>[];
+};
+
+const GATE_LABELS: Record<string, string> = {
+  strategy_regime_gate: "Strateji × Rejim Kapısı",
+  signal_persistence_gate: "Sinyal Tutarlılığı Kapısı",
+  pivot_distance_gate: "Pivot Mesafesi Kapısı",
+  mae_mfe_bucket_trading_gate: "MAE/MFE Kova Kapısı",
+  regime_trading_gate: "Rejim Aç/Kapa",
+  direction_trading_gate: "Yön Aç/Kapa",
+  asset_class_trading_gate: "Varlık Sınıfı Aç/Kapa",
 };
 
 const PORTFOLIO_DISCOUNT_REASON_LABELS: Record<string, string> = {
@@ -644,6 +660,29 @@ function ExplainModal({ decisionId, onClose }: { decisionId: string; onClose: ()
                       (lag={c.best_lag}, p={c.best_p_value.toFixed(4)}, n={c.sample_size})
                     </p>
                   ))}
+                </div>
+              )}
+
+              {/* Kullanıcı isteği (2026-08-31): 7 sessiz kapının artık
+                  burada görünmesi — pozitif EV/gerçek boyutlu bir karar
+                  bile bu kapılardan biri yüzünden açılmamış olabilir. */}
+              {data.gate_blocks.length > 0 && (
+                <div>
+                  <p className="text-xs text-ink-faint mb-1">Engelleyen kapı</p>
+                  {data.gate_blocks.map((g, i) => {
+                    const gate = String(g.gate ?? "");
+                    const { gate: _gate, reason: _reason, ...rest } = g;
+                    return (
+                      <p key={i} className="text-xs text-ink-soft">
+                        <span className="font-mono text-ink">{GATE_LABELS[gate] ?? gate}</span>
+                        {" — "}
+                        {String(g.reason ?? "")}
+                        {Object.keys(rest).length > 0 && (
+                          <span className="text-ink-faint"> ({JSON.stringify(rest)})</span>
+                        )}
+                      </p>
+                    );
+                  })}
                 </div>
               )}
             </div>

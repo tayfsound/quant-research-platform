@@ -56,6 +56,13 @@ def _persist_decision_with_full_agent_contributions() -> DecisionEvent:
                 "type": "cross_asset_context",
                 "data": {"cause": "BTCUSDT", "best_lag": 3, "best_p_value": 0.012, "sample_size": 180},
             },
+            {
+                "type": "gate_block",
+                "data": {
+                    "gate": "signal_persistence_gate", "reason": "fresh_signal_not_yet_persistent",
+                    "run_length": 2, "min_required": 4,
+                },
+            },
         ],
     )
     with SessionFactory.get_session() as session:
@@ -110,6 +117,15 @@ def test_explain_separates_agent_votes_from_special_entries():
     # causality) da açıklama ekranında görünmeli, visibility-only.
     assert body["cross_asset_context"] == [
         {"cause": "BTCUSDT", "best_lag": 3, "best_p_value": 0.012, "sample_size": 180},
+    ]
+
+    # Kullanıcı isteği (2026-08-31): sessiz kapıların artık explain
+    # ekranında görünmesi.
+    assert body["gate_blocks"] == [
+        {
+            "gate": "signal_persistence_gate", "reason": "fresh_signal_not_yet_persistent",
+            "run_length": 2, "min_required": 4,
+        },
     ]
 
 
@@ -187,3 +203,4 @@ def test_explain_handles_a_decision_with_no_agent_contributions_gracefully():
     assert body["decision_fusion"] == []
     assert body["portfolio_confidence_discounts"] == []
     assert body["cross_asset_context"] == []
+    assert body["gate_blocks"] == []

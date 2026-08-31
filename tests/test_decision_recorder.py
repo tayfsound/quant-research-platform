@@ -159,6 +159,14 @@ def test_fresh_signal_blocked_when_prior_consistent_run_below_minimum():
         )
         event = recorder.record(ctx, [])
         assert event.status == "no_trade"
+
+        # Kullanıcı isteği (2026-08-31): bu kapı önceden hiç iz bırakmadan
+        # engelliyordu — artık explain ekranında görünür bir kayıt bırakıyor.
+        gate_blocks = [o for o in event.agent_opinions if o.get("type") == "gate_block"]
+        assert len(gate_blocks) == 1
+        assert gate_blocks[0]["data"]["gate"] == "signal_persistence_gate"
+        assert gate_blocks[0]["data"]["run_length"] == 3
+        assert gate_blocks[0]["data"]["min_required"] == 4
     finally:
         with SessionFactory.get_session() as session:
             AppSettingsRepository(session).set("signal_persistence_gate_enabled", "false", updated_by="test")

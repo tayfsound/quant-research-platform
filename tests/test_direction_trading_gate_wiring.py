@@ -41,6 +41,11 @@ def test_short_disabled_blocks_a_short_entry():
     try:
         event = DecisionRecorder().record(_ctx(symbol, direction="SHORT"), [])
         assert event.status == "no_trade"
+
+        gate_blocks = [o for o in event.agent_opinions if o.get("type") == "gate_block"]
+        assert len(gate_blocks) == 1
+        assert gate_blocks[0]["data"]["gate"] == "direction_trading_gate"
+        assert gate_blocks[0]["data"]["direction"] == "SHORT"
     finally:
         _reset_defaults()
 

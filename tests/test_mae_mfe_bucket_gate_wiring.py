@@ -44,6 +44,11 @@ def test_bucket_disabled_blocks_a_matching_entry():
     try:
         event = DecisionRecorder().record(_ctx(symbol), [])
         assert event.status == "no_trade"
+
+        gate_blocks = [o for o in event.agent_opinions if o.get("type") == "gate_block"]
+        assert len(gate_blocks) == 1
+        assert gate_blocks[0]["data"]["gate"] == "mae_mfe_bucket_trading_gate"
+        assert gate_blocks[0]["data"]["bucket_key"] == "direction=LONG|regime=bull_trend|volatility_regime=normal|asset_class=crypto"
     finally:
         _reset_defaults()
 

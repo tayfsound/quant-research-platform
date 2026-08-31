@@ -151,6 +151,20 @@ class DecisionRecorder:
                 run_length = consistent_direction_run_length(prior, direction)
                 if is_fresh_signal_blocked(run_length, min_required):
                     opens_position = False
+                    # Kullanıcı isteği (2026-08-31): bu ve aşağıdaki 6 kapı
+                    # hiçbir açıklama bırakmadan sessizce engelliyordu —
+                    # "neden açılmadı" sorusunun cevabı sadece elle DB
+                    # kazarak bulunabiliyordu. decision_fusion/portfolio_
+                    # confidence_discount ile AYNI desen, tek ortak "type".
+                    agent_opinions_data.append({
+                        "type": "gate_block",
+                        "data": {
+                            "gate": "signal_persistence_gate",
+                            "reason": "fresh_signal_not_yet_persistent",
+                            "run_length": run_length,
+                            "min_required": min_required,
+                        },
+                    })
 
         # Faz 350 — Pozisyon Havuzu / Max Confidence Modu: normal council
         # yolunda (deneysel bucket'sız) risk-onaylı bir açılış, ayar
@@ -226,6 +240,14 @@ class DecisionRecorder:
             )
             if is_regime_trading_blocked(market_regime, regime_enabled_map):
                 opens_position = False
+                agent_opinions_data.append({
+                    "type": "gate_block",
+                    "data": {
+                        "gate": "regime_trading_gate",
+                        "reason": "regime_disabled_by_user",
+                        "market_regime": market_regime,
+                    },
+                })
 
         # Kullanıcı isteği (2026-08-28): Dashboard'daki "LONG/SHORT kazanma
         # oranı" kartlarına manuel bir aç/kapa anahtarı — Grok raporunun
@@ -247,6 +269,14 @@ class DecisionRecorder:
                 direction_enabled_map = {}
             if is_direction_trading_blocked(direction, direction_enabled_map):
                 opens_position = False
+                agent_opinions_data.append({
+                    "type": "gate_block",
+                    "data": {
+                        "gate": "direction_trading_gate",
+                        "reason": "direction_disabled_by_user",
+                        "direction": direction,
+                    },
+                })
 
         # Kullanıcı isteği (2026-08-28): canlıya kademeli geçiş için,
         # yukarıdaki rejim kapısından DAHA GRANÜLER bir kontrol — MAE/MFE
@@ -281,6 +311,14 @@ class DecisionRecorder:
             )
             if is_mae_mfe_bucket_trading_blocked(bucket_key, bucket_enabled_map):
                 opens_position = False
+                agent_opinions_data.append({
+                    "type": "gate_block",
+                    "data": {
+                        "gate": "mae_mfe_bucket_trading_gate",
+                        "reason": "bucket_disabled_by_user",
+                        "bucket_key": bucket_key,
+                    },
+                })
 
         # Kullanıcı isteği (2026-08-28): "kararı vermeden önce burayı
         # tarayacak, ajan gruplarının başarısını ölçecek — %80'in altında
@@ -333,6 +371,15 @@ class DecisionRecorder:
                 distance_pct = (ctx.market.features or {}).get("nearest_pivot_distance_pct")
                 if is_pivot_distance_entry_blocked(is_large_cap, distance_pct, threshold_pct=threshold_pct):
                     opens_position = False
+                    agent_opinions_data.append({
+                        "type": "gate_block",
+                        "data": {
+                            "gate": "pivot_distance_gate",
+                            "reason": "too_far_from_pivot",
+                            "distance_pct": distance_pct,
+                            "threshold_pct": threshold_pct,
+                        },
+                    })
 
         # Kullanıcı isteği (2026-08-27): "Emtia, Kripto, Hisse Senedi'ni
         # aç kapa yapabileceğimiz modüller." AI konseyi/pump_fade AYRIMI
@@ -355,6 +402,14 @@ class DecisionRecorder:
             category = asset_class_trading_category(ctx.market.symbol)
             if is_asset_class_trading_blocked(category, enabled_map):
                 opens_position = False
+                agent_opinions_data.append({
+                    "type": "gate_block",
+                    "data": {
+                        "gate": "asset_class_trading_gate",
+                        "reason": "asset_class_disabled_by_user",
+                        "asset_class": category,
+                    },
+                })
 
         # Faz 192: RiskTargetStage'in gerçek ATR'den kurduğu risk/ödül
         # magnitüdlerini (ctx.decision.stop_loss_distance/take_profit_
@@ -410,6 +465,15 @@ class DecisionRecorder:
                 blocked_pairs = StrategyGateApprovalRepository(self.session).list_blocked_pairs()
                 if is_strategy_regime_gated(strategy_label, market_regime, blocked_pairs):
                     opens_position = False
+                    agent_opinions_data.append({
+                        "type": "gate_block",
+                        "data": {
+                            "gate": "strategy_regime_gate",
+                            "reason": "known_underperforming_strategy_regime_pair",
+                            "strategy_label": strategy_label,
+                            "market_regime": market_regime,
+                        },
+                    })
 
         # Faz 255: kullanıcı isteği — token bazlı kaldıraç. Aynı capital_
         # per_trade "teminatı" leverage kadar daha büyük bir notional

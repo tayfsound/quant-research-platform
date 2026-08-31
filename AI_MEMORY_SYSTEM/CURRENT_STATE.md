@@ -1,16 +1,24 @@
-# Mevcut Durum -- v1.123.0 (Faz 383-392 + FIL Faz C: force-open + feature graph + cross-asset causal bağlam)
+# Mevcut Durum -- v1.125.0 (FIL Faz C/D tamamlandı + 7 sessiz kapıya görünürlük eklendi)
 
 **Tarih:** 2026-08-31
 **Branch:** main
-**Son commit (HEAD):** FIL Faz C (bu turda commitlenecek) — bkz. git log.
+**Son commit (HEAD):** 7 sessiz kapı görünürlüğü (bu turda commitlenecek) — bkz. git log.
 **Servis durumu:** uvicorn + celery worker, watchdog orphan-detection düzeltmesi (Faz 390) sonrası doğru şekilde yeniden başlatıldı, aktif çalışıyor.
+
+**7 sessiz kapıya görünürlük (2026-08-31, kullanıcı isteği) — "sistem hâlâ cimri davranıyor" araştırmasının sonucu:**
+Kullanıcının acil bulgusu üzerine son 2.5 saatteki 105 kararın TAMAMINI (`agent_contributions` JSONB'sini elle) inceledim: %83'ü gerçekten negatif EV (bug değil), %13'ü portföy ENB/korelasyon indirimiyle geri çevrilmiş, ama %4'ü (4 karar) DecisionFusion'ın GERÇEK boyutla onayladığı, hiçbir ret nedeni kaydedilmemiş kararlar — yine de açılmamış. Kök neden: `services/decision_recorder.py`'de **7 ayrı kapı** (`strategy_regime_gate`, `signal_persistence_gate`, `pivot_distance_gate`, `mae_mfe_bucket_trading_gate`, `regime_trading_gate`, `direction_trading_gate`, `asset_class_trading_gate`) hiçbir açıklama bırakmadan `opens_position=False` yapıyordu — "neden açılmadı" sorusu SADECE elle DB kazarak (ve gerçek dünyada, her gate'in kendi mantığını tek tek elden geçirerek) cevaplanabiliyordu. Somut örnekler: PLTRUSDT (26 Ağustos'ta kullanıcı onayıyla kalıcı engellenmiş `ai_council_LONG_swing × bullish_high`, hâlâ aktif), BATUSDT (signal_persistence — son 4 döngüde yön tutarsız).
+
+Düzeltme: her 7 kapıya da `decision_fusion`/`portfolio_confidence_discount` ile AYNI desende (`agent_opinions_data.append({"type": "gate_block", "data": {...}})`) bir kayıt eklendi — `api/rest/positions.py::explain_position` → `Transactions.tsx`'e yeni "Engelleyen kapı" bölümü. Artık hiçbir ret sessiz kalmıyor.
 
 **FIL Faz C (2026-08-31) — Feature Intelligence Layer'ın son parçası, kullanıcının "çok bekledi o hikaye" diye tekrar tekrar hatırlattığı görev:**
 Faz A (redundancy matrix + koşullu IC) ve Faz B (klik-tabanlı residualizasyon) zaten tamamlanmıştı. Faz C iki parçadan oluşuyordu:
 1. **Cross-asset causal bağlam (visibility-only):** `causal_inference_gatherer.py`'nin Granger causality çıktısı (BTC/ETH → 79 sembol, haftalık) artık `KnowledgeStage`'de (canlı hesaplama DEĞİL, son kaydedilmiş haftalık snapshot'ın ucuz bir DB okuması) karara "cross_asset_context" olarak ekleniyor — `decision_fusion_entries`/`portfolio_confidence_discounts` ile AYNI zincir (RecordingStage → DecisionRecorder.record() → agent_contributions → explain_position → Transactions.tsx). Council'i HİÇ etkilemiyor, sadece kayda geçiyor.
 2. **Feature graph görselleştirme:** `FeatureIC.tsx`'e redundancy verisinin (mevcut, yeni hesaplama yok) dairesel/node-edge grafik görünümü eklendi — saf SVG, yeni bağımlılık yok.
 
-FIL Faz D (walk-forward meta-model) bu planın kapsamı dışında bırakıldı — kullanıcının kendisi de bugün ayrıca "puanlama yerine geçmiş-deneyim eşleştirmesi" fikrini büyük, ayrı bir mimari tartışma olarak beklemeye aldı (bkz. [[project_open_items_2026_08_31]] madde 6).
+**FIL Faz D (aynı gün, hemen ardından) — "Historical Analog Engine":**
+Önce kullanıcıya Faz D'nin neden ertelendiğini açıklarken (case-based reasoning'e karşı gerekçe) ÖNEMLİ bir kendi hatamı buldum: bu oturum boyunca tekrarladığım "`strategy_hypothesis_scanner.py`'de bir pattern OOS'ta -%32.2 puan tersine döndü" iddiası **YANLIŞTI** — doğrulamadan tekrarlanmış/uydurulmuş bir rakamdı. Gerçek kayıt (bu dosyanın kendi geçmişi, satır ~289-293 ve ~1033): o aday (LONG swing×bullish_high) OOS'ta GERÇEKTEN TEKRARLANDI, insan onayından geçti, ŞU AN CANLI bir gate'i gerçekten engelliyor. Bu, case-based yaklaşıma karşı değil LEHİNE bir kanıt. `project_open_items_2026_08_31.md` madde 6 buna göre düzeltildi.
+
+Bu düzeltilmiş resimle Faz D kuruldu: `analytics/historical_analog_engine.py` — `agent_combination_reliability.py`'nin AYNI istatistiksel korumalarını (FDR + embargo'lu temporal-split OOS + min örneklem + örtüşme-düzeltmeli effective_sample_size — `compute_oos_survival`/`two_proportion_p_value` artık iki modül arasında paylaşılan public fonksiyonlar) yeniden kullanıyor, üçüncü bir eksen (`market_regime`) ekliyor. `dashboard/src/views/HistoricalAnalogs.tsx` — yeni sayfa. Gerçek üretim verisiyle doğrulandı: 1831 kapanmış işlem, 106 analog, 4 tanesi gate_eligible (ör. order_flow+technical × bullish_low × LONG, %86.9 win rate, n=252). **Kasıtlı olarak offline/analiz-only — karar hattına HİÇ bağlanmadı**, canlıya bağlanması ayrı bir onay turu gerektirecek (kullanıcının kendi orijinal tasarımı).
 
 **Faz 392 düzeltme (aynı gün, kullanıcı geri bildirimiyle):** İlk versiyon force-open için ayrı bir sabit %85 win_rate eşiği koymuştu — kullanıcı itiraz etti ("aynı hayatı yüz defa yaparım ki hata olduğuna emin olabileyim, %85 çok yüksek"). Ayrı eşik kaldırıldı, artık kullanıcının panelden zaten kontrol ettiği Karar Kapısı'nın (`agent_combination_gate_min_win_rate`) eşiğini paylaşıyor: kapı kapalıyken win_rate hiç filtrelenmiyor (sadece `gate_eligible` — örneklem/anlamlılık şartı — kalıyor).
 

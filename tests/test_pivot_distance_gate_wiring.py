@@ -39,6 +39,12 @@ def test_large_cap_far_from_pivot_is_blocked():
     event = recorder.record(_ctx(_LARGE_CAP_SYMBOL, distance_pct=0.02), [])
     assert event.status == "no_trade"
 
+    # Kullanıcı isteği (2026-08-31): görünürlük kaydı.
+    gate_blocks = [o for o in event.agent_opinions if o.get("type") == "gate_block"]
+    assert len(gate_blocks) == 1
+    assert gate_blocks[0]["data"]["gate"] == "pivot_distance_gate"
+    assert gate_blocks[0]["data"]["distance_pct"] == 0.02
+
 
 def test_large_cap_near_pivot_is_not_blocked():
     _set_gate()
