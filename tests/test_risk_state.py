@@ -499,7 +499,13 @@ def test_concept_drift_reason_set_in_live_mode_when_recent_win_rate_drops_signif
     far_future = datetime.now(UTC) + timedelta(days=3650, hours=20)
     with SessionFactory.get_session() as session:
         original_mode = AppSettingsRepository(session).get("trading_mode")
+        original_cutoff = AppSettingsRepository(session).get("concept_drift_legacy_cutoff_at")
         AppSettingsRepository(session).set("trading_mode", "live", updated_by="test")
+        # Faz 383 — paylaşılan test DB'sinde başka bir testten (ya da
+        # manuel dashboard "Kapat" tıklamasından) kalmış olabilecek bir
+        # cutoff, bu testin varsaydığı "drift aktif" durumunu yanlışlıkla
+        # bozmasın diye açıkça temizleniyor.
+        AppSettingsRepository(session).set("concept_drift_legacy_cutoff_at", "", updated_by="test")
     try:
         _seed_concept_drift_trades(symbol, far_future)
 
@@ -510,6 +516,9 @@ def test_concept_drift_reason_set_in_live_mode_when_recent_win_rate_drops_signif
         _cleanup_symbol(symbol)
         with SessionFactory.get_session() as session:
             AppSettingsRepository(session).set("trading_mode", original_mode, updated_by="test")
+            AppSettingsRepository(session).set(
+                "concept_drift_legacy_cutoff_at", original_cutoff or "", updated_by="test",
+            )
 
 
 def test_concept_drift_reason_not_set_in_test_mode_even_when_drift_detected():
@@ -537,6 +546,53 @@ def test_concept_drift_reason_not_set_in_test_mode_even_when_drift_detected():
         _cleanup_symbol(symbol)
         with SessionFactory.get_session() as session:
             AppSettingsRepository(session).set("trading_mode", original_mode, updated_by="test")
+
+
+def test_concept_drift_legacy_cutoff_resets_the_trigger_without_hiding_history():
+    """Faz 383 — kullanıcı isteği: "tetiklendi diye sonsuza kadar
+    bırakacak değiliz, dashboard'daki uyarı balonuna kapatma butonu
+    gelsin." Bu kontrol saf bir hesaplama (kalıcı durum yok), bu yüzden
+    kill_switch_legacy_cutoff_at İLE AYNI desen kullanılıyor:
+    concept_drift_legacy_cutoff_at set edilince, bu tarihten ÖNCE açılmış
+    (kirlenmiş) pozisyonlar pencereden düşüyor — eski işlemler SİLİNMİYOR,
+    sadece göz ardı ediliyor. Burada seed edilen TÜM işlemler aynı ana
+    (test çalışma zamanı) açıldığı için cutoff'u seed'den SONRAYA
+    ayarlamak hepsini pencereden düşürüyor (available=False) — reset'in
+    gerçekten filtreyi uyguladığının kanıtı."""
+    from datetime import UTC, datetime, timedelta
+
+    symbol = f"RISKSTATE{uuid4().hex[:8]}"
+    far_future = datetime.now(UTC) + timedelta(days=3650, hours=21)
+    with SessionFactory.get_session() as session:
+        original_mode = AppSettingsRepository(session).get("trading_mode")
+        original_cutoff = AppSettingsRepository(session).get("concept_drift_legacy_cutoff_at")
+        AppSettingsRepository(session).set("trading_mode", "live", updated_by="test")
+        # Bu test kendi cutoff senaryosunu BAŞTAN kuruyor — paylaşılan
+        # test DB'sinde başka bir testten kalmış olabilecek eski bir
+        # cutoff, aşağıdaki ilk assertion'ı (drift AKTİF olmalı) yanlışlıkla
+        # bozmasın diye açıkça temizleniyor.
+        AppSettingsRepository(session).set("concept_drift_legacy_cutoff_at", "", updated_by="test")
+    try:
+        _seed_concept_drift_trades(symbol, far_future)
+
+        state = load_position_risk_state()
+        assert state["concept_drift_reason"] is not None
+
+        reset_cutoff = datetime.now(UTC) + timedelta(seconds=1)
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set(
+                "concept_drift_legacy_cutoff_at", reset_cutoff.isoformat(), updated_by="test",
+            )
+
+        state_after_reset = load_position_risk_state()
+        assert state_after_reset["concept_drift_reason"] is None
+    finally:
+        _cleanup_symbol(symbol)
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("trading_mode", original_mode, updated_by="test")
+            AppSettingsRepository(session).set(
+                "concept_drift_legacy_cutoff_at", original_cutoff or "", updated_by="test",
+            )
 
 
 def test_get_concept_drift_diagnostics_reports_real_numbers_even_when_not_active():
@@ -594,7 +650,7 @@ def test_get_concept_drift_diagnostics_reports_unavailable_below_sample_threshol
     from services.risk_state import get_concept_drift_diagnostics
 
     class _EmptyRepo:
-        def list_closed_trades(self, limit, exclude_experiment_bucket=None):
+        def list_closed_trades(self, limit, exclude_experiment_bucket=None, min_opened_at=None):
             return []
 
     diagnostics = get_concept_drift_diagnostics(_EmptyRepo())

@@ -31,21 +31,54 @@ def concept_drift_status(user: AuthContext = Depends(get_current_user)):
     Aynı eşiği/hesabı kullanır (services/risk_state.py::get_concept_
     drift_diagnostics) — RiskEngine'in ne yaptığıyla dashboard'un
     gösterdiği HER ZAMAN aynı, ayrı bir kopya hesap değil."""
+    from datetime import datetime
+
     from database.repositories.app_settings_repository import AppSettingsRepository
     from database.repositories.decision_persistor import DecisionPersistor
     from database.session_factory import SessionFactory
     from services.risk_state import get_concept_drift_diagnostics
 
     with SessionFactory.get_session() as session:
-        diagnostics = get_concept_drift_diagnostics(DecisionPersistor(session))
+        settings_repo = AppSettingsRepository(session)
+        # Faz 383 — RiskEngine'in GERÇEKTE ne uyguladığıyla (bkz. risk_
+        # state.py::load_position_risk_state) AYNI cutoff — aksi halde
+        # kullanıcı "sıfırla" dedikten sonra panel hâlâ eski/kirlenmiş
+        # pencereyle "aktif" gösterebilirdi, tek gerçek kaynak ilkesi bozulur.
+        legacy_cutoff_raw = settings_repo.get("concept_drift_legacy_cutoff_at")
+        legacy_cutoff_at = datetime.fromisoformat(legacy_cutoff_raw) if legacy_cutoff_raw else None
+        diagnostics = get_concept_drift_diagnostics(DecisionPersistor(session), min_opened_at=legacy_cutoff_at)
         # Faz 268-sonrası: kullanıcı isteği — koruma sadece canlı modda
         # pozisyon açmayı engelliyor (bkz. services/risk_state.py::
         # load_position_risk_state). Panel istatistikleri hep gerçek
         # gösterir ama "enforced" olmadan bu SADECE bilgilendirme, sistem
         # gerçekte durdurulmuş değil.
-        trading_mode = AppSettingsRepository(session).get("trading_mode")
+        trading_mode = settings_repo.get("trading_mode")
         diagnostics["enforced"] = trading_mode == "live"
+        diagnostics["reset_at"] = legacy_cutoff_raw
         return diagnostics
+
+
+@router.post("/concept-drift-status/reset")
+def reset_concept_drift(user: AuthContext = Depends(require_role(Role.OPERATOR))):
+    """Faz 383 — kullanıcı isteği: "tetiklendi diye sonsuza kadar
+    bırakacak değiliz, dashboard'daki uyarı balonuna kapatma butonu
+    gelsin." Bu, eski kötü işlemleri SİLMİYOR/GİZLEMİYOR — sadece Concept
+    Drift'in bakma penceresini "şu andan itibaren"e çeviriyor (bkz.
+    services/risk_state.py::get_concept_drift_diagnostics docstring'i —
+    kill_switch_legacy_cutoff_at ile AYNI, zaten kanıtlanmış desen).
+    Performans gerçekten düzelmediyse, yeterli taze veri birikince drift
+    dürüstçe TEKRAR tetiklenir — bu kalıcı bir susturma değil."""
+    from datetime import UTC, datetime
+
+    from database.repositories.app_settings_repository import AppSettingsRepository
+    from database.session_factory import SessionFactory
+
+    now = datetime.now(UTC)
+    with SessionFactory.get_session() as session:
+        AppSettingsRepository(session).set(
+            "concept_drift_legacy_cutoff_at", now.isoformat(), updated_by=user.username,
+        )
+    return {"reset_at": now.isoformat(), "reset_by": user.username}
 
 
 @router.get("/market-direction-summary")

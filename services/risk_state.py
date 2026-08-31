@@ -15,7 +15,7 @@ from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMEN
 _CONCEPT_DRIFT_WIN_RATE_DROP_THRESHOLD = 0.15
 
 
-def get_concept_drift_diagnostics(decision_repo: DecisionPersistor) -> dict:
+def get_concept_drift_diagnostics(decision_repo: DecisionPersistor, min_opened_at: datetime | None = None) -> dict:
     """Faz 268-sonrası — kullanıcı isteği: "Concept Drift aktif olduğunda
     panelden göreyim, neden pozisyon almadığını bilmeden kalmayayım."
     _compute_concept_drift_reason (aşağıda) SADECE tetiklendiğinde bir
@@ -28,9 +28,22 @@ def get_concept_drift_diagnostics(decision_repo: DecisionPersistor) -> dict:
     AI'ın karar/confidence sisteminden tamamen yalıtık, kendi (çok farklı)
     kâr/zarar dağılımına sahip mekanik bir strateji; onun kapanışları AI'ın
     kazanma oranı istatistiğine karışırsa Concept Drift AI'ın gerçekte
-    bozulmadığı bir anda yanlışlıkla tetiklenebilir."""
+    bozulmadığı bir anda yanlışlıkla tetiklenebilir.
+
+    Faz 383 — kullanıcı isteği: "tetiklendi diye sonsuza kadar bırakacak
+    değiliz, dashboard'daki uyarı balonuna kapatma butonu gelsin." Bu
+    kontrol saf bir HESAPLAMA (son 150 kapanmış işlem) — kalıcı bir "aktif/
+    kapalı" durumu YOK, bu yüzden basit bir on/off flag'i çalışmaz (bir
+    sonraki cycle'da işlemler değişmeden aynı 150'lik pencere aynı sonucu
+    üretir, "kapatma" anlamsız kalırdı). min_opened_at, kill_switch_
+    legacy_cutoff_at İLE AYNI, zaten kanıtlanmış desen (bkz. list_closed_
+    trades'in min_opened_at yorumu): insan "sıfırla" dediğinde bu tarihten
+    ÖNCE açılmış pozisyonlar pencereye hiç girmiyor — istatistik SAHTE
+    hale getirilmiyor (eski kötü işlemler silinmiyor/gizlenmiyor, sadece
+    "bundan sonrasına bak" deniyor), ve performans GERÇEKTEN düzelmediyse
+    yeterli taze veri birikince drift dürüstçe TEKRAR tetiklenir."""
     trades = decision_repo.list_closed_trades(
-        limit=150, exclude_experiment_bucket=PUMP_FADE_EXPERIMENT_BUCKET
+        limit=150, exclude_experiment_bucket=PUMP_FADE_EXPERIMENT_BUCKET, min_opened_at=min_opened_at,
     )
     if len(trades) < 100:
         return {"available": False, "sample_size": len(trades), "required_sample_size": 100}
@@ -53,13 +66,13 @@ def get_concept_drift_diagnostics(decision_repo: DecisionPersistor) -> dict:
     }
 
 
-def _compute_concept_drift_reason(decision_repo: DecisionPersistor) -> RiskReason | None:
+def _compute_concept_drift_reason(decision_repo: DecisionPersistor, min_opened_at: datetime | None = None) -> RiskReason | None:
     """Faz 268-sonrası — bkz. contracts/contexts/risk.py::concept_drift_
     reason yorumu. Burada (RiskEngine.execute()'un İÇİNDE DEĞİL) hesaplanır
     ki test çağıranlar ctx.risk.concept_drift_reason'ı doğrudan set edip
     RiskEngine'i izole test edebilsin — gerçek bir regresyon (2026-08-13)
     bu ayrımın neden zorunlu olduğunu kanıtladı."""
-    diagnostics = get_concept_drift_diagnostics(decision_repo)
+    diagnostics = get_concept_drift_diagnostics(decision_repo, min_opened_at=min_opened_at)
     if not diagnostics["available"] or not diagnostics["active"]:
         return None
 
@@ -135,7 +148,14 @@ def load_position_risk_state(
         # get_concept_drift_diagnostics (dashboard'un okuduğu) hâlâ HER
         # zaman gerçek istatistikleri hesaplıyor — sadece gerçek pozisyon
         # engelleme (RiskReason) canlı modla sınırlandı.
-        concept_drift_reason = _compute_concept_drift_reason(decision_repo) if trading_mode == "live" else None
+        concept_drift_legacy_cutoff_raw = settings_repo.get("concept_drift_legacy_cutoff_at")
+        concept_drift_legacy_cutoff_at = (
+            datetime.fromisoformat(concept_drift_legacy_cutoff_raw) if concept_drift_legacy_cutoff_raw else None
+        )
+        concept_drift_reason = (
+            _compute_concept_drift_reason(decision_repo, min_opened_at=concept_drift_legacy_cutoff_at)
+            if trading_mode == "live" else None
+        )
 
         # Faz 268-sonrası — gerçek olay: XAUTUSDT SHORT x54. bkz.
         # contracts/contexts/risk.py::same_direction_open_counts.

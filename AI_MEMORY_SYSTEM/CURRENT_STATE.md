@@ -1,9 +1,20 @@
-# Mevcut Durum -- v1.115.0 (Faz 376: "decision decomposition" — weight_adjustments + net_evidence_by_direction)
+# Mevcut Durum -- v1.121.0 (Faz 376-382: decision decomposition + kilit TTL + kalibrasyon-drop bug'ı + pump_fade cutoff + EV teşhis + ajan güvenilirliği uncertainty-additive + ENB top-3 muafiyeti)
 
-**Tarih:** 2026-08-29
+**Tarih:** 2026-08-31
 **Branch:** main
-**Son commit (HEAD):** Faz 376 commit'i bu turda atılacak (bkz. aşağı).
-**Servis durumu:** Faz 376 sonrası worker + uvicorn yeniden başlatılacak (contracts/agent.py ve services/council_orchestrator.py CANLI karar hattını etkiliyor, sadece dashboard/API değil).
+**Son commit (HEAD):** `9e48004` (Faz 382) — tüm turun işleri commitlendi, push edildi.
+**Servis durumu:** uvicorn + celery worker Faz 382 dahil en son kodla çalışıyor. **AMA canlıda hâlâ pozisyon açılmıyor** — kök neden ARTIK Faz 376-382'nin düzelttiği hiçbir şey değil, YENİ ve ayrı bir üçüncü kapı: RiskEngine'in Concept Drift gate'i (`CONCEPT_DRIFT_DEGRADATION`, kazanma oranı %66→%24, p=0.0000) council'ı hiç çağırmadan hisse senedi kararlarını reddediyor. Bu gerçek bir düşüş mü yoksa son 2 günün kaosunun (worker takılmaları, pump_fade bug'ı, threshold sıfırlamaları) kirlettiği bir ölçüm artefaktı mı — HENÜZ ARAŞTIRILMADI. Bkz. [[project_open_items_2026_08_31]] madde 1.
+
+**Faz 376-382 özet (2026-08-29/30/31, tek bir marathon oturumu):**
+- Faz 376: decision decomposition — `weight_adjustments` (agent-level before/after/multiplier) + `net_evidence_by_direction` (aktif/bastırılmış ajan ayrımı), Transactions'a eklendi.
+- Faz 377: `run_trading_cycle_task`'ın Redis kilidi 600sn→1800sn — gerçek çalışma süresi (~12.5dk) eski TTL'i aşıyordu, üst üste binen döngüler 2.5 saatlik tam duruşa yol açmıştı.
+- Faz 378: kalibrasyon adımındaki bir hata artık ajanın ZATEN başarıyla hesaplanmış oyunu tamamen düşürmüyor (ayrı try/except) + `ConfidenceModelRepository`/`WeightRepository`'nin `mkdir`ına eksik `parents=True` eklendi (dış bir bug raporu doğrulandı).
+- Faz 379: Copilot'un bir gece önceki pump-fade temizlik commit'i, `cleanup_stale_pump_fade_positions_task`'ın cutoff'unu kaldırmıştı — bu KALICI 60sn'lik görev, artık HER YENİ pump_fade pozisyonunu da (<1dk içinde) anında kapatıyordu. Cutoff sabit bir zamana geri çekildi.
+- Faz 380: "Negatif EV" reddine `confidence`/`win`/`loss` teşhis alanları eklendi — çoğu reddin aslında win=loss=0 (MetaStage zaten WAIT demiş, gerçek EV hesabı hiç yapılmamış) olduğu keşfedildi.
+- Faz 381 (BÜYÜK): ajan güvenilirlik bastırması (`benching_floor` + `unanswered_debate_challenge`) sıralı çarpımsal (0.1×0.7×...) yerine odds-uzayında toplamalı (`services/agent_reliability_weighting.py`, yeni). Gerçek 1048 benching olayında ortalama ağırlık 0.1→0.909 çıktı. PYPLUSDT eleştirisinin (kullanıcı, birkaç gün önce) doğrudan çözümü.
+- Faz 382: Faz 381 sonrası bir cycle'da onlarca sembol aynı anda ACT/REDUCE'a ulaşınca, portföy seviyesindeki "düşük effective-number-of-bets" indirimi HEPSİNİ aynı anda WAIT'e döndürüyordu (kullanıcı: "kilitlenir yoksa"). Aday sayısı MIN_EFFECTIVE_BETS'i (3) aşınca artık en iyi 3 aday muaf.
+
+**Bu turda ayrıca bulunan, HENÜZ düzeltilmeyen açık maddeler:** TRUMPUSDT direction-lineage uyuşmazlığı (council SHORT, persist edilen direction LONG, kısmen mtf_direction ile açıklanıyor ama tam değil), `agent_debate.py`'de hâlâ sessiz `except: pass`, `api/rest/weights.py`/`strategy_gates.py`'de auth'suz okuma endpoint'leri, Macro ajanının tek başına council'in kolektifinden daha isabetli olduğu bulgusu (yeni ajan eklememe kararını destekliyor). Tam liste: [[project_open_items_2026_08_31]].
 
 **Faz 376 (2026-08-29) — kullanıcı bulgusu, canlı bir PYPLUSDT LONG %65.7
 kararı üzerinden çok detaylı bir teknik eleştiri getirdi:** Kalibrasyon ×

@@ -308,7 +308,9 @@ export default function Dashboard() {
   const [conceptDrift, setConceptDrift] = useState<{
     available: boolean; active?: boolean; enforced?: boolean;
     baseline_win_rate?: number; recent_win_rate?: number; p_value?: number;
+    reset_at?: string | null;
   } | null>(null);
+  const [conceptDriftResetting, setConceptDriftResetting] = useState(false);
   // Faz 362-devam — backlog madde 21, kullanıcı isteği: "AI şu an piyasa
   // yönünü nasıl görüyor" bilgi kartı.
   const [marketDirection, setMarketDirection] = useState<{
@@ -469,6 +471,23 @@ export default function Dashboard() {
       .finally(() => setSaving(null));
   };
 
+  // Faz 383 — kullanıcı isteği: "tetiklendi diye sonsuza kadar bırakacak
+  // değiliz, dashboard'daki uyarı balonuna kapatma butonu gelsin."
+  const resetConceptDrift = () => {
+    setConceptDriftResetting(true);
+    setError(null);
+    fetch("/api/v1/dashboard/concept-drift-status/reset", { method: "POST", headers: authHeaders() })
+      .then(async (r) => {
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          throw new Error(body.detail || `${r.status}`);
+        }
+        load();
+      })
+      .catch((e) => setError(`concept-drift-reset: ${e.message || e}`))
+      .finally(() => setConceptDriftResetting(false));
+  };
+
   const isRunning = settings.ai_enabled !== "false";
   const isLive = settings.trading_mode === "live";
 
@@ -560,9 +579,14 @@ export default function Dashboard() {
 
       {conceptDrift?.available && conceptDrift.active && conceptDrift.enforced && (
         <div className="mb-6 rounded-xl border border-fall/20 bg-fall-soft p-4">
-          <p className="text-sm font-semibold text-fall mb-1">
-            ⚠ Concept Drift koruması aktif — yeni pozisyon açılmıyor
-          </p>
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-sm font-semibold text-fall mb-1">
+              ⚠ Concept Drift koruması aktif — yeni pozisyon açılmıyor
+            </p>
+            <Button variant="secondary" onClick={resetConceptDrift} disabled={conceptDriftResetting}>
+              {conceptDriftResetting ? "Kapatılıyor…" : "Kapat"}
+            </Button>
+          </div>
           <p className="text-xs text-ink-soft">
             Bunun öncesindeki 100 işlemde kazanma oranı {((conceptDrift.baseline_win_rate ?? 0) * 100).toFixed(1)}%
             iken son 50 işlemde {((conceptDrift.recent_win_rate ?? 0) * 100).toFixed(1)}%'e düştü — bu, genel/tüm-zamanlar
@@ -570,7 +594,9 @@ export default function Dashboard() {
             (p={(conceptDrift.p_value ?? 0).toFixed(4)},
             istatistiksel olarak anlamlı) — sistem bunu kendi güvenlik mekanizması olarak algılayıp yeni işlem
             açmayı durdurdu. Zaten açık pozisyonlar etkilenmez, normal şekilde kapanmaya devam eder. Yakın
-            pencere yeterince gerçek/sağlıklı kapanışla dolunca kendiliğinden açılır.
+            pencere yeterince gerçek/sağlıklı kapanışla dolunca kendiliğinden açılır — ya da "Kapat" ile
+            pencereyi şimdiden itibaren sıfırlayabilirsin (eski işlemler silinmez, sadece bundan sonraki
+            kapanışlara bakılır; performans gerçekten düzelmediyse koruma dürüstçe tekrar tetiklenir).
           </p>
         </div>
       )}
@@ -581,9 +607,14 @@ export default function Dashboard() {
           bilgilendirme — alarm rengi değil, "engellenmiyor" net belirtiliyor. */}
       {conceptDrift?.available && conceptDrift.active && !conceptDrift.enforced && (
         <div className="mb-6 rounded-xl border border-warn/20 bg-warn-soft p-4">
-          <p className="text-sm font-semibold text-warn mb-1">
-            ℹ Concept Drift tespit edildi — test modunda olduğun için pozisyon açmayı engellemiyor
-          </p>
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-sm font-semibold text-warn mb-1">
+              ℹ Concept Drift tespit edildi — test modunda olduğun için pozisyon açmayı engellemiyor
+            </p>
+            <Button variant="secondary" onClick={resetConceptDrift} disabled={conceptDriftResetting}>
+              {conceptDriftResetting ? "Kapatılıyor…" : "Kapat"}
+            </Button>
+          </div>
           <p className="text-xs text-ink-soft">
             Bunun öncesindeki 100 işlemde kazanma oranı {((conceptDrift.baseline_win_rate ?? 0) * 100).toFixed(1)}%
             iken son 50 işlemde {((conceptDrift.recent_win_rate ?? 0) * 100).toFixed(1)}%'e düştü — bu, genel/tüm-zamanlar

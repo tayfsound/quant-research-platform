@@ -45,3 +45,40 @@ def test_concept_drift_status_returns_real_shape():
         assert isinstance(body["enforced"], bool)
     else:
         assert "sample_size" in body
+
+
+def test_concept_drift_reset_requires_auth():
+    r = client.post("/api/v1/dashboard/concept-drift-status/reset")
+    assert r.status_code in (401, 403)
+
+
+def test_concept_drift_reset_requires_operator_role():
+    r = client.post("/api/v1/dashboard/concept-drift-status/reset", headers=make_authed_headers(Role.VIEWER))
+    assert r.status_code == 403
+
+
+def test_concept_drift_reset_sets_legacy_cutoff_and_status_reflects_it():
+    """Faz 383 — kullanıcı isteği: "dashboard'daki uyarı balonuna kapatma
+    butonu gelsin." Reset sonrası status endpoint'i AYNI cutoff'u
+    okumalı — tek gerçek kaynak (bkz. api/rest/dashboard.py::
+    reset_concept_drift docstring'i)."""
+    from database.repositories.app_settings_repository import AppSettingsRepository
+    from database.session_factory import SessionFactory
+
+    with SessionFactory.get_session() as session:
+        original_cutoff = AppSettingsRepository(session).get("concept_drift_legacy_cutoff_at")
+    try:
+        r = client.post("/api/v1/dashboard/concept-drift-status/reset", headers=make_authed_headers(Role.OPERATOR))
+        assert r.status_code == 200
+        body = r.json()
+        assert "reset_at" in body
+        assert body["reset_by"]
+
+        status = client.get("/api/v1/dashboard/concept-drift-status", headers=make_authed_headers(Role.VIEWER))
+        assert status.status_code == 200
+        assert status.json()["reset_at"] == body["reset_at"]
+    finally:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set(
+                "concept_drift_legacy_cutoff_at", original_cutoff or "", updated_by="test",
+            )

@@ -71,6 +71,13 @@ DEFAULTS: dict[str, str] = {
     # işlemler hâlâ gerçek ve hâlâ sayılıyor, sadece "AI şu an duruyor mu"
     # kararı güncel karar kalitesine bakıyor. bkz. services/risk_state.py.
     "kill_switch_legacy_cutoff_at": "",
+    # Faz 383 — kill_switch_legacy_cutoff_at İLE AYNI desen. Kullanıcı
+    # isteği: "Concept Drift tetiklendi diye sonsuza kadar bırakacak
+    # değiliz, dashboard'daki uyarı balonuna kapatma butonu gelsin."
+    # (ISO datetime string, boş=devre dışı). bkz. services/risk_state.py::
+    # get_concept_drift_diagnostics, api/rest/dashboard.py::
+    # reset_concept_drift.
+    "concept_drift_legacy_cutoff_at": "",
     # Faz 268-sonrası — kullanıcı isteği: SourceReliabilityAgent'ın
     # "reliability"i (eskiden ajanın kendi bildirdiği confidence'ın
     # ortalamasıydı, GERÇEK isabet oranı değil — hatta 120 saniyede bir
