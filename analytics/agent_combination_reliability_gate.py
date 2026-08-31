@@ -19,10 +19,14 @@ kendi notu) gruplar "bilinen" sayılır. Diğer tüm aç-kapa kapılarıyla
 rapor yoksa/eşleşen bilinen bir grup yoksa ASLA engellemez — kullanıcı
 tercihi kapısı, güvenlik kapısı değil.
 
-Kapsamlı NOT: şimdilik SADECE engelleme (blok) yönü var — "iyi bilinen bir
-grup pozisyonu güçlendirsin/zorunlu kılsın" yönü kasıtlı olarak
-ERTELENDİ (kullanıcı isteği, adım adım aktivasyon ilkesi — önce blok
-yönünün gerçekten iyi çalıştığı gözlemlensin)."""
+Kapsamlı NOT: uzun süre SADECE engelleme (blok) yönü vardı — "iyi bilinen
+bir grup pozisyonu güçlendirsin/zorunlu kılsın" yönü kasıtlı olarak
+ERTELENMİŞTİ (kullanıcı isteği, adım adım aktivasyon ilkesi — önce blok
+yönünün gerçekten iyi çalıştığı gözlemlensin). Faz 392 (2026-08-31) ile
+bu ikinci yarı da (force_open_eligible_pairs / is_agent_combination_
+force_eligible, aşağıda) kullanıcı onayıyla devreye alındı — DAHA SIKI
+bir kanıt eşiğiyle (gate_eligible + yüksek win_rate, sadece bağımsızlık
+değil)."""
 
 # Kullanıcı bulgusu (2026-08-28): gerçek veride genel ortalama (baseline)
 # win_rate ~%74 civarında oturuyor, bunun altındaki gruplar dashboard'da
@@ -79,3 +83,51 @@ def is_agent_combination_trading_blocked(
         if set(pair["domains"]) <= agreeing_domains and pair["win_rate"] < min_win_rate:
             return True
     return False
+
+
+# Faz 392 — kullanıcı isteği (2026-08-31): "Daha önce başarılı olmuş
+# rejimler ve ajan kombinasyonu gibi bir araya gelen durumlar olursa
+# sistem hiçbir engele takılmasın direkt işlem açsın." Bu yukarıdaki blok
+# yönünün AYNEN simetriği — dosyanın en üstündeki docstring'de (satır
+# 22-25) zaten "kasıtlı olarak ERTELENDİ" diye kayıtlı ikinci yarı, şimdi
+# kullanıcı onayıyla devreye alınıyor. Blok yönünden FARKI: sadece
+# trustworthy_known_pairs (bağımsızlık kanıtı) YETMİYOR, ayrıca
+# `gate_eligible` (FDR + out-of-sample survival + effective_sample_size)
+# VE belirgin şekilde yüksek bir win_rate isteniyor — negatif EV'yi
+# geçersiz kılacak kadar güçlü, birden fazla açıdan doğrulanmış kanıt.
+DEFAULT_MIN_WIN_RATE_FOR_FORCE = 0.85
+
+
+def force_open_eligible_pairs(
+    report_pairs: list[dict],
+    min_win_rate: float = DEFAULT_MIN_WIN_RATE_FOR_FORCE,
+    max_overlap_pct: float = DEFAULT_MAX_OVERLAP_PCT,
+    min_distinct_days: int = DEFAULT_MIN_DISTINCT_DAYS,
+) -> list[dict]:
+    """trustworthy_known_pairs()'ın (bağımsızlık kanıtı) çıktısını, AYRICA
+    gate_eligible (FDR-anlamlı + OOS-survival + yeterli effective_sample_
+    size — analytics/agent_combination_reliability.py'nin kendi üç-şartlı
+    bayrağı) VE win_rate >= min_win_rate ile daraltır. Blok yönünden farklı
+    olarak TEK bir kriter (win_rate) yetmiyor — negatif EV'yi geçersiz
+    kılıp gerçek para riske atacağı için en sıkı kanıt eşiği burada."""
+    known = trustworthy_known_pairs(report_pairs, max_overlap_pct, min_distinct_days)
+    return [p for p in known if p.get("gate_eligible") and p["win_rate"] >= min_win_rate]
+
+
+def is_agent_combination_force_eligible(
+    agreeing_domains: frozenset[str] | None,
+    known_pairs: list[dict],
+) -> tuple[bool, dict | None]:
+    """is_agent_combination_trading_blocked ile simetrik eşleştirme
+    mantığı: known_pairs = force_open_eligible_pairs()'ın çıktısı. Birden
+    fazla eşleşme varsa en yüksek win_rate'li olan audit için döndürülür
+    (blok yönünün "en kötümser" ilkesinin tersi — burada en güçlü kanıtı
+    göstermek audit açısından daha faydalı, karar zaten TEK bir eşleşmeyle
+    veriliyor)."""
+    if agreeing_domains is None:
+        return False, None
+    matches = [p for p in known_pairs if set(p["domains"]) <= agreeing_domains]
+    if not matches:
+        return False, None
+    best = max(matches, key=lambda p: p["win_rate"])
+    return True, best

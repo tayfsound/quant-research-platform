@@ -708,6 +708,17 @@ DEFAULTS: dict[str, str] = {
     "agent_combination_gate_enabled": "false",
     "agent_combination_gate_min_win_rate": "0.74",
 
+    # Faz 392 — kullanıcı isteği (2026-08-31): yukarıdaki blok yönünün
+    # simetriği — "daha önce başarılı olmuş ajan kombinasyonu bir araya
+    # gelirse sistem hiçbir engele takılmasın direkt işlem açsın." bkz.
+    # analytics/agent_combination_reliability_gate.py::force_open_
+    # eligible_pairs (gate_eligible + yüksek win_rate). Eşik %85 —
+    # baseline'ın (~%74) belirgin üstü, negatif EV'yi geçersiz kılacak
+    # kadar güçlü kanıt. Varsayılan KAPALI (aynı adım-adım aktivasyon
+    # ilkesi).
+    "agent_combination_force_open_enabled": "false",
+    "agent_combination_force_open_min_win_rate": "0.85",
+
     # Faz 362 — kullanıcı bulgusu: "council'in ara sıra bir cycle'da
     # tersine dönmesi çoğunlukla gürültü — bu gürültüye güvenerek yeni
     # pozisyonlara da girebilir." Gerçek 3619 kapanmış pozisyonla (10-24

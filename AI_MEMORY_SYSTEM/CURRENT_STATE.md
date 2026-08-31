@@ -1,20 +1,29 @@
-# Mevcut Durum -- v1.121.0 (Faz 376-382: decision decomposition + kilit TTL + kalibrasyon-drop bug'ı + pump_fade cutoff + EV teşhis + ajan güvenilirliği uncertainty-additive + ENB top-3 muafiyeti)
+# Mevcut Durum -- v1.122.0 (Faz 383-392: concept drift reset + agent_debate loglama + auth + regime bug + test-mode override + cooldown/min-profit kaldırma + watchdog orphan fix + ajan kombinasyonu force-open)
 
 **Tarih:** 2026-08-31
 **Branch:** main
-**Son commit (HEAD):** `9e48004` (Faz 382) — tüm turun işleri commitlendi, push edildi.
-**Servis durumu:** uvicorn + celery worker Faz 382 dahil en son kodla çalışıyor. **AMA canlıda hâlâ pozisyon açılmıyor** — kök neden ARTIK Faz 376-382'nin düzelttiği hiçbir şey değil, YENİ ve ayrı bir üçüncü kapı: RiskEngine'in Concept Drift gate'i (`CONCEPT_DRIFT_DEGRADATION`, kazanma oranı %66→%24, p=0.0000) council'ı hiç çağırmadan hisse senedi kararlarını reddediyor. Bu gerçek bir düşüş mü yoksa son 2 günün kaosunun (worker takılmaları, pump_fade bug'ı, threshold sıfırlamaları) kirlettiği bir ölçüm artefaktı mı — HENÜZ ARAŞTIRILMADI. Bkz. [[project_open_items_2026_08_31]] madde 1.
+**Son commit (HEAD):** Faz 392 (bu turda commitlenecek) — bkz. git log.
+**Servis durumu:** uvicorn + celery worker, watchdog orphan-detection düzeltmesi (Faz 390) sonrası doğru şekilde yeniden başlatıldı, aktif çalışıyor.
 
-**Faz 376-382 özet (2026-08-29/30/31, tek bir marathon oturumu):**
-- Faz 376: decision decomposition — `weight_adjustments` (agent-level before/after/multiplier) + `net_evidence_by_direction` (aktif/bastırılmış ajan ayrımı), Transactions'a eklendi.
-- Faz 377: `run_trading_cycle_task`'ın Redis kilidi 600sn→1800sn — gerçek çalışma süresi (~12.5dk) eski TTL'i aşıyordu, üst üste binen döngüler 2.5 saatlik tam duruşa yol açmıştı.
-- Faz 378: kalibrasyon adımındaki bir hata artık ajanın ZATEN başarıyla hesaplanmış oyunu tamamen düşürmüyor (ayrı try/except) + `ConfidenceModelRepository`/`WeightRepository`'nin `mkdir`ına eksik `parents=True` eklendi (dış bir bug raporu doğrulandı).
-- Faz 379: Copilot'un bir gece önceki pump-fade temizlik commit'i, `cleanup_stale_pump_fade_positions_task`'ın cutoff'unu kaldırmıştı — bu KALICI 60sn'lik görev, artık HER YENİ pump_fade pozisyonunu da (<1dk içinde) anında kapatıyordu. Cutoff sabit bir zamana geri çekildi.
-- Faz 380: "Negatif EV" reddine `confidence`/`win`/`loss` teşhis alanları eklendi — çoğu reddin aslında win=loss=0 (MetaStage zaten WAIT demiş, gerçek EV hesabı hiç yapılmamış) olduğu keşfedildi.
-- Faz 381 (BÜYÜK): ajan güvenilirlik bastırması (`benching_floor` + `unanswered_debate_challenge`) sıralı çarpımsal (0.1×0.7×...) yerine odds-uzayında toplamalı (`services/agent_reliability_weighting.py`, yeni). Gerçek 1048 benching olayında ortalama ağırlık 0.1→0.909 çıktı. PYPLUSDT eleştirisinin (kullanıcı, birkaç gün önce) doğrudan çözümü.
-- Faz 382: Faz 381 sonrası bir cycle'da onlarca sembol aynı anda ACT/REDUCE'a ulaşınca, portföy seviyesindeki "düşük effective-number-of-bets" indirimi HEPSİNİ aynı anda WAIT'e döndürüyordu (kullanıcı: "kilitlenir yoksa"). Aday sayısı MIN_EFFECTIVE_BETS'i (3) aşınca artık en iyi 3 aday muaf.
+**Faz 383-391 özet (2026-08-31, aynı marathon oturumunun devamı):**
+- Faz 383: Concept Drift uyarısına dashboard'dan "Kapat" (sıfırlama) butonu — `concept_drift_legacy_cutoff_at`, `kill_switch_legacy_cutoff_at` ile aynı desen.
+- Faz 384: `agent_debate.py`'deki sessiz `except: pass`'lar artık loglanıyor.
+- Faz 385: `weights.py`/`strategy_gates.py`'nin auth'suz okuma endpoint'lerine auth eklendi.
+- Faz 386: `learning_loop.py`'nin market_regime çıkarımı yanlış alandan (`raw_snapshot` yerine `features`) okuyordu, düzeltildi.
+- Faz 387: Trading cycle sembol-başına zamanlama teşhisi (saf ölçüm, kod değişikliği yok).
+- Faz 388: Test modunda MetaStage'in WAIT-forcing gate'leri artık REDUCE'a düşüyor (boyut confidence'a orantılı) — kullanıcının acil "test modunda hiç veri toplayamıyorum" talebi.
+- Faz 389: `min_seconds_between_trades` cooldown kontrolü tamamen kaldırıldı (döngü zaten ~20-30dk sürüyor, ayrı bir min-bekleme anlamsızdı).
+- Faz 390 (KRİTİK operasyonel bug): watchdog'un `pgrep -f` kontrolü, ana worker süreci ölüp çocukları yetim (PPID=1) kaldığında bunu "sağlıklı" sayıyordu — gerçek bir 3+ saatlik duruşu hiç tespit etmedi. Artık sadece watchdog'un DOĞRUDAN çocuğu olan eşleşme sağlıklı sayılıyor (`pgrep -P $$ -f ...` — macOS'ta `-P` bayrağı pattern'den ÖNCE gelmeli, ilk denemede yanlış sırada olduğu için sessizce etkisizdi).
+- Faz 391: `min_profit_target_pct` kontrolü tamamen kaldırıldı (SL/TP artık dinamik/otomatik belirlendiği için Faz 210'un statik komisyon-tabanı kontrolü redundant hale gelmişti).
 
-**Bu turda ayrıca bulunan, HENÜZ düzeltilmeyen açık maddeler:** TRUMPUSDT direction-lineage uyuşmazlığı (council SHORT, persist edilen direction LONG, kısmen mtf_direction ile açıklanıyor ama tam değil), `agent_debate.py`'de hâlâ sessiz `except: pass`, `api/rest/weights.py`/`strategy_gates.py`'de auth'suz okuma endpoint'leri, Macro ajanının tek başına council'in kolektifinden daha isabetli olduğu bulgusu (yeni ajan eklememe kararını destekliyor). Tam liste: [[project_open_items_2026_08_31]].
+**Faz 392 (bu turda) — ajan kombinasyonu "force-open" yönü devreye alındı:** Kullanıcı test modunda sistemin sürekli 0 işlem açmasından rahatsız oldu ("araştırma platformum var, araştırma yapamıyorum"). Kök neden bug değildi — Faz 388 çalışıyor (MetaStage artık gerçekten REDUCE üretiyor), ama bir sonraki kapı (`decision_fusion.py`'nin negatif-EV reddi) artık GERÇEKTEN hesaplanıyor ve çoğu adayı dürüstçe reddediyor (önceden hiç çalışmıyordu). Kullanıcının önerisi: "Daha önce başarılı olmuş ajan kombinasyonu bir araya gelirse sistem hiçbir engele takılmasın direkt işlem açsın — açtığı işlem başarısız olursa kombinasyonun başarı oranı otomatik düşer, kendi kendine düzelir." Kritik bulgu: bu özellik zaten VARDI, `analytics/agent_combination_reliability_gate.py`'nin docstring'i "iyi bilinen bir grup pozisyonu zorunlu kılsın yönü kasıtlı olarak ERTELENDİ" diye kayıtlıydı (adım adım aktivasyon ilkesi, blok yönü Faz 367-368'den beri gözlemlendi). Bugün kullanıcı onayıyla ikinci yarı devreye alındı:
+- `analytics/agent_combination_reliability_gate.py` — yeni `force_open_eligible_pairs`/`is_agent_combination_force_eligible`: `trustworthy_known_pairs` (bağımsızlık kanıtı) ÜSTÜNE `gate_eligible` (FDR + OOS-survival + effective_sample_size) VE win_rate≥0.85 şartı.
+- `services/decision_fusion.py` — negatif EV bloğunda (SHORT exploration'dan ÖNCE), LONG/SHORT fark etmeksizin eşleşen kombinasyon varsa ENTER_LONG/SHORT (boyut ×0.5), `experiment_bucket=agent_combo_force_open_v1` ile tam izole.
+- `services/agent_combination_reliability_force_open.py` (yeni) — kendi kill switch'i (3 ardışık zarar) + concurrent cap (5) — haftalık rapor gecikmesi penceresinde zararı sınırlar.
+- Yeni ayarlar: `agent_combination_force_open_enabled` (varsayılan false), `agent_combination_force_open_min_win_rate` (varsayılan 0.85) — `AgentCombinationReliability.tsx`'te (Settings.tsx'te DEĞİL, contextual placement) yeni bir kart.
+- **Varsayılan KAPALI** — kullanıcı dashboard'dan bilinçli açacak, gözlem penceresi (feedback_incremental_module_activation) bundan sonra başlıyor.
+
+**Hâlâ açık, HENÜZ düzeltilmeyen maddeler:** Concept Drift gate'in bazı sembolleri (PLTRUSDT gibi) engellemesinin gerçek bir düşüş mü yoksa ölçüm artefaktı mı olduğu (Faz 383 sadece manuel sıfırlama imkanı verdi, asıl soruyu cevaplamadı); Faz 381-391'in tam gözlem penceresi. Tam liste: [[project_open_items_2026_08_31]].
 
 **Faz 376 (2026-08-29) — kullanıcı bulgusu, canlı bir PYPLUSDT LONG %65.7
 kararı üzerinden çok detaylı bir teknik eleştiri getirdi:** Kalibrasyon ×

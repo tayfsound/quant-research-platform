@@ -59,6 +59,10 @@ export default function AgentCombinationReliability() {
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [minWinRateInput, setMinWinRateInput] = useState("");
+  // Faz 392 — kullanıcı isteği (2026-08-31): yukarıdaki Karar Kapısı'nın
+  // simetriği — "daha önce başarılı olmuş ajan kombinasyonu bir araya
+  // gelirse sistem hiçbir engele takılmasın direkt işlem açsın."
+  const [forceOpenMinWinRateInput, setForceOpenMinWinRateInput] = useState("");
 
   const load = () => {
     setLoading(true);
@@ -73,6 +77,7 @@ export default function AgentCombinationReliability() {
         setReports(history.reports || []);
         setSettings(settingsData.settings || {});
         setMinWinRateInput(settingsData.settings?.agent_combination_gate_min_win_rate ?? "0.74");
+        setForceOpenMinWinRateInput(settingsData.settings?.agent_combination_force_open_min_win_rate ?? "0.85");
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
@@ -99,6 +104,7 @@ export default function AgentCombinationReliability() {
   };
 
   const gateEnabled = settings.agent_combination_gate_enabled === "true";
+  const forceOpenEnabled = settings.agent_combination_force_open_enabled === "true";
 
   return (
     <div>
@@ -145,6 +151,55 @@ export default function AgentCombinationReliability() {
               className="!px-3 !py-1.5 text-xs"
             >
               {gateEnabled ? "Kapıyı Kapat" : "Kapıyı Aç"}
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* Faz 392 — kullanıcı isteği (2026-08-31): Karar Kapısı'nın
+          simetriği — burada bir grup ENGELLENMİYOR, tam tersine, negatif
+          EV yüzünden WAIT'e dönecek bir karar, çok güçlü kanıtlı (kapı
+          uygun + yüksek kazanma oranlı) bir grup eşleşirse ZORLA açılıyor
+          (küçültülmüş boyutla, izole deneysel kovada). Varsayılan KAPALI. */}
+      <Card className="mb-6">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <h3 className="text-sm font-semibold text-ink mb-1">Force-Open (negatif EV'yi geçersiz kıl)</h3>
+            <p className="text-xs text-ink-soft">
+              Açıksa: negatif EV yüzünden reddedilecek bir karar, "Kapı uygun" (FDR + zamanla tekrar + yeterli
+              bağımsız N) VE kazanma oranı aşağıdaki eşiğin üstünde olan bir grupla eşleşirse yine de açılır —
+              küçültülmüş boyutla (proposed_size × 0.5), ayrı bir deneysel kovada (agent_combo_force_open_v1,
+              ana istatistikleri kirletmez). Kendi kill switch'i var: son 3 kapanmış işlemi art arda zararlıysa
+              otomatik durur.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              max="1"
+              value={forceOpenMinWinRateInput}
+              onChange={(e) => setForceOpenMinWinRateInput(e.target.value)}
+              onBlur={() => {
+                if (
+                  forceOpenMinWinRateInput &&
+                  forceOpenMinWinRateInput !== settings.agent_combination_force_open_min_win_rate
+                ) {
+                  save("agent_combination_force_open_min_win_rate", forceOpenMinWinRateInput);
+                }
+              }}
+              disabled={saving === "agent_combination_force_open_min_win_rate"}
+              className="w-20 px-2 py-1.5 rounded-lg text-xs font-mono border border-line bg-surface text-ink shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent"
+              title="Eşik win_rate (0-1 arası, ör. 0.85)"
+            />
+            <Button
+              variant={forceOpenEnabled ? "danger" : "secondary"}
+              disabled={saving === "agent_combination_force_open_enabled"}
+              onClick={() => save("agent_combination_force_open_enabled", forceOpenEnabled ? "false" : "true")}
+              className="!px-3 !py-1.5 text-xs"
+            >
+              {forceOpenEnabled ? "Force-Open'ı Kapat" : "Force-Open'ı Aç"}
             </Button>
           </div>
         </div>

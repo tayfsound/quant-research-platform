@@ -161,7 +161,80 @@ class DecisionFusion:
             # kalır (normal model performans istatistiklerine karışmaz).
             direction = (ctx.decision.proposed_direction or "").upper()
             explored = False
-            if direction == "SHORT" and (win > 0 or loss > 0):
+
+            # Faz 392 — kullanıcı isteği (2026-08-31): "Daha önce başarılı
+            # olmuş ajan kombinasyonu bir araya gelirse sistem hiçbir
+            # engele takılmasın direkt işlem açsın." SHORT exploration'dan
+            # ÖNCE kontrol ediliyor — LONG'da da geçerli, SHORT'a özel
+            # değil. analytics/agent_combination_reliability_gate.py'nin
+            # uzun süredir bilinçli ertelenmiş "force-open" yarısı, bugün
+            # kullanıcı onayıyla devreye alındı. Zaten çalışan blok
+            # yönüyle (decision_recorder.py) AYNI desen: haftalık rapor +
+            # AppSettingsRepository ile açık/kapalı.
+            if direction in ("LONG", "SHORT") and (win > 0 or loss > 0) and opinions:
+                from database.repositories.app_settings_repository import AppSettingsRepository
+                from database.session_factory import SessionFactory
+
+                with SessionFactory.get_session() as _settings_session:
+                    _settings_repo = AppSettingsRepository(_settings_session)
+                    force_open_enabled = _settings_repo.get("agent_combination_force_open_enabled") == "true"
+                    _min_win_rate_raw = _settings_repo.get("agent_combination_force_open_min_win_rate")
+
+                if force_open_enabled:
+                    from analytics.agent_combination_reliability_gate import (
+                        DEFAULT_MIN_WIN_RATE_FOR_FORCE,
+                        force_open_eligible_pairs,
+                        is_agent_combination_force_eligible,
+                    )
+                    from database.repositories.agent_combination_reliability_report_repository import (
+                        AgentCombinationReliabilityReportRepository,
+                    )
+                    from services.agent_combination_reliability_force_open import (
+                        EXPERIMENT_BUCKET as _FORCE_OPEN_BUCKET,
+                    )
+                    from services.agent_combination_reliability_force_open import (
+                        SIZE_MULTIPLIER as _FORCE_OPEN_SIZE_MULTIPLIER,
+                    )
+                    from services.agent_combination_reliability_force_open import (
+                        is_eligible as _force_open_is_eligible,
+                    )
+
+                    min_win_rate = float(_min_win_rate_raw) if _min_win_rate_raw else DEFAULT_MIN_WIN_RATE_FOR_FORCE
+                    agreeing_domains = frozenset(
+                        o.domain.value for o in opinions if (getattr(o, "direction", "") or "").upper() == direction
+                    )
+                    with SessionFactory.get_session() as _report_session:
+                        report = AgentCombinationReliabilityReportRepository(_report_session).get_latest()
+                    safety_ok, _safety_reason = _force_open_is_eligible()
+                    if report and report.get("result") and safety_ok:
+                        force_pairs = force_open_eligible_pairs(
+                            report["result"].get("pairs") or [], min_win_rate=min_win_rate
+                        )
+                        eligible, matched_pair = is_agent_combination_force_eligible(agreeing_domains, force_pairs)
+                        if eligible:
+                            explored = True
+                            ctx.decision.action = (
+                                ActionType.ENTER_LONG if direction == "LONG" else ActionType.ENTER_SHORT
+                            )
+                            ctx.decision.final_size = abs(ctx.decision.proposed_size) * _FORCE_OPEN_SIZE_MULTIPLIER
+                            ctx.cognition.relevant_knowledge.append({
+                                "type": "experiment_bucket",
+                                "data": {"bucket": _FORCE_OPEN_BUCKET},
+                            })
+                            ctx.cognition.relevant_knowledge.append({
+                                "type": "decision_fusion",
+                                "data": {
+                                    "adjustment": "Ajan kombinasyonu force-open — EV negatif ama "
+                                                  "geçmişte kanıtlanmış güçlü kombinasyon eşleşti",
+                                    "matched_domains": matched_pair["domains"],
+                                    "matched_win_rate": matched_pair["win_rate"],
+                                    "matched_sample_size": matched_pair["sample_size"],
+                                    "predicted_ev": round(ev, 6),
+                                    "confidence": round(confidence, 4),
+                                },
+                            })
+
+            if not explored and direction == "SHORT" and (win > 0 or loss > 0):
                 from services.short_exploration import (
                     EXPERIMENT_BUCKET as _SHORT_EXPLORATION_BUCKET,
                 )

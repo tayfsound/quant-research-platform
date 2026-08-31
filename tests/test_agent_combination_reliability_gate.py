@@ -2,6 +2,8 @@
 Saf fonksiyon testleri (decision_recorder.py wiring'i için bkz. tests/
 test_agent_combination_reliability_gate_wiring.py)."""
 from analytics.agent_combination_reliability_gate import (
+    force_open_eligible_pairs,
+    is_agent_combination_force_eligible,
     is_agent_combination_trading_blocked,
     trustworthy_known_pairs,
 )
@@ -74,3 +76,65 @@ def test_single_low_match_blocks_even_alongside_a_high_match():
     gelinmiyor."""
     agreeing = frozenset({"technical", "quant", "onchain", "order_flow"})
     assert is_agent_combination_trading_blocked(agreeing, [_LOW_PAIR, _HIGH_PAIR], min_win_rate=0.80) is True
+
+
+# Faz 392 — force-open yönü (blok yönünün simetriği). _HIGH_PAIR win_rate
+# 0.95 ama gate_eligible varsayılan olarak yok (aşağıdaki testlerde
+# ekleniyor) — force_open_eligible_pairs, trustworthy_known_pairs'ın
+# ÜSTÜNE ayrıca gate_eligible + yüksek win_rate şartı ekliyor.
+_GATE_ELIGIBLE_HIGH_PAIR = {**_HIGH_PAIR, "gate_eligible": True}
+_NOT_GATE_ELIGIBLE_HIGH_PAIR = {**_HIGH_PAIR, "gate_eligible": False}
+
+
+def test_force_open_eligible_pairs_excludes_non_gate_eligible_even_if_high_win_rate():
+    result = force_open_eligible_pairs([_NOT_GATE_ELIGIBLE_HIGH_PAIR], min_win_rate=0.85)
+    assert result == []
+
+
+def test_force_open_eligible_pairs_excludes_gate_eligible_below_min_win_rate():
+    low_but_gate_eligible = {**_LOW_PAIR, "gate_eligible": True}
+    result = force_open_eligible_pairs([low_but_gate_eligible], min_win_rate=0.85)
+    assert result == []
+
+
+def test_force_open_eligible_pairs_keeps_gate_eligible_high_win_rate():
+    result = force_open_eligible_pairs([_GATE_ELIGIBLE_HIGH_PAIR], min_win_rate=0.85)
+    assert result == [_GATE_ELIGIBLE_HIGH_PAIR]
+
+
+def test_force_open_eligible_pairs_still_applies_trustworthy_filters():
+    """gate_eligible + yüksek win_rate yetmiyor — bağımsızlık kanıtı
+    (overlap/distinct_days) da hâlâ geçerli, çünkü trustworthy_known_
+    pairs önce çalışıyor."""
+    narrow_window = {**_GATE_ELIGIBLE_HIGH_PAIR, "distinct_days": 2}
+    assert force_open_eligible_pairs([narrow_window], min_win_rate=0.85) == []
+
+
+def test_force_eligible_when_agreeing_domains_is_none():
+    eligible, matched = is_agent_combination_force_eligible(None, [_GATE_ELIGIBLE_HIGH_PAIR])
+    assert eligible is False
+    assert matched is None
+
+
+def test_force_eligible_when_known_pair_is_a_subset():
+    agreeing = frozenset({"onchain", "order_flow", "macro"})
+    eligible, matched = is_agent_combination_force_eligible(agreeing, [_GATE_ELIGIBLE_HIGH_PAIR])
+    assert eligible is True
+    assert matched == _GATE_ELIGIBLE_HIGH_PAIR
+
+
+def test_not_force_eligible_when_known_pair_is_not_a_subset():
+    agreeing = frozenset({"macro", "sentiment"})
+    eligible, matched = is_agent_combination_force_eligible(agreeing, [_GATE_ELIGIBLE_HIGH_PAIR])
+    assert eligible is False
+    assert matched is None
+
+
+def test_force_eligible_returns_the_strongest_match_when_multiple_qualify():
+    stronger_pair = {**_GATE_ELIGIBLE_HIGH_PAIR, "domains": ["macro"], "win_rate": 0.99}
+    agreeing = frozenset({"onchain", "order_flow", "macro"})
+    eligible, matched = is_agent_combination_force_eligible(
+        agreeing, [_GATE_ELIGIBLE_HIGH_PAIR, stronger_pair]
+    )
+    assert eligible is True
+    assert matched["win_rate"] == 0.99
