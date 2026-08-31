@@ -442,6 +442,52 @@ class MetaStage:
             except Exception as exc:
                 structlog.get_logger().warning("self_reliability_gate_failed", error=str(exc))
 
+        # Faz 388 — kullanıcı bulgusu/isteği (2026-08-31, gerçek gözlem:
+        # canlıda 2.5+ saat, test modunda da uzun süre HİÇ pozisyon
+        # açılmadı — "o kadar çok çarpandan geçiyor ki karar verilene
+        # kadar en son yok oluyor güven değeri, güvenle karar verdirmeye
+        # çalışmak faydasız"). Kullanıcının açık talebi: "güven seviyesi
+        # kararın verilip verilmeyeceğini değil, boyutunu etkilemeli...
+        # işlem alsın bütün rejimlerden alsın başarılı olsun olmasın
+        # alsın ki data toplayalım."
+        #
+        # DİKKAT — bu, Faz 207'de denenip kullanıcının KENDİ isteğiyle
+        # GERİ ALINAN bir fikirle YÜZEYSEL olarak benziyor ama FARKLI:
+        # Faz 207 reduce_threshold'u 0.05'e indirmişti — confidence %19
+        # ile de %80 ile de AYNI (sabit) boyutta pozisyon açılıyordu,
+        # confidence gerçekten ANLAMSIZ hale geliyordu (kullanıcının o
+        # zamanki şikayeti tam buydu). Burada eşik DEĞİŞMİYOR — sadece
+        # yukarıdaki gate'lerden HERHANGİ biri (confidence eşiği, strong-
+        # dissent, sideways-market, short-in-bearish-low, regime-reversal,
+        # self-reliability) WAIT'e zorlasa bile, test modunda VE gerçek
+        # bir yönlü sinyal (belief.direction) varsa REDUCE'a düşülüyor —
+        # REDUCE'un KENDİ, ZATEN var olan formülü (final_size = proposed_
+        # size * confidence, birkaç satır aşağıda) boyutu confidence'a
+        # ORANTILI küçültüyor. Yani %5 confidence gerçekten küçük bir
+        # pozisyon açar, %70 confidence çok daha büyük — confidence
+        # ANLAMINI KORUYOR, sadece "hiç açma" yerine "orantılı aç" diyor.
+        # SADECE trading_mode="test" iken (gerçek sermaye riski yok) ve
+        # SADECE council'in kendisi WAIT demediğinde (belief.direction
+        # LONG/SHORT ise) devreye giriyor — canlı modda hiçbir şey
+        # değişmiyor, council gerçekten WAIT dediğinde (yönlü sinyal
+        # yoksa) test modunda da hâlâ WAIT.
+        if (
+            ctx.risk.trading_mode == "test"
+            and meta["decision"] == "WAIT"
+            and belief.direction in ("LONG", "SHORT")
+        ):
+            meta["decision"] = "REDUCE"
+            ctx.cognition.relevant_knowledge.append({
+                "type": "test_mode_wait_override",
+                "data": {
+                    "reason": "Test modunda güven eşiği/güvenlik gate'leri WAIT'e zorladı, "
+                              "ama gerçek bir yönlü sinyal (belief.direction) var — veri "
+                              "toplama amacıyla REDUCE'a düşürüldü, boyut confidence'a orantılı.",
+                    "confidence": meta["confidence"],
+                    "belief_direction": belief.direction,
+                },
+            })
+
         if meta["decision"] == "WAIT":
             ctx.decision.action = ActionType.WAIT
             ctx.decision.final_size = 0.0

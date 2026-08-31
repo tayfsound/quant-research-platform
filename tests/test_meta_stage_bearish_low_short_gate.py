@@ -5,6 +5,8 @@ bearish/low ise %95.2 (n=398, +$141). "bearish_low" (EMA20<EMA50 + düşük
 gerçekleşen volatilite) fiilen bir taban/konsolidasyon kurulumu, düşüş
 devamı değil. SADECE bu spesifik kombinasyonda (yön=SHORT + trend=bearish
 + volatilite=low) WAIT'e zorlanıyor."""
+import pytest
+
 from contracts.agent import AgentDomain, AgentOpinion
 from contracts.belief import Belief
 from contracts.context import CognitiveCycleContext
@@ -103,6 +105,48 @@ def test_short_in_bullish_low_does_not_force_wait(monkeypatch):
     result_ctx = stage.execute(ctx, _belief("SHORT"), _supportive_opinions("SHORT"))
 
     assert result_ctx.decision.action != ActionType.WAIT
+
+
+def test_test_mode_downgrades_wait_to_reduce_scaled_by_confidence(monkeypatch):
+    """Faz 388 — kullanıcı bulgusu/isteği (2026-08-31): canlıda 2.5+ saat,
+    test modunda da uzun süre hiç pozisyon açılmadı — "güven seviyesi
+    kararın verilip verilmeyeceğini değil, boyutunu etkilemeli... işlem
+    alsın bütün rejimlerden alsın ki data toplayalım." trading_mode="test"
+    iken, bu dosyanın gate'i (short_in_bearish_low) gibi bir WAIT-zorlayan
+    gate tetiklense bile, gerçek bir yönlü sinyal (belief.direction) varsa
+    REDUCE'a düşülüyor — final_size, REDUCE'un KENDİ formülüyle (proposed_
+    size * confidence) orantılı küçülüyor, sıfırlanmıyor."""
+    _mock_healthy_self_reliability(monkeypatch)
+    ctx = _ctx(trend="bearish", volatility_regime="low")
+    ctx.risk.trading_mode = "test"
+    stage = MetaStage()
+    result_ctx = stage.execute(ctx, _belief("SHORT"), _supportive_opinions("SHORT"))
+
+    assert result_ctx.decision.action == ActionType.REDUCE
+    assert result_ctx.decision.final_size > 0.0
+    assert result_ctx.decision.final_size == pytest.approx(
+        result_ctx.decision.proposed_size * result_ctx.decision.confidence
+    )
+    override_entries = [
+        item["data"] for item in ctx.cognition.relevant_knowledge
+        if item.get("type") == "test_mode_wait_override"
+    ]
+    assert len(override_entries) == 1
+
+
+def test_live_mode_still_forces_wait_unaffected_by_test_mode_override(monkeypatch):
+    """Faz 388 regresyon: canlı modda hiçbir şey değişmemeli — bu dosyanın
+    ana testiyle (test_short_in_bearish_low_forces_wait) AYNI senaryo,
+    sadece override'ın SADECE test modunda devreye girdiğini bir kez daha
+    açıkça kilitliyor."""
+    _mock_healthy_self_reliability(monkeypatch)
+    ctx = _ctx(trend="bearish", volatility_regime="low")
+    assert ctx.risk.trading_mode == "live"
+    stage = MetaStage()
+    result_ctx = stage.execute(ctx, _belief("SHORT"), _supportive_opinions("SHORT"))
+
+    assert result_ctx.decision.action == ActionType.WAIT
+    assert result_ctx.decision.final_size == 0.0
 
 
 def test_missing_features_do_not_force_wait(monkeypatch):
