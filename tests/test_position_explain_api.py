@@ -52,6 +52,10 @@ def _persist_decision_with_full_agent_contributions() -> DecisionEvent:
                     "multiplier": 0.8,
                 },
             },
+            {
+                "type": "cross_asset_context",
+                "data": {"cause": "BTCUSDT", "best_lag": 3, "best_p_value": 0.012, "sample_size": 180},
+            },
         ],
     )
     with SessionFactory.get_session() as session:
@@ -101,6 +105,12 @@ def test_explain_separates_agent_votes_from_special_entries():
         "confidence_after": 0.72,
         "multiplier": 0.8,
     }]
+
+    # FIL Faz C — kullanıcı isteği: Causal Inference bağlamı (Granger
+    # causality) da açıklama ekranında görünmeli, visibility-only.
+    assert body["cross_asset_context"] == [
+        {"cause": "BTCUSDT", "best_lag": 3, "best_p_value": 0.012, "sample_size": 180},
+    ]
 
 
 def test_explain_summarizes_net_evidence_by_direction_and_carries_weight_adjustments():
@@ -176,3 +186,4 @@ def test_explain_handles_a_decision_with_no_agent_contributions_gracefully():
     assert body["council_belief"] is None
     assert body["decision_fusion"] == []
     assert body["portfolio_confidence_discounts"] == []
+    assert body["cross_asset_context"] == []

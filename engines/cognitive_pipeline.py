@@ -38,6 +38,39 @@ class KnowledgeStage:
             ctx.decision.model_dump(),
         )
         ctx.cognition.relevant_knowledge.extend(relevant)
+
+        # FIL Faz C — kullanıcı isteği (2026-08-31): Causal Inference'in
+        # (Faz 331, Granger causality — BTC/ETH'nin diğer 79 sembolü
+        # öngörüp öngörmediği) çıktısı bugüne kadar SADECE dashboard'da
+        # görülüyordu, karar bağlamına hiç bağlı değildi. Council'i HİÇ
+        # etkilememesi bilinçli (oy kullanmıyor, sadece kayda geçiyor —
+        # data_unavailable_domains/weight_snapshot ile AYNI "visibility-
+        # only" ilke). Haftalık raporun kendisi (services/causal_
+        # inference_gatherer.py) canlı çağrılırsa ~81 sembolün OHLCV'sini
+        # çekip Granger testi koşar — karar döngüsü için çok pahalı olurdu,
+        # bu yüzden SADECE son kaydedilmiş haftalık snapshot okunuyor (tek
+        # ucuz DB sorgusu, diğer periyodik-rapor tüketen kapılarla —
+        # agent_combination_reliability_gate.py vb. — AYNI ilke).
+        from database.repositories.causal_inference_report_repository import (
+            CausalInferenceReportRepository,
+        )
+        from database.session_factory import SessionFactory
+
+        with SessionFactory.get_session() as _causal_session:
+            _causal_report = CausalInferenceReportRepository(_causal_session).get_latest()
+        if _causal_report and _causal_report.get("result"):
+            for rel in _causal_report["result"].get("fdr_significant_relationships") or []:
+                if rel.get("effect") == ctx.market.symbol:
+                    ctx.cognition.relevant_knowledge.append({
+                        "type": "cross_asset_context",
+                        "data": {
+                            "cause": rel.get("cause"),
+                            "best_lag": rel.get("best_lag"),
+                            "best_p_value": rel.get("best_p_value"),
+                            "sample_size": rel.get("sample_size"),
+                        },
+                    })
+
         return ctx
 
 
@@ -1259,6 +1292,13 @@ class RecordingStage:
         # güvenli bir ajan varken nihai karar neden %28 çıktı" sorusunun
         # cevabı DB'de yoktu. decision_fusion_entries ile AYNI desen.
         portfolio_confidence_discounts = []
+        # FIL Faz C — kullanıcı isteği: KnowledgeStage'in eklediği
+        # cross-asset causal bağlamın (Granger causality, BTC/ETH → bu
+        # sembol) da decision_fusion_entries ile AYNI desende kalıcı
+        # hâle gelmesi — "hangi kanıt gösterildi" sorusunun explain
+        # ekranında cevabı olsun (visibility-only, karar mantığını
+        # etkilemiyor).
+        cross_asset_context_entries = []
         experiment_bucket = None
 
         if hasattr(ctx, "cognition"):
@@ -1267,6 +1307,8 @@ class RecordingStage:
                     decision_fusion_entries.append(item.get("data"))
                 if item.get("type") == "portfolio_confidence_discount":
                     portfolio_confidence_discounts.append(item.get("data"))
+                if item.get("type") == "cross_asset_context":
+                    cross_asset_context_entries.append(item.get("data"))
 
             for item in reversed(ctx.cognition.relevant_knowledge):
                 if item.get("type") == "debate_result":
@@ -1290,6 +1332,7 @@ class RecordingStage:
             decision_fusion_entries,
             experiment_bucket,
             portfolio_confidence_discounts,
+            cross_asset_context_entries=cross_asset_context_entries,
         )
 
         from observability.metrics import decisions_total

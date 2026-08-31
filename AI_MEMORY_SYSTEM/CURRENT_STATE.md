@@ -1,9 +1,18 @@
-# Mevcut Durum -- v1.122.0 (Faz 383-392: concept drift reset + agent_debate loglama + auth + regime bug + test-mode override + cooldown/min-profit kaldırma + watchdog orphan fix + ajan kombinasyonu force-open)
+# Mevcut Durum -- v1.123.0 (Faz 383-392 + FIL Faz C: force-open + feature graph + cross-asset causal bağlam)
 
 **Tarih:** 2026-08-31
 **Branch:** main
-**Son commit (HEAD):** Faz 392 (bu turda commitlenecek) — bkz. git log.
+**Son commit (HEAD):** FIL Faz C (bu turda commitlenecek) — bkz. git log.
 **Servis durumu:** uvicorn + celery worker, watchdog orphan-detection düzeltmesi (Faz 390) sonrası doğru şekilde yeniden başlatıldı, aktif çalışıyor.
+
+**FIL Faz C (2026-08-31) — Feature Intelligence Layer'ın son parçası, kullanıcının "çok bekledi o hikaye" diye tekrar tekrar hatırlattığı görev:**
+Faz A (redundancy matrix + koşullu IC) ve Faz B (klik-tabanlı residualizasyon) zaten tamamlanmıştı. Faz C iki parçadan oluşuyordu:
+1. **Cross-asset causal bağlam (visibility-only):** `causal_inference_gatherer.py`'nin Granger causality çıktısı (BTC/ETH → 79 sembol, haftalık) artık `KnowledgeStage`'de (canlı hesaplama DEĞİL, son kaydedilmiş haftalık snapshot'ın ucuz bir DB okuması) karara "cross_asset_context" olarak ekleniyor — `decision_fusion_entries`/`portfolio_confidence_discounts` ile AYNI zincir (RecordingStage → DecisionRecorder.record() → agent_contributions → explain_position → Transactions.tsx). Council'i HİÇ etkilemiyor, sadece kayda geçiyor.
+2. **Feature graph görselleştirme:** `FeatureIC.tsx`'e redundancy verisinin (mevcut, yeni hesaplama yok) dairesel/node-edge grafik görünümü eklendi — saf SVG, yeni bağımlılık yok.
+
+FIL Faz D (walk-forward meta-model) bu planın kapsamı dışında bırakıldı — kullanıcının kendisi de bugün ayrıca "puanlama yerine geçmiş-deneyim eşleştirmesi" fikrini büyük, ayrı bir mimari tartışma olarak beklemeye aldı (bkz. [[project_open_items_2026_08_31]] madde 6).
+
+**Faz 392 düzeltme (aynı gün, kullanıcı geri bildirimiyle):** İlk versiyon force-open için ayrı bir sabit %85 win_rate eşiği koymuştu — kullanıcı itiraz etti ("aynı hayatı yüz defa yaparım ki hata olduğuna emin olabileyim, %85 çok yüksek"). Ayrı eşik kaldırıldı, artık kullanıcının panelden zaten kontrol ettiği Karar Kapısı'nın (`agent_combination_gate_min_win_rate`) eşiğini paylaşıyor: kapı kapalıyken win_rate hiç filtrelenmiyor (sadece `gate_eligible` — örneklem/anlamlılık şartı — kalıyor).
 
 **Faz 383-391 özet (2026-08-31, aynı marathon oturumunun devamı):**
 - Faz 383: Concept Drift uyarısına dashboard'dan "Kapat" (sıfırlama) butonu — `concept_drift_legacy_cutoff_at`, `kill_switch_legacy_cutoff_at` ile aynı desen.

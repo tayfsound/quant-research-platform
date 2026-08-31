@@ -104,6 +104,25 @@ export default function FeatureIC() {
     (a, b) => Math.abs(b[1].correlation) - Math.abs(a[1].correlation)
   );
 
+  // FIL Faz C — kullanıcı isteği: node=feature, edge=redundancy korelasyonu.
+  // Basit, deterministik dairesel layout — küçük N (tipik 10-25 feature)
+  // için force-simulation kütüphanesi gereksiz karmaşıklık/kararsızlık
+  // getirir, package.json'da zaten d3/visx yok. Yeni bağımlılık YOK.
+  const graphNodes = Array.from(
+    new Set(sortedRedundancy.flatMap(([pairKey]) => pairKey.split("|")))
+  ).sort();
+  const GRAPH_SIZE = 380;
+  const GRAPH_CENTER = GRAPH_SIZE / 2;
+  const GRAPH_RADIUS = GRAPH_SIZE / 2 - 60;
+  const nodePositions: Record<string, { x: number; y: number }> = {};
+  graphNodes.forEach((name, i) => {
+    const angle = (i / Math.max(graphNodes.length, 1)) * 2 * Math.PI - Math.PI / 2;
+    nodePositions[name] = {
+      x: GRAPH_CENTER + GRAPH_RADIUS * Math.cos(angle),
+      y: GRAPH_CENTER + GRAPH_RADIUS * Math.sin(angle),
+    };
+  });
+
   return (
     <div>
       <PageHeader
@@ -158,6 +177,65 @@ export default function FeatureIC() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+      </Card>
+
+      {/* FIL Faz C — kullanıcı isteği: aşağıdaki tablonun aynı verisinin
+          (redundancy çiftleri) grafik/topoloji görünümü — hangi feature'ların
+          birbiriyle "kümelendiğini" tek bakışta görmek için. Tablolar
+          KALDIRILMADI, bu üstlerine eklenen bir özet görünüm. */}
+      <Card className="mb-6">
+        <h3 className="text-sm font-semibold text-ink mb-1">Feature grafiği</h3>
+        <p className="text-xs text-ink-soft mb-3">
+          Düğüm = feature, kenar = redundancy korelasyonu. Kırmızı (|r|≥0.9) neredeyse birebir çakışma, turuncu
+          (|r|≥0.7) redundant aday. Aşağıdaki tablonun aynı verisi, sadece görsel — sayısal detay için tabloya bak.
+        </p>
+        {loading ? (
+          <Spinner />
+        ) : graphNodes.length === 0 ? (
+          <EmptyState label="Henüz hiçbir feature çifti için yeterli ortak örneklem birikmedi." />
+        ) : (
+          <div className="overflow-x-auto flex justify-center">
+            <svg width={GRAPH_SIZE} height={GRAPH_SIZE} viewBox={`0 0 ${GRAPH_SIZE} ${GRAPH_SIZE}`}>
+              {sortedRedundancy.map(([pairKey, entry]) => {
+                const [a, b] = pairKey.split("|");
+                const pa = nodePositions[a];
+                const pb = nodePositions[b];
+                if (!pa || !pb) return null;
+                const abs = Math.abs(entry.correlation);
+                const stroke = abs >= 0.9 ? "var(--color-fall)" : abs >= 0.7 ? "var(--color-warn)" : "var(--color-line)";
+                return (
+                  <line
+                    key={pairKey}
+                    x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y}
+                    stroke={stroke}
+                    strokeWidth={1 + abs * 3}
+                    strokeOpacity={0.3 + abs * 0.5}
+                  />
+                );
+              })}
+              {graphNodes.map((name) => {
+                const p = nodePositions[name];
+                const labelOffsetX = p.x > GRAPH_CENTER + 5 ? 6 : p.x < GRAPH_CENTER - 5 ? -6 : 0;
+                const anchor = p.x > GRAPH_CENTER + 5 ? "start" : p.x < GRAPH_CENTER - 5 ? "end" : "middle";
+                return (
+                  <g key={name}>
+                    <circle cx={p.x} cy={p.y} r={5} className="fill-accent" />
+                    <text
+                      x={p.x + labelOffsetX}
+                      y={p.y + (p.y > GRAPH_CENTER ? 14 : -8)}
+                      textAnchor={anchor}
+                      className="fill-current text-ink"
+                      fontSize={10}
+                      fontFamily="monospace"
+                    >
+                      {name}
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
           </div>
         )}
       </Card>

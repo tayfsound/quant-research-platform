@@ -34,6 +34,7 @@ class DecisionRecorder:
         decision_fusion_entries=None,
         experiment_bucket=None,
         portfolio_confidence_discounts=None,
+        cross_asset_context_entries=None,
     ) -> DecisionEvent:
 
         direction = (
@@ -81,6 +82,15 @@ class DecisionRecorder:
         for entry in (portfolio_confidence_discounts or []):
             agent_opinions_data.append({
                 "type": "portfolio_confidence_discount",
+                "data": entry,
+            })
+
+        # FIL Faz C — kullanıcı isteği: cross-asset causal bağlam (Faz
+        # 331, Granger causality) kalıcı hâle geldi — decision_fusion/
+        # portfolio_confidence_discount ile AYNI desen.
+        for entry in (cross_asset_context_entries or []):
+            agent_opinions_data.append({
+                "type": "cross_asset_context",
                 "data": entry,
             })
 

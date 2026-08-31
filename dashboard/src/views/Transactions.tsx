@@ -428,6 +428,15 @@ type ExplainData = {
     multiplier: number;
     effective_number_of_bets?: number;
   }[];
+  // FIL Faz C — kullanıcı isteği: Causal Inference'in (Granger causality,
+  // BTC/ETH → bu sembol) visibility-only bağlamı. Çoğu kararda BOŞ olur
+  // (sadece FDR'ı geçen ilişkiler için doluyor) — bu beklenen/dürüst.
+  cross_asset_context: {
+    cause: string;
+    best_lag: number;
+    best_p_value: number;
+    sample_size: number;
+  }[];
 };
 
 const PORTFOLIO_DISCOUNT_REASON_LABELS: Record<string, string> = {
@@ -618,6 +627,23 @@ function ExplainModal({ decisionId, onClose }: { decisionId: string; onClose: ()
                   <p className="text-xs text-ink-soft">
                     {String((data.debate_result as { reasoning?: string }).reasoning ?? JSON.stringify(data.debate_result))}
                   </p>
+                </div>
+              )}
+
+              {/* FIL Faz C — kullanıcı isteği: Causal Inference (Granger
+                  causality) bağlamı, sadece görünürlük — hiçbir oy
+                  kullanmadı, kararı etkilemedi. Çoğu kararda boş kalır. */}
+              {data.cross_asset_context.length > 0 && (
+                <div>
+                  <p className="text-xs text-ink-faint mb-1">
+                    Cross-asset bağlam (Granger causality — sadece görünürlük, oy kullanmadı)
+                  </p>
+                  {data.cross_asset_context.map((c, i) => (
+                    <p key={i} className="text-xs text-ink-soft">
+                      <span className="font-mono text-ink">{c.cause}</span> bu sembolü öngörüyor olabilir
+                      (lag={c.best_lag}, p={c.best_p_value.toFixed(4)}, n={c.sample_size})
+                    </p>
+                  ))}
                 </div>
               )}
             </div>

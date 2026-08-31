@@ -284,6 +284,12 @@ def explain_position(decision_id: str, user: AuthContext = Depends(get_current_u
     debate_result = next((i["data"] for i in contributions if isinstance(i, dict) and i.get("type") == "debate_result"), None)
     inner_critic = next((i["data"] for i in contributions if isinstance(i, dict) and i.get("type") == "inner_critic"), None)
     decision_fusion_entries = [i["data"] for i in contributions if isinstance(i, dict) and i.get("type") == "decision_fusion"]
+    # FIL Faz C — kullanıcı isteği: cross-asset causal bağlam (Granger
+    # causality, BTC/ETH → bu sembol), visibility-only — karara girmedi,
+    # sadece hangi kanıtın GÖRÜLDÜĞÜNÜ gösteriyor.
+    cross_asset_context = [
+        i["data"] for i in contributions if isinstance(i, dict) and i.get("type") == "cross_asset_context"
+    ]
     # Kullanıcı bulgusu: "%74 güvenli bir ajan varken nihai karar neden
     # %28 çıktı?" — bu indirim MetaStage'in ACT/REDUCE kararından SONRA
     # uygulanıyor (services/orchestrator.py::_apply_portfolio_fusion),
@@ -353,6 +359,7 @@ def explain_position(decision_id: str, user: AuthContext = Depends(get_current_u
         "debate_result": debate_result,
         "inner_critic": inner_critic,
         "decision_fusion": decision_fusion_entries,
+        "cross_asset_context": cross_asset_context,
         "weight_snapshot_id": (weight_snapshot or {}).get("id"),
     }
 
