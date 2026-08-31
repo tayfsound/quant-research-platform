@@ -1,11 +1,29 @@
 """Faz 194: kripto-olmayan varlıklar (endeks/emtia/hisse) için gerçek OHLCV
 kaynağı. Binance bunları sağlamıyor — Yahoo Finance (yfinance, key
-gerektirmeyen ücretsiz seçenek) tek pratik alternatif."""
+gerektirmeyen ücretsiz seçenek) tek pratik alternatif.
+
+Faz 393 (2026-08-31) — gerçek olay: `symbol_propose_timing` loglarında
+AMDUSDT ile INTCUSDT arasında AÇIKLANAMAYAN ~819sn (13.65dk) bir boşluk
+bulundu (Faz 387'nin "gizemli boşluk" bulgusunun TEKRARI — tesadüf değil,
+tekrarlanan gerçek bir olay). Worker log'unda o pencerede SIFIR aktivite
+var — hiçbir hata/uyarı basılmadan süreç donuyor. Kök neden: `yf.Ticker.
+history()`'nin KENDİ `timeout=10` varsayılanı var ama bu SADECE OHLCV veri
+isteğine uygulanıyor — yfinance'in Yahoo'nun bot-korumasını aşmak için
+kullandığı çerez/crumb alma mekanizması (ayrı, iç bir adım) bilinen bir
+şekilde bu timeout'a uymuyor/askıda kalabiliyor. Tek request'e timeout
+vermek yetmiyor — TÜM çağrıyı uygulama seviyesinde sert bir üst sınırla
+sarmalıyoruz (ThreadPoolExecutor + .result(timeout=...), market_data/
+ingestion/data_provider.py::_run_coroutine_sync ile AYNI desen)."""
 import logging
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 
 from market_data.ingestion.ohlcv import OHLCV
 
 logger = logging.getLogger(__name__)
+
+# Yahoo'nun kendi timeout'u (crumb/çerez adımı hariç) 10sn — bunun
+# üstüne, TÜM çağrıyı (crumb dahil) kapsayan bir uygulama-seviyesi tavan.
+_HARD_TIMEOUT_SECONDS = 15
 
 # 1m veri yfinance'te sadece son ~birkaç gün için tutuluyor — period'u
 # limit'e göre değil, interval'in gerçekte desteklediği pencereye göre
@@ -42,11 +60,32 @@ class YahooProvider:
         interval = timeframe if timeframe in _INTERVAL_TO_PERIOD else "1d"
         period = _INTERVAL_TO_PERIOD[interval]
 
+        # Kritik bulgu: `with ThreadPoolExecutor(...) as pool:` KULLANMIYORUZ
+        # — context manager çıkışta `shutdown(wait=True)` çağırır, bu da
+        # çağıran thread'i, .result(timeout=...) zaten TimeoutError
+        # fırlatmış olsa bile, arka plandaki gerçekten askıda kalmış
+        # thread bitene kadar (ör. gerçek olayda 819sn) BEKLETİR — asıl
+        # amacı (çağıranı hızlıca serbest bırakmak) tamamen geçersiz
+        # kılıyordu (elle doğrulandı: timeout=0.2sn olsa bile toplam süre
+        # 5sn'ye kadar çıkıyordu). `shutdown(wait=False)` ile askıda kalan
+        # thread arka planda kendi başına bitmeye bırakılıyor (orphan,
+        # deamon gibi), çağıran ANINDA serbest kalıyor.
+        pool = ThreadPoolExecutor(max_workers=1)
         try:
-            df = yf.Ticker(symbol).history(period=period, interval=interval)
+            df = pool.submit(
+                lambda: yf.Ticker(symbol).history(period=period, interval=interval)
+            ).result(timeout=_HARD_TIMEOUT_SECONDS)
+        except FutureTimeoutError:
+            logger.warning(
+                "Yahoo Finance fetch timed out for %s after %ss (muhtemelen crumb/çerez adımı askıda kaldı)",
+                symbol, _HARD_TIMEOUT_SECONDS,
+            )
+            return []
         except Exception as exc:
             logger.warning("Yahoo Finance fetch failed for %s: %s", symbol, exc)
             return []
+        finally:
+            pool.shutdown(wait=False)
 
         if df is None or df.empty:
             return []

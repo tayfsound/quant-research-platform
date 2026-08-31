@@ -42,3 +42,40 @@ def test_yahoo_provider_resamples_1h_bars_into_real_4h_bars():
     # 4h barların hacmi, tek bir 1h barın hacminden belirgin şekilde
     # büyük olmalı (4 barın toplamı) — gerçekten agregatlandığının kanıtı.
     assert fourh[-1].volume > hourly[-1].volume
+
+
+def test_yahoo_provider_enforces_a_hard_timeout_when_the_call_hangs(monkeypatch):
+    """Faz 393 — gerçek olay: `symbol_propose_timing` loglarında AMDUSDT
+    ile INTCUSDT arasında 819sn'lik açıklanamayan bir boşluk bulundu,
+    worker o pencerede tamamen donmuştu. Kök neden: yfinance'in kendi
+    `timeout=10`'u SADECE OHLCV isteğine uygulanıyor, çerez/crumb alma
+    adımına değil — o adım askıda kalabiliyor. Bu test, TÜM çağrının
+    (crumb dahil) uygulama seviyesinde sert bir üst sınırla sarmalandığını
+    doğruluyor: `yf.Ticker` sonsuza kadar asılı kalan sahte bir modülle
+    değiştiriliyor (`sys.modules["yfinance"]`), `_HARD_TIMEOUT_SECONDS`
+    hızlı test için küçültülüyor."""
+    import sys
+    import time
+
+    import market_data.ingestion.yahoo_provider as yahoo_provider_module
+
+    monkeypatch.setattr(yahoo_provider_module, "_HARD_TIMEOUT_SECONDS", 0.2)
+
+    class _HangingTicker:
+        def __init__(self, symbol):
+            pass
+
+        def history(self, period, interval):
+            time.sleep(5)  # _HARD_TIMEOUT_SECONDS'tan (0.2) çok daha uzun.
+            raise AssertionError("bu satıra hiç ulaşılmamalı, timeout önce tetiklenmeli")
+
+    fake_yfinance = type(sys)("yfinance")
+    fake_yfinance.Ticker = _HangingTicker
+    monkeypatch.setitem(sys.modules, "yfinance", fake_yfinance)
+
+    start = time.monotonic()
+    data = yahoo_provider_module.YahooProvider().get_ohlcv("HANGTEST", "1d", limit=5)
+    elapsed = time.monotonic() - start
+
+    assert data == []
+    assert elapsed < 2.0  # gerçek donma (5sn) değil, timeout'un (0.2sn) hemen sonrası
