@@ -228,6 +228,13 @@ def test_worse_price_pyramid_add_blocked_outside_allowed_regime():
     event = recorder.record(ctx, [])
     assert event.status == "no_trade"
 
+    # Kullanıcı isteği (2026-08-31): bu kapı da diğer 7'siyle AYNI desende
+    # artık görünürlük bırakıyor.
+    gate_blocks = [o for o in event.agent_opinions if o.get("type") == "gate_block"]
+    assert len(gate_blocks) == 1
+    assert gate_blocks[0]["data"]["gate"] == "pyramid_regime_gate"
+    assert gate_blocks[0]["data"]["market_regime"] == "bearish_normal"
+
 
 def test_worse_price_pyramid_add_allowed_in_bullish_low_regime():
     from database.session_factory import SessionFactory

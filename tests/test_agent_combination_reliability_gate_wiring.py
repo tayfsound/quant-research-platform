@@ -81,6 +81,13 @@ def test_enabled_gate_blocks_a_known_low_reliability_matching_group():
     try:
         event = DecisionRecorder().record(_ctx(symbol), _opinions([AgentDomain.TECHNICAL, AgentDomain.QUANT]))
         assert event.status == "no_trade"
+
+        # Kullanıcı isteği (2026-08-31): bu kapı da diğerleriyle AYNI
+        # desende artık görünürlük bırakıyor.
+        gate_blocks = [o for o in event.agent_opinions if o.get("type") == "gate_block"]
+        assert len(gate_blocks) == 1
+        assert gate_blocks[0]["data"]["gate"] == "agent_combination_gate"
+        assert set(gate_blocks[0]["data"]["agreeing_domains"]) == {"technical", "quant"}
     finally:
         _reset_defaults()
 

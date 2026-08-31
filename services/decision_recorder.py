@@ -216,6 +216,15 @@ class DecisionRecorder:
                     direction, entry_price, existing_avg, market_regime, allowed_regime=allowed_regime
                 ):
                     opens_position = False
+                    agent_opinions_data.append({
+                        "type": "gate_block",
+                        "data": {
+                            "gate": "pyramid_regime_gate",
+                            "reason": "worse_price_pyramid_outside_allowed_regime",
+                            "market_regime": market_regime,
+                            "existing_avg_entry_price": existing_avg,
+                        },
+                    })
 
         # Kullanıcı isteği (2026-08-27): "sistemin işlem aldığı rejimleri
         # de aç kapa yapabilirsek süper olur." AI konseyi-özel (pyramid_
@@ -349,6 +358,15 @@ class DecisionRecorder:
                     agreeing_domains = agreeing_domains_for_decision(agent_opinions_data, direction)
                     if is_agent_combination_trading_blocked(agreeing_domains, known_pairs, min_win_rate):
                         opens_position = False
+                        agent_opinions_data.append({
+                            "type": "gate_block",
+                            "data": {
+                                "gate": "agent_combination_gate",
+                                "reason": "known_low_reliability_agent_combination",
+                                "agreeing_domains": sorted(agreeing_domains) if agreeing_domains else [],
+                                "min_win_rate": min_win_rate,
+                            },
+                        })
 
         # Backlog #17 — kullanıcı isteği: "tepeden/dipten kovalıyorsa"
         # (kritik bir seviyeden çok uzaktaysa) giriş engellensin. Gerçek
