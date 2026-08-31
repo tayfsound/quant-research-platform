@@ -851,11 +851,21 @@ class CognitiveOrchestrator:
             cascade_enabled = settings_repo.get("multi_timeframe_cascade_enabled") == "true"
             ab_test_enabled = settings_repo.get("multi_timeframe_cascade_ab_test_enabled") == "true"
 
+        # Faz 387 — kullanıcı isteği: trading cycle performans profillemesi
+        # (~12.5dk'lık tam sweep'in nereye gittiğini ölçmek). Saf ölçüm —
+        # davranış DEĞİŞMEDİ, sadece sembol başına hangi yolun (cascade/
+        # plain) kullanıldığı ve gerçek geçen süre structlog'a düşüyor.
+        import time as _time
+
+        import structlog as _structlog
+
         proposals: dict[str, dict] = {}
         for sym in symbols:
+            _t0 = _time.monotonic()
             if ab_test_enabled:
                 from services.ab_testing import assign_bucket
                 bucket = assign_bucket()
+                path = "cascade" if bucket == "treatment" else "plain"
                 p = self.propose_multi_timeframe(sym) if bucket == "treatment" else self.propose(sym)
                 if p is not None:
                     p["ctx"].cognition.relevant_knowledge.append({
@@ -863,7 +873,13 @@ class CognitiveOrchestrator:
                         "data": {"bucket": f"multi_timeframe_cascade_v1:{bucket}"},
                     })
             else:
+                path = "cascade" if cascade_enabled else "plain"
                 p = self.propose_multi_timeframe(sym) if cascade_enabled else self.propose(sym)
+            _structlog.get_logger().info(
+                "symbol_propose_timing",
+                symbol=sym, path=path, elapsed_s=round(_time.monotonic() - _t0, 3),
+                had_result=p is not None,
+            )
             if p is not None:
                 proposals[sym] = p
                 # Shadow Mode (Faz 268-sonrası) — kullanıcıyla üzerinde
