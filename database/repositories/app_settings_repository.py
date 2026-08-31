@@ -712,12 +712,14 @@ DEFAULTS: dict[str, str] = {
     # simetriği — "daha önce başarılı olmuş ajan kombinasyonu bir araya
     # gelirse sistem hiçbir engele takılmasın direkt işlem açsın." bkz.
     # analytics/agent_combination_reliability_gate.py::force_open_
-    # eligible_pairs (gate_eligible + yüksek win_rate). Eşik %85 —
-    # baseline'ın (~%74) belirgin üstü, negatif EV'yi geçersiz kılacak
-    # kadar güçlü kanıt. Varsayılan KAPALI (aynı adım-adım aktivasyon
-    # ilkesi).
+    # eligible_pairs. AYRI bir win_rate eşiği YOK (kullanıcı itirazı: "aynı
+    # hayatı yüz defa yaparım ki hata olduğuna emin olabileyim" — sabit bir
+    # eşik erken/haksız 'güvenilmez' yaftası vurur) — yukarıdaki
+    # `agent_combination_gate_min_win_rate`'İ paylaşır: blok kapısı
+    # KAPALIYSA win_rate filtresi hiç uygulanmaz (sadece gate_eligible —
+    # örneklem/anlamlılık — kalır), AÇIKSA aynı eşiği kullanır. Varsayılan
+    # KAPALI (aynı adım-adım aktivasyon ilkesi).
     "agent_combination_force_open_enabled": "false",
-    "agent_combination_force_open_min_win_rate": "0.85",
 
     # Faz 362 — kullanıcı bulgusu: "council'in ara sıra bir cycle'da
     # tersine dönmesi çoğunlukla gürültü — bu gürültüye güvenerek yeni

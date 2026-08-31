@@ -90,26 +90,32 @@ def is_agent_combination_trading_blocked(
 # sistem hiçbir engele takılmasın direkt işlem açsın." Bu yukarıdaki blok
 # yönünün AYNEN simetriği — dosyanın en üstündeki docstring'de (satır
 # 22-25) zaten "kasıtlı olarak ERTELENDİ" diye kayıtlı ikinci yarı, şimdi
-# kullanıcı onayıyla devreye alınıyor. Blok yönünden FARKI: sadece
-# trustworthy_known_pairs (bağımsızlık kanıtı) YETMİYOR, ayrıca
-# `gate_eligible` (FDR + out-of-sample survival + effective_sample_size)
-# VE belirgin şekilde yüksek bir win_rate isteniyor — negatif EV'yi
-# geçersiz kılacak kadar güçlü, birden fazla açıdan doğrulanmış kanıt.
-DEFAULT_MIN_WIN_RATE_FOR_FORCE = 0.85
-
-
+# kullanıcı onayıyla devreye alınıyor.
+#
+# Faz 392 düzeltme (aynı gün) — kullanıcı ilk versiyondaki sabit %85
+# eşiğine itiraz etti: "Onların güvenilmez olduklarına ne kadar eminiz?
+# ... aynı hayatı yüz defa yaparım ki hata olduğuna emin olabileyim."
+# Ayrı bir force-open eşiği YOK artık — win_rate bar'ı DOĞRUDAN
+# kullanıcının panelden kontrol ettiği blok kapısının kendi eşiğine
+# (`agent_combination_gate_min_win_rate`) bağlı: kapı KAPALIYSA (kullanıcı
+# zaten "güvenilir/güvenilmez" ayrımını istemiyor demektir) win_rate
+# filtresi tamamen devre dışı (min_win_rate=0.0, hepsi geçer) — SADECE
+# `gate_eligible` (FDR + OOS-survival + yeterli örneklem) kalır, çünkü bu
+# "güvenilmez" demek değil, "yeterince tekrar edilmedi, henüz bir şey
+# söylenemez" demek (kullanıcının kendi "yüz kere yaşama" mantığı).
 def force_open_eligible_pairs(
     report_pairs: list[dict],
-    min_win_rate: float = DEFAULT_MIN_WIN_RATE_FOR_FORCE,
+    min_win_rate: float = 0.0,
     max_overlap_pct: float = DEFAULT_MAX_OVERLAP_PCT,
     min_distinct_days: int = DEFAULT_MIN_DISTINCT_DAYS,
 ) -> list[dict]:
     """trustworthy_known_pairs()'ın (bağımsızlık kanıtı) çıktısını, AYRICA
     gate_eligible (FDR-anlamlı + OOS-survival + yeterli effective_sample_
     size — analytics/agent_combination_reliability.py'nin kendi üç-şartlı
-    bayrağı) VE win_rate >= min_win_rate ile daraltır. Blok yönünden farklı
-    olarak TEK bir kriter (win_rate) yetmiyor — negatif EV'yi geçersiz
-    kılıp gerçek para riske atacağı için en sıkı kanıt eşiği burada."""
+    bayrağı) VE win_rate >= min_win_rate ile daraltır. min_win_rate=0.0
+    (varsayılan) demek: win_rate hiç filtrelenmiyor, sadece gate_eligible
+    yeterli — çağıran taraf (services/decision_fusion.py) bunu kullanıcının
+    panel eşiğine göre belirler."""
     known = trustworthy_known_pairs(report_pairs, max_overlap_pct, min_distinct_days)
     return [p for p in known if p.get("gate_eligible") and p["win_rate"] >= min_win_rate]
 

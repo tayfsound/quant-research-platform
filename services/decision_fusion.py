@@ -178,11 +178,17 @@ class DecisionFusion:
                 with SessionFactory.get_session() as _settings_session:
                     _settings_repo = AppSettingsRepository(_settings_session)
                     force_open_enabled = _settings_repo.get("agent_combination_force_open_enabled") == "true"
-                    _min_win_rate_raw = _settings_repo.get("agent_combination_force_open_min_win_rate")
+                    # Faz 392 düzeltme — kullanıcı isteği: ayrı bir force-open
+                    # eşiği YOK, kullanıcının panelden kontrol ettiği blok
+                    # kapısının kendi eşiğine bağlı. Kapı KAPALIYSA (kullanıcı
+                    # "güvenilir/güvenilmez" ayrımını hiç istemiyor demektir)
+                    # win_rate filtresi tamamen devre dışı (0.0) — sadece
+                    # gate_eligible (örneklem/anlamlılık) kalır.
+                    _block_gate_enabled = _settings_repo.get("agent_combination_gate_enabled") == "true"
+                    _block_gate_min_win_rate_raw = _settings_repo.get("agent_combination_gate_min_win_rate")
 
                 if force_open_enabled:
                     from analytics.agent_combination_reliability_gate import (
-                        DEFAULT_MIN_WIN_RATE_FOR_FORCE,
                         force_open_eligible_pairs,
                         is_agent_combination_force_eligible,
                     )
@@ -199,7 +205,11 @@ class DecisionFusion:
                         is_eligible as _force_open_is_eligible,
                     )
 
-                    min_win_rate = float(_min_win_rate_raw) if _min_win_rate_raw else DEFAULT_MIN_WIN_RATE_FOR_FORCE
+                    min_win_rate = (
+                        float(_block_gate_min_win_rate_raw)
+                        if _block_gate_enabled and _block_gate_min_win_rate_raw
+                        else 0.0
+                    )
                     agreeing_domains = frozenset(
                         o.domain.value for o in opinions if (getattr(o, "direction", "") or "").upper() == direction
                     )
