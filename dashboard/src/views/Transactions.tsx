@@ -442,6 +442,10 @@ type ExplainData = {
   // burada da görünmesi — önceden "neden açılmadı" sorusu DB kazmadan
   // cevaplanamıyordu.
   gate_blocks: Record<string, unknown>[];
+  // Faz 397 — strategy_regime_gate test modunda artık engellemiyor,
+  // sadece "canlıda engellerdi" diye kaydediyor — işlem burada GERÇEKTEN
+  // açıldı, gate_blocks'tan (gerçekten engelleyen) ayrı gösteriliyor.
+  gate_bypasses_test_mode: Record<string, unknown>[];
   // Faz 394 — kullanıcı isteği ("tam mimari değişim"): gate_eligible bir
   // Historical Analog eşleştiğinde belief.strength'in gerçek ampirik
   // win_rate ile override edildiği anlar. Çoğu kararda BOŞ olacak
@@ -679,6 +683,28 @@ function ExplainModal({ decisionId, onClose }: { decisionId: string; onClose: ()
                 <div>
                   <p className="text-xs text-ink-faint mb-1">Engelleyen kapı</p>
                   {data.gate_blocks.map((g, i) => {
+                    const gate = String(g.gate ?? "");
+                    const { gate: _gate, reason: _reason, ...rest } = g;
+                    return (
+                      <p key={i} className="text-xs text-ink-soft">
+                        <span className="font-mono text-ink">{GATE_LABELS[gate] ?? gate}</span>
+                        {" — "}
+                        {String(g.reason ?? "")}
+                        {Object.keys(rest).length > 0 && (
+                          <span className="text-ink-faint"> ({JSON.stringify(rest)})</span>
+                        )}
+                      </p>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Faz 397 — kullanıcı isteği: strategy_gate_approvals test
+                  modunda işlem alımına engel olmasın, ama şeffaf kalsın. */}
+              {data.gate_bypasses_test_mode.length > 0 && (
+                <div>
+                  <p className="text-xs text-ink-faint mb-1">Test modunda atlanan kapı (canlıda engellerdi)</p>
+                  {data.gate_bypasses_test_mode.map((g, i) => {
                     const gate = String(g.gate ?? "");
                     const { gate: _gate, reason: _reason, ...rest } = g;
                     return (

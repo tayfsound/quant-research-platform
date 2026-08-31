@@ -461,16 +461,25 @@ class DecisionRecorder:
                 )
                 blocked_pairs = StrategyGateApprovalRepository(self.session).list_blocked_pairs()
                 if is_strategy_regime_gated(strategy_label, market_regime, blocked_pairs):
-                    opens_position = False
-                    agent_opinions_data.append({
-                        "type": "gate_block",
-                        "data": {
-                            "gate": "strategy_regime_gate",
-                            "reason": "known_underperforming_strategy_regime_pair",
-                            "strategy_label": strategy_label,
-                            "market_regime": market_regime,
-                        },
-                    })
+                    gate_data = {
+                        "gate": "strategy_regime_gate",
+                        "reason": "known_underperforming_strategy_regime_pair",
+                        "strategy_label": strategy_label,
+                        "market_regime": market_regime,
+                    }
+                    # Faz 397 (2026-09-01) — kullanıcı isteği: "strategy_
+                    # gate_approvals bunlar test modunda işlem alımına
+                    # engel olmasın ama" — bu kapı gerçek sermaye riskinde
+                    # (canlı) hâlâ tam olarak engelliyor, ama test modunda
+                    # (Faz 388'in "veri toplama hız kesmesin" ilkesiyle
+                    # AYNI gerekçe) artık ENGELLEMİYOR — sadece şeffaf
+                    # şekilde kaydediyor (canlıda engellerdi, ama test
+                    # modunda değil).
+                    if ctx.risk.trading_mode == "test":
+                        agent_opinions_data.append({"type": "gate_bypassed_test_mode", "data": gate_data})
+                    else:
+                        opens_position = False
+                        agent_opinions_data.append({"type": "gate_block", "data": gate_data})
 
         # Faz 255: kullanıcı isteği — token bazlı kaldıraç. Aynı capital_
         # per_trade "teminatı" leverage kadar daha büyük bir notional

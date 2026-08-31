@@ -86,6 +86,28 @@ def test_gate_is_a_noop_when_disabled_even_with_a_blocked_pair():
         _cleanup(approval_id)
 
 
+def test_blocked_strategy_regime_pair_does_not_block_in_test_mode():
+    """Faz 397 — kullanıcı isteği: "strategy_gate_approvals bunlar test
+    modunda işlem alımına engel olmasın ama" — canlıda hâlâ tam olarak
+    engelliyor (yukarıdaki test), test modunda artık engellemiyor,
+    sadece şeffaf şekilde kaydediyor."""
+    _set_strategy_gate_enabled("true")
+    approval_id = _block_pair("ai_council_LONG_swing", "bullish_high")
+    symbol = f"SGTEST{__import__('uuid').uuid4().hex[:6]}USDT"
+    recorder = DecisionRecorder()
+    ctx = _long_swing_ctx(symbol)
+    ctx.risk.trading_mode = "test"
+    try:
+        event = recorder.record(ctx, [])
+        assert event.status == "open"
+        bypasses = [o for o in event.agent_opinions if o.get("type") == "gate_bypassed_test_mode"]
+        assert len(bypasses) == 1
+        assert bypasses[0]["data"]["gate"] == "strategy_regime_gate"
+        assert not any(o.get("type") == "gate_block" for o in event.agent_opinions)
+    finally:
+        _cleanup(approval_id)
+
+
 def test_pending_pair_does_not_block_only_blocked_does():
     from contracts.strategy_gate_approval import StrategyGateApproval
 

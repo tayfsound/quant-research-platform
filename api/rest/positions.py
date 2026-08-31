@@ -295,6 +295,13 @@ def explain_position(decision_id: str, user: AuthContext = Depends(get_current_u
     # bucket/regime_trading/direction_trading/asset_class_trading) artık
     # burada görünür — "neden açılmadı" sorusuna DB kazmadan cevap.
     gate_blocks = [i["data"] for i in contributions if isinstance(i, dict) and i.get("type") == "gate_block"]
+    # Faz 397 — kullanıcı isteği: strategy_regime_gate test modunda artık
+    # engellemiyor, sadece kaydediyor ("canlıda engellerdi") — tam
+    # şeffaflık için ayrı bir alan (gate_blocks ile karıştırılmasın,
+    # burada işlem GERÇEKTEN açıldı).
+    gate_bypasses_test_mode = [
+        i["data"] for i in contributions if isinstance(i, dict) and i.get("type") == "gate_bypassed_test_mode"
+    ]
     # Faz 394 — kullanıcı isteği: HistoricalAnalogOverrideStage'in
     # belief.strength'i gerçek ampirik win_rate ile override ettiği
     # anlar — tam şeffaflık, "neden bu kadar güvenildi" sorusunun cevabı.
@@ -372,6 +379,7 @@ def explain_position(decision_id: str, user: AuthContext = Depends(get_current_u
         "decision_fusion": decision_fusion_entries,
         "cross_asset_context": cross_asset_context,
         "gate_blocks": gate_blocks,
+        "gate_bypasses_test_mode": gate_bypasses_test_mode,
         "historical_analog_overrides": historical_analog_overrides,
         "weight_snapshot_id": (weight_snapshot or {}).get("id"),
     }
