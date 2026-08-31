@@ -1,4 +1,6 @@
 """Agent Debate Layer V2 — çok turlu tartışma + Cognitive Audit."""
+import structlog
+
 from contracts.agent import (
     AgentChallenge,
     AgentDomain,
@@ -42,8 +44,19 @@ class AgentDebate:
                         result = challenger.challenge(opinion, context)
                         if result:
                             challenges.extend(result)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        # Faz 384 — kullanıcı bulgusu (dış rapor, doğrulandı
+                        # gerçek): bu hata sessizce yutuluyordu, hiçbir iz
+                        # bırakmıyordu. Bir challenger patlarsa TÜM turun
+                        # çökmesi de yanlış (bkz. council_orchestrator.py'nin
+                        # Faz 378'deki AYNI ilkesi — tek bir bileşenin hatası
+                        # zaten hesaplanmış diğer görüşleri düşürmemeli), bu
+                        # yüzden davranış DEĞİŞMEDİ — sadece artık loglanıyor.
+                        structlog.get_logger().warning(
+                            "debate_challenger_failed",
+                            challenger_domain=getattr(challenger, "domain", None),
+                            target_domain=opinion.domain.value, error=str(e),
+                        )
 
             # Responder'lar cevap verir
             for challenge in challenges:
@@ -59,8 +72,16 @@ class AgentDebate:
                                 0.1,
                                 adjusted_confidence[key] + response.confidence_change,
                             )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        # Faz 384 — bkz. yukarıdaki challenger except'inin
+                        # AYNI gerekçesi. Not: production'da hiçbir responder
+                        # kayıtlı değil (satır ~78'deki yorum), bu blok şu an
+                        # fiilen çalışmıyor — ama gelecekte bir responder
+                        # eklenirse hatası artık sessiz kalmayacak.
+                        structlog.get_logger().warning(
+                            "debate_responder_failed",
+                            target_domain=challenge.target_domain.value, error=str(e),
+                        )
 
             rounds.append(DebateRound(
                 round_number=round_num,
@@ -135,7 +156,11 @@ class AgentDebate:
                 "opinions": [o.model_dump() for o in opinions],
                 "rounds": [r.model_dump() for r in rounds],
             })
-        except Exception:
+        except Exception as e:
+            # Faz 384 — nötr/boş bir CognitiveAudit dönmek (audit isteğe
+            # bağlı bir zenginleştirme, debate sonucunu bloklamıyor) hâlâ
+            # doğru davranış — sadece artık hata sessizce kaybolmuyor.
+            structlog.get_logger().warning("debate_cognitive_audit_failed", error=str(e))
             return CognitiveAudit()
 
         # Challenge'lardan CognitiveAudit üret

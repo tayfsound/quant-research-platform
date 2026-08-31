@@ -31,6 +31,42 @@ class MockResponder:
             evidence_quality_change=-0.1,
         )
 
+class _ExplodingChallenger:
+    """Faz 384 regresyon testi için: gerçek bir ChallengerAgent'ın
+    (ör. veri eksikliği, dış API hatası) patlayabileceği senaryoyu
+    simüle eder."""
+    domain = AgentDomain.RISK
+
+    def challenge(self, opinion, context):
+        raise RuntimeError("simulated challenger failure")
+
+
+def test_challenger_failure_is_logged_not_silently_swallowed():
+    """Faz 384 — kullanıcı bulgusu (dış rapor, doğrulandı gerçek):
+    services/agent_debate.py'deki except Exception: pass hiçbir iz
+    bırakmıyordu. Davranış (bir challenger'ın patlaması TÜM turu
+    çökertmemeli) DEĞİŞMEDİ — artık sadece structlog'a warning düşüyor."""
+    import structlog
+    from structlog.testing import capture_logs
+
+    debate = AgentDebate(max_rounds=1)
+    debate.register_challenger(AgentDomain.RISK, _ExplodingChallenger())
+    opinions = [AgentOpinion(domain=AgentDomain.TECHNICAL, direction="LONG", confidence=0.85).recalculate()]
+
+    with capture_logs(processors=[structlog.contextvars.merge_contextvars]) as logs:
+        result = debate.run_debate(opinions, {})
+
+    # Patlayan challenger'a rağmen debate çökmedi, normal sonuçlandı.
+    assert result.final_direction == "LONG"
+    assert len(result.rounds) == 1
+    assert result.rounds[0].challenges == []
+
+    failure_logs = [log for log in logs if log.get("event") == "debate_challenger_failed"]
+    assert len(failure_logs) == 1
+    assert failure_logs[0]["error"] == "simulated challenger failure"
+    assert failure_logs[0]["log_level"] == "warning"
+
+
 def test_debate_with_rounds():
     debate = AgentDebate(max_rounds=2)
     debate.register_challenger(AgentDomain.RISK, MockChallenger(
