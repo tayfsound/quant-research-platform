@@ -1,9 +1,25 @@
-# Mevcut Durum -- v1.129.0 (Faz 396: futures emir miktarı artık borsanın gerçek LOT_SIZE step'ine yuvarlanıyor)
+# Mevcut Durum -- v1.130.0 (Faz 397: strategy_regime_gate test modunda artık engellemiyor)
 
 **Tarih:** 2026-09-01
 **Branch:** main
-**Son commit (HEAD):** `00c2f76` Faz 396 — futures emirlerinde miktarı borsanın gerçek LOT_SIZE step'ine yuvarla.
-**Servis durumu:** Faz 396 push edildi, worker+uvicorn yeniden başlatılacak (bu turda).
+**Son commit (HEAD):** `f5f3731` Faz 397 — strategy_regime_gate test modunda işlem alımına engel olmasın.
+**Servis durumu:** Faz 396+397 push edildi, worker+uvicorn yeniden başlatılacak (bu turda).
+
+**Faz 397 (bu turda) — strategy_regime_gate test modunda artık işlem
+alımına engel olmuyor:** Kullanıcı: "strategy_gate_approvals bunlar test
+modunda işlem alımına engel olmasın ama." `strategy_gate_approvals`
+tablosundaki kalıcı-onaylı blocked-pair'ler (ör. 26 Ağustos'ta onaylanan
+`ai_council_LONG_swing × bullish_high`) canlıda (`ctx.risk.trading_mode
+== "live"`) hâlâ tam olarak engelliyor — bu Faz 388'in "test modunda
+veri toplama hız kesmesin" ilkesiyle AYNI gerekçeyle sadece test moduna
+kısıtlandı. `ctx.risk.trading_mode == "test"` iken artık `opens_position`
+FALSE yapılmıyor, bunun yerine yeni bir `gate_bypassed_test_mode` girdisi
+(gerçekten engelleyen `gate_block`'tan AYRI tip) şeffaf şekilde
+kaydediliyor — `explain_position` + `Transactions.tsx`'e "Test modunda
+atlanan kapı (canlıda engellerdi)" bölümü eklendi. Test: 25 passed
+(`test_strategy_gate_wiring.py`/`test_strategy_regime_gate.py`/
+`test_silent_gates_gate_block_visibility.py`/`test_decision_recorder.py`/
+`test_position_explain_api.py`), `tsc --noEmit` temiz.
 
 **Faz 393-396 özet (2026-09-01, aynı marathon oturumunun devamı — 392'den sonra):**
 - Faz 393: yfinance'in `history()` çağrısı kendi `timeout=10` parametresini
