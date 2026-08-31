@@ -295,6 +295,12 @@ def explain_position(decision_id: str, user: AuthContext = Depends(get_current_u
     # bucket/regime_trading/direction_trading/asset_class_trading) artık
     # burada görünür — "neden açılmadı" sorusuna DB kazmadan cevap.
     gate_blocks = [i["data"] for i in contributions if isinstance(i, dict) and i.get("type") == "gate_block"]
+    # Faz 394 — kullanıcı isteği: HistoricalAnalogOverrideStage'in
+    # belief.strength'i gerçek ampirik win_rate ile override ettiği
+    # anlar — tam şeffaflık, "neden bu kadar güvenildi" sorusunun cevabı.
+    historical_analog_overrides = [
+        i["data"] for i in contributions if isinstance(i, dict) and i.get("type") == "historical_analog_override"
+    ]
     # Kullanıcı bulgusu: "%74 güvenli bir ajan varken nihai karar neden
     # %28 çıktı?" — bu indirim MetaStage'in ACT/REDUCE kararından SONRA
     # uygulanıyor (services/orchestrator.py::_apply_portfolio_fusion),
@@ -366,6 +372,7 @@ def explain_position(decision_id: str, user: AuthContext = Depends(get_current_u
         "decision_fusion": decision_fusion_entries,
         "cross_asset_context": cross_asset_context,
         "gate_blocks": gate_blocks,
+        "historical_analog_overrides": historical_analog_overrides,
         "weight_snapshot_id": (weight_snapshot or {}).get("id"),
     }
 

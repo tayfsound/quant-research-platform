@@ -356,6 +356,12 @@ celery_app.conf.beat_schedule = {
         "task": "refresh_agent_combination_reliability_report_task",
         "schedule": 604800.0,
     },
+    # Faz 394 — Historical Analog Engine (FIL Faz D): ajan-kombinasyonu ×
+    # rejim × yön hücrelerinin haftalık anlık görüntüsü.
+    "refresh-historical-analog-report-weekly": {
+        "task": "refresh_historical_analog_report_task",
+        "schedule": 604800.0,
+    },
     # Cognitive Core 10.0 — Collective Intelligence: Causal Inference'tan
     # sonraki dördüncü ölçüm-only Grup B adayı (Condorcet'in Jüri Teoremi).
     "refresh-collective-intelligence-report-weekly": {

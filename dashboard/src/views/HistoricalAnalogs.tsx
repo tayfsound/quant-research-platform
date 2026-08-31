@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { authHeaders } from "../api/auth";
-import { Card, PageHeader, Badge, EmptyState, ErrorNote, Spinner } from "../components/ui";
+import { Button, Card, PageHeader, Badge, EmptyState, ErrorNote, Spinner } from "../components/ui";
 
 // FIL Faz D — kullanıcı isteği (2026-08-31): "geçmiş benzer piyasa
 // durumlarını eşleştiren" bir analiz — ajan-kombinasyonu × market_regime
@@ -39,18 +39,47 @@ export default function HistoricalAnalogs() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [onlyGateEligible, setOnlyGateEligible] = useState(false);
+  // Faz 394 — kullanıcı isteği ("tam mimari değişim"): AgentCombinationReliability.tsx'in
+  // Force-Open kartıyla AYNI desen (Settings'e DEĞİL, bkz. proje hafızası "settings placement: contextual").
+  const [settings, setSettings] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
     setError(null);
-    fetch("/api/v1/historical-analogs/", { headers: authHeaders() })
-      .then((r) => r.json())
-      .then((data) => setResult(data.result || null))
+    Promise.all([
+      fetch("/api/v1/historical-analogs/", { headers: authHeaders() }).then((r) => r.json()),
+      fetch("/api/v1/settings/", { headers: authHeaders() }).then((r) => r.json()),
+    ])
+      .then(([data, settingsData]) => {
+        setResult(data.result || null);
+        setSettings(settingsData.settings || {});
+      })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   };
 
   useEffect(load, []);
+
+  const save = (key: string, value: string) => {
+    setSaving(key);
+    setError(null);
+    fetch(`/api/v1/settings/${key}?value=${encodeURIComponent(value)}`, {
+      method: "POST",
+      headers: authHeaders(),
+    })
+      .then(async (r) => {
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          throw new Error(body.detail || `${r.status}`);
+        }
+        setSettings((s) => ({ ...s, [key]: value }));
+      })
+      .catch((e) => setError(`${key}: ${e.message || e}`))
+      .finally(() => setSaving(null));
+  };
+
+  const overrideEnabled = settings.historical_analog_override_enabled === "true";
 
   const analogs = (result?.analogs || []).filter((a) => !onlyGateEligible || a.gate_eligible);
 
@@ -61,12 +90,39 @@ export default function HistoricalAnalogs() {
         description={
           `"Bu ajan kombinasyonu + bu rejimde daha önce ne olmuş" sorusuna gerçek kapanmış kararlarla cevap. ` +
           `Ajan Kombinasyonu Güvenilirliği'nin AYNI istatistiksel korumaları (FDR + zamanla-tekrar/OOS + ` +
-          `örtüşme-düzeltmeli örneklem) — üçüncü eksen olarak piyasa rejimi eklenmiş hâli. Sadece ölçüm/analiz — ` +
-          `karar hattına bağlı DEĞİL, hiçbir gate/ağırlık otomatik değişmiyor.`
+          `örtüşme-düzeltmeli örneklem) — üçüncü eksen olarak piyasa rejimi eklenmiş hâli.`
         }
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}
+
+      {/* Faz 394 — kullanıcı isteği (2026-09-01): "tam mimari değişim" —
+          teknik ajanın yalnız kötü, belirli ortaklarla eşlikte çok iyi
+          olduğu bulgusu üzerine, gate_eligible bir analog eşleştiğinde
+          artık council'in ASIL confidence hesabının (belief.strength)
+          YERİNE geçebiliyor (kenarda bir gate değil). Varsayılan KAPALI. */}
+      <Card className="mb-6">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <h3 className="text-sm font-semibold text-ink mb-1">Confidence Override</h3>
+            <p className="text-xs text-ink-soft">
+              Açıksa: bir kararda "kapı uygun" bir analog eşleşirse (ajan kombinasyonu + rejim + yön), council'in
+              cluster/crowding/coverage skorlamasından gelen confidence'ı (belief.strength) GERÇEK ampirik kazanma
+              oranı ile DEĞİŞTİRİR — eşleşme yoksa (bugün kararların ezici çoğunluğu) hiçbir şey değişmez. Sadece
+              YÜKSELTİR, asla düşürmez. Kalibrasyon/opportunity-quality/InnerCritic gibi son güvenlik katmanları hâlâ
+              devrede.
+            </p>
+          </div>
+          <Button
+            variant={overrideEnabled ? "danger" : "secondary"}
+            disabled={saving === "historical_analog_override_enabled"}
+            onClick={() => save("historical_analog_override_enabled", overrideEnabled ? "false" : "true")}
+            className="!px-3 !py-1.5 text-xs shrink-0"
+          >
+            {overrideEnabled ? "Override'ı Kapat" : "Override'ı Aç"}
+          </Button>
+        </div>
+      </Card>
 
       <Card className="mb-6">
         <div className="flex items-center justify-between gap-4 flex-wrap">

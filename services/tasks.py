@@ -638,6 +638,27 @@ def refresh_agent_combination_reliability_report_task() -> dict:
     return {"id": str(report.id), "pair_count": len(result.get("pairs", []))}
 
 
+@celery_app.task(name="refresh_historical_analog_report_task")
+def refresh_historical_analog_report_task() -> dict:
+    """Faz 394 — Historical Analog Engine (FIL Faz D): analytics/
+    historical_analog_engine.py'nin ajan-kombinasyonu × rejim × yön
+    hücrelerini haftalık kaydeder. engines/cognitive_pipeline.py::
+    HistoricalAnalogOverrideStage bu snapshot'ı okur (canlı hesaplama
+    DEĞİL, pahalı olurdu)."""
+    from contracts.historical_analog_report import HistoricalAnalogReport
+    from database.repositories.historical_analog_report_repository import (
+        HistoricalAnalogReportRepository,
+    )
+    from services.historical_analog_gatherer import gather_historical_analogs
+
+    result = gather_historical_analogs()
+    with SessionFactory.get_session() as session:
+        report = HistoricalAnalogReport(result=result)
+        HistoricalAnalogReportRepository(session).save(report)
+
+    return {"id": str(report.id), "analog_count": len(result.get("analogs", []))}
+
+
 @celery_app.task(name="refresh_collective_intelligence_report_task")
 def refresh_collective_intelligence_report_task() -> dict:
     """Cognitive Core 10.0 — kullanıcı isteği: council'i hiç etkilemeyen,

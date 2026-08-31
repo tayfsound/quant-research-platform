@@ -442,6 +442,19 @@ type ExplainData = {
   // burada da görünmesi — önceden "neden açılmadı" sorusu DB kazmadan
   // cevaplanamıyordu.
   gate_blocks: Record<string, unknown>[];
+  // Faz 394 — kullanıcı isteği ("tam mimari değişim"): gate_eligible bir
+  // Historical Analog eşleştiğinde belief.strength'in gerçek ampirik
+  // win_rate ile override edildiği anlar. Çoğu kararda BOŞ olacak
+  // (bugün sadece 4-6 hücre gate_eligible) — bu beklenen/dürüst.
+  historical_analog_overrides: {
+    domains: string[];
+    market_regime: string;
+    direction: string;
+    matched_win_rate: number;
+    sample_size: number;
+    effective_sample_size: number;
+    strength_before: number;
+  }[];
 };
 
 const GATE_LABELS: Record<string, string> = {
@@ -680,6 +693,25 @@ function ExplainModal({ decisionId, onClose }: { decisionId: string; onClose: ()
                       </p>
                     );
                   })}
+                </div>
+              )}
+
+              {/* Faz 394 — kullanıcı isteği: "tam mimari değişim" — bir
+                  gate_eligible Historical Analog eşleştiğinde belief.
+                  strength'in gerçek ampirik win_rate ile override
+                  edildiği anlar, tam şeffaf. */}
+              {data.historical_analog_overrides.length > 0 && (
+                <div className="bg-accent-soft rounded-lg p-2.5 border border-line-soft">
+                  <p className="text-xs text-ink-faint mb-1.5">
+                    ★ Güven, bilinen bir tarihsel örüntüyle (gerçek ampirik kazanma oranı) override edildi
+                  </p>
+                  {data.historical_analog_overrides.map((o, i) => (
+                    <p key={i} className="text-xs text-ink-soft">
+                      <span className="font-mono text-ink">{o.domains.join(" + ")}</span> · {o.market_regime} ·{" "}
+                      {o.direction}: %{(o.strength_before * 100).toFixed(1)} → %{(o.matched_win_rate * 100).toFixed(1)}{" "}
+                      (n={o.sample_size}, bağımsız N={o.effective_sample_size})
+                    </p>
+                  ))}
                 </div>
               )}
             </div>

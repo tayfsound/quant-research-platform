@@ -7,6 +7,7 @@ from engines.cognitive_pipeline import (
     CouncilStage,
     DecisionFusionStage,
     DrawdownSizingStage,
+    HistoricalAnalogOverrideStage,
     KnowledgeStage,
     MemoryStage,
     MetaStage,
@@ -46,6 +47,7 @@ class CognitiveEngine:
         self.knowledge_stage = KnowledgeStage()
         self.binder_stage = BinderStage()
         self.council_stage = CouncilStage(registry, pinned_weight_snapshot_id=pinned_weight_snapshot_id)
+        self.historical_analog_override_stage = HistoricalAnalogOverrideStage()
         self.meta_stage = MetaStage()
         self.predictive_risk_stage = PredictiveRiskStage()
         self.drawdown_sizing_stage = DrawdownSizingStage()
@@ -84,6 +86,7 @@ class CognitiveEngine:
         ctx = self.knowledge_stage.execute(ctx)
         ctx = self.binder_stage.execute(ctx)
         ctx, belief, opinions = self.council_stage.execute(ctx)
+        belief = self.historical_analog_override_stage.execute(ctx, belief, opinions)
         ctx = self.meta_stage.execute(ctx, belief, opinions)
         ctx = self.predictive_risk_stage.execute(ctx)
         ctx = self.drawdown_sizing_stage.execute(ctx)

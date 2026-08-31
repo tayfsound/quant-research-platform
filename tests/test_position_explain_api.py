@@ -63,6 +63,14 @@ def _persist_decision_with_full_agent_contributions() -> DecisionEvent:
                     "run_length": 2, "min_required": 4,
                 },
             },
+            {
+                "type": "historical_analog_override",
+                "data": {
+                    "domains": ["sentiment", "technical"], "market_regime": "bullish_normal", "direction": "LONG",
+                    "matched_win_rate": 0.951, "sample_size": 102, "effective_sample_size": 26.0,
+                    "strength_before": 0.3521,
+                },
+            },
         ],
     )
     with SessionFactory.get_session() as session:
@@ -125,6 +133,16 @@ def test_explain_separates_agent_votes_from_special_entries():
         {
             "gate": "signal_persistence_gate", "reason": "fresh_signal_not_yet_persistent",
             "run_length": 2, "min_required": 4,
+        },
+    ]
+
+    # Faz 394 — kullanıcı isteği: HistoricalAnalogOverrideStage'in
+    # belief.strength'i override ettiği anlar da açıklama ekranında.
+    assert body["historical_analog_overrides"] == [
+        {
+            "domains": ["sentiment", "technical"], "market_regime": "bullish_normal", "direction": "LONG",
+            "matched_win_rate": 0.951, "sample_size": 102, "effective_sample_size": 26.0,
+            "strength_before": 0.3521,
         },
     ]
 
@@ -204,3 +222,4 @@ def test_explain_handles_a_decision_with_no_agent_contributions_gracefully():
     assert body["portfolio_confidence_discounts"] == []
     assert body["cross_asset_context"] == []
     assert body["gate_blocks"] == []
+    assert body["historical_analog_overrides"] == []

@@ -417,6 +417,9 @@ def _validate(key: str, value: str) -> None:
     elif key == "agent_combination_force_open_enabled":
         if value not in ("true", "false"):
             raise HTTPException(400, "agent_combination_force_open_enabled must be 'true' or 'false'")
+    elif key == "historical_analog_override_enabled":
+        if value not in ("true", "false"):
+            raise HTTPException(400, "historical_analog_override_enabled must be 'true' or 'false'")
     elif key == "pyramid_worse_price_allowed_regime":
         # Faz 361 — bkz. analytics/pyramid_regime_gate.py. Sadece gerçek
         # market_regime formatının ({trend}_{volatility}) üretebileceği

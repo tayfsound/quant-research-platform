@@ -172,6 +172,87 @@ class CouncilStage:
         return ctx, belief, opinions
 
 
+class HistoricalAnalogOverrideStage:
+    """Faz 394 — kullanıcı isteği ("tam mimari değişim"): teknik ajanın
+    yalnız kötü (%27.7 kazanma, agent ablation) ama sentiment/order_flow/
+    quant ile eşlikte çok iyi (%79-98, agent combination reliability,
+    gerçek FDR+OOS doğrulamalı) olduğu bugün bulundu — "puanlama değil
+    örüntü tanısın" isteğinin somut kanıtı. `belief_engine.py`'nin
+    cluster/crowding/coverage skorlaması dolaylı bir PROXY; gate_eligible
+    (istatistiksel olarak sağlam) bir tarihsel örüntü eşleşirse, o
+    örüntünün GERÇEK ampirik win_rate'i bu proxy'nin YERİNE geçer.
+
+    Gerçek veriyle ölçüldü (bu turda): 1831 kapanmış AI-konseyi kararında
+    sadece 6 domain-kombinasyonu (rejimsiz) / 4 analog (rejimli) gate_
+    eligible — yani bu SADECE nadir, çok güçlü kanıtlı durumlarda devreye
+    giriyor, ezici çoğunlukta (bugün ~%99) hiçbir şey değişmiyor, mevcut
+    skorlama zinciri aynen çalışıyor. Downstream (Metacognition risk_
+    penalty/conflict_level, DecisionFusion kalibrasyon/opportunity-
+    quality/InnerCritic) KASITLI OLARAK dokunulmuyor — override edilmiş
+    strength bile bu son güvenlik katmanlarından geçmeye devam ediyor.
+
+    SADECE confidence'ı YÜKSELTİR (gate_eligible = yüksek win_rate),
+    hiçbir zaman düşürmez — test modundaki "engelsiz, geniş veri
+    toplama" hedefiyle (Faz 388) çelişmiyor, ondan bağımsız çalışıyor."""
+
+    def execute(self, ctx: CognitiveCycleContext, belief: Belief, opinions: list[AgentOpinion]) -> Belief:
+        from database.repositories.app_settings_repository import AppSettingsRepository
+        from database.session_factory import SessionFactory
+
+        with SessionFactory.get_session() as session:
+            enabled = AppSettingsRepository(session).get("historical_analog_override_enabled") == "true"
+        if not enabled or not opinions or belief.direction not in ("LONG", "SHORT"):
+            return belief
+
+        features = ctx.market.features or {}
+        trend = features.get("trend", "unknown")
+        market_regime = f"{trend}_{features.get('volatility_regime', 'normal')}" if trend != "unknown" else None
+        if market_regime is None:
+            return belief
+
+        agreeing_domains = frozenset(
+            o.domain.value for o in opinions if (getattr(o, "direction", "") or "").upper() == belief.direction
+        )
+        if not agreeing_domains:
+            return belief
+
+        from database.repositories.historical_analog_report_repository import (
+            HistoricalAnalogReportRepository,
+        )
+
+        with SessionFactory.get_session() as session:
+            report = HistoricalAnalogReportRepository(session).get_latest()
+        if not report or not report.get("result"):
+            return belief
+
+        matches = [
+            a for a in report["result"].get("analogs") or []
+            if a.get("gate_eligible")
+            and a.get("market_regime") == market_regime
+            and a.get("direction") == belief.direction
+            and set(a.get("domains") or []) <= agreeing_domains
+        ]
+        if not matches:
+            return belief
+
+        best = max(matches, key=lambda a: a["win_rate"])
+        strength_before = belief.strength
+        belief.strength = best["win_rate"]
+        ctx.cognition.relevant_knowledge.append({
+            "type": "historical_analog_override",
+            "data": {
+                "domains": best["domains"],
+                "market_regime": market_regime,
+                "direction": belief.direction,
+                "matched_win_rate": best["win_rate"],
+                "sample_size": best["sample_size"],
+                "effective_sample_size": best["effective_sample_size"],
+                "strength_before": strength_before,
+            },
+        })
+        return belief
+
+
 class MetaStage:
     # Faz 268-sonrası — kullanıcı isteği, gerçek örneklerle doğrulandı
     # (bkz. ADAUSDT %19.1 güven kararı: technical ajanı %87 güvenle VE
@@ -1299,6 +1380,11 @@ class RecordingStage:
         # ekranında cevabı olsun (visibility-only, karar mantığını
         # etkilemiyor).
         cross_asset_context_entries = []
+        # Faz 394 — kullanıcı isteği: HistoricalAnalogOverrideStage'in
+        # belief.strength'i override ettiği anları da (gate_eligible bir
+        # örüntü eşleşti mi, hangi domainler/rejim/win_rate) decision_
+        # fusion ile AYNI desende kalıcı hâle getiriyoruz — tam şeffaflık.
+        historical_analog_override_entries = []
         experiment_bucket = None
 
         if hasattr(ctx, "cognition"):
@@ -1309,6 +1395,8 @@ class RecordingStage:
                     portfolio_confidence_discounts.append(item.get("data"))
                 if item.get("type") == "cross_asset_context":
                     cross_asset_context_entries.append(item.get("data"))
+                if item.get("type") == "historical_analog_override":
+                    historical_analog_override_entries.append(item.get("data"))
 
             for item in reversed(ctx.cognition.relevant_knowledge):
                 if item.get("type") == "debate_result":
@@ -1333,6 +1421,7 @@ class RecordingStage:
             experiment_bucket,
             portfolio_confidence_discounts,
             cross_asset_context_entries=cross_asset_context_entries,
+            historical_analog_override_entries=historical_analog_override_entries,
         )
 
         from observability.metrics import decisions_total

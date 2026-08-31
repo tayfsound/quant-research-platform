@@ -721,6 +721,19 @@ DEFAULTS: dict[str, str] = {
     # KAPALI (aynı adım-adım aktivasyon ilkesi).
     "agent_combination_force_open_enabled": "false",
 
+    # Faz 394 — "tam mimari değişim": kullanıcı isteği, bugünkü gerçek
+    # bulgu üzerine ("teknik ajan yalnız kötü, sentiment/order_flow/quant
+    # ile eşlikte %79-98 kazanıyor — puanlama değil örüntü tanısın").
+    # engines/cognitive_pipeline.py::HistoricalAnalogOverrideStage — bir
+    # karar gate_eligible bir Historical Analog'a (analytics/historical_
+    # analog_engine.py, FIL Faz D) eşleşirse, o örüntünün GERÇEK ampirik
+    # win_rate'i belief.strength'in YERİNE geçer (cluster/crowding/
+    # coverage skorlaması bu kararda atlanır). Gerçek veride şu an sadece
+    # birkaç hücre (4-6) bu bara ulaşıyor — etkisi kasıtlı olarak dar,
+    # veri arttıkça organik büyür. Varsayılan KAPALI (aynı adım-adım
+    # aktivasyon ilkesi).
+    "historical_analog_override_enabled": "false",
+
     # Faz 362 — kullanıcı bulgusu: "council'in ara sıra bir cycle'da
     # tersine dönmesi çoğunlukla gürültü — bu gürültüye güvenerek yeni
     # pozisyonlara da girebilir." Gerçek 3619 kapanmış pozisyonla (10-24

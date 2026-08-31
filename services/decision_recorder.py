@@ -35,6 +35,7 @@ class DecisionRecorder:
         experiment_bucket=None,
         portfolio_confidence_discounts=None,
         cross_asset_context_entries=None,
+        historical_analog_override_entries=None,
     ) -> DecisionEvent:
 
         direction = (
@@ -91,6 +92,14 @@ class DecisionRecorder:
         for entry in (cross_asset_context_entries or []):
             agent_opinions_data.append({
                 "type": "cross_asset_context",
+                "data": entry,
+            })
+
+        # Faz 394 — kullanıcı isteği: HistoricalAnalogOverrideStage'in
+        # belief.strength'i override ettiği anlar da AYNI desende kalıcı.
+        for entry in (historical_analog_override_entries or []):
+            agent_opinions_data.append({
+                "type": "historical_analog_override",
                 "data": entry,
             })
 
