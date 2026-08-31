@@ -12,6 +12,7 @@ geçiş ayrı, çok daha yüksek riskli, insan onaylı bir karar olmalı."""
 import hashlib
 import hmac
 import time
+from decimal import Decimal
 from typing import Any
 from urllib.parse import urlencode
 
@@ -45,6 +46,36 @@ def _sign(params: dict[str, Any], secret: str) -> str:
     olarak yeniden hesaplanıp doğrulanabilsin (bkz. testler)."""
     query_string = urlencode(params)
     return hmac.new(secret.encode(), query_string.encode(), hashlib.sha256).hexdigest()
+
+
+# Faz 396 (2026-09-01) — gerçek olay: hisse/emtia sınıfı semboller
+# (PLTRUSDT/NVDAUSDT/QQQUSDT/TSLAUSDT/vb.) `execution_mode_symbols`'ta
+# "testnet" işaretliyken GERÇEKTEN emir denemesi yapıyordu ama HER
+# SEFERİNDE Binance -1111 "Precision is over the maximum defined for
+# this asset" ile reddediliyordu — miktar (ör. 0.00922463), o sembolün
+# GERÇEK LOT_SIZE step'ine (bu sınıf semboller kripto gibi 8 ondalık
+# değil, çok daha kaba bir step kullanıyor) hiç yuvarlanmadan
+# gönderiliyordu. `services/decision_recorder.py` bu başarısızlığı
+# fail-closed ele alıyordu (opens_position=False) — DAVRANIŞ DOĞRUYDU,
+# ama KÖK SEBEP (borsa gerçekten emri kabul etmiyordu) hiç
+# düzeltilmemişti. exchangeInfo'nun kendi `quantityPrecision`'ı (fapi
+# adapter.py'de zaten okunuyordu, satır 66) sadece GÖSTERİM amaçlı bir
+# rahatlık alanı — asıl KURAL LOT_SIZE filtresinin `stepSize`'ı, bu
+# yüzden ondan hesaplanıyor.
+def _round_quantity_to_step(quantity: float, step_size: float) -> float:
+    """Miktarı, borsanın o sembol için izin verdiği GERÇEK step'e göre
+    AŞAĞI yuvarlar (yukarı değil — "AI kendi risk limitini asla
+    genişletemez" ilkesiyle tutarlı, hesaplanandan biraz küçük bir
+    pozisyon her zaman biraz büyük bir pozisyonden daha güvenli).
+    Ondalık kayan nokta hatalarından kaçınmak için Decimal kullanılıyor
+    (float ile 0.00922463 // 0.001 gibi işlemler gerçek dünyada yanlış
+    basamak sayısı üretebiliyor)."""
+    if step_size <= 0:
+        return quantity
+    d_qty = Decimal(str(quantity))
+    d_step = Decimal(str(step_size))
+    steps = (d_qty / d_step).to_integral_value(rounding="ROUND_DOWN")
+    return float(steps * d_step)
 
 
 class BinanceOrderRejectedError(Exception):
@@ -83,6 +114,35 @@ class BinanceFuturesExecutionAdapter:
             headers={"X-MBX-APIKEY": api_key},
             timeout=_ORDER_TIMEOUT_SECONDS,
         )
+        # Faz 396 — sembol başına LOT_SIZE stepSize önbelleği (exchangeInfo
+        # tüm sembolleri TEK istekte döndürüyor, TEK seferde çekilip
+        # process ömrü boyunca saklanıyor — her emirde yeniden çekmek
+        # gereksiz bir ağ isteği/hız-limiti riski olurdu, stepSize'lar
+        # borsa tarafında sık değişmiyor).
+        self._step_size_cache: dict[str, float] = {}
+
+    def _get_step_size(self, symbol: str) -> float | None:
+        """Sembolün GERÇEK LOT_SIZE step'i — bulunamazsa (borsa isteği
+        başarısız, sembol yok vb.) None, fail-closed: çağıran taraf bu
+        durumda miktarı yuvarlamadan gönderir (eski davranış, en azından
+        yeni bir hataya yol açmaz)."""
+        if symbol in self._step_size_cache:
+            return self._step_size_cache[symbol]
+        try:
+            resp = self._client.get("/fapi/v1/exchangeInfo")
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception:
+            return None
+        for s in data.get("symbols", []):
+            step = None
+            for f in s.get("filters", []):
+                if f.get("filterType") == "LOT_SIZE":
+                    step = float(f["stepSize"])
+                    break
+            if step is not None:
+                self._step_size_cache[s["symbol"]] = step
+        return self._step_size_cache.get(symbol)
 
     def _signed_params(self, params: dict[str, Any]) -> dict[str, Any]:
         signed = {**params, "timestamp": int(time.time() * 1000), "recvWindow": _RECV_WINDOW_MS}
@@ -140,11 +200,17 @@ class BinanceFuturesExecutionAdapter:
         )
 
     def _place_regular_order(self, req: PlaceOrderRequest) -> OrderStatus:
+        step_size = self._get_step_size(req.symbol)
+        quantity = (
+            _round_quantity_to_step(req.quantity, step_size)
+            if step_size is not None
+            else req.quantity
+        )
         params: dict[str, Any] = {
             "symbol": req.symbol,
             "side": req.side.value,
             "type": req.order_type.value,
-            "quantity": req.quantity,
+            "quantity": quantity,
             "newClientOrderId": req.client_order_id,
         }
         if req.stop_price is not None:
@@ -163,12 +229,18 @@ class BinanceFuturesExecutionAdapter:
         gönderiliyor (bkz. dosya üstündeki not). stopPrice yerine
         triggerPrice, newClientOrderId yerine clientAlgoId — Binance'in
         Algo Order API'sinin KENDİ, farklı parametre isimleri."""
+        step_size = self._get_step_size(req.symbol)
+        quantity = (
+            _round_quantity_to_step(req.quantity, step_size)
+            if step_size is not None
+            else req.quantity
+        )
         params: dict[str, Any] = {
             "algoType": "CONDITIONAL",
             "symbol": req.symbol,
             "side": req.side.value,
             "type": req.order_type.value,
-            "quantity": req.quantity,
+            "quantity": quantity,
             "clientAlgoId": req.client_order_id,
         }
         if req.stop_price is not None:
