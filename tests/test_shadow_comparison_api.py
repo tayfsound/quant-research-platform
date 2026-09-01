@@ -42,6 +42,9 @@ def test_shadow_comparison_endpoint_returns_both_sides_with_sample_size_flag():
     assert body["macro_only"]["sample_size_sufficient"] is False
     assert "council" in body
     assert "win_rate" in body["council"]
+    # Faz 400-devam — canonical evaluation cohort görünürlüğü.
+    assert body["council"]["evaluation_window"]["limit"] == 100_000
+    assert body["council"]["evaluation_window"]["exclude_experiment_buckets"] == ["pump_fade_v1"]
 
 
 def test_shadow_comparison_endpoint_requires_auth():

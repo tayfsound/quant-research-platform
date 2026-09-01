@@ -30,3 +30,5 @@ def test_seasonality_endpoint_returns_the_expected_shape():
         data = response.json()
         assert "hourly" in data and "buckets" in data["hourly"] and "significance" in data["hourly"]
         assert "day_of_week" in data and "buckets" in data["day_of_week"]
+        # Faz 400-devam — canonical evaluation cohort görünürlüğü.
+        assert data["evaluation_window"]["limit"] == 5000

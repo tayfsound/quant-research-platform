@@ -11,6 +11,7 @@ sorusuna saf cevap) döndürür. Kasıtlı olarak SADECE ölçüm — hiçbir
 otomatik "council'i küçült" eylemi tetiklemiyor."""
 from fastapi import APIRouter, Depends
 
+from analytics.evaluation_cohort import describe_evaluation_window
 from database.repositories.decision_persistor import DecisionPersistor
 from database.repositories.shadow_position_repository import ShadowPositionRepository
 from database.session_factory import SessionFactory
@@ -36,12 +37,16 @@ def council_comparison_summary(session, min_sample_size: int) -> dict:
         sign = 1.0 if direction == "LONG" else -1.0
         pnl_series.append(sign * (exit_price - entry) / entry)
 
+    evaluation_window = describe_evaluation_window(
+        rows, limit=100_000, exclude_experiment_buckets=["pump_fade_v1"],
+    )
     total = len(pnl_series)
     if total == 0:
         return {
             "source": "council", "closed_count": 0, "win_rate": None,
             "avg_pnl_pct": None, "cumulative_pnl_pct": None,
             "max_drawdown_pct": None, "sample_size_sufficient": False,
+            "evaluation_window": evaluation_window,
         }
 
     wins = sum(1 for p in pnl_series if p > 0)
@@ -61,6 +66,7 @@ def council_comparison_summary(session, min_sample_size: int) -> dict:
         "cumulative_pnl_pct": round(cumulative, 5),
         "max_drawdown_pct": round(max_drawdown, 5),
         "sample_size_sufficient": total >= min_sample_size,
+        "evaluation_window": evaluation_window,
     }
 
 

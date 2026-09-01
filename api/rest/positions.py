@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from analytics.evaluation_cohort import describe_evaluation_window
 from contracts.auth import Role
 from database.repositories.app_settings_repository import AppSettingsRepository
 from database.repositories.decision_persistor import DecisionPersistor
@@ -527,6 +528,16 @@ def performance_summary(user: AuthContext = Depends(get_current_user)):
             "by_trade_type": by_trade_type,
             "by_direction": persistor.closed_trades_summary_by_direction(
                 exclude_experiment_bucket=excluded_bucket
+            ),
+            # Faz 400-devam — kullanıcı isteği: canonical evaluation cohort
+            # görünürlüğü. `by_trade_type` yukarıdaki `all_time` (limitsiz
+            # closed_trades_summary SQL agregasyonu) İLE AYNI kaynaktan
+            # DEĞİL, ayrı bir list_closed_trades(limit=100_000) çağrısından
+            # geliyor -- bugün pratikte eşit ama gerçek toplam 100.000'i
+            # geçerse SESSİZCE ayrışabilirdi. Bu alan hangi pencereden
+            # geldiğini açıkça gösteriyor.
+            "by_trade_type_evaluation_window": describe_evaluation_window(
+                all_closed, limit=100_000, exclude_experiment_buckets=[excluded_bucket] if excluded_bucket else [],
             ),
         }
 

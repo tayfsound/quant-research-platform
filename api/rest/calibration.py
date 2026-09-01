@@ -12,6 +12,7 @@ from analytics.calibration_uncertainty import (
     compute_expected_calibration_error,
     extract_predictions_from_closed_trades,
 )
+from analytics.evaluation_cohort import describe_evaluation_window
 from database.repositories.decision_persistor import DecisionPersistor
 from database.session_factory import SessionFactory
 from services.auth_service import AuthContext, get_current_user
@@ -24,7 +25,11 @@ def calibration(user: AuthContext = Depends(get_current_user)):
     with SessionFactory.get_session() as session:
         closed_trades = DecisionPersistor(session).list_closed_trades(limit=100_000)
     predictions = extract_predictions_from_closed_trades(closed_trades)
-    return {"result": compute_expected_calibration_error(predictions), "total_closed_trades": len(closed_trades)}
+    return {
+        "result": compute_expected_calibration_error(predictions),
+        "total_closed_trades": len(closed_trades),
+        "evaluation_window": describe_evaluation_window(closed_trades, limit=100_000),
+    }
 
 
 @router.get("/reports")

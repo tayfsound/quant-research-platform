@@ -74,6 +74,9 @@ def test_calibration_reflects_real_closed_trades_confidence_and_outcome():
         assert body["total_closed_trades"] == 15
         assert body["result"] is not None
         assert body["result"]["expected_calibration_error"] < 0.05
+        # Faz 400-devam — canonical evaluation cohort görünürlüğü.
+        assert body["evaluation_window"]["n_trades"] == 15
+        assert body["evaluation_window"]["limit"] == 100_000
 
 
 def test_calibration_reports_requires_auth():

@@ -57,6 +57,12 @@ def test_feature_ic_reflects_real_closed_trades_with_feature_contributions():
         assert features[key]["ic"] > 0.9
         assert features[key]["sample_size"] == 25
         assert features[key]["agent_domain"] == "quant"
+        # Faz 400-devam — canonical evaluation cohort görünürlüğü. Paylaşılan
+        # quantdb_test'te başka testlerin de satırları olabileceği için
+        # kesin sayı yerine sadece alanın varlığı/mantıklılığı doğrulanıyor.
+        evaluation_window = response.json()["evaluation_window"]
+        assert evaluation_window["n_trades"] >= 25
+        assert evaluation_window["limit"] == 100_000
 
 
 def test_feature_ic_reports_requires_auth():

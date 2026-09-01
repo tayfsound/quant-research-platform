@@ -6,6 +6,7 @@ hesaplanıp saklanmaz, her istek gerçek kapanmış işlem geçmişinden
 taze hesaplanır."""
 from fastapi import APIRouter, Depends
 
+from analytics.evaluation_cohort import describe_evaluation_window
 from analytics.feature_ic import compute_feature_ic
 from database.repositories.decision_persistor import DecisionPersistor
 from database.session_factory import SessionFactory
@@ -18,7 +19,10 @@ router = APIRouter(prefix="/feature-ic", tags=["feature-ic"])
 def feature_ic(min_sample_size: int = 20, user: AuthContext = Depends(get_current_user)):
     with SessionFactory.get_session() as session:
         closed_trades = DecisionPersistor(session).list_closed_trades(limit=100_000)
-    return {"features": compute_feature_ic(closed_trades, min_sample_size=min_sample_size)}
+    return {
+        "features": compute_feature_ic(closed_trades, min_sample_size=min_sample_size),
+        "evaluation_window": describe_evaluation_window(closed_trades, limit=100_000),
+    }
 
 
 @router.get("/reports")

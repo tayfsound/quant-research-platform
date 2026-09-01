@@ -179,6 +179,12 @@ def test_performance_endpoint_breaks_down_win_rate_and_pnl_by_trade_type():
     assert "orta_vadeli" not in by_type
     assert by_type["scalp"]["trade_count"] >= 2
     assert by_type["swing"]["trade_count"] >= 1
+    # Faz 400-devam — canonical evaluation cohort görünürlüğü: by_trade_type
+    # ayrı bir list_closed_trades(limit=100_000) çağrısından geliyor,
+    # all_time'ın limitsiz closed_trades_summary'sinden DEĞİL.
+    window = response.json()["by_trade_type_evaluation_window"]
+    assert window["limit"] == 100_000
+    assert window["exclude_experiment_buckets"] == ["pump_fade_v1"]
 
 
 def test_deployed_notional_reflects_real_margin_not_leveraged_notional():
