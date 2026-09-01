@@ -1587,9 +1587,24 @@ class RiskGateStage:
         # TOPLAM sayıya bakıyor, ENB/Cross-Symbol Correlation Filter de
         # sadece aynı cycle'daki eşzamanlı önerilere bakıyor — hiçbiri
         # saatler içinde AYNI sembol/yönde BİRİKEN pozisyonu görmüyor.
-        final_direction = "LONG" if ctx.decision.action == ActionType.ENTER_LONG else (
-            "SHORT" if ctx.decision.action == ActionType.ENTER_SHORT else None
-        )
+        #
+        # Faz 405 (2026-09-01) — kritik bulgu, kullanıcı gözlemi: bu kapı
+        # (ve aşağıdaki Faz 358'in $ tavanı, AYNI final_direction'ı
+        # paylaşıyor) SADECE ENTER_LONG/ENTER_SHORT'u görüyordu — REDUCE
+        # aksiyonunu (Faz 388'in test-modu WAIT->REDUCE'u VE canlı moddaki
+        # normal REDUCE'u, final_size = proposed_size * confidence, HER
+        # ikisi de GERÇEK yeni bir pozisyon açıyor) TAMAMEN atlıyordu.
+        # Gerçek olay: BRKBUSDT'de limit 20 iken 23 LONG + 4 SHORT pozisyon
+        # aynı anda açık kalmıştı, hepsi REDUCE üzerinden — canlı
+        # reprodüksiyon: same_direction_open_counts={'LONG': 23} iken
+        # action=REDUCE için risk verdict='approved', sıfır ret nedeni.
+        if ctx.decision.action in (ActionType.ENTER_LONG, ActionType.ENTER_SHORT):
+            final_direction = "LONG" if ctx.decision.action == ActionType.ENTER_LONG else "SHORT"
+        elif ctx.decision.action == ActionType.REDUCE:
+            _reduce_direction = (ctx.decision.proposed_direction or "").upper()
+            final_direction = _reduce_direction if _reduce_direction in ("LONG", "SHORT") else None
+        else:
+            final_direction = None
         if (
             final_direction is not None
             and ctx.risk.max_open_positions_per_symbol_direction is not None

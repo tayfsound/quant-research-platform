@@ -165,6 +165,93 @@ def test_same_direction_cap_disabled_when_setting_is_none():
     assert ctx.risk.evaluation.verdict == "approved"
 
 
+def test_rejects_reduce_action_when_too_many_same_direction_positions_open():
+    """Faz 405 — kritik bulgu, kullanıcı gözlemi (2026-09-01): bu kapı
+    SADECE ENTER_LONG/ENTER_SHORT'u görüyordu, Faz 388'in test-modu (VE
+    canlı moddaki normal) REDUCE aksiyonunu (final_size = proposed_size *
+    confidence, GERÇEK yeni bir pozisyon açıyor) TAMAMEN atlıyordu.
+    Gerçek olay: BRKBUSDT'de limit 20 iken 23 LONG pozisyon aynı anda
+    açık kalmıştı, hepsi REDUCE üzerinden."""
+    from contracts.contexts.decision import ActionType
+
+    stage = RiskGateStage(MagicMock())
+    ctx = CognitiveCycleContext()
+    ctx.decision.action = ActionType.REDUCE
+    ctx.decision.proposed_direction = "LONG"
+    ctx.decision.final_size = 0.1
+    ctx.risk.limits = {"max_position_size": FakeLimit()}
+    ctx.risk.evaluation = FakeEval()
+    ctx.risk.current_drawdown = 0.0
+    ctx.risk.same_direction_open_counts = {"LONG": 23, "SHORT": 4}
+    ctx.risk.max_open_positions_per_symbol_direction = 20
+
+    ctx = stage.execute(ctx)
+
+    assert ctx.risk.evaluation.verdict == "rejected"
+    assert any(r.code == "MAX_SAME_SYMBOL_DIRECTION_POSITIONS" for r in ctx.risk.evaluation.reasons)
+    assert ctx.decision.action == ActionType.WAIT
+    assert ctx.decision.final_size == 0.0
+
+
+def test_approves_reduce_action_when_same_direction_open_count_is_below_the_limit():
+    from contracts.contexts.decision import ActionType
+
+    stage = RiskGateStage(MagicMock())
+    ctx = CognitiveCycleContext()
+    ctx.decision.action = ActionType.REDUCE
+    ctx.decision.proposed_direction = "LONG"
+    ctx.decision.final_size = 0.1
+    ctx.risk.limits = {"max_position_size": FakeLimit()}
+    ctx.risk.evaluation = FakeEval()
+    ctx.risk.current_drawdown = 0.0
+    ctx.risk.same_direction_open_counts = {"LONG": 3, "SHORT": 0}
+    ctx.risk.max_open_positions_per_symbol_direction = 20
+
+    ctx = stage.execute(ctx)
+
+    assert ctx.risk.evaluation.verdict == "approved"
+
+
+def test_reduce_action_with_no_proposed_direction_is_not_gated_fail_closed():
+    """proposed_direction hiç yoksa/WAIT ise (icat edilmiş bir yön asla
+    varsayılmaz) bu kapı devreye girmemeli — başka bir gate'in işi."""
+    from contracts.contexts.decision import ActionType
+
+    stage = RiskGateStage(MagicMock())
+    ctx = CognitiveCycleContext()
+    ctx.decision.action = ActionType.REDUCE
+    ctx.decision.proposed_direction = None
+    ctx.decision.final_size = 0.1
+    ctx.risk.limits = {"max_position_size": FakeLimit()}
+    ctx.risk.evaluation = FakeEval()
+    ctx.risk.current_drawdown = 0.0
+    ctx.risk.same_direction_open_counts = {"LONG": 999, "SHORT": 0}
+    ctx.risk.max_open_positions_per_symbol_direction = 20
+
+    ctx = stage.execute(ctx)
+
+    assert ctx.risk.evaluation.verdict == "approved"
+
+
+def test_wait_action_is_never_gated_by_the_same_symbol_direction_cap():
+    from contracts.contexts.decision import ActionType
+
+    stage = RiskGateStage(MagicMock())
+    ctx = CognitiveCycleContext()
+    ctx.decision.action = ActionType.WAIT
+    ctx.decision.proposed_direction = "LONG"
+    ctx.decision.final_size = 0.0
+    ctx.risk.limits = {"max_position_size": FakeLimit()}
+    ctx.risk.evaluation = FakeEval()
+    ctx.risk.current_drawdown = 0.0
+    ctx.risk.same_direction_open_counts = {"LONG": 999, "SHORT": 0}
+    ctx.risk.max_open_positions_per_symbol_direction = 20
+
+    ctx = stage.execute(ctx)
+
+    assert ctx.risk.evaluation.verdict == "approved"
+
+
 def test_rejects_when_same_symbol_direction_notional_exceeds_capital_cap():
     """Faz 358 — kullanıcı bulgusu: gerçek olay XAUTUSDT LONG'da 17
     pozisyon, hepsi %0.15'lik bir fiyat bandında — sayı-bazlı gate
