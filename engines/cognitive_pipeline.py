@@ -177,7 +177,7 @@ class CouncilStage:
 
         belief, opinions = self.orchestrator.deliberate(
             contexts, regime=current_regime, symbol=ctx.market.symbol or None,
-            data_freshness=data_freshness,
+            data_freshness=data_freshness, market_features=features,
         )
 
         ctx.cognition.relevant_knowledge.append({

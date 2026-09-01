@@ -62,6 +62,7 @@ class CouncilOrchestrator:
         regime: str | None = None,
         symbol: str | None = None,
         data_freshness: float | None = None,
+        market_features: dict | None = None,
     ) -> tuple[Belief, list[AgentOpinion]]:
 
         opinions: list[AgentOpinion] = []
@@ -325,6 +326,58 @@ class CouncilOrchestrator:
                         "detail": f"Mixture-of-Experts rejim router'ı ({moe['regime']}, hurst={hurst:.2f}).",
                     })
                     opinion.recalculate()
+
+        # Faz 402 — Market State / Direction Katmanı Faz 2 (bkz. ~/.claude/
+        # plans/velvety-whistling-parasol.md). MoE Regime Router'ın (yukarı)
+        # AYNI şablonu — market_data.features.market_state_engine::
+        # compute_market_state()'in `reversing` sinyali (Welch t-test,
+        # piyasanın ölçülen yönü az önce döndüğünde True) yeni tespit
+        # edilen yöne KARŞI oy veren ajanların ağırlığını hafifçe düşürür,
+        # AYNI yöndekileri hafifçe yükseltir. SADECE market_state_tilt_
+        # enabled=true iken (varsayılan kapalı — Faz 1'in gerçek gözlem
+        # verisi olgunlaşmadan açılmayacak) VE reversing=True iken (genel
+        # `direction` etiketinde DEĞİL — sideways-market kapısının öğrettiği
+        # ders: tek başına geniş kullanılan yumuşak bir sinyal çok fazla
+        # yanlış pozitif üretir).
+        if market_features:
+            from database.repositories.app_settings_repository import AppSettingsRepository
+            from database.session_factory import SessionFactory
+
+            with SessionFactory.get_session() as _mst_session:
+                _market_state_tilt_enabled = (
+                    AppSettingsRepository(_mst_session).get("market_state_tilt_enabled") == "true"
+                )
+            if _market_state_tilt_enabled:
+                from analytics.market_state_tilt import compute_market_state_tilt
+                from market_data.features.market_state_engine import compute_market_state
+
+                market_state = compute_market_state(market_features)
+                tilt_result = compute_market_state_tilt(market_state)
+                if tilt_result["direction"] is not None:
+                    for opinion in opinions:
+                        if opinion.direction == tilt_result["direction"]:
+                            tilt = tilt_result["agreeing_weight"]
+                        elif opinion.direction in ("LONG", "SHORT"):
+                            tilt = tilt_result["opposing_weight"]
+                        else:
+                            continue
+                        if tilt != 1.0:
+                            _pre_mst_weight = opinion.performance_weight
+                            opinion.performance_weight = round(opinion.performance_weight * tilt, 4)
+                            opinion.caveats.append(
+                                f"Market State ({market_state['regime_label']}, güven="
+                                f"{market_state['confidence']:.2f}) piyasanın az önce "
+                                f"{tilt_result['direction']} yönüne döndüğünü tespit etti, oy "
+                                f"ağırlığını x{tilt:.2f} ayarladı."
+                            )
+                            opinion.weight_adjustments.append({
+                                "step": "market_state_tilt",
+                                "before": _pre_mst_weight, "after": opinion.performance_weight,
+                                "multiplier": round(tilt, 4),
+                                "detail": f"Market State reversing sinyali ({market_state['regime_label']}, "
+                                          f"confidence={market_state['confidence']:.2f}).",
+                            })
+                            opinion.recalculate()
 
         if self.pinned_weight_snapshot_id is not None:
             # Backtest determinizmi: pinned bir snapshot her zaman TAM

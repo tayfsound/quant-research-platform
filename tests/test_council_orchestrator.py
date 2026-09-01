@@ -207,9 +207,9 @@ def test_council_stage_derives_regime_from_market_features_and_forwards_it(monke
     captured = {}
     original_deliberate = co_module.CouncilOrchestrator.deliberate
 
-    def spy_deliberate(self, contexts, regime=None, symbol=None, data_freshness=None):
+    def spy_deliberate(self, contexts, regime=None, symbol=None, data_freshness=None, market_features=None):
         captured["regime"] = regime
-        return original_deliberate(self, contexts, regime=regime, symbol=symbol, data_freshness=data_freshness)
+        return original_deliberate(self, contexts, regime=regime, symbol=symbol, data_freshness=data_freshness, market_features=market_features)
 
     monkeypatch.setattr(co_module.CouncilOrchestrator, "deliberate", spy_deliberate)
 
@@ -237,9 +237,9 @@ def test_council_stage_computes_real_data_freshness_from_last_bar_timestamp(monk
     captured = {}
     original_deliberate = co_module.CouncilOrchestrator.deliberate
 
-    def spy_deliberate(self, contexts, regime=None, symbol=None, data_freshness=None):
+    def spy_deliberate(self, contexts, regime=None, symbol=None, data_freshness=None, market_features=None):
         captured["data_freshness"] = data_freshness
-        return original_deliberate(self, contexts, regime=regime, symbol=symbol, data_freshness=data_freshness)
+        return original_deliberate(self, contexts, regime=regime, symbol=symbol, data_freshness=data_freshness, market_features=market_features)
 
     monkeypatch.setattr(co_module.CouncilOrchestrator, "deliberate", spy_deliberate)
 
@@ -264,9 +264,9 @@ def test_council_stage_leaves_data_freshness_none_without_a_last_bar_timestamp(m
     captured = {}
     original_deliberate = co_module.CouncilOrchestrator.deliberate
 
-    def spy_deliberate(self, contexts, regime=None, symbol=None, data_freshness=None):
+    def spy_deliberate(self, contexts, regime=None, symbol=None, data_freshness=None, market_features=None):
         captured["data_freshness"] = data_freshness
-        return original_deliberate(self, contexts, regime=regime, symbol=symbol, data_freshness=data_freshness)
+        return original_deliberate(self, contexts, regime=regime, symbol=symbol, data_freshness=data_freshness, market_features=market_features)
 
     monkeypatch.setattr(co_module.CouncilOrchestrator, "deliberate", spy_deliberate)
 
