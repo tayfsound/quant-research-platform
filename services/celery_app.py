@@ -167,6 +167,14 @@ celery_app.conf.beat_schedule = {
         "task": "regime_reversal_guardian_task",
         "schedule": 60.0,
     },
+    # Faz 403 — Market State Reversal Guardian. regime_reversal_guardian
+    # ile AYNI cadence — piyasanın kendi ölçülen dönüşü de bir stop-loss
+    # serisi kadar hızlı tepki gerektiriyor. Varsayılan KAPALI olduğu için
+    # (market_state_reversal_guardian_enabled) şu an sıfır maliyetli.
+    "market-state-reversal-guardian-every-60s": {
+        "task": "market_state_reversal_guardian_task",
+        "schedule": 60.0,
+    },
     # Backlog #13 (2026-08-26) — Portfolio Stress Guardian. Daha ağır bir
     # hesaplama (TÜM açık pozisyonların taze fiyatı + 365 günlük referans
     # sembol geçmişi) — günlük bir tarihsel dağılım dakikalar içinde

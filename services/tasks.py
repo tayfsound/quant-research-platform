@@ -318,6 +318,22 @@ def regime_reversal_guardian_task() -> dict:
         return run_guardian_sweep()
 
 
+@celery_app.task(name="market_state_reversal_guardian_task")
+def market_state_reversal_guardian_task() -> dict:
+    """Faz 403 — Market State Reversal Guardian (bkz. ~/.claude/plans/
+    velvety-whistling-parasol.md). market_state_reversal_guardian_enabled=
+    false iken (varsayılan KAPALI) sıfır maliyetli no-op. regime_reversal_
+    guardian_task/belief_reversal_exit_task ile AYNI cadence/kilit deseni
+    — bkz. services/market_state_reversal_guardian.py::sweep_market_
+    state_reversals() docstring'i."""
+    from services.market_state_reversal_guardian import sweep_market_state_reversals
+
+    with _CycleLock("lock:market_state_reversal_guardian_task", ttl_seconds=300) as acquired:
+        if not acquired:
+            return {"skipped": "previous_run_still_in_progress"}
+        return sweep_market_state_reversals()
+
+
 @celery_app.task(name="portfolio_stress_guardian_task")
 def portfolio_stress_guardian_task() -> dict:
     """Backlog #13 (2026-08-26) — Portfolio Stress Guardian.

@@ -773,6 +773,13 @@ DEFAULTS: dict[str, str] = {
     # (feedback_incremental_module_activation).
     "market_state_tilt_enabled": "false",
 
+    # Faz 403 (2026-09-01) — Market State / Direction Katmanı Faz 3.
+    # services/market_state_reversal_guardian.py'nin ayarları — regime_
+    # reversal_guardian/belief_reversal_exit ile AYNI desen. Varsayılan
+    # KAPALI — Faz 1'in gerçek gözlem verisi olgunlaşmadan açılmayacak.
+    "market_state_reversal_guardian_enabled": "false",
+    "market_state_reversal_guardian_min_confidence": "0.5",
+
     # Faz 362-devam — kullanıcı bulgusu (2026-08-25, gerçek olay): Faz
     # 310'un self-reliability gate'i (recent_dsr < 0.3 -> her karar WAIT'e
     # zorlanır) gerçek, geçerli bir ölçümle (son 500 kapanmış işlemin
