@@ -1,9 +1,42 @@
-# Mevcut Durum -- v1.133.0 (Faz 399+400: test-modu EV istisnası + Canonical Evaluation Cohort Faz 0)
+# Mevcut Durum -- v1.134.0 (Faz 401: Market State / Direction Katmanı Faz 1)
 
 **Tarih:** 2026-09-01
 **Branch:** main
-**Son commit (HEAD):** `0fac15e` Faz 400 — Canonical Evaluation Cohort, Faz 0.
-**Servis durumu:** Faz 396-400 push edildi, worker+uvicorn yeniden başlatıldı.
+**Son commit (HEAD):** `2310e7f` Faz 401 — Market State / Direction Katmanı, Faz 1 (gözlem-only).
+**Servis durumu:** Faz 396-401 push edildi, worker+uvicorn yeniden başlatılacak (candle_lookback değişikliği TÜM sistemi etkiliyor, dikkatli restart).
+
+**Faz 401 (bu turda) — Market State / Direction Katmanı, Faz 1
+(gözlem-only):** Büyük mimari planın (~/.claude/plans/velvety-whistling-
+parasol.md) ilk gerçek kod fazı. `market_data/features/market_state_
+engine.py` (yeni, saf fonksiyon) — `regime_engine.py::compute_regime_v2()`
+ile AYNI girdileri (long_term_trend_regime/regime_changepoint_detected/
+hurst_exponent) kullanarak "hangi yön, ne kadar güvenli" sorusuna cevap
+veriyor, hiçbir şey icat etmiyor. `analytics/market_state_cluster_
+engine.py` — `risk/cross_symbol_correlation.py`'nin (same_direction_
+correlation, z=9.42 doğrulanmış) korelasyon matrisini yeniden kullanarak
+altın-kümesi tipi paylaşılan rejim dönüşlerini yakalıyor. Yeni
+`market_state_snapshots` tablosu + `refresh_market_state_cluster_task`
+(5dk kadans). `engines/cognitive_pipeline.py::KnowledgeStage`'e
+`cross_asset_context` ile AYNI visibility-only desende kablolandı — hiçbir
+canlı kararı etkilemiyor, sadece `Transactions.tsx`'te görünüyor.
+
+**KRİTİK bulgu + kullanıcı onaylı düzeltme:** `candle_lookback` ayarı
+100'dü (varsayılan da 100), ama `long_term_trend_regime` (200-EMA
+tabanlı) en az 220 mum istiyor — bu sinyal ŞİMDİYE KADAR HİÇ
+hesaplanamıyordu (muhtemelen `regime_engine.py::compute_regime_v2()`'nin
+de hâlâ canlıya bağlanmamasının bir parçası — inşa edilmiş ama hiç
+gerçek veri üretemeyen bir sinyal). Kullanıcı onayıyla 250'ye yükseltildi
+(hem koddaki DEFAULT hem canlı DB satırı, quantdb+quantdb_test). Canlı
+doğrulandı: BTCUSDT gerçek 250 bar → `long_term_trend_regime=bear_trend`,
+`hurst=0.417`, `compute_market_state` → SHORT/%16.6 güven. Bu, TÜM
+sistemi etkiler (her ajanın teknik sinyali biraz daha fazla geçmiş görür,
+veri çekme/hesaplama maliyeti ~2.5x artar) — canlıda gözlemlenmeli.
+
+Test: 111 passed (bir test sadece büyük toplu koşuda ilgisiz bir mock-
+sızıntısı yüzünden flake veriyordu, izole/küçük kombinasyonlarda temiz
+geçiyor). `tsc --noEmit` temiz. Sıradaki: Faz 2 (belief synthesis'e
+confidence eğimi) ve Faz 3 (proaktif çıkış guardian'ı) — her ikisi de
+Faz 1'in gerçek gözlem verisiyle doğrulanmadan başlanmayacak.
 
 **BÜYÜK MİMARİ PROJE BAŞLADI (bu turda, kullanıcı onayıyla) — "Market
 State / Direction Katmanı":** Kullanıcının gerçek gözlemi ("AI pozisyonlar
