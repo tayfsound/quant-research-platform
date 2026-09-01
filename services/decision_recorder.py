@@ -36,6 +36,7 @@ class DecisionRecorder:
         portfolio_confidence_discounts=None,
         cross_asset_context_entries=None,
         historical_analog_override_entries=None,
+        market_state_entries=None,
     ) -> DecisionEvent:
 
         direction = (
@@ -100,6 +101,16 @@ class DecisionRecorder:
         for entry in (historical_analog_override_entries or []):
             agent_opinions_data.append({
                 "type": "historical_analog_override",
+                "data": entry,
+            })
+
+        # Faz 401 — Market State / Direction Katmanı Faz 1 (bkz.
+        # ~/.claude/plans/velvety-whistling-parasol.md): KnowledgeStage'in
+        # per-sembol market state okuması, cross_asset_context ile AYNI
+        # desende kalıcı — visibility-only, HİÇBİR kararı etkilemiyor.
+        for entry in (market_state_entries or []):
+            agent_opinions_data.append({
+                "type": "market_state",
                 "data": entry,
             })
 

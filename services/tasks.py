@@ -659,6 +659,34 @@ def refresh_historical_analog_report_task() -> dict:
     return {"id": str(report.id), "analog_count": len(result.get("analogs", []))}
 
 
+@celery_app.task(name="refresh_market_state_cluster_task")
+def refresh_market_state_cluster_task() -> dict:
+    """Faz 401 — Market State / Direction Katmanı Faz 1 (bkz. ~/.claude/
+    plans/velvety-whistling-parasol.md). analytics/market_state_cluster_
+    engine.py'nin watchlist-genelinde korelasyon kümesi hesabını 5
+    dakikada bir kaydeder — engines/cognitive_pipeline.py::KnowledgeStage
+    bu snapshot'ı okur (canlı hesaplama DEĞİL, watchlist'in tamamını her
+    cycle'da yeniden çekmek pahalı olurdu). Diğer 5dk'lık guardian
+    görevleriyle (regime_reversal_guardian_task/portfolio_stress_
+    guardian_task) AYNI _CycleLock deseni — SADECE ölçüm/kayıt, hiçbir
+    canlı kararı etkilemiyor."""
+    from contracts.market_state_report import MarketStateReport
+    from database.repositories.market_state_report_repository import MarketStateReportRepository
+    from database.session_factory import SessionFactory
+    from services.market_state_gatherer import gather_market_state_cluster
+
+    with _CycleLock("lock:refresh_market_state_cluster_task", ttl_seconds=300) as acquired:
+        if not acquired:
+            return {"skipped": "previous_run_still_in_progress"}
+
+        result = gather_market_state_cluster()
+        with SessionFactory.get_session() as session:
+            report = MarketStateReport(result=result)
+            MarketStateReportRepository(session).save(report)
+
+        return {"id": str(report.id), "n_symbols": result.get("n_symbols", 0)}
+
+
 @celery_app.task(name="refresh_collective_intelligence_report_task")
 def refresh_collective_intelligence_report_task() -> dict:
     """Cognitive Core 10.0 — kullanıcı isteği: council'i hiç etkilemeyen,

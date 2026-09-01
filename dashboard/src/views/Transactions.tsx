@@ -446,6 +446,17 @@ type ExplainData = {
   // sadece "canlıda engellerdi" diye kaydediyor — işlem burada GERÇEKTEN
   // açıldı, gate_blocks'tan (gerçekten engelleyen) ayrı gösteriliyor.
   gate_bypasses_test_mode: Record<string, unknown>[];
+  // Faz 401 — Market State / Direction Katmanı Faz 1: per-sembol piyasa
+  // durumu okuması (visibility-only, henüz hiçbir kararı etkilemiyor).
+  market_state_entries: {
+    direction: "LONG" | "SHORT" | "NEUTRAL";
+    confidence: number;
+    reversing: boolean;
+    regime_label: string;
+    cluster_agreement: number | null;
+    cluster_reversing_fraction: number | null;
+    cluster_peer_count: number | null;
+  }[];
   // Faz 394 — kullanıcı isteği ("tam mimari değişim"): gate_eligible bir
   // Historical Analog eşleştiğinde belief.strength'in gerçek ampirik
   // win_rate ile override edildiği anlar. Çoğu kararda BOŞ olacak
@@ -718,6 +729,28 @@ function ExplainModal({ decisionId, onClose }: { decisionId: string; onClose: ()
                       </p>
                     );
                   })}
+                </div>
+              )}
+
+              {/* Faz 401 — Market State / Direction Katmanı Faz 1: piyasanın
+                  council'den BAĞIMSIZ ölçülen yönü/güveni — henüz hiçbir
+                  kararı etkilemiyor, sadece gözlem/kayıt amaçlı. */}
+              {data.market_state_entries.length > 0 && (
+                <div className="bg-accent-soft rounded-lg p-2.5 border border-line-soft">
+                  <p className="text-xs text-ink-faint mb-1.5">Market State (gözlem-only)</p>
+                  {data.market_state_entries.map((m, i) => (
+                    <p key={i} className="text-xs text-ink-soft">
+                      <span className="font-mono text-ink">{m.direction}</span>
+                      {" — güven "}{(m.confidence * 100).toFixed(0)}%
+                      {m.reversing && <span className="text-fall font-semibold"> — DÖNÜYOR</span>}
+                      {" "}({m.regime_label})
+                      {m.cluster_peer_count != null && m.cluster_peer_count > 0 && (
+                        <span className="text-ink-faint">
+                          {" — küme: "}{m.cluster_peer_count} eş, {((m.cluster_agreement ?? 0) * 100).toFixed(0)}% aynı yönde
+                        </span>
+                      )}
+                    </p>
+                  ))}
                 </div>
               )}
 

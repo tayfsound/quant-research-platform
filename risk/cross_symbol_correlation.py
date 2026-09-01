@@ -16,6 +16,21 @@ MIN_CLUSTER_PEERS = 1  # aynı yönde en az 1 diğer yüksek-korele sembol
 MAX_CONVICTION_DISCOUNT = 0.5  # en fazla %50 confidence indirimi
 
 
+def compute_correlation_matrix(returns: dict[str, list[float]]) -> tuple[list[str], np.ndarray]:
+    """Faz 401 — Market State Cluster Engine (analytics/market_state_
+    cluster_engine.py) ile paylaşılan, TEK kaynak korelasyon matrisi
+    hesabı — bu dosyanın önceden sadece kendi içinde gömülü tuttuğu
+    matematiği dışarı çıkarıyor, davranış DEĞİŞMEDİ (compute_same_
+    direction_correlation_discount aynen bunu çağırıyor)."""
+    symbols = list(returns.keys())
+    if len(symbols) < 2:
+        return symbols, np.array([])
+    matrix = np.array([returns[s] for s in symbols])
+    with np.errstate(invalid="ignore"):
+        corr = np.corrcoef(matrix)
+    return symbols, corr
+
+
 def compute_same_direction_correlation_discount(
     returns: dict[str, list[float]],
     directions: dict[str, str],
@@ -31,13 +46,9 @@ def compute_same_direction_correlation_discount(
     DISCOUNT, 1.0] aralığında bir confidence çarpanı döner. Sadece yüksek
     korelasyonlu (>HIGH_CORRELATION_THRESHOLD), en az bir eş sembollü
     aynı-yönlü bir küme varsa indirim uygular — asla büyütmez, fail-closed."""
-    symbols = list(returns.keys())
+    symbols, corr = compute_correlation_matrix(returns)
     if len(symbols) < 2:
         return {s: 1.0 for s in symbols}
-
-    matrix = np.array([returns[s] for s in symbols])
-    with np.errstate(invalid="ignore"):
-        corr = np.corrcoef(matrix)
 
     multipliers: dict[str, float] = {}
     for i, sym in enumerate(symbols):

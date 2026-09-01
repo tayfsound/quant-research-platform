@@ -71,6 +71,38 @@ class KnowledgeStage:
                         },
                     })
 
+        # Faz 401 — Market State / Direction Katmanı, Faz 1 (bkz.
+        # ~/.claude/plans/velvety-whistling-parasol.md). Kasıtlı olarak
+        # TAM cross_asset_context ile AYNI "visibility-only" ilke: council'i
+        # HİÇ etkilemiyor (belief/MetaStage'e bağlı değil), sadece kayda
+        # geçiyor. Sembol-bazlı hesap sıfır ek maliyetli (compute_market_
+        # state saf bir fonksiyon, ctx.market.features bu noktada zaten
+        # dolu) — küme-bazlı (cluster_agreement/cluster_reversing_fraction)
+        # kısmı SADECE en son kaydedilmiş periyodik anlık görüntüde bu
+        # sembol varsa eklenir (ucuz DB okuması, canlı korelasyon matrisi
+        # BURADA yeniden hesaplanmıyor).
+        from market_data.features.market_state_engine import compute_market_state
+
+        market_state = compute_market_state(ctx.market.features or {})
+        with SessionFactory.get_session() as _market_state_session:
+            from database.repositories.market_state_report_repository import (
+                MarketStateReportRepository,
+            )
+
+            _market_state_report = MarketStateReportRepository(_market_state_session).get_latest()
+        cluster_state = None
+        if _market_state_report and _market_state_report.get("result"):
+            cluster_state = (_market_state_report["result"].get("by_symbol") or {}).get(ctx.market.symbol)
+        ctx.cognition.relevant_knowledge.append({
+            "type": "market_state",
+            "data": {
+                **market_state,
+                "cluster_agreement": (cluster_state or {}).get("cluster_agreement"),
+                "cluster_reversing_fraction": (cluster_state or {}).get("cluster_reversing_fraction"),
+                "cluster_peer_count": (cluster_state or {}).get("peer_count"),
+            },
+        })
+
         return ctx
 
 
@@ -1385,6 +1417,10 @@ class RecordingStage:
         # örüntü eşleşti mi, hangi domainler/rejim/win_rate) decision_
         # fusion ile AYNI desende kalıcı hâle getiriyoruz — tam şeffaflık.
         historical_analog_override_entries = []
+        # Faz 401 — Market State / Direction Katmanı Faz 1: KnowledgeStage'in
+        # eklediği per-sembol market state okuması (visibility-only, HİÇBİR
+        # kararı etkilemiyor) — cross_asset_context ile AYNI desende kalıcı.
+        market_state_entries = []
         experiment_bucket = None
 
         if hasattr(ctx, "cognition"):
@@ -1397,6 +1433,8 @@ class RecordingStage:
                     cross_asset_context_entries.append(item.get("data"))
                 if item.get("type") == "historical_analog_override":
                     historical_analog_override_entries.append(item.get("data"))
+                if item.get("type") == "market_state":
+                    market_state_entries.append(item.get("data"))
 
             for item in reversed(ctx.cognition.relevant_knowledge):
                 if item.get("type") == "debate_result":
@@ -1422,6 +1460,7 @@ class RecordingStage:
             portfolio_confidence_discounts,
             cross_asset_context_entries=cross_asset_context_entries,
             historical_analog_override_entries=historical_analog_override_entries,
+            market_state_entries=market_state_entries,
         )
 
         from observability.metrics import decisions_total

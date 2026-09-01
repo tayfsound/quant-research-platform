@@ -305,7 +305,15 @@ DEFAULTS: dict[str, str] = {
     # ölçümde ikisi arasında iyi bir denge — hem makul sıklıkta sinyal
     # hem komisyonu rahat aşan hedef büyüklüğü.
     "candle_timeframe": "15m",
-    "candle_lookback": "100",
+    # Faz 401 (2026-09-01) — Market State / Direction Katmanı Faz 1:
+    # signal_engine.py::_long_term_trend_regime() (200-EMA tabanlı,
+    # market_state_engine.py'nin yön sinyalinin dayandığı sağlam gösterge)
+    # en az 220 mum istiyor, yetersizse dürüstçe "insufficient_data"
+    # dönüyor. 100'de bu sinyal HİÇBİR ZAMAN hesaplanamıyordu (aynı
+    # zamanda regime_engine.py::compute_regime_v2()'nin de neden hâlâ
+    # canlıya hiç bağlanmadığının muhtemel bir parçası). 220'nin üzerine
+    # güvenli bir pay için 250 — kullanıcı onayıyla yükseltildi.
+    "candle_lookback": "250",
     # Faz 224: kullanıcı bulgusu — "PNL de para birimi görünmüyor bu hangi
     # birimle kayıp belli değil dolar mı btc mi vs... her yerde aynı
     # problem var." Sistemdeki tüm fiyat/PnL alanları zaten USD cinsinden

@@ -302,6 +302,11 @@ def explain_position(decision_id: str, user: AuthContext = Depends(get_current_u
     gate_bypasses_test_mode = [
         i["data"] for i in contributions if isinstance(i, dict) and i.get("type") == "gate_bypassed_test_mode"
     ]
+    # Faz 401 — Market State / Direction Katmanı Faz 1: per-sembol piyasa
+    # durumu okuması (visibility-only, HİÇBİR kararı etkilemiyor).
+    market_state_entries = [
+        i["data"] for i in contributions if isinstance(i, dict) and i.get("type") == "market_state"
+    ]
     # Faz 394 — kullanıcı isteği: HistoricalAnalogOverrideStage'in
     # belief.strength'i gerçek ampirik win_rate ile override ettiği
     # anlar — tam şeffaflık, "neden bu kadar güvenildi" sorusunun cevabı.
@@ -381,6 +386,7 @@ def explain_position(decision_id: str, user: AuthContext = Depends(get_current_u
         "gate_blocks": gate_blocks,
         "gate_bypasses_test_mode": gate_bypasses_test_mode,
         "historical_analog_overrides": historical_analog_overrides,
+        "market_state_entries": market_state_entries,
         "weight_snapshot_id": (weight_snapshot or {}).get("id"),
     }
 

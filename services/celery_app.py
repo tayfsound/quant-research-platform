@@ -175,6 +175,15 @@ celery_app.conf.beat_schedule = {
         "task": "portfolio_stress_guardian_task",
         "schedule": 300.0,
     },
+    # Faz 401 — Market State / Direction Katmanı Faz 1. portfolio-stress-
+    # guardian ile AYNI cadence — watchlist genelinde bir korelasyon
+    # matrisi + rejim okuması, dakikalar içinde anlamlı değişmez. Kasıtlı
+    # olarak SADECE ölçüm/kayıt (bkz. services/market_state_gatherer.py
+    # docstring'i) — hiçbir canlı kararı etkilemiyor.
+    "market-state-cluster-every-5m": {
+        "task": "refresh_market_state_cluster_task",
+        "schedule": 300.0,
+    },
     # Faz 362-devam — Belief Reversal Exit. regime_reversal_guardian ile
     # AYNI cadence — council'in bir sembolde tersine dönmesi de fiyat
     # hareketi kadar hızlı tepki gerektiriyor.
