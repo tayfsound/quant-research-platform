@@ -5,6 +5,7 @@ combination_reliability_gatherer.py ile AYNI desen (pump_fade_v1 hariç —
 council oylaması yok, mekanik strateji, anlaşma/rejim kavramı anlamsız),
 sadece market_regime ve direction'ı da kayda ekliyor."""
 from analytics.agent_combination_reliability import agreeing_domains_for_decision
+from analytics.evaluation_cohort import describe_evaluation_window
 from analytics.historical_analog_engine import compute_historical_analogs
 from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMENT_BUCKET
 
@@ -41,4 +42,7 @@ def gather_historical_analogs() -> dict:
 
     result = compute_historical_analogs(records)
     result["n_trades"] = len(records)
+    result["evaluation_window"] = describe_evaluation_window(
+        closed_trades, limit=MAX_DECISIONS, exclude_experiment_buckets=[PUMP_FADE_EXPERIMENT_BUCKET],
+    )
     return result

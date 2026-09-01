@@ -9,6 +9,7 @@ oylarından (api/rest/positions.py::explain_position ile AYNI çıkarım
 deseni) LONG/SHORT/WAIT sayımı yapılır, compute_agent_agreement ile
 0-1 arası bir anlaşma skoruna çevrilir — pump_fade_v1 hariç (mekanik
 strateji, council oylaması hiç yok)."""
+from analytics.evaluation_cohort import describe_evaluation_window
 from analytics.feature_relationship import compute_feature_redundancy, compute_redundancy_clusters
 from analytics.opportunity_quality import (
     _feature_independence_from_contributions,
@@ -94,4 +95,7 @@ def gather_opportunity_quality() -> dict:
         "by_quality_score_bucket": by_quality_score,
         "n_trades": len(trades),
         "n_trades_with_reliability": len(score_trades),
+        "evaluation_window": describe_evaluation_window(
+            closed_trades, limit=None, exclude_experiment_buckets=[PUMP_FADE_EXPERIMENT_BUCKET],
+        ),
     }

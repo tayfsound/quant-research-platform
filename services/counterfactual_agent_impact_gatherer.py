@@ -38,6 +38,7 @@ from datetime import UTC, datetime, timedelta
 
 from analytics.agent_ablation import resynthesize_belief_and_opinions_with_domain_excluded
 from analytics.counterfactual_trade_replay import BreakevenSettings, walk_price_path_to_exit
+from analytics.evaluation_cohort import describe_evaluation_window
 from contracts.context import CognitiveCycleContext
 from engines.cognitive_pipeline import RiskGateStage, RiskTargetStage
 from engines.risk_engine import RiskEngine
@@ -338,5 +339,8 @@ def gather_counterfactual_agent_impact(agent_domain: str) -> dict:
             "Risk-kapısı girdileri ve RiskTargetStage'in kalibrasyon/çarpan okumaları bu replay'in "
             "ÇALIŞTIRILDIĞI ANDAKİ canlı duruma göre, pozisyon büyüklüğü gerçekleşen işlemin GERÇEK "
             "boyutuna göre yaklaşık -- tam tarihsel point-in-time doğruluk değil (bkz. modül üstü not)."
+        ),
+        "evaluation_window": describe_evaluation_window(
+            closed_trades, limit=None, exclude_experiment_buckets=[PUMP_FADE_EXPERIMENT_BUCKET],
         ),
     }

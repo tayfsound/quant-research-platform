@@ -2,6 +2,7 @@
 tek kaynak — Faz 368. analytics/feature_relationship.py saf kalıyor,
 gerçek veriye dokunan kod burada (feature_ic_by_regime_gatherer.py'deki
 AYNI 100_000-limit deseni)."""
+from analytics.evaluation_cohort import describe_evaluation_window
 from analytics.feature_ic import compute_feature_ic
 from analytics.feature_relationship import (
     compute_conditional_ic,
@@ -37,4 +38,5 @@ def gather_feature_relationship() -> dict:
         "redundancy_clusters": [sorted(c) for c in clusters],
         "residualized_ic": residualized_ic,
         "n_decisions_analyzed": len(closed_trades),
+        "evaluation_window": describe_evaluation_window(closed_trades, limit=MAX_DECISIONS),
     }

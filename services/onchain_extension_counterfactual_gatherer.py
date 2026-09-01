@@ -12,6 +12,7 @@ sonra kibarlık gecikmesi var."""
 import time
 from datetime import datetime
 
+from analytics.evaluation_cohort import describe_evaluation_window
 from analytics.onchain_extension_counterfactual import resynthesize_with_onchain_btc_extension
 from services.counterfactual_agent_impact_gatherer import _load_breakeven_settings, replay_flipped_decision
 from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMENT_BUCKET
@@ -132,5 +133,8 @@ def gather_onchain_btc_extension_counterfactual(max_decisions: int = 500) -> dic
             "ÇALIŞTIRILDIĞI ANDAKİ canlı duruma göre, pozisyon büyüklüğü gerçekleşen işlemin GERÇEK "
             "boyutuna göre yaklaşık -- tam tarihsel point-in-time doğruluk değil. Ayrıca 'en yakın "
             "zamanlı BTC durumu' bir yaklaşıklık, o TAM anın BTC ağ durumu değil."
+        ),
+        "evaluation_window": describe_evaluation_window(
+            non_btc_trades, limit=max_decisions, exclude_experiment_buckets=[PUMP_FADE_EXPERIMENT_BUCKET],
         ),
     }

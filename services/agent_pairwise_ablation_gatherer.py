@@ -14,6 +14,7 @@ from analytics.agent_ablation import (
     reconstruct_opinions,
     summarize_pairwise_ablation_by_domain_pair,
 )
+from analytics.evaluation_cohort import describe_evaluation_window
 from contracts.agent import VOTING_AGENT_DOMAINS
 from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMENT_BUCKET
 
@@ -61,4 +62,10 @@ def gather_agent_pairwise_ablation() -> dict:
             })
 
     by_pair = summarize_pairwise_ablation_by_domain_pair(records)
-    return {"by_pair": by_pair, "n_decisions_analyzed": len(closed_trades)}
+    return {
+        "by_pair": by_pair,
+        "n_decisions_analyzed": len(closed_trades),
+        "evaluation_window": describe_evaluation_window(
+            closed_trades, limit=MAX_DECISIONS, exclude_experiment_buckets=[PUMP_FADE_EXPERIMENT_BUCKET],
+        ),
+    }

@@ -16,6 +16,7 @@ pump_fade_v1 hariç (council oylaması yok — agent_combination_reliability
 ile AYNI dışlama gerekçesi). Kasıtlı olarak SADECE ölçüm/rapor — hiçbir
 ajan ağırlığını burada otomatik değiştirmiyor."""
 from analytics.agent_combination_reliability import agreeing_domains_for_decision
+from analytics.evaluation_cohort import describe_evaluation_window
 from analytics.strategy_regime_compatibility import compute_strategy_regime_compatibility
 from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMENT_BUCKET
 
@@ -47,4 +48,10 @@ def gather_agent_domain_regime_reliability() -> dict:
             records.append({"strategy": domain, "market_regime": market_regime, "win": win})
 
     by_domain = compute_strategy_regime_compatibility(records)
-    return {"by_domain": by_domain, "n_trades": len(closed_trades)}
+    return {
+        "by_domain": by_domain,
+        "n_trades": len(closed_trades),
+        "evaluation_window": describe_evaluation_window(
+            closed_trades, limit=MAX_DECISIONS, exclude_experiment_buckets=[PUMP_FADE_EXPERIMENT_BUCKET],
+        ),
+    }

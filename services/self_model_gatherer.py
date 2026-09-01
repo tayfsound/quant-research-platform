@@ -11,6 +11,7 @@ import time
 from sqlalchemy import text
 
 from analytics.backtest_validation import compute_deflated_sharpe_ratio
+from analytics.evaluation_cohort import describe_evaluation_window
 from analytics.model_drift import compute_feature_drift
 from analytics.self_model import compute_self_reliability_snapshot
 from database.repositories.calibration_report_repository import CalibrationReportRepository
@@ -41,6 +42,11 @@ def gather_self_reliability_snapshot() -> dict:
         # olduğu gibi burada da karışmamalı.
         closed_trades = decision_repo.list_closed_trades(
             limit=500, exclude_experiment_bucket=PUMP_FADE_EXPERIMENT_BUCKET
+        )
+        # Faz 400 — kritik bulgu: bu gatherer DSR'ı besleyen kapanmış-işlem
+        # N'ini hiç raporlamıyordu — canonical evaluation cohort görünürlüğü.
+        evaluation_window = describe_evaluation_window(
+            closed_trades, limit=500, exclude_experiment_buckets=[PUMP_FADE_EXPERIMENT_BUCKET],
         )
         returns = []
         for t in closed_trades:
@@ -96,13 +102,15 @@ def gather_self_reliability_snapshot() -> dict:
         ai_enabled_updated_by = settings_repo.get_updated_by("ai_enabled")
     kill_switch_active = ai_enabled == "false" and ai_enabled_updated_by == "kill_switch"
 
-    return compute_self_reliability_snapshot(
+    snapshot = compute_self_reliability_snapshot(
         ece=ece,
         recent_dsr=recent_dsr,
         kill_switch_active=kill_switch_active,
         known_feature_drift_count=known_feature_drift_count,
         concept_drift_detected=concept_drift_detected,
     )
+    snapshot["evaluation_window"] = evaluation_window
+    return snapshot
 
 
 # Faz 310 — kullanıcı isteği: "self modeli karar hattına bağlayalım."

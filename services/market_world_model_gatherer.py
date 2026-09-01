@@ -41,6 +41,7 @@ performance_gatherer.py'nin AYNI notu): multi_timeframe_cascade_v1 (A/B
 deneyi) de basis_arb_v1 ile AYNI şekilde hariç tutuluyor — bu modülün
 amacı "gerçek AI konseyi getiri dağılımı"nı simüle etmek, deneysel
 varyansı değil (basis_arb_v1 zaten aynı gerekçeyle hariçti)."""
+from analytics.evaluation_cohort import describe_evaluation_window
 from analytics.market_world_model import compute_block_bootstrap_paths, compute_block_size_sensitivity
 from services.asset_class_performance_gatherer import _is_production_ai_council
 from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMENT_BUCKET
@@ -83,10 +84,21 @@ def gather_market_world_model(
 
     paths = compute_block_bootstrap_paths(returns, block_size=block_size, path_length=path_length)
     block_size_sensitivity = compute_block_size_sensitivity(returns, path_length=path_length)
+    # Faz 400 — kritik bulgu: bu modülün TEK "n_*" alanı (n_returns)
+    # returns listesinin (starting_capital>0 şartından SONRA) uzunluğunu
+    # anlatıyordu, gerçek kapanmış-işlem N'ini (closed_trades, filtreler
+    # UYGULANMIŞ hâliyle) DEĞİL — canonical evaluation cohort görünürlüğü
+    # için ayrı, doğru bir alan.
+    evaluation_window = describe_evaluation_window(
+        closed_trades, limit=2000,
+        exclude_experiment_buckets=[PUMP_FADE_EXPERIMENT_BUCKET],
+        production_ai_council_filtered=True,
+    )
     return {
         "block_size": block_size,
         "path_length": path_length,
         "n_returns": len(returns),
         "paths": paths,
         "block_size_sensitivity": block_size_sensitivity,
+        "evaluation_window": evaluation_window,
     }

@@ -3,6 +3,7 @@ kaynak — Faz 296. analytics/agent_ablation.py saf (pure) kalıyor, gerçek
 veriye dokunan kod burada. pump_fade_v1 hariç (council oylaması yok,
 mekanik strateji — ablation anlamsız)."""
 from analytics.agent_ablation import compute_leave_one_out_impact, summarize_ablation_by_domain
+from analytics.evaluation_cohort import describe_evaluation_window
 from contracts.agent import VOTING_AGENT_DOMAINS
 from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMENT_BUCKET
 
@@ -31,4 +32,10 @@ def gather_agent_ablation() -> dict:
                 records.append({"domain": domain.value, "impact": impact, "pnl": float(pnl)})
 
     by_domain = summarize_ablation_by_domain(records)
-    return {"by_domain": by_domain, "n_decisions_analyzed": len(closed_trades)}
+    return {
+        "by_domain": by_domain,
+        "n_decisions_analyzed": len(closed_trades),
+        "evaluation_window": describe_evaluation_window(
+            closed_trades, limit=MAX_DECISIONS, exclude_experiment_buckets=[PUMP_FADE_EXPERIMENT_BUCKET],
+        ),
+    }

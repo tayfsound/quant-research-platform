@@ -18,6 +18,7 @@ savunulabilir bir tercih) — ama BU kart "gerçek AI performansı"nı
 gösterdiğini iddia ettiği için deney/üretim ayrımı burada daha önemli,
 kullanıcı onayıyla ayrı tutuluyor."""
 from analytics.asset_class_performance import compute_asset_class_performance
+from analytics.evaluation_cohort import describe_evaluation_window
 from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMENT_BUCKET
 
 MAX_DECISIONS = 5000
@@ -47,4 +48,12 @@ def gather_asset_class_performance() -> dict:
     closed_trades = [t for t in closed_trades if _is_production_ai_council(t.get("experiment_bucket"))]
 
     by_category = compute_asset_class_performance(closed_trades)
-    return {"by_category": by_category, "n_trades_analyzed": len(closed_trades)}
+    return {
+        "by_category": by_category,
+        "n_trades_analyzed": len(closed_trades),
+        "evaluation_window": describe_evaluation_window(
+            closed_trades, limit=MAX_DECISIONS,
+            exclude_experiment_buckets=[PUMP_FADE_EXPERIMENT_BUCKET, BASIS_ARB_EXPERIMENT_BUCKET],
+            production_ai_council_filtered=True,
+        ),
+    }

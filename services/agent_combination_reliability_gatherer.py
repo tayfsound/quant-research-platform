@@ -7,6 +7,7 @@ from analytics.agent_combination_reliability import (
     agreeing_domains_for_decision,
     compute_combination_reliability,
 )
+from analytics.evaluation_cohort import describe_evaluation_window
 from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMENT_BUCKET
 
 MAX_DECISIONS = 2000
@@ -35,4 +36,10 @@ def gather_agent_combination_reliability() -> dict:
 
     result = compute_combination_reliability(records)
     result["n_trades"] = len(records)
+    # Faz 400 — canonical evaluation cohort görünürlüğü: n_trades ANALİZDE
+    # KULLANILAN alt kümeyi (usable contributions/direction/pnl), evaluation_
+    # window ise SORGULANAN ham pencereyi anlatıyor — ikisi kasıtlı olarak farklı.
+    result["evaluation_window"] = describe_evaluation_window(
+        closed_trades, limit=MAX_DECISIONS, exclude_experiment_buckets=[PUMP_FADE_EXPERIMENT_BUCKET],
+    )
     return result
