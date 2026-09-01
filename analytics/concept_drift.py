@@ -18,6 +18,39 @@ MIN_SAMPLE_SIZE = 20
 SIGNIFICANCE_LEVEL = 0.05
 
 
+def collapse_batch_closed_trades(trades: list[dict]) -> list[dict]:
+    """Faz 398 (2026-09-01) — gerçek olay: 2026-08-27'de GC=F+XAUTUSDT
+    (aynı temel varlık, altın) için açılan bir piramit kümesi (aynı
+    dakikalarda 5-10 ayrı giriş) `close_due_positions()`'ın TEK bir
+    taramasında (services/position_closer.py — `now = datetime.now(UTC)`
+    döngü başında BİR KEZ hesaplanıp tüm bacaklara uygulanıyor) hep
+    birlikte kapandı — Concept Drift'in "son 50 işlem" penceresinin
+    %40'ını (20/50), TEK bir gerçek ticaret tezini onlarca kez sayarak
+    doldurdu (baseline %66 → recent %26, p=8.5e-6 — istatistiksel olarak
+    "anlamlı" ama gerçekte büyük ölçüde bir sayım artefaktı).
+
+    `trades`: `DecisionPersistor.list_closed_trades()`'in döndürdüğü,
+    closed_at DESC sıralı ham satırlar (`{"symbol", "closed_at", "pnl",
+    ...}`). Aynı sembolün aynı ANDA (aynı `closed_at`, yani aynı tarama
+    olayında) kapanan bacaklarını TEK bir "karar" a indirger — toplam pnl
+    (win = toplam pnl > 0). Farklı sembollerin aynı taramada kapanması
+    (ilgisiz, ayrı tezler) ayrı kalır — anahtar (symbol, closed_at) ikilisi.
+    Aynı sembolün farklı ZAMANLARDA (ör. günler arayla) kapanan bacakları
+    KASITLI OLARAK birleştirilmiyor — bunlar gerçekten ayrı karar anları
+    (her biri kendi zamanında sistemin pozisyonu açık bırakma/kapatma
+    kararı), tek bir sayım artefaktı değil."""
+    groups: dict[tuple, dict] = {}
+    order: list[tuple] = []
+    for t in trades:
+        key = (t.get("symbol"), t.get("closed_at"))
+        if key not in groups:
+            groups[key] = {"symbol": t.get("symbol"), "closed_at": t.get("closed_at"), "pnl": 0.0, "leg_count": 0}
+            order.append(key)
+        groups[key]["pnl"] += t.get("pnl") or 0.0
+        groups[key]["leg_count"] += 1
+    return [groups[k] for k in order]
+
+
 def compute_concept_drift(
     baseline_outcomes: list[bool],
     recent_outcomes: list[bool],

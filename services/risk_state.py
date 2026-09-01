@@ -5,7 +5,7 @@ kasıtlı olarak ayrı: bunlar kullanıcının günlük ayarlayabildiği operasy
 tercihler (app_settings), kriptografik acil durum eşiği değil."""
 from datetime import UTC, datetime
 
-from analytics.concept_drift import compute_concept_drift
+from analytics.concept_drift import collapse_batch_closed_trades, compute_concept_drift
 from contracts.contexts.risk import RiskReason
 from database.repositories.app_settings_repository import AppSettingsRepository
 from database.repositories.decision_persistor import DecisionPersistor
@@ -42,9 +42,17 @@ def get_concept_drift_diagnostics(decision_repo: DecisionPersistor, min_opened_a
     hale getirilmiyor (eski kötü işlemler silinmiyor/gizlenmiyor, sadece
     "bundan sonrasına bak" deniyor), ve performans GERÇEKTEN düzelmediyse
     yeterli taze veri birikince drift dürüstçe TEKRAR tetiklenir."""
-    trades = decision_repo.list_closed_trades(
-        limit=150, exclude_experiment_bucket=PUMP_FADE_EXPERIMENT_BUCKET, min_opened_at=min_opened_at,
+    # Faz 398 — piramit kümelerinin (aynı sembol, aynı tarama olayında
+    # birlikte kapanan bacaklar) TEK bir gerçek karar olarak sayılması
+    # için ham satırlardan gruplanmış "karar" sayısı her zaman ham satır
+    # sayısından KÜÇÜK OLUR — 150 gerçek karara ulaşmak için ham limit
+    # kasıtlı olarak daha geniş (bkz. analytics/concept_drift.py::
+    # collapse_batch_closed_trades docstring'i, gerçek ölçüm: 500 ham
+    # satır ~355 gerçek karara indirgeniyordu, ~1.4x oran).
+    raw_trades = decision_repo.list_closed_trades(
+        limit=600, exclude_experiment_bucket=PUMP_FADE_EXPERIMENT_BUCKET, min_opened_at=min_opened_at,
     )
+    trades = collapse_batch_closed_trades(raw_trades)
     if len(trades) < 100:
         return {"available": False, "sample_size": len(trades), "required_sample_size": 100}
 

@@ -588,9 +588,10 @@ export default function Dashboard() {
             </Button>
           </div>
           <p className="text-xs text-ink-soft">
-            Bunun öncesindeki 100 işlemde kazanma oranı {((conceptDrift.baseline_win_rate ?? 0) * 100).toFixed(1)}%
-            iken son 50 işlemde {((conceptDrift.recent_win_rate ?? 0) * 100).toFixed(1)}%'e düştü — bu, genel/tüm-zamanlar
-            kazanma oranından FARKLI, sadece en yakın 150 kapanan işlemin kendi içindeki karşılaştırması
+            Bunun öncesindeki 100 kararda kazanma oranı {((conceptDrift.baseline_win_rate ?? 0) * 100).toFixed(1)}%
+            iken son 50 kararda {((conceptDrift.recent_win_rate ?? 0) * 100).toFixed(1)}%'e düştü — bu, genel/tüm-zamanlar
+            kazanma oranından FARKLI, sadece en yakın 150 gerçek kararın kendi içindeki karşılaştırması
+            (aynı anda/aynı piramit kümesinde birlikte kapanan bacaklar TEK karar sayılır)
             (p={(conceptDrift.p_value ?? 0).toFixed(4)},
             istatistiksel olarak anlamlı) — sistem bunu kendi güvenlik mekanizması olarak algılayıp yeni işlem
             açmayı durdurdu. Zaten açık pozisyonlar etkilenmez, normal şekilde kapanmaya devam eder. Yakın
@@ -616,9 +617,10 @@ export default function Dashboard() {
             </Button>
           </div>
           <p className="text-xs text-ink-soft">
-            Bunun öncesindeki 100 işlemde kazanma oranı {((conceptDrift.baseline_win_rate ?? 0) * 100).toFixed(1)}%
-            iken son 50 işlemde {((conceptDrift.recent_win_rate ?? 0) * 100).toFixed(1)}%'e düştü — bu, genel/tüm-zamanlar
-            kazanma oranından FARKLI, sadece en yakın 150 kapanan işlemin kendi içindeki karşılaştırması
+            Bunun öncesindeki 100 kararda kazanma oranı {((conceptDrift.baseline_win_rate ?? 0) * 100).toFixed(1)}%
+            iken son 50 kararda {((conceptDrift.recent_win_rate ?? 0) * 100).toFixed(1)}%'e düştü — bu, genel/tüm-zamanlar
+            kazanma oranından FARKLI, sadece en yakın 150 gerçek kararın kendi içindeki karşılaştırması
+            (aynı anda/aynı piramit kümesinde birlikte kapanan bacaklar TEK karar sayılır)
             (p={(conceptDrift.p_value ?? 0).toFixed(4)},
             istatistiksel olarak anlamlı). Bu koruma sadece canlı modda gerçek pozisyon açmayı durdurur —
             test modunda amaç zaten veri biriktirmek olduğu için burada sadece bilgi amaçlı gösteriliyor.

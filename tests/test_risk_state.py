@@ -646,6 +646,77 @@ def test_get_concept_drift_diagnostics_reports_real_numbers_even_when_not_active
         _cleanup_symbol(symbol)
 
 
+def test_concept_drift_does_not_falsely_trigger_on_a_single_pyramid_batch_close():
+    """Faz 398 — gerçek olay: 2026-08-27 GC=F/XAUTUSDT piramit kümesi
+    (aynı `close_due_positions()` taramasında, aynı `closed_at`'te
+    kapanan onlarca bacak) Concept Drift'in "son 50 işlem" penceresini
+    tek bir kaybeden tezle doldurup istatistiksel olarak "anlamlı" ama
+    gerçekte yanıltıcı bir alarm üretti (baseline %66 -> recent %26).
+
+    Bu test AYNI şekli sentetik olarak üretiyor: 100 gerçekten eski,
+    kazanan işlem (baseline) + TEK bir piramit anında (aynı closed_at)
+    kapanan 40 kaybeden bacak + 10 gerçekten ayrı, kazanan yeni karar.
+    Ham satır sayısı 50'yi (10+40) dolduruyor, ama GERÇEK karar sayısı
+    sadece 11 (1 küme + 10 tekil) -- collapse_batch_closed_trades bu
+    40 bacağı TEK bir kayba indirgediği için "recent" penceresi 39
+    gerçek eski (kazanan) kararla dolduruluyor, gerçek dışı bir alarm
+    ÜRETİLMİYOR."""
+    from datetime import UTC, datetime, timedelta
+
+    from services.risk_state import get_concept_drift_diagnostics
+
+    symbol = f"RISKSTATE{uuid4().hex[:8]}"
+    far_future = datetime.now(UTC) + timedelta(days=3650, hours=26)
+    try:
+        with SessionFactory.get_session() as session:
+            repo = DecisionPersistor(session)
+            # Baseline: 100 gerçekten ayrı, kazanan eski karar.
+            for i in range(100):
+                event = DecisionEvent(
+                    id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+                    final_size=1.0, status="open", entry_price=100.0, quantity=1.0,
+                )
+                repo.persist(event)
+                repo.close_position(
+                    decision_id=str(event.id), exit_price=100.0, pnl=10.0,
+                    closed_at=far_future + timedelta(seconds=i),
+                )
+            # TEK bir piramit anı: 40 bacak, hepsi AYNI closed_at, hepsi kayıp.
+            pyramid_instant = far_future + timedelta(hours=1)
+            for _ in range(40):
+                event = DecisionEvent(
+                    id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+                    final_size=1.0, status="open", entry_price=100.0, quantity=1.0,
+                )
+                repo.persist(event)
+                repo.close_position(
+                    decision_id=str(event.id), exit_price=95.0, pnl=-5.0,
+                    closed_at=pyramid_instant,
+                )
+            # 10 gerçekten ayrı, kazanan yeni karar (piramit anından SONRA).
+            for i in range(10):
+                event = DecisionEvent(
+                    id=uuid4(), symbol=symbol, proposed_direction="LONG", final_action="LONG",
+                    final_size=1.0, status="open", entry_price=100.0, quantity=1.0,
+                )
+                repo.persist(event)
+                repo.close_position(
+                    decision_id=str(event.id), exit_price=100.0, pnl=10.0,
+                    closed_at=far_future + timedelta(hours=2, seconds=i),
+                )
+
+        with SessionFactory.get_session() as session:
+            diagnostics = get_concept_drift_diagnostics(DecisionPersistor(session))
+
+        assert diagnostics["available"] is True
+        # 40 kaybeden HAM satır "recent" pencerenin %80'ini dolduruyordu --
+        # tek bir gerçek karara indirgendiği için artık öyle değil.
+        assert diagnostics["active"] is False
+        assert diagnostics["win_rate_drop"] < 0.15
+    finally:
+        _cleanup_symbol(symbol)
+
+
 def test_get_concept_drift_diagnostics_reports_unavailable_below_sample_threshold(tmp_path):
     from services.risk_state import get_concept_drift_diagnostics
 
