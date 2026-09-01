@@ -1,9 +1,38 @@
-# Mevcut Durum -- v1.136.0 (Market State / Direction Katmanı Faz 0-3 TAMAMLANDI)
+# Mevcut Durum -- v1.138.0 (Market State / Direction Katmanı Faz 0-4 TAMAMLANDI)
 
 **Tarih:** 2026-09-01
 **Branch:** main
-**Son commit (HEAD):** `a5725d5` Faz 403 — Market State / Direction Katmanı, Faz 3 (proaktif çıkış guardian'ı).
-**Servis durumu:** Faz 396-403 push edildi, worker+uvicorn+beat yeniden başlatıldı (beat AYRI restart gerektiriyor — watchdog'un izlemediği tek süreç, yeni periyodik görevler eklendiğinde manuel `nohup .venv/bin/celery -A services.celery_app beat` ile yeniden başlatılmalı).
+**Son commit (HEAD):** `341484a` Faz 404 — Market State / Direction Katmanı, Faz 4 (historical_analog_engine'e 4. eksen).
+**Servis durumu:** Faz 396-404 + Faz 400-devam (API rapor uçları) push edildi, worker+uvicorn yeniden başlatıldı.
+
+**Faz 400-devam (aynı gün) — Canonical Evaluation Cohort'un API rapor
+uçlarına genişletilmesi:** İlk Faz 400 turu sadece `services/*_
+gatherer.py` modüllerini kapsamıştı — `api/rest/feature_ic.py`,
+`api/rest/calibration.py`, `api/rest/shadow.py`, `api/rest/
+seasonality.py`'ye ve `api/rest/positions.py`'nin `/performance`
+endpoint'ine (özellikle `by_trade_type` — GERÇEK bir gizli tutarsızlık
+riski: `all_time`'ın limitsiz `closed_trades_summary` SQL agregasyonundan
+AYRI, kendi `list_closed_trades(limit=100_000)` çağrısından geliyordu)
+de `evaluation_window` eklendi. Kasıtlı DOKUNULMADI: feature_ic_report/
+calibration_report (Celery, zaten tek/exclusion'sız bir N'i var,
+schema migration'a değmez), threshold_optimizer.py (kendi sample_size'ı
+zaten daha doğru, başka raporla karşılaştırılmıyor).
+
+**Faz 404 (aynı gün) — historical_analog_engine.py'ye 4. eksen:**
+Kullanıcı isteğiyle planın kendi "Faz 1-3 gerçek kenar gösterirse"
+ertelemesi bilerek atlanarak yapıldı. `market_state_engine.py::market_
+state_reversing_for_decision()` (yeni) agent_contributions'tan kararın
+anındaki `reversing` bayrağını çıkarıyor (SADECE Faz 401'den — bugünden
+— sonraki kararlarda var, eskiler fail-closed dışlanıyor).
+`compute_historical_analogs()`'un grup anahtarı (domains, market_regime,
+direction) → (domains, market_regime, direction, reversing) oldu.
+Kasıtlı olarak offline/analiz-only kaldı. `HistoricalAnalogs.tsx`'e
+"Piyasa dönüyor mu" sütunu eklendi. Veri henüz seyrek olduğu için
+`gate_eligible` sayısı ~0'a yakın olabilir — planın kendi öngördüğü,
+zararsız bir no-op, zamanla organik dolacak.
+
+**Market State / Direction Katmanı'nın planlanan TÜM fazları (0-4) artık
+kodda.** Aktif kod işi kalmadı — sıra tamamen gözlemde/izlemede.
 
 **Market State / Direction Katmanı — Faz 0-3 TAMAMLANDI (2026-09-01,
 kullanıcı onaylı büyük mimari proje):** Tam plan `~/.claude/plans/
