@@ -64,3 +64,23 @@ def compute_market_state(features: dict) -> dict:
         "reversing": reversing,
         "regime_label": label,
     }
+
+
+def market_state_reversing_for_decision(agent_contributions: list[dict] | None) -> bool | None:
+    """Faz 404 (Market State Katmanı Faz 4) — kaydedilmiş agent_
+    contributions'tan (engines/cognitive_pipeline.py::KnowledgeStage'in
+    eklediği `market_state` girdisi, bkz. services/decision_recorder.py)
+    o kararın ANINDAKİ `reversing` bayrağını döner.
+
+    `analytics/agent_combination_reliability.py::agreeing_domains_for_
+    decision` ile AYNI ilke: girdi hiç yoksa (bu alan SADECE Faz 401'den
+    — 2026-09-01 — SONRAKİ kararlarda var; daha eski kararlarda hiç
+    kaydedilmemiş) None döner — icat edilmiş bir değer asla üretilmez,
+    çağıran taraf bu kararı örneklemden dışlamalı."""
+    for item in agent_contributions or []:
+        if isinstance(item, dict) and item.get("type") == "market_state":
+            data = item.get("data") or {}
+            reversing = data.get("reversing")
+            if isinstance(reversing, bool):
+                return reversing
+    return None

@@ -1,5 +1,5 @@
 """Market State / Direction Motoru testleri — Faz 401 (Market State Katmanı Faz 1)."""
-from market_data.features.market_state_engine import compute_market_state
+from market_data.features.market_state_engine import compute_market_state, market_state_reversing_for_decision
 
 
 def test_bull_trend_maps_to_long_direction():
@@ -68,6 +68,29 @@ def test_reversing_passes_through_regime_changepoint_detected():
 def test_missing_changepoint_field_defaults_to_not_reversing():
     result = compute_market_state({"long_term_trend_regime": "bull_trend", "hurst_exponent": 0.7})
     assert result["reversing"] is False
+
+
+def test_market_state_reversing_for_decision_extracts_the_flag():
+    contributions = [
+        {"type": "decision_fusion", "data": {"rejection": "x"}},
+        {"type": "market_state", "data": {"direction": "SHORT", "confidence": 0.5, "reversing": True, "regime_label": "x"}},
+    ]
+    assert market_state_reversing_for_decision(contributions) is True
+
+
+def test_market_state_reversing_for_decision_extracts_false_correctly():
+    contributions = [
+        {"type": "market_state", "data": {"direction": "LONG", "confidence": 0.5, "reversing": False, "regime_label": "x"}},
+    ]
+    assert market_state_reversing_for_decision(contributions) is False
+
+
+def test_market_state_reversing_for_decision_none_when_no_such_entry():
+    """Faz 401'den (2026-09-01) ÖNCEKİ kararlarda bu alan hiç yok --
+    icat edilmiş bir değer asla üretilmez."""
+    assert market_state_reversing_for_decision([{"type": "decision_fusion", "data": {}}]) is None
+    assert market_state_reversing_for_decision([]) is None
+    assert market_state_reversing_for_decision(None) is None
 
 
 def test_regime_label_matches_compute_regime_v2_output_exactly():

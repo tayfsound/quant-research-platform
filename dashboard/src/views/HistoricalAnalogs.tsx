@@ -14,6 +14,11 @@ type Analog = {
   domains: string[];
   market_regime: string;
   direction: string;
+  // Faz 404 (Market State Katmanı Faz 4) — dördüncü eksen: piyasa TAM O
+  // ANDA tersine mi dönüyordu (market_state_engine.py'nin `reversing`
+  // sinyali). SADECE 2026-09-01'den sonraki kararlarda var, bu yüzden
+  // veri henüz seyrek olabilir.
+  reversing: boolean;
   combination_size: number;
   sample_size: number;
   effective_sample_size: number;
@@ -160,6 +165,7 @@ export default function HistoricalAnalogs() {
                   <th className="py-2 pr-4">Ajan kombinasyonu</th>
                   <th className="py-2 pr-4">Rejim</th>
                   <th className="py-2 pr-4">Yön</th>
+                  <th className="py-2 pr-4">Piyasa dönüyor mu</th>
                   <th className="py-2 pr-4">Kazanma oranı</th>
                   <th className="py-2 pr-4">Baseline'a fark</th>
                   <th className="py-2 pr-4">Örneklem</th>
@@ -175,6 +181,9 @@ export default function HistoricalAnalogs() {
                     <td className="py-2 pr-4 font-mono text-ink">{a.domains.join(" + ")}</td>
                     <td className="py-2 pr-4 text-ink-soft">{a.market_regime}</td>
                     <td className="py-2 pr-4 text-ink-soft">{a.direction}</td>
+                    <td className="py-2 pr-4">
+                      <Badge tone={a.reversing ? "fall" : "neutral"}>{a.reversing ? "Evet" : "Hayır"}</Badge>
+                    </td>
                     <td className="py-2 pr-4">
                       <Badge tone={a.win_rate_delta_vs_baseline >= 0 ? "rise" : "fall"}>
                         {(a.win_rate * 100).toFixed(1)}%

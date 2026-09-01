@@ -14,7 +14,20 @@ analytics/agent_combination_reliability.py) BİREBİR yeniden kullanıyor,
 üçüncü bir eksen (market_regime) ekliyor.
 
 Kasıtlı olarak offline/analiz-only — karar hattına BAĞLANMIYOR bu turda
-(ayrı bir onay turu gerektirir, plan dosyasında kayıtlı)."""
+(ayrı bir onay turu gerektirir, plan dosyasında kayıtlı).
+
+Faz 404 (2026-09-01, Market State Katmanı Faz 4 — bkz. ~/.claude/plans/
+velvety-whistling-parasol.md) — dördüncü eksen: market_data.features.
+market_state_engine::compute_market_state()'in `reversing` bayrağı
+(Welch t-test, piyasanın ölçülen yönü az önce döndüğünde True). Soru:
+"bu ajan kombinasyonu × rejim × yön üçlüsü, piyasa TAM O ANDA tersine
+dönüyorken de mi güvenilir, yoksa sadece sakin dönemlerde mi?" Bu alan
+SADECE 2026-09-01'den (Faz 401) SONRAKİ kararlarda kaydedildi — daha
+eski hiçbir kararda yok, bu yüzden bugün itibariyle `gate_eligible`
+sayısı örneklem yetersizliğinden ~0'a çöküyor OLABİLİR — modülün kendi
+min_group_size/effective_sample_size korumaları bunu zaten kendiliğinden
+zararsız bir no-op'a indirgiyor, veri zamanla birikince örgü organik
+olarak dolacak."""
 from collections import defaultdict
 from itertools import combinations
 
@@ -36,20 +49,25 @@ def compute_historical_analogs(
 ) -> dict:
     """records: her biri {'agreeing_domains': frozenset[str], 'market_regime':
     str | None, 'direction': 'LONG'|'SHORT', 'win': bool, 'closed_at':
-    datetime | None} olan GERÇEK kapanmış kararlar. Domain evrenindeki HER
-    kombinasyon (2/3'lü) × gerçek market_regime × direction üçlüsü için:
-    o üçlünün (agreeing_domains ÜST KÜMESİ olan kararlarda) win_rate'ini
-    tüm örneklemin baseline'ıyla karşılaştırır. agent_combination_
+    datetime | None, 'reversing': bool | None} olan GERÇEK kapanmış
+    kararlar. Domain evrenindeki HER kombinasyon (2/3'lü) × gerçek
+    market_regime × direction × reversing dörtlüsü için: o dörtlünün
+    (agreeing_domains ÜST KÜMESİ olan kararlarda) win_rate'ini tüm
+    örneklemin baseline'ıyla karşılaştırır. agent_combination_
     reliability.py::compute_combination_reliability ile AYNI istatistiksel
-    iskelet — üçüncü eksen (market_regime) eklendiği için min_group_size
-    ve effective_sample_size korumaları AYNEN uygulanıyor (örneklem daha
-    kolay parçalanır, icat edilmiş sonuç riski artmasın diye)."""
+    iskelet — dördüncü eksen (reversing, Faz 404) eklendiği için
+    min_group_size ve effective_sample_size korumaları AYNEN uygulanıyor
+    (örneklem daha kolay parçalanır, icat edilmiş sonuç riski artmasın
+    diye). `reversing` None olan kayıtlar (Faz 401'den — 2026-09-01 —
+    ÖNCEKİ kararlar, bu alan hiç kaydedilmemiş) dışlanır — fail-closed,
+    icat edilmiş bir reversing değeri asla varsayılmaz."""
     valid = [
         r for r in records
         if r.get("agreeing_domains") is not None
         and r.get("market_regime")
         and r.get("direction") in ("LONG", "SHORT")
         and r.get("win") is not None
+        and isinstance(r.get("reversing"), bool)
     ]
     if not valid:
         return {"analogs": [], "baseline_win_rate": None, "baseline_sample_size": 0}
@@ -67,7 +85,7 @@ def compute_historical_analogs(
             combo_set = frozenset(combo)
             for r in valid:
                 if combo_set <= r["agreeing_domains"]:
-                    groups[(combo, r["market_regime"], r["direction"])].append(r)
+                    groups[(combo, r["market_regime"], r["direction"], r["reversing"])].append(r)
 
     # agent_combination_reliability.py'deki AYNI örtüşme mantığı: bir
     # işlem birden fazla (domain, rejim, yön) hücresine birden girebilir
@@ -81,7 +99,7 @@ def compute_historical_analogs(
     for key, group in groups.items():
         if len(group) < min_group_size:
             continue
-        domains, regime, direction = key
+        domains, regime, direction, reversing = key
         wins = sum(1 for r in group if r["win"])
         domains_set = set(domains)
         own_ids = group_id_sets[key]
@@ -101,6 +119,7 @@ def compute_historical_analogs(
             "domains": list(domains),
             "market_regime": regime,
             "direction": direction,
+            "reversing": reversing,
             "combination_size": len(domains),
             "sample_size": len(group),
             "effective_sample_size": effective_sample_size,

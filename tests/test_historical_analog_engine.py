@@ -6,13 +6,14 @@ from datetime import UTC, datetime, timedelta
 from analytics.historical_analog_engine import compute_historical_analogs
 
 
-def _record(domains, regime, direction, win, closed_at=None):
+def _record(domains, regime, direction, win, closed_at=None, reversing=False):
     return {
         "agreeing_domains": frozenset(domains),
         "market_regime": regime,
         "direction": direction,
         "win": win,
         "closed_at": closed_at,
+        "reversing": reversing,
     }
 
 
@@ -75,6 +76,39 @@ def test_direction_is_a_separate_grouping_axis():
     short_analog = next(a for a in result["analogs"] if a["direction"] == "SHORT")
     assert long_analog["win_rate"] == 0.90
     assert short_analog["win_rate"] == 0.20
+
+
+def test_reversing_is_a_separate_grouping_axis():
+    """Faz 404 — dördüncü eksen: AYNI domain ikilisi + AYNI rejim + AYNI
+    yön ama piyasa tersine dönüyor mu dönmüyor mu farklı — ayrı hücreler
+    olarak raporlanmalı (direction'ın kendi ayrı-eksen testiyle AYNI
+    desen)."""
+    records = []
+    for i in range(30):
+        records.append(_record({"technical", "macro"}, "bullish_low", "LONG", i < 27, reversing=False))
+    for i in range(30):
+        records.append(_record({"technical", "macro"}, "bullish_low", "LONG", i < 6, reversing=True))
+
+    result = compute_historical_analogs(records, combination_sizes=(2,), min_group_size=20)
+    calm = next(a for a in result["analogs"] if a["reversing"] is False)
+    reversing = next(a for a in result["analogs"] if a["reversing"] is True)
+    assert calm["win_rate"] == 0.90
+    assert reversing["win_rate"] == 0.20
+
+
+def test_records_with_missing_or_non_bool_reversing_are_excluded_fail_closed():
+    """Faz 404 — reversing SADECE Faz 401'den (2026-09-01) sonraki
+    kararlarda var; eski kararlarda hiç yok (None). İcat edilmiş bir
+    reversing değeri asla varsayılmamalı — bu kayıtlar örneklemden
+    tamamen dışlanır."""
+    records = [
+        {"agreeing_domains": frozenset({"technical", "macro"}), "market_regime": "bullish_low",
+         "direction": "LONG", "win": True, "closed_at": None, "reversing": None},
+        {"agreeing_domains": frozenset({"technical", "macro"}), "market_regime": "bullish_low",
+         "direction": "LONG", "win": True, "closed_at": None},  # reversing hiç yok
+    ]
+    result = compute_historical_analogs(records)
+    assert result == {"analogs": [], "baseline_win_rate": None, "baseline_sample_size": 0}
 
 
 def test_gate_eligible_requires_fdr_and_oos_and_effective_sample_size_together():

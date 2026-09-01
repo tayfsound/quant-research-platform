@@ -3,10 +3,18 @@ toplayan tek kaynak — FIL Faz D. analytics/historical_analog_engine.py
 saf (pure) kalıyor, gerçek veriye dokunan kod burada. services/agent_
 combination_reliability_gatherer.py ile AYNI desen (pump_fade_v1 hariç —
 council oylaması yok, mekanik strateji, anlaşma/rejim kavramı anlamsız),
-sadece market_regime ve direction'ı da kayda ekliyor."""
+sadece market_regime ve direction'ı da kayda ekliyor.
+
+Faz 404 — dördüncü eksen: market_data.features.market_state_engine::
+market_state_reversing_for_decision() ile agent_contributions'tan o
+kararın anındaki `reversing` bayrağı çıkarılıyor. SADECE 2026-09-01'den
+(Faz 401) SONRAKİ kararlarda bu alan var — daha eski kararlar bu yüzden
+dışlanıyor (analytics/historical_analog_engine.py'nin kendi fail-closed
+filtresi)."""
 from analytics.agent_combination_reliability import agreeing_domains_for_decision
 from analytics.evaluation_cohort import describe_evaluation_window
 from analytics.historical_analog_engine import compute_historical_analogs
+from market_data.features.market_state_engine import market_state_reversing_for_decision
 from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMENT_BUCKET
 
 MAX_DECISIONS = 2000
@@ -36,6 +44,7 @@ def gather_historical_analogs() -> dict:
             "agreeing_domains": agreeing,
             "market_regime": market_regime,
             "direction": final_direction,
+            "reversing": market_state_reversing_for_decision(contributions),
             "win": pnl > 0,
             "closed_at": t.get("closed_at"),
         })
