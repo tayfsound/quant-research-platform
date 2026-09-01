@@ -279,6 +279,33 @@ class DecisionFusion:
                             "short_exploration_rejected_reason": reason,
                         },
                     })
+            # Faz 399 — kullanıcı isteği: "test modunda sürekli her türlü
+            # kombinasyonda engelsiz işlem alıp denesin sistem... test
+            # modunda data toplama hedefimiz hız kesmesin." Gerçek veriyle
+            # bulundu: Faz 388'in MetaStage'teki WAIT->REDUCE test-modu
+            # dönüşümü, pipeline'da DAHA SONRA çalışan BU negatif-EV
+            # reddiyle (trading_mode hiç kontrol etmiyordu) sessizce geri
+            # alınıyordu — son 2 günde test modunda 9339 yönlü (LONG/SHORT)
+            # kararın 9300'ü tam burada, hiçbir gate_block izi bırakmadan
+            # WAIT'e düşmüştü. Force-open/SHORT-exploration'ın AYNI ilkesi
+            # (gerçek sermaye riskinde HİÇBİR ŞEY değişmiyor, sadece test
+            # modunda veri toplama için küçük boyutlu bir REDUCE'a
+            # düşülüyor) — Faz 388'in kendi formülüyle (final_size =
+            # proposed_size * confidence) tutarlı.
+            if not explored and ctx.risk.trading_mode == "test" and direction in ("LONG", "SHORT") and (win > 0 or loss > 0):
+                explored = True
+                ctx.decision.action = ActionType.REDUCE
+                ctx.decision.final_size = round(abs(ctx.decision.proposed_size) * confidence, 8)
+                ctx.cognition.relevant_knowledge.append({
+                    "type": "decision_fusion",
+                    "data": {
+                        "adjustment": "Test modu — negatif EV canlıda tam olarak engellerdi, veri toplama "
+                                      "için REDUCE'a düşürüldü (gerçek sermaye riskinde değişiklik yok)",
+                        "predicted_ev": round(ev, 6),
+                        "confidence": round(confidence, 4),
+                    },
+                })
+
             if not explored:
                 ctx.decision.action = ActionType.WAIT
                 ctx.decision.final_size = 0.0
