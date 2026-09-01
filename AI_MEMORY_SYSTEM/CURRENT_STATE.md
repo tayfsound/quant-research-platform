@@ -1,9 +1,45 @@
-# Mevcut Durum -- v1.130.0 (Faz 397: strategy_regime_gate test modunda artık engellemiyor)
+# Mevcut Durum -- v1.131.0 (Faz 398: Concept Drift artık piramit bacaklarını tek karar sayıyor)
 
 **Tarih:** 2026-09-01
 **Branch:** main
-**Son commit (HEAD):** `f5f3731` Faz 397 — strategy_regime_gate test modunda işlem alımına engel olmasın.
-**Servis durumu:** Faz 396+397 push edildi, worker+uvicorn yeniden başlatılacak (bu turda).
+**Son commit (HEAD):** `0d88005` Faz 398 — Concept Drift artık aynı-anda kapanan piramit bacaklarını tek karar sayıyor.
+**Servis durumu:** Faz 396+397+398 push edildi, worker+uvicorn yeniden başlatılacak.
+
+**Faz 398 (bu turda) — Concept Drift'in "PLTRUSDT gibi sembolleri
+engellemesi gerçek bir düşüş mü, ölçüm artefaktı mı" sorusunun
+araştırılması, kullanıcı isteğiyle ("diğer konuyu araştıralım"):**
+Kapı şu an PASİF (31 Ağustos'ta zaten sıfırlanmış, sıfırlama sonrası
+sadece birkaç kapanmış işlem var, 100 eşiğine çok uzak). Sıfırlamadan
+hemen önceki gerçek tetikleme (%66→%26, p=8.5e-6) incelendiğinde:
+en yeni 50 kapanmış işlemin %40'ı (20/50) TEK bir korele küme —
+GC=F (altın vadeli, veri kaynağı) + XAUTUSDT (tokenize altın), ikisi de
+LONG, ikisi de %0 kazanma. Detayına inilince bu 20 satırın çoğu aslında
+**aynı kapanış anına** (milisaniyeye kadar aynı `closed_at`) aitti —
+`services/position_closer.py::close_due_positions()`'ın `now =
+datetime.now(UTC)`'ı döngü başında BİR KEZ hesaplayıp tüm bacaklara
+uygulaması yüzünden, aynı dakikalarda açılan bir piramit kümesi (5-10
+giriş) hep birlikte kapanınca TEK bir gerçek tez onlarca "bağımsız
+işlem" gibi sayılmış. Altını çıkarınca residual düşüş %66→%43,3
+(p=0.044) — hâlâ gerçek ama alarm seviyesindeki rakamdan çok daha ılımlı.
+`same_direction_correlation` bu çifti neredeyse hiç yakalamamış (156/541
+tarihsel işlemden sadece 7-8'i indirimli) — muhtemelen ikisi aynı
+cycle'da aynı anda önerilmediği için korelasyon matrisi ikisini asla
+birlikte görmüyor (ayrı, dokunulmayan bir bulgu).
+
+Kullanıcı onayıyla ("Bunu uygulayabilirsin mantıklı yaklaşım sevdim")
+düzeltildi: `analytics/concept_drift.py::collapse_batch_closed_trades`
+— aynı sembolün aynı `closed_at`'te kapanan bacaklarını TEK bir karara
+(toplam pnl) indirger; farklı semboller aynı taramada kapansa bile ayrı
+kalır, aynı sembolün FARKLI zamanlarda kapanan bacakları da KASITLI
+OLARAK ayrı kalır (gerçek ayrı karar anları, sayım artefaktı değil).
+`services/risk_state.py::get_concept_drift_diagnostics` artık ham
+satırları (limit=600, ~1.4x güvenlik payı — 500 ham satır gerçekte
+~355 gerçek karara indirgeniyor) bu fonksiyondan geçirip 150 GERÇEK
+karara göre pencereleri hesaplıyor. Test: 59 passed (yeni entegrasyon
+testi: 40 bacaklı tek bir piramit kaybı artık yanlış alarm üretmiyor).
+`tsc --noEmit` temiz. Bu global bir kapı (sembole özel değil, tetiklenince
+TÜM sembollerdeki yeni pozisyonları engelliyor) — düzeltme gelecekte
+benzer bir piramit kümesinin tek başına tüm sistemi durdurmasını önlüyor.
 
 **`same_direction_correlation` doğrulaması (bu turda, kullanıcı sorusu,
 kod değişikliği DEĞİL — saf analiz):** Önceki bir turda yapılan hızlı
