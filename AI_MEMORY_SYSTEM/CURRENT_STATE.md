@@ -34,6 +34,32 @@ zararsız bir no-op, zamanla organik dolacak.
 **Market State / Direction Katmanı'nın planlanan TÜM fazları (0-4) artık
 kodda.** Aktif kod işi kalmadı — sıra tamamen gözlemde/izlemede.
 
+**Faz 405 (aynı gün, ayrı bir konu) — kritik bug bulundu ve düzeltildi:
+`max_open_positions_per_symbol_direction` REDUCE aksiyonunu hiç
+görmüyordu.** Kullanıcı gözlemi: "TP kârları $1'in altında, SL zararları
+kat kat büyük, aynı sembol günde defalarca yön değiştiriyor gibi
+görünüyor." Kök neden araştırılırken bulundu: `engines/cognitive_
+pipeline.py`'nin RiskGateStage'indeki same-symbol-direction kapıları
+(hem sayı-bazlı MAX_SAME_SYMBOL_DIRECTION_POSITIONS hem Faz 358'in $
+tavanı, aynı `final_direction` değişkenini paylaşıyor) SADECE `ctx.
+decision.action == ENTER_LONG/ENTER_SHORT` iken hesaplanıyordu — Faz
+388'in test-modu (VE canlı moddaki normal) REDUCE aksiyonu (gerçek yeni
+bir pozisyon açıyor) bu kontrolü TAMAMEN atlıyordu. Canlı reprodüksiyon:
+BRKBUSDT'de limit 20 iken 23 LONG + 4 SHORT pozisyon aynı anda açık
+kalmıştı, hepsi REDUCE üzerinden, risk verdict hep 'approved' sıfır ret
+nedeniyle. Düzeltildi: `final_direction` artık REDUCE için `proposed_
+direction`'dan hesaplanıyor. Test: 4 yeni + 89 regresyon passed.
+
+**Bu araştırma sırasında İKİ AYRI, HENÜZ ÇÖZÜLMEMİŞ gerçek sorun daha
+bulundu** (bkz. [[project_open_items_2026_08_31]] madde 3-4):
+1. TP/SL risk:ödül asimetrisi — TP-kapananlarda hedef mesafesi stop'un
+   sadece %10'u (dolar kârı genelde $1 altı), SL-kapananlarda açılış
+   hedefi aşırı iyimser (%35) ama hiç ulaşılamıyor. Kök neden (RiskTarget
+   Stage/Adaptive Barrier Engine) henüz incelenmedi.
+2. Piramitlenerek devasa büyüyen, günlerce açık kalan pozisyonlar (ör.
+   TRXUSDT, 6 bacak, ~$260K notional, 8+ gün). Faz 405 bunun BİR
+   nedenini düzeltti ama piramitlemenin kendisi ayrı incelenmeli.
+
 **Market State / Direction Katmanı — Faz 0-3 TAMAMLANDI (2026-09-01,
 kullanıcı onaylı büyük mimari proje):** Tam plan `~/.claude/plans/
 velvety-whistling-parasol.md`'de. Kullanıcının gerçek gözlemi ("AI
