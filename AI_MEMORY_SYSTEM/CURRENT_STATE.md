@@ -50,15 +50,22 @@ kalmıştı, hepsi REDUCE üzerinden, risk verdict hep 'approved' sıfır ret
 nedeniyle. Düzeltildi: `final_direction` artık REDUCE için `proposed_
 direction`'dan hesaplanıyor. Test: 4 yeni + 89 regresyon passed.
 
-**Bu araştırma sırasında İKİ AYRI, HENÜZ ÇÖZÜLMEMİŞ gerçek sorun daha
-bulundu** (bkz. [[project_open_items_2026_08_31]] madde 3-4):
-1. TP/SL risk:ödül asimetrisi — TP-kapananlarda hedef mesafesi stop'un
-   sadece %10'u (dolar kârı genelde $1 altı), SL-kapananlarda açılış
-   hedefi aşırı iyimser (%35) ama hiç ulaşılamıyor. Kök neden (RiskTarget
-   Stage/Adaptive Barrier Engine) henüz incelenmedi.
-2. Piramitlenerek devasa büyüyen, günlerce açık kalan pozisyonlar (ör.
-   TRXUSDT, 6 bacak, ~$260K notional, 8+ gün). Faz 405 bunun BİR
-   nedenini düzeltti ama piramitlemenin kendisi ayrı incelenmeli.
+**Bu araştırma sırasında bulunan İKİNCİ, DAHA DERİN sorunun KÖK NEDENİ de
+bulundu (aynı gün, kullanıcı isteğiyle birlikte araştırıldı) — düzeltme
+kullanıcının kararını bekliyor, tam detay [[project_open_items_2026_08_31]]
+madde 3'te:**
+
+TP/SL risk:ödül asimetrisi VE piramitlenerek devasa büyüyen kayıplar
+(TRXUSDT 6 bacak, ~$260K notional) AYNI kökten çıkıyor: **Adaptive
+Barrier Engine** (varsayılan AÇIK) MAE/MFE yüzdelik dilimlerinden stop/
+hedef üretirken sabit 2,75:1 oranını hiç korumuyor. Somut kanıt:
+TRXUSDT'nin 6 bacağının hepsi stop=%4,5, hedef=%95,5 (imkansıza yakın).
+Genel istatistik: en "güvenli" hedef kovasında bile (<%3, %81,6 kazanma)
+ort. kazanç $4,33 vs ort. kayıp -$162,24 (37 kat asimetri) — net -$26.
+Piramitlemenin kendisi zararlı değil, bozuk bir R:R'a piramit yapmak
+zararı çarpıyor. Kullanıcı: "bunun üzerine biraz düşünmem lazım" —
+önerilen düzeltme (hedef/stop oranına bir tavan koymak) HENÜZ
+uygulanmadı, onay bekliyor.
 
 **Market State / Direction Katmanı — Faz 0-3 TAMAMLANDI (2026-09-01,
 kullanıcı onaylı büyük mimari proje):** Tam plan `~/.claude/plans/
