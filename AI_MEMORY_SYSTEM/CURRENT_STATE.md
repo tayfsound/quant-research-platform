@@ -1,9 +1,44 @@
-# Mevcut Durum -- v1.131.0 (Faz 398: Concept Drift artık piramit bacaklarını tek karar sayıyor)
+# Mevcut Durum -- v1.133.0 (Faz 399+400: test-modu EV istisnası + Canonical Evaluation Cohort Faz 0)
 
 **Tarih:** 2026-09-01
 **Branch:** main
-**Son commit (HEAD):** `0d88005` Faz 398 — Concept Drift artık aynı-anda kapanan piramit bacaklarını tek karar sayıyor.
-**Servis durumu:** Faz 396+397+398 push edildi, worker+uvicorn yeniden başlatılacak.
+**Son commit (HEAD):** `0fac15e` Faz 400 — Canonical Evaluation Cohort, Faz 0.
+**Servis durumu:** Faz 396-400 push edildi, worker+uvicorn yeniden başlatıldı.
+
+**BÜYÜK MİMARİ PROJE BAŞLADI (bu turda, kullanıcı onayıyla) — "Market
+State / Direction Katmanı":** Kullanıcının gerçek gözlemi ("AI pozisyonlar
+stop olmaya başlamadan zaten regime'in değiştiğini görebilmeli... başarısız
+pozisyonların %90'ından fazlasında zaten direction problemi var") gerçek
+veriyle doğrulandı: XAUTUSDT'de 27-31 Ağustos kayıp serisi boyunca council
+hiçbir zaman SHORT'a dönmedi (sürekli zayıf LONG); son 80 kayıp kararın
+37'sinde (%46) AI'nin yönü pozisyon açıkken BİR KEZ BİLE %65+ güvenle
+karşı yöne dönmedi. Dış mimari raporunun (2026-08-21) "piyasa yönü ile
+strateji uygunluğu aynı katmanda karışık" bulgusuyla örtüşüyor. Tam
+aşamalı plan (Faz 0-4, her biri varsayılan kapalı/gözlem pencereli)
+kaydedildi: `/Users/emreturkes/.claude/plans/velvety-whistling-parasol.md`.
+Faz 0 (Canonical Evaluation Cohort, kod-değişikliği riski sıfır, sadece
+raporlama) bu turda TAMAMLANDI ve push edildi (Faz 400, aşağıda). Faz 1-4
+(Market State hesaplama, belief synthesis'e confidence eğimi, proaktif
+çıkış guardian'ı, historical_analog_engine'e 4. eksen) henüz başlanmadı —
+sıradaki iş.
+
+**Faz 399 (bu turda) — decision_fusion.py'nin negatif-EV reddine
+test-modu istisnası:** Kök neden: negatif-EV reddi hiç `trading_mode`
+kontrol etmiyordu, Faz 388'in MetaStage'teki test-modu WAIT→REDUCE
+dönüşümünden SONRA çalıştığı için o korumayı sessizce geri alıyordu.
+Gerçek veri: son 2 günde test modunda 9339 yönlü kararın 9300'ü hiçbir
+gate_block izi bırakmadan bu yüzden WAIT'e düşmüştü. force-open/short-
+exploration'ın AYNI ilkesiyle bir istisna eklendi (gerçek sermayede
+hiçbir şey değişmiyor, test modunda REDUCE'a düşülüyor). Test: 77 passed.
+
+**Faz 400 (bu turda) — Canonical Evaluation Cohort, Faz 0:** 14 analytics/
+gatherer modülünün `list_closed_trades()`'i farklı limit/dışlama
+kriterleriyle çağırdığı (dış rapordan, kod üzerinden yeniden doğrulandı)
+sorunu — yeni `analytics/evaluation_cohort.py::describe_evaluation_
+window` her birinin dönüş sözlüğüne tek tip bir `evaluation_window` bloğu
+ekliyor. İki gerçek bug da düzeltildi: `self_model_gatherer.py` ve
+`market_world_model_gatherer.py` kapanmış-işlem N'ini hiç raporlamıyordu.
+Sıfır karar-mantığı riski, sadece eklemeli metadata. Test: 208+ passed.
 
 **Faz 398 (bu turda) — Concept Drift'in "PLTRUSDT gibi sembolleri
 engellemesi gerçek bir düşüş mü, ölçüm artefaktı mı" sorusunun
