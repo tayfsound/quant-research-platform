@@ -1,9 +1,56 @@
-# Mevcut Durum -- v1.134.0 (Faz 401: Market State / Direction Katmanı Faz 1)
+# Mevcut Durum -- v1.136.0 (Market State / Direction Katmanı Faz 0-3 TAMAMLANDI)
 
 **Tarih:** 2026-09-01
 **Branch:** main
-**Son commit (HEAD):** `2310e7f` Faz 401 — Market State / Direction Katmanı, Faz 1 (gözlem-only).
-**Servis durumu:** Faz 396-401 push edildi, worker+uvicorn yeniden başlatılacak (candle_lookback değişikliği TÜM sistemi etkiliyor, dikkatli restart).
+**Son commit (HEAD):** `a5725d5` Faz 403 — Market State / Direction Katmanı, Faz 3 (proaktif çıkış guardian'ı).
+**Servis durumu:** Faz 396-403 push edildi, worker+uvicorn+beat yeniden başlatıldı (beat AYRI restart gerektiriyor — watchdog'un izlemediği tek süreç, yeni periyodik görevler eklendiğinde manuel `nohup .venv/bin/celery -A services.celery_app beat` ile yeniden başlatılmalı).
+
+**Market State / Direction Katmanı — Faz 0-3 TAMAMLANDI (2026-09-01,
+kullanıcı onaylı büyük mimari proje):** Tam plan `~/.claude/plans/
+velvety-whistling-parasol.md`'de. Kullanıcının gerçek gözlemi ("AI
+pozisyonlar stop olmaya başlamadan zaten regime'in değiştiğini
+görebilmeli") gerçek veriyle doğrulanmıştı (XAUTUSDT örneği, %46'lık
+kohort) — bu turda TÜM planlanan fazlar (Faz 4 hariç, o "1-3 gerçek kenar
+gösterirse" diye kasıtlı ertelendi) koda döküldü:
+
+- **Faz 400 (Canonical Evaluation Cohort)**: 14 gatherer'a tutarlı
+  `evaluation_window` metadata'sı, 2 gerçek "N raporlamıyor" bug'ı
+  düzeltildi.
+- **Faz 401 (Market State hesaplama, gözlem-only)**: `market_state_
+  engine.py`/`market_state_cluster_engine.py`, `KnowledgeStage`'e
+  visibility-only kablolandı. KRİTİK yan bulgu: `candle_lookback` 100'dü
+  (`long_term_trend_regime` en az 220 istiyor, bu sinyal HİÇ
+  hesaplanamıyordu) — kullanıcı onayıyla 250'ye yükseltildi. Canlıda TAM
+  doğrulandı: gerçek döngü 104 karar üretti, SOLUSDT `reversing=true`
+  gösterdi, XAUTUSDT artık doğru şekilde SHORT/bear_trend_high okunuyor
+  (önceki LONG-yanlılık sorununun tam tersi).
+- **Faz 402 (belief synthesis'e confidence eğimi)**: `market_state_
+  tilt.py`, MoE Regime Router'ın (Faz 353) AYNI şablonu — SADECE
+  `reversing=True` iken, `market_state_tilt_enabled` ile (varsayılan
+  KAPALI) korunuyor.
+- **Faz 403 (proaktif çıkış guardian'ı)**: `market_state_reversal_
+  guardian.py` — regime_reversal_guardian/belief_reversal_exit'in YANINDA,
+  council'in HENÜZ fark etmediği dönüşleri piyasanın kendi okumasından
+  yakalıyor. Kasıtlı ihtiyatlı: TAM değil KISMİ (%50) kapatma,
+  `market_state_reversal_guardian_enabled` ile (varsayılan KAPALI)
+  korunuyor.
+
+**Faz 2/3 varsayılan KAPALI kalacak** — Faz 1'in birkaç günlük gerçek
+gözlem verisi (Transactions.tsx'teki "Market State" bölümü, market_state_
+snapshots tablosu) olgunlaşmadan açılmayacak
+(feedback_incremental_module_activation). Test: toplamda 400+ hedefli
+test passed bu dört fazda. `tsc --noEmit` temiz.
+
+**Önemli operasyonel not (bu turda öğrenildi):** Celery **beat** süreci
+watchdog script'i tarafından izlenmiyor/otomatik yeniden başlatılmıyor —
+worker/uvicorn'un aksine. Yeni bir periyodik görev (`beat_schedule`'a
+yeni bir satır) eklendiğinde, beat SÜRECİ MANUEL olarak yeniden
+başlatılmadıkça yeni görevi ASLA zamanlamaz (mevcut görevler bile
+persisted `celerybeat-schedule` dosyasından kendi son-çalışma zamanlarını
+koruyarak çalışmaya devam eder, sadece YENİ eklenenler görünmez kalır).
+Bundan sonra `beat_schedule`'a her yeni satır eklendiğinde: `nohup
+.venv/bin/celery -A services.celery_app beat --loglevel=info >
+/tmp/qrp_beat_restartN.log 2>&1 &` ile manuel restart gerekiyor.
 
 **Faz 401 (bu turda) — Market State / Direction Katmanı, Faz 1
 (gözlem-only):** Büyük mimari planın (~/.claude/plans/velvety-whistling-
