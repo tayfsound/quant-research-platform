@@ -79,6 +79,31 @@ def test_closed_pump_fade_trade_is_excluded_from_trades_api(client):
     assert symbol not in trades
 
 
+def test_closed_pump_fade_trade_is_visible_with_explicit_experiment_bucket_param(client):
+    """Faz 406-devam — kullanıcı bulgusu (2026-09-03): "kapanmış işlemlerde
+    pump-fade işlemlerini göremiyorum." Yukarıdaki koşulsuz dışlama
+    Transactions.tsx'teki "Pump-Fade" filtresini de sessizce ölü
+    bırakmıştı (her zaman sıfır sonuç). `experiment_bucket=pump_fade_v1`
+    query param'ı verilirse dışlamanın YERİNE geçip SADECE bu bucket'ı
+    döndürmeli — varsayılan (yukarıdaki) davranış DEĞİŞMEDİ."""
+    symbol = f"PFVISIBLE{uuid4().hex[:8]}"
+    event = _open_pump_fade_position(symbol)
+    with SessionFactory.get_session() as session:
+        DecisionPersistor(session).close_position(
+            decision_id=str(event.id), exit_price=95.0, pnl=5.0, closed_at=datetime.now(UTC)
+        )
+
+    response = client.get(
+        "/api/v1/trades", params={"experiment_bucket": "pump_fade_v1"},
+        headers=make_authed_headers(Role.VIEWER),
+    )
+    assert response.status_code == 200
+    trades = {t["symbol"]: t for t in response.json()["trades"]}
+
+    assert symbol in trades
+    assert trades[symbol]["trade_type"] == "pump_fade"
+
+
 def test_normal_ai_position_is_not_labeled_pump_fade(client):
     """experiment_bucket boşsa eski sezgisel sınıflandırma (scalp/swing)
     bozulmamalı — bu bir regresyon testi."""

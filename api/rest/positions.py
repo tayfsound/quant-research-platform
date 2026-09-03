@@ -394,7 +394,8 @@ def explain_position(decision_id: str, user: AuthContext = Depends(get_current_u
 
 @router.get("/trades")
 def list_closed_trades(
-    limit: int = 100, offset: int = 0, user: AuthContext = Depends(get_current_user)
+    limit: int = 100, offset: int = 0, experiment_bucket: str | None = None,
+    user: AuthContext = Depends(get_current_user),
 ):
     """Faz 224: kritik bulgu — "summary" artık `limit`'e (tablo için kaç
     satır gösterileceği) bağlı DEĞİL, gerçek toplam üzerinden hesaplanıyor
@@ -406,13 +407,28 @@ def list_closed_trades(
     Faz 362-devam — kullanıcı isteği: "kör gidiyorum, geriye dönüp
     inceleme yapamıyorum" — `offset` eklendi, GET /positions'la (Faz
     268y) AYNI gerçek sayfalama deseni. `summary.count` her zaman
-    gerçek toplamı yansıttığı için frontend sayfa sayısını hesaplayabiliyor."""
+    gerçek toplamı yansıttığı için frontend sayfa sayısını hesaplayabiliyor.
+
+    Faz 406-devam — kullanıcı bulgusu: "kapanmış işlemlerde pump-fade
+    işlemlerini göremiyorum." Kök neden: pump_fade_v1 burada KOŞULSUZ
+    dışlanıyordu (ana dashboard istatistiklerinin mekanik bir deneyle
+    kirlenmemesi için, Faz 268-sonrası) — bu, Transactions.tsx'teki
+    "Pump-Fade" filtresini de sessizce ölü bırakmıştı (her zaman sıfır
+    sonuç). `experiment_bucket` verilirse dışlamanın YERİNE geçer (SADECE
+    o bucket'ı getirir) — varsayılan davranış (dışlama, kirlenme koruması)
+    hiç değişmedi, sadece bu bucket'ı özellikle görmek isteyen çağıran
+    artık görebiliyor."""
     with SessionFactory.get_session() as session:
         persistor = DecisionPersistor(session)
-        excluded_bucket = "pump_fade_v1"
-        rows = persistor.list_closed_trades(limit=limit, offset=offset, exclude_experiment_bucket=excluded_bucket)
+        excluded_bucket = None if experiment_bucket else "pump_fade_v1"
+        rows = persistor.list_closed_trades(
+            limit=limit, offset=offset, exclude_experiment_bucket=excluded_bucket,
+            experiment_bucket=experiment_bucket,
+        )
         trades = [_serialize(r) for r in rows]
-        summary = persistor.closed_trades_summary(exclude_experiment_bucket=excluded_bucket)
+        summary = persistor.closed_trades_summary(
+            exclude_experiment_bucket=excluded_bucket, experiment_bucket=experiment_bucket,
+        )
         return {
             "trades": trades,
             "summary": {

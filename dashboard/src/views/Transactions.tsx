@@ -1023,7 +1023,13 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
       });
     const tradesOffset = hasActiveFilters ? 0 : tradesPage * TRADES_PAGE_SIZE;
     const tradesLimit = hasActiveFilters ? 5000 : TRADES_PAGE_SIZE;
-    fetch(`/api/v1/trades?limit=${tradesLimit}&offset=${tradesOffset}`, { headers: authHeaders() })
+    // Faz 406-devam — kullanıcı bulgusu: "kapanmış işlemlerde pump-fade
+    // işlemlerini göremiyorum." GET /trades pump_fade_v1'i varsayılan
+    // olarak dışlıyor (ana dashboard istatistiklerinin kirlenmemesi için)
+    // — "Pump-Fade" filtresi seçiliyken dışlamanın YERİNE experiment_
+    // bucket=pump_fade_v1 gönderiyoruz ki filtre gerçekten çalışsın.
+    const tradesBucketParam = typeFilter === "pump_fade" ? "&experiment_bucket=pump_fade_v1" : "";
+    fetch(`/api/v1/trades?limit=${tradesLimit}&offset=${tradesOffset}${tradesBucketParam}`, { headers: authHeaders() })
       .then((r) => r.json())
       .then((data) => {
         setTrades(data.trades || []);
@@ -1040,7 +1046,7 @@ export default function Transactions({ onSelectSymbol }: { onSelectSymbol?: (sym
     const interval = setInterval(load, 15000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openPage, tradesPage, hasActiveFilters]);
+  }, [openPage, tradesPage, hasActiveFilters, typeFilter]);
 
   const partialClose = async (id: string, fraction: number) => {
     setCloseError(null);

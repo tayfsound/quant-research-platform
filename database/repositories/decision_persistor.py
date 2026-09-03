@@ -771,7 +771,7 @@ class DecisionPersistor:
 
     def list_closed_trades(
         self, limit: int | None = 200, min_opened_at=None, exclude_experiment_bucket: str | None = None,
-        direction: str | None = None, offset: int = 0,
+        direction: str | None = None, offset: int = 0, experiment_bucket: str | None = None,
     ):
         # Faz 238: kullanıcı isteği — "kirli geçmiş veriyi temizle."
         # excluded_from_stats=true işaretli satırlar (aşırı capital
@@ -806,6 +806,18 @@ class DecisionPersistor:
         if exclude_experiment_bucket is not None:
             query += " AND (experiment_bucket IS NULL OR experiment_bucket != :exclude_experiment_bucket)"
             params["exclude_experiment_bucket"] = exclude_experiment_bucket
+        # Faz 406-devam — kullanıcı bulgusu: "kapanmış işlemlerde pump-fade
+        # işlemlerini göremiyorum." Kök neden: yukarıdaki exclude_experiment_
+        # bucket, GET /trades'te KOŞULSUZ pump_fade_v1'e uygulanıyordu —
+        # Transactions.tsx'teki "Pump-Fade" filtre seçeneği bu yüzden HER
+        # ZAMAN sıfır sonuç dönüyordu (ölü filtre). experiment_bucket, o
+        # filtre AKTİFKEN dışlamanın YERİNE geçiyor (SADECE o bucket'ı
+        # getiriyor) — ana özet/performans sayfasındaki dışlama (kirlenme
+        # koruması) hiç değişmedi, sadece bu bucket'ı özellikle GÖRMEK
+        # isteyen bir çağıran artık görebiliyor.
+        if experiment_bucket is not None:
+            query += " AND experiment_bucket = :experiment_bucket"
+            params["experiment_bucket"] = experiment_bucket
         if direction is not None:
             # Faz 352 — Regime Reversal Guardian: YÖN-bazlı ardışık stop
             # sayacı, kill switch'in GLOBAL sayacının aksine tek bir yönün
@@ -828,7 +840,9 @@ class DecisionPersistor:
 
         return [dict(r) for r in rows]
 
-    def closed_trades_summary(self, exclude_experiment_bucket: str | None = None) -> dict:
+    def closed_trades_summary(
+        self, exclude_experiment_bucket: str | None = None, experiment_bucket: str | None = None,
+    ) -> dict:
         """Faz 224: kritik bulgu — kullanıcı: "sürekli işlem alıyor kapatıyor
         ama kapanmış işlem sayısı 100 görünüyor, bir ara 400 küsürdü... bu
         dashboarda güvenemiyorum." Kök neden: GET /trades'in summary'si
@@ -899,13 +913,18 @@ class DecisionPersistor:
         if exclude_experiment_bucket is not None:
             query += " AND (experiment_bucket IS NULL OR experiment_bucket != :exclude_experiment_bucket)"
             params["exclude_experiment_bucket"] = exclude_experiment_bucket
+        # Faz 406-devam — bkz. list_closed_trades'teki AYNI parametre notu.
+        if experiment_bucket is not None:
+            query += " AND experiment_bucket = :experiment_bucket"
+            params["experiment_bucket"] = experiment_bucket
         row = self.session.execute(text(query), params).mappings().one()
         excluded_count = self.session.execute(
             text(
                 "SELECT count(*) FROM decisions WHERE status = 'closed' AND excluded_from_stats = true "
-                "AND (:exclude_experiment_bucket IS NULL OR experiment_bucket != :exclude_experiment_bucket)"
+                "AND (:exclude_experiment_bucket IS NULL OR experiment_bucket != :exclude_experiment_bucket) "
+                "AND (:experiment_bucket IS NULL OR experiment_bucket = :experiment_bucket)"
             ),
-            {"exclude_experiment_bucket": exclude_experiment_bucket},
+            {"exclude_experiment_bucket": exclude_experiment_bucket, "experiment_bucket": experiment_bucket},
         ).scalar()
         trade_count = row["trade_count"] or 0
         return {
