@@ -11,6 +11,7 @@ deseni) LONG/SHORT/WAIT sayımı yapılır, compute_agent_agreement ile
 strateji, council oylaması hiç yok)."""
 from analytics.evaluation_cohort import describe_evaluation_window
 from analytics.feature_relationship import compute_feature_redundancy, compute_redundancy_clusters
+from analytics.measurement_stability import compute_stability
 from analytics.opportunity_quality import (
     _feature_independence_from_contributions,
     _reliability_from_contributions,
@@ -21,16 +22,42 @@ from analytics.opportunity_quality import (
 )
 from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMENT_BUCKET
 
+STABILITY_LOOKBACK_SNAPSHOTS = 12
+
 
 def _agreement_for_decision(row: dict) -> float | None:
     return agreement_from_contributions(row.get("agent_contributions"))
 
 
+def _attach_stability(by_agreement: dict[str, dict], by_quality_score: dict[str, dict], past_snapshots: list[dict]) -> None:
+    """Faz 407 — kullanıcı isteği: "ölçtüğümüz her veri için zaman
+    içindeki stabilitesini de ölçelim." SADECE gözlem — by_regime alt-
+    kırılımına dokunmuyor (örneklem zaten oraya kadar seyrek)."""
+    past_agreement: dict[str, list[float]] = {}
+    past_score: dict[str, list[float]] = {}
+    for snap in past_snapshots:
+        result = snap.get("result") or {}
+        for bucket, stat in (result.get("by_agreement_bucket") or {}).items():
+            past_agreement.setdefault(bucket, []).append(stat.get("win_rate"))
+        for bucket, stat in (result.get("by_quality_score_bucket") or {}).items():
+            past_score.setdefault(bucket, []).append((stat.get("overall") or {}).get("win_rate"))
+
+    for bucket, stat in by_agreement.items():
+        stat["win_rate_stability"] = compute_stability([*past_agreement.get(bucket, []), stat.get("win_rate")])
+    for bucket, stat in by_quality_score.items():
+        overall = stat.get("overall") or {}
+        overall["win_rate_stability"] = compute_stability([*past_score.get(bucket, []), overall.get("win_rate")])
+
+
 def gather_opportunity_quality() -> dict:
     from database.repositories.decision_persistor import DecisionPersistor
+    from database.repositories.opportunity_quality_report_repository import (
+        OpportunityQualityReportRepository,
+    )
     from database.session_factory import SessionFactory
 
     with SessionFactory.get_session() as session:
+        past_snapshots = OpportunityQualityReportRepository(session).get_recent(STABILITY_LOOKBACK_SNAPSHOTS)
         # Faz 363 — kullanıcı bulgusu: "high" (yüksek anlaşma) kovası
         # sürekli boş görünüyordu. Kök neden: limit=2000, en yeni 2000
         # kapanmış işlemle sınırlıyordu — gerçek toplam 3264 (excluded_
@@ -90,6 +117,7 @@ def gather_opportunity_quality() -> dict:
 
     by_agreement = compute_opportunity_quality_by_agreement(trades)
     by_quality_score = compute_opportunity_quality_by_score(score_trades)
+    _attach_stability(by_agreement, by_quality_score, past_snapshots)
     return {
         "by_agreement_bucket": by_agreement,
         "by_quality_score_bucket": by_quality_score,

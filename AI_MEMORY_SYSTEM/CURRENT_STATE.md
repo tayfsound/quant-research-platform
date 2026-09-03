@@ -1,9 +1,31 @@
-# Mevcut Durum -- v1.142.0 (Faz 407: Ölçüm Stabilitesi — "4. boyut", gözlem-only)
+# Mevcut Durum -- v1.143.0 (Faz 407 TAMAMLANDI: Ölçüm Stabilitesi 17/17 modüle bağlandı)
 
 **Tarih:** 2026-09-03
 **Branch:** main
-**Son commit (HEAD):** (bu turda push edilecek) Faz 407: measurement_stability + 5 modüle gözlem-only bağlantı.
-**Servis durumu:** push edilecek, worker+uvicorn yeniden başlatılacak.
+**Son commit (HEAD):** `c363fd7` Faz 407: Ölçüm Stabilitesi ("4. boyut") — gözlem-only, 5 modüle bağlandı (+ bu turda 12 modül daha, push edilecek).
+**Servis durumu:** push edilecek, worker+uvicorn yeniden başlatılacak (trading cycle zaten bitti).
+
+**Faz 407-devam (aynı gün) — kalan 12 modül de bağlandı, envanterin
+TAMAMI (17/17) artık gözlem-only stabilite üretiyor:**
+`direction_prediction_v2` (brier_score_stability, per-domain),
+`agent_ablation` (caused_trade_win_rate_stability, per-domain),
+`feature_relationship` (correlation_stability, her feature çiftine —
+kullanıcının "kaotik" bulduğu redundancy grafiğiyle DOĞRUDAN ilgili),
+`collective_intelligence` (per_agent_accuracy_stability),
+`mae_mfe_confidence` (p90_stability, her koşul kovasına),
+`opportunity_quality` (win_rate_stability, agreement VE quality-score
+kovalarına), `agent_pairwise_ablation` (substitution_rate_stability —
+kullanıcıya az önce açıklanan AYNI tablo), `tp_sl_confluence` (4 pct
+alanına, Faz 343'ün zaten belgelediği rejim-bağımlılığı artık
+ölçülebilir), `causal_inference` (best_p_value_stability, her nedensel
+çifte), `market_world_model` (bootstrap path özet skalerlerine),
+`self_model` (ece/dsr stabilitesi), `meta_learning_effectiveness`
+(trend'in KENDİSİNİN — spearman_correlation — stabilitesi).
+
+HİÇBİRİ karar hattına bağlanmadı, ~20 yeni test (birim + regresyon),
+140+ ilgili test tam regresyonsuz geçti. Faz 407 artık tamamen KODLANDI
+— sıradaki adım kullanıcının kararı: hangi stabilite sinyalini GERÇEKTEN
+wire edeceğine dair (tek tek, gözlem penceresi biriktikten sonra).
 
 **Faz 407 — kullanıcı isteği: "biz bir şeyleri ölçüyoruz ama verinin
 zaman içindeki volatilitesini ölçmüyoruz... dördüncü boyutu

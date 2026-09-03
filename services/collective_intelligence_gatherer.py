@@ -24,14 +24,28 @@ from analytics.collective_intelligence import (
     compute_accuracy_confidence_interval,
     compute_expected_majority_accuracy,
 )
+from analytics.measurement_stability import compute_stability
 from contracts.agent import VOTING_AGENT_DOMAINS
 from services.agent_memory import AgentMemory
 
 WINDOW = 3000
 MIN_SAMPLES = 10
+STABILITY_LOOKBACK_SNAPSHOTS = 12
 
 
 def gather_collective_intelligence() -> dict:
+    from database.repositories.collective_intelligence_report_repository import (
+        CollectiveIntelligenceReportRepository,
+    )
+    from database.session_factory import SessionFactory
+
+    with SessionFactory.get_session() as session:
+        past_snapshots = CollectiveIntelligenceReportRepository(session).get_recent(STABILITY_LOOKBACK_SNAPSHOTS)
+    past_by_domain: dict[str, list[float]] = {}
+    for snap in past_snapshots:
+        for domain, acc in ((snap.get("result") or {}).get("per_agent_accuracy") or {}).items():
+            past_by_domain.setdefault(domain, []).append(acc)
+
     memory = AgentMemory()
 
     per_agent_accuracy: dict[str, float] = {}
@@ -67,8 +81,16 @@ def gather_collective_intelligence() -> dict:
     accuracies = list(per_agent_accuracy.values())
     condorcet = compute_expected_majority_accuracy(accuracies) if len(accuracies) >= 2 else None
 
+    # Faz 407 — kullanıcı isteği: "ölçtüğümüz her veri için zaman
+    # içindeki stabilitesini de ölçelim." SADECE gözlem.
+    per_agent_accuracy_stability = {
+        domain: compute_stability([*past_by_domain.get(domain, []), acc])
+        for domain, acc in per_agent_accuracy.items()
+    }
+
     return {
         "per_agent_accuracy": per_agent_accuracy,
+        "per_agent_accuracy_stability": per_agent_accuracy_stability,
         "per_agent_sample_size": per_agent_sample_size,
         "per_agent_confidence_interval": per_agent_confidence_interval,
         "agents_included": list(per_agent_accuracy.keys()),

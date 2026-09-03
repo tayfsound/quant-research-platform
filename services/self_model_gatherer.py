@@ -12,6 +12,7 @@ from sqlalchemy import text
 
 from analytics.backtest_validation import compute_deflated_sharpe_ratio
 from analytics.evaluation_cohort import describe_evaluation_window
+from analytics.measurement_stability import compute_stability
 from analytics.model_drift import compute_feature_drift
 from analytics.self_model import compute_self_reliability_snapshot
 from database.repositories.calibration_report_repository import CalibrationReportRepository
@@ -21,11 +22,34 @@ from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMEN
 from services.risk_state import get_concept_drift_diagnostics
 
 _MIN_TRADES_FOR_DSR = 20
+STABILITY_LOOKBACK_SNAPSHOTS = 12
+_INPUT_STABILITY_FIELDS = ("ece", "recent_dsr")
+
+
+def _attach_inputs_stability(snapshot: dict, past_snapshots: list[dict]) -> None:
+    """Faz 407 — kullanıcı isteği: "ölçtüğümüz her veri için zaman
+    içindeki stabilitesini de ölçelim." ECE/DSR'ın haftadan haftaya ne
+    kadar tutarlı olduğunu ekliyor — SADECE gözlem, overall_reliability
+    sınıflandırmasına hiç dokunmuyor."""
+    past_by_field: dict[str, list[float]] = {}
+    for snap in past_snapshots:
+        snap_inputs = (snap.get("result") or {}).get("inputs") or {}
+        for field in _INPUT_STABILITY_FIELDS:
+            if snap_inputs.get(field) is not None:
+                past_by_field.setdefault(field, []).append(snap_inputs[field])
+
+    snapshot["inputs_stability"] = {
+        field: compute_stability([*past_by_field.get(field, []), snapshot["inputs"].get(field)])
+        for field in _INPUT_STABILITY_FIELDS
+    }
 
 
 def gather_self_reliability_snapshot() -> dict:
     with SessionFactory.get_session() as session:
         decision_repo = DecisionPersistor(session)
+        from database.repositories.self_model_report_repository import SelfModelReportRepository
+
+        past_snapshots = SelfModelReportRepository(session).get_recent(STABILITY_LOOKBACK_SNAPSHOTS)
 
         # ECE — en son haftalık kalibrasyon raporundan (henüz üretilmediyse
         # None — compute_self_reliability_snapshot None'ı zaten fail-closed
@@ -110,6 +134,7 @@ def gather_self_reliability_snapshot() -> dict:
         concept_drift_detected=concept_drift_detected,
     )
     snapshot["evaluation_window"] = evaluation_window
+    _attach_inputs_stability(snapshot, past_snapshots)
     return snapshot
 
 

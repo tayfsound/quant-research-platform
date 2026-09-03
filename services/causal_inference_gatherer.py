@@ -14,8 +14,10 @@ ETHUSDT) SEBEP adayı olarak, listenin GERİ KALANI ETKİ adayı olarak
 test ediliyor — "BTC/ETH'nin hareketi diğer varlıkları öngörüyor mu"
 sorusuna gerçek veriyle cevap."""
 from analytics.causal_inference import apply_fdr_correction, compute_granger_causality
+from analytics.measurement_stability import compute_stability
 from market_data.ingestion.data_provider import RoutingProvider
 
+STABILITY_LOOKBACK_SNAPSHOTS = 12
 CAUSE_SYMBOLS = ["BTCUSDT", "ETHUSDT"]
 
 # services/orchestrator.py'nin gerçek multi-symbol backtest'lerinde
@@ -55,7 +57,33 @@ def _fetch_returns(provider: RoutingProvider, symbol: str) -> list[float] | None
     ]
 
 
+def _attach_p_value_stability(relationships: list[dict], past_snapshots: list[dict]) -> None:
+    """Faz 407 — kullanıcı isteği: "ölçtüğümüz her veri için zaman
+    içindeki stabilitesini de ölçelim." SADECE gözlem — hiçbir ilişki
+    filtrelenmiyor. Korelasyon stabilitesiyle AYNI mantık: bir nedensel
+    ilişkinin p-değeri haftadan haftaya tutarlı mı yoksa şans eseri bir
+    kerelik mi görünüyor."""
+    past_by_pair: dict[str, list[float]] = {}
+    for snap in past_snapshots:
+        for r in (snap.get("result") or {}).get("significant_relationships") or []:
+            key = f"{r['cause']}|{r['effect']}"
+            past_by_pair.setdefault(key, []).append(r.get("best_p_value"))
+
+    for r in relationships:
+        key = f"{r['cause']}|{r['effect']}"
+        series = [*past_by_pair.get(key, []), r.get("best_p_value")]
+        r["best_p_value_stability"] = compute_stability(series)
+
+
 def gather_causal_relationships() -> dict:
+    from database.repositories.causal_inference_report_repository import (
+        CausalInferenceReportRepository,
+    )
+    from database.session_factory import SessionFactory
+
+    with SessionFactory.get_session() as session:
+        past_snapshots = CausalInferenceReportRepository(session).get_recent(STABILITY_LOOKBACK_SNAPSHOTS)
+
     provider = RoutingProvider()
 
     cause_returns = {s: r for s in CAUSE_SYMBOLS if (r := _fetch_returns(provider, s)) is not None}
@@ -108,6 +136,7 @@ def gather_causal_relationships() -> dict:
         if fdr_ok:
             fdr_significant_relationships.append(row)
 
+    _attach_p_value_stability(relationships, past_snapshots)
     relationships.sort(key=lambda r: r["best_p_value"])
     fdr_significant_relationships.sort(key=lambda r: r["best_p_value"])
     return {

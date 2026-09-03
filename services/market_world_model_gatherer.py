@@ -43,11 +43,34 @@ amacı "gerçek AI konseyi getiri dağılımı"nı simüle etmek, deneysel
 varyansı değil (basis_arb_v1 zaten aynı gerekçeyle hariçti)."""
 from analytics.evaluation_cohort import describe_evaluation_window
 from analytics.market_world_model import compute_block_bootstrap_paths, compute_block_size_sensitivity
+from analytics.measurement_stability import compute_stability
 from services.asset_class_performance_gatherer import _is_production_ai_council
 from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMENT_BUCKET
 
 DEFAULT_BLOCK_SIZE = 10
 DEFAULT_PATH_LENGTH = 50
+STABILITY_LOOKBACK_SNAPSHOTS = 12
+_PATH_STABILITY_FIELDS = ("mean_cumulative_return", "p5_cumulative_return", "worst_max_drawdown")
+
+
+def _attach_paths_stability(paths: dict | None, past_snapshots: list[dict]) -> None:
+    """Faz 407 — kullanıcı isteği: "ölçtüğümüz her veri için zaman
+    içindeki stabilitesini de ölçelim." Bootstrap simülasyonunun (sabit
+    random_seed=42 ile deterministik) ana özet skalerlerinin haftadan
+    haftaya ne kadar tutarlı olduğunu ekliyor — SADECE gözlem."""
+    if paths is None:
+        return
+    past_by_field: dict[str, list[float]] = {}
+    for snap in past_snapshots:
+        snap_paths = (snap.get("result") or {}).get("paths") or {}
+        for field in _PATH_STABILITY_FIELDS:
+            if field in snap_paths:
+                past_by_field.setdefault(field, []).append(snap_paths[field])
+
+    paths["stability"] = {
+        field: compute_stability([*past_by_field.get(field, []), paths.get(field)])
+        for field in _PATH_STABILITY_FIELDS
+    }
 
 
 def gather_market_world_model(
@@ -61,6 +84,9 @@ def gather_market_world_model(
     her istekte taze cevap vermesi için."""
     from database.repositories.app_settings_repository import AppSettingsRepository
     from database.repositories.decision_persistor import DecisionPersistor
+    from database.repositories.market_world_model_report_repository import (
+        MarketWorldModelReportRepository,
+    )
     from database.session_factory import SessionFactory
 
     with SessionFactory.get_session() as session:
@@ -68,6 +94,7 @@ def gather_market_world_model(
         closed_trades = DecisionPersistor(session).list_closed_trades(
             limit=2000, exclude_experiment_bucket=PUMP_FADE_EXPERIMENT_BUCKET
         )
+        past_snapshots = MarketWorldModelReportRepository(session).get_recent(STABILITY_LOOKBACK_SNAPSHOTS)
     closed_trades = [t for t in closed_trades if _is_production_ai_council(t.get("experiment_bucket"))]
 
     # Kronolojik sıraya çevir — list_closed_trades opened_at DESC döner,
@@ -83,6 +110,7 @@ def gather_market_world_model(
                 returns.append(pnl / starting_capital)
 
     paths = compute_block_bootstrap_paths(returns, block_size=block_size, path_length=path_length)
+    _attach_paths_stability(paths, past_snapshots)
     block_size_sensitivity = compute_block_size_sensitivity(returns, path_length=path_length)
     # Faz 400 — kritik bulgu: bu modülün TEK "n_*" alanı (n_returns)
     # returns listesinin (starting_capital>0 şartından SONRA) uzunluğunu

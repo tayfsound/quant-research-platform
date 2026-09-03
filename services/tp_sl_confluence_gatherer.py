@@ -18,6 +18,7 @@ seviyeler fiyatın ÜSTÜNDE kalır — o düşüş penceresinde 7/10 tekil
 seviye fiyatın üstündeydi, mevcut yükseliş ölçümünün tam tersi). Yön
 kodlaması/sign hatası değil — mevcut piyasa koşuluna bağlı, beklenen
 bir davranış."""
+from analytics.measurement_stability import compute_stability
 from analytics.tp_sl_confluence import compute_confluence_zones, compute_price_levels, find_nearby_confluence_zone
 from market_data.features.signal_engine import compute_daily_atr_pct
 from market_data.ingestion.data_provider import RoutingProvider
@@ -27,6 +28,30 @@ DEFAULT_TARGET_ATR_MULT_LONG = 6.89
 DEFAULT_STOP_ATR_MULT_SHORT = 2.5
 DEFAULT_TARGET_ATR_MULT_SHORT = 1.4
 DEFAULT_MIN_STOP_PCT = 0.045
+STABILITY_LOOKBACK_SNAPSHOTS = 12
+_PCT_FIELDS = (
+    "pct_long_stop_near_confluence", "pct_long_target_near_confluence",
+    "pct_short_stop_near_confluence", "pct_short_target_near_confluence",
+)
+
+
+def _attach_pct_stability(result: dict, past_snapshots: list[dict]) -> None:
+    """Faz 407 — kullanıcı isteği: "ölçtüğümüz her veri için zaman
+    içindeki stabilitesini de ölçelim." Bu modülün kendi docstring'i
+    ZATEN bu yüzdelerin piyasa rejimiyle (boğa/ayı) doğal olarak
+    değiştiğini belgeliyor (Faz 343 bulgusu) — stabilite bunu SADECE
+    gözlemlenebilir kılıyor, davranış değişmiyor."""
+    past_by_field: dict[str, list[float]] = {}
+    for snap in past_snapshots:
+        snap_result = snap.get("result") or {}
+        for field in _PCT_FIELDS:
+            if field in snap_result:
+                past_by_field.setdefault(field, []).append(snap_result[field])
+
+    result["stability"] = {
+        field: compute_stability([*past_by_field.get(field, []), result.get(field)])
+        for field in _PCT_FIELDS
+    }
 
 
 def _analyze_symbol(
@@ -84,6 +109,9 @@ def _analyze_symbol(
 
 def gather_tp_sl_confluence() -> dict:
     from database.repositories.app_settings_repository import AppSettingsRepository
+    from database.repositories.tp_sl_confluence_report_repository import (
+        TpSlConfluenceReportRepository,
+    )
     from database.session_factory import SessionFactory
 
     with SessionFactory.get_session() as session:
@@ -94,6 +122,7 @@ def gather_tp_sl_confluence() -> dict:
         stop_mult_short = float(repo.get("stop_atr_mult_short") or DEFAULT_STOP_ATR_MULT_SHORT)
         target_mult_short = float(repo.get("target_atr_mult_short") or DEFAULT_TARGET_ATR_MULT_SHORT)
         min_stop_pct = float(repo.get("min_stop_pct") or DEFAULT_MIN_STOP_PCT)
+        past_snapshots = TpSlConfluenceReportRepository(session).get_recent(STABILITY_LOOKBACK_SNAPSHOTS)
 
     symbols = [s.strip() for s in watchlist_raw.split(",") if s.strip()]
     provider = RoutingProvider()
@@ -109,7 +138,7 @@ def gather_tp_sl_confluence() -> dict:
 
     n = len(results)
     if n == 0:
-        return {
+        result = {
             "symbols_analyzed": 0,
             "avg_confluence_zones_per_symbol": 0.0,
             "pct_long_stop_near_confluence": 0.0,
@@ -118,8 +147,10 @@ def gather_tp_sl_confluence() -> dict:
             "pct_short_target_near_confluence": 0.0,
             "by_symbol": [],
         }
+        _attach_pct_stability(result, past_snapshots)
+        return result
 
-    return {
+    result = {
         "symbols_analyzed": n,
         "avg_confluence_zones_per_symbol": round(
             sum(r["confluence_zone_count"] for r in results) / n, 2
@@ -138,3 +169,5 @@ def gather_tp_sl_confluence() -> dict:
         ),
         "by_symbol": results,
     }
+    _attach_pct_stability(result, past_snapshots)
+    return result

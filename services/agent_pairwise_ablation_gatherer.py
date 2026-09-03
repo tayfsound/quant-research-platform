@@ -15,13 +15,33 @@ from analytics.agent_ablation import (
     summarize_pairwise_ablation_by_domain_pair,
 )
 from analytics.evaluation_cohort import describe_evaluation_window
+from analytics.measurement_stability import compute_stability
 from contracts.agent import VOTING_AGENT_DOMAINS
 from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMENT_BUCKET
 
 MAX_DECISIONS = 3000
+STABILITY_LOOKBACK_SNAPSHOTS = 12
+
+
+def _attach_substitution_rate_stability(by_pair: dict[str, dict], past_snapshots: list[dict]) -> None:
+    """Faz 407 — kullanıcı isteği: "ölçtüğümüz her veri için zaman
+    içindeki stabilitesini de ölçelim." SADECE gözlem — bir ajan
+    çiftinin "birbirinin yerini tutma oranı"nın haftadan haftaya ne
+    kadar tutarlı olduğunu ekliyor."""
+    past_by_pair: dict[str, list[float]] = {}
+    for snap in past_snapshots:
+        for pair, stat in ((snap.get("result") or {}).get("by_pair") or {}).items():
+            past_by_pair.setdefault(pair, []).append(stat.get("substitution_rate"))
+
+    for pair, stat in by_pair.items():
+        series = [*past_by_pair.get(pair, []), stat.get("substitution_rate")]
+        stat["substitution_rate_stability"] = compute_stability(series)
 
 
 def gather_agent_pairwise_ablation() -> dict:
+    from database.repositories.agent_pairwise_ablation_report_repository import (
+        AgentPairwiseAblationReportRepository,
+    )
     from database.repositories.decision_persistor import DecisionPersistor
     from database.session_factory import SessionFactory
 
@@ -29,6 +49,7 @@ def gather_agent_pairwise_ablation() -> dict:
         closed_trades = DecisionPersistor(session).list_closed_trades(
             limit=MAX_DECISIONS, exclude_experiment_bucket=PUMP_FADE_EXPERIMENT_BUCKET
         )
+        past_snapshots = AgentPairwiseAblationReportRepository(session).get_recent(STABILITY_LOOKBACK_SNAPSHOTS)
 
     domain_names = sorted(d.value for d in VOTING_AGENT_DOMAINS)
     records = []
@@ -62,6 +83,7 @@ def gather_agent_pairwise_ablation() -> dict:
             })
 
     by_pair = summarize_pairwise_ablation_by_domain_pair(records)
+    _attach_substitution_rate_stability(by_pair, past_snapshots)
     return {
         "by_pair": by_pair,
         "n_decisions_analyzed": len(closed_trades),
