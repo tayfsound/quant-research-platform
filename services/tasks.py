@@ -665,6 +665,7 @@ def refresh_historical_analog_report_task() -> dict:
     from database.repositories.historical_analog_report_repository import (
         HistoricalAnalogReportRepository,
     )
+    from database.session_factory import SessionFactory
     from services.historical_analog_gatherer import gather_historical_analogs
 
     result = gather_historical_analogs()
