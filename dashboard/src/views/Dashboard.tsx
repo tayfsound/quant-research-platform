@@ -1005,6 +1005,19 @@ export default function Dashboard() {
                 }
                 save("execution_mode_symbols", JSON.stringify(next));
               };
+              // Kullanıcı isteği (2026-09-03): "bütün sembolleri hem canlı
+              // hem test'te tutmanın bir yolu yok mu?" — shadow zaten tüm
+              // watchlist'i paralel işliyor, eksik olan tek şey testnet
+              // emirlerini tek tek değil toplu açabilmekti.
+              const addAllToTestnet = () => {
+                if (!window.confirm(`${watchlist.length} sembolün tamamı testnet'e eklenecek — hepsi gerçek Binance Futures Testnet emirleriyle işlem görmeye başlar. Onaylıyor musun?`)) return;
+                const next: Record<string, string> = { ...executionModeSymbols };
+                for (const s of watchlist) next[s] = "testnet";
+                save("execution_mode_symbols", JSON.stringify(next));
+              };
+              const revertAllToSimulated = () => {
+                save("execution_mode_symbols", JSON.stringify({}));
+              };
               return (
                 <>
                   {liveSymbols.length === 0 ? (
@@ -1046,6 +1059,20 @@ export default function Dashboard() {
                     >
                       Canlıya Al
                     </Button>
+                    <Button
+                      disabled={saving === "execution_mode_symbols" || availableToAdd.length === 0}
+                      onClick={addAllToTestnet}
+                    >
+                      Tümünü Testnet'e Ekle
+                    </Button>
+                    {liveSymbols.length > 0 && (
+                      <Button
+                        disabled={saving === "execution_mode_symbols"}
+                        onClick={revertAllToSimulated}
+                      >
+                        Tümünü Simülasyona Döndür
+                      </Button>
+                    )}
                   </div>
                 </>
               );
