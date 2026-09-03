@@ -508,7 +508,7 @@ def refresh_feature_ic_report_task() -> dict:
     desen. SADECE ölçüm/kayıt — hiçbir feature'ı otomatik pasifleştirmiyor
     (compute_feature_ic'in kendi ilkesiyle aynı: "AI kendi skorlama
     mantığını otomatik gevşetemez/değiştiremez")."""
-    from analytics.feature_ic import compute_feature_ic
+    from analytics.feature_ic import attach_ic_stability, compute_feature_ic
     from contracts.feature_ic_report import FeatureICReport
     from database.repositories.decision_persistor import DecisionPersistor
     from database.repositories.feature_ic_report_repository import FeatureICReportRepository
@@ -516,7 +516,9 @@ def refresh_feature_ic_report_task() -> dict:
 
     with SessionFactory.get_session() as session:
         closed_trades = DecisionPersistor(session).list_closed_trades(limit=100_000)
+        past_snapshots = FeatureICReportRepository(session).get_recent(12)
         features = compute_feature_ic(closed_trades)
+        attach_ic_stability(features, past_snapshots)
         report = FeatureICReport(features=features, total_closed_trades=len(closed_trades))
         FeatureICReportRepository(session).save(report)
 
@@ -567,6 +569,7 @@ def refresh_calibration_report_task() -> dict:
         compute_expected_calibration_error,
         extract_predictions_from_closed_trades,
     )
+    from analytics.measurement_stability import compute_stability
     from contracts.calibration_report import CalibrationReport
     from database.repositories.calibration_report_repository import CalibrationReportRepository
     from database.repositories.decision_persistor import DecisionPersistor
@@ -576,6 +579,19 @@ def refresh_calibration_report_task() -> dict:
         closed_trades = DecisionPersistor(session).list_closed_trades(limit=100_000)
         predictions = extract_predictions_from_closed_trades(closed_trades)
         result = compute_expected_calibration_error(predictions)
+        if result is not None:
+            # Faz 407 — kullanıcı isteği: "ölçtüğümüz her veri için zaman
+            # içindeki stabilitesini de ölçelim." Tek bir skaler (ECE'nin
+            # kendisi) haftadan haftaya ne kadar tutarlı — feature_ic/
+            # historical_analog'daki AYNI desen, ama tek anahtar olduğu
+            # için eşleştirme gerekmiyor.
+            past_snapshots = CalibrationReportRepository(session).get_recent(12)
+            past_ece = [
+                (s.get("result") or {}).get("expected_calibration_error") for s in past_snapshots
+            ]
+            result["expected_calibration_error_stability"] = compute_stability(
+                [*past_ece, result["expected_calibration_error"]]
+            )
         report = CalibrationReport(result=result, total_closed_trades=len(closed_trades))
         CalibrationReportRepository(session).save(report)
 
@@ -687,7 +703,9 @@ def refresh_market_state_cluster_task() -> dict:
     görevleriyle (regime_reversal_guardian_task/portfolio_stress_
     guardian_task) AYNI _CycleLock deseni — SADECE ölçüm/kayıt, hiçbir
     canlı kararı etkilemiyor."""
+    from contracts.correlation_report import CorrelationReport
     from contracts.market_state_report import MarketStateReport
+    from database.repositories.correlation_report_repository import CorrelationReportRepository
     from database.repositories.market_state_report_repository import MarketStateReportRepository
     from database.session_factory import SessionFactory
     from services.market_state_gatherer import gather_market_state_cluster
@@ -697,11 +715,20 @@ def refresh_market_state_cluster_task() -> dict:
             return {"skipped": "previous_run_still_in_progress"}
 
         result = gather_market_state_cluster()
+        correlation_pairs = result.pop("correlation_pairs", [])
         with SessionFactory.get_session() as session:
             report = MarketStateReport(result=result)
             MarketStateReportRepository(session).save(report)
+            # Faz 407 — kullanıcı isteği: korelasyonun zaman içindeki
+            # stabilitesi ayrı bir raporda (market_state ile AYNI cycle'da
+            # hesaplanan `returns`i yeniden kullanıyor, ek API çağrısı yok).
+            correlation_report = CorrelationReport(result={"pairs": correlation_pairs})
+            CorrelationReportRepository(session).save(correlation_report)
 
-        return {"id": str(report.id), "n_symbols": result.get("n_symbols", 0)}
+        return {
+            "id": str(report.id), "n_symbols": result.get("n_symbols", 0),
+            "correlation_report_id": str(correlation_report.id), "correlation_pair_count": len(correlation_pairs),
+        }
 
 
 @celery_app.task(name="refresh_collective_intelligence_report_task")

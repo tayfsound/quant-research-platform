@@ -21,6 +21,8 @@ from collections import defaultdict
 
 from scipy import stats
 
+from analytics.measurement_stability import compute_stability
+
 MIN_SAMPLE_SIZE = 20
 
 
@@ -81,3 +83,22 @@ def compute_feature_ic(closed_trades: list[dict], min_sample_size: int = MIN_SAM
             "agent_domain": domains[feature_name],
         }
     return results
+
+
+def attach_ic_stability(features: dict[str, dict], past_snapshots: list[dict]) -> None:
+    """Faz 407 — kullanıcı isteği: "ölçtüğümüz her veri için zaman
+    içindeki stabilitesini de ölçelim." historical_analog_gatherer.py/
+    agent_combination_reliability_gatherer.py'deki AYNI desen: SADECE
+    gözlem, hiçbir feature filtrelenmiyor/pasifleştirilmiyor — bir
+    feature'ın IC'si haftadan haftaya istikrarlı mı yoksa gürültülü mü
+    (ör. korelasyondaki BTC-ETH/NVDA-AMD ayrımıyla AYNI mantık) ekliyor.
+    past_snapshots: FeatureICReportRepository.get_recent()'ın döndürdüğü
+    ham liste (her biri {'features': {feature_name: {'ic': ...}}})."""
+    past_by_feature: dict[str, list[float]] = {}
+    for snap in past_snapshots:
+        for name, stat in (snap.get("features") or {}).items():
+            past_by_feature.setdefault(name, []).append(stat.get("ic"))
+
+    for name, stat in features.items():
+        series = [*past_by_feature.get(name, []), stat.get("ic")]
+        stat["ic_stability"] = compute_stability(series)

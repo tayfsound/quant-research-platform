@@ -56,6 +56,15 @@ def test_gathers_market_state_for_every_watchlist_symbol_with_enough_bars(monkey
         # ama küme alanları (yüksek korele eş) yine de dolu olmalı.
         assert result["by_symbol"]["AAATESTUSDT"]["direction"] == "NEUTRAL"
         assert result["by_symbol"]["AAATESTUSDT"]["peer_count"] == 1
+
+        # Faz 407 — kullanıcı isteği: korelasyon çiftleri de (AYNI zaten
+        # çekilmiş getirilerden, ek API çağrısı olmadan) gözlem için
+        # döndürülmeli. Neredeyse özdeş getiriler -> yüksek korelasyon.
+        pairs = {p["pair"]: p for p in result["correlation_pairs"]}
+        assert "AAATESTUSDT|BBBTESTUSDT" in pairs
+        assert pairs["AAATESTUSDT|BBBTESTUSDT"]["correlation"] > 0.9
+        # İlk çalıştırma -> hiç geçmiş yok -> fail-closed None.
+        assert pairs["AAATESTUSDT|BBBTESTUSDT"]["correlation_stability"] is None
     finally:
         _restore_watchlist(original)
 

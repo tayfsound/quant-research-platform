@@ -14,6 +14,11 @@ import numpy as np
 HIGH_CORRELATION_THRESHOLD = 0.7
 MIN_CLUSTER_PEERS = 1  # aynı yönde en az 1 diğer yüksek-korele sembol
 MAX_CONVICTION_DISCOUNT = 0.5  # en fazla %50 confidence indirimi
+# Faz 407 — kullanıcı isteği: korelasyonun zaman içindeki stabilitesini
+# ölçelim. Bu tabanın altındaki çiftler (BTC-AAPL örneğinde ~0.10) zaten
+# HIGH_CORRELATION_THRESHOLD'a hiç yaklaşmıyor — stabilitelerini takip
+# etmenin bir değeri yok, gereksiz depolamayı önlemek için filtreleniyor.
+MIN_TRACKED_CORRELATION = 0.5
 
 
 def compute_correlation_matrix(returns: dict[str, list[float]]) -> tuple[list[str], np.ndarray]:
@@ -71,3 +76,36 @@ def compute_same_direction_correlation_discount(
         multipliers[sym] = 1.0 - excess * MAX_CONVICTION_DISCOUNT
 
     return multipliers
+
+
+def describe_correlation_pairs(
+    returns: dict[str, list[float]], min_abs_correlation: float = MIN_TRACKED_CORRELATION,
+) -> list[dict]:
+    """Faz 407 — kullanıcı isteği: "ölçtüğümüz her veri için zaman
+    içindeki stabilitesini de ölçelim." Gerçek bulgu: aynı kayan-pencere
+    yöntemiyle BTC-ETH std=0.042 (istikrarlı) vs NVDA-AMD std=0.181 (aynı
+    >0.7 okumayı üretebilir ama ~4 kat daha gürültülü) çıktı —
+    compute_same_direction_correlation_discount TEK bir anlık okumaya
+    güveniyor, ikisini ayırt edemiyor. Bu saf fonksiyon HİÇBİR ŞEYİ
+    değiştirmiyor/wire etmiyor — sadece periyodik kayıt için gerçek
+    korelasyon çiftlerini çıkarıyor (stabilite geçmişi ayrı bir aşamada,
+    çağıran tarafta ekleniyor — bkz. services/market_state_gatherer.py).
+
+    min_abs_correlation altındaki çiftler dışarıda bırakılıyor — hiçbir
+    zaman HIGH_CORRELATION_THRESHOLD'a yaklaşmayan gürültü çiftlerinin
+    (ör. BTC-AAPL, ~0.10) stabilitesini takip etmenin değeri yok."""
+    symbols, corr = compute_correlation_matrix(returns)
+    if len(symbols) < 2:
+        return []
+
+    pairs = []
+    for i in range(len(symbols)):
+        for j in range(i + 1, len(symbols)):
+            value = corr[i, j]
+            if np.isnan(value) or abs(value) < min_abs_correlation:
+                continue
+            pairs.append({
+                "pair": "|".join(sorted([symbols[i], symbols[j]])),
+                "correlation": round(float(value), 6),
+            })
+    return pairs

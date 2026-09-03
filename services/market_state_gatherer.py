@@ -14,12 +14,32 @@ hattının GERÇEKTEN gördüğü rejimle tutarlı olsun."""
 from concurrent.futures import ThreadPoolExecutor
 
 from analytics.market_state_cluster_engine import compute_cluster_market_state
+from analytics.measurement_stability import compute_stability
 from market_data.features.market_state_engine import compute_market_state
 from market_data.features.signal_engine import compute_quant_signals, compute_technical_signals
+from risk.cross_symbol_correlation import describe_correlation_pairs
+
+STABILITY_LOOKBACK_SNAPSHOTS = 12
+
+
+def _attach_correlation_stability(pairs: list[dict], past_snapshots: list[dict]) -> None:
+    """Faz 407 — bkz. risk/cross_symbol_correlation.py::describe_
+    correlation_pairs docstring'i. Historical_analog/agent_combination_
+    reliability gatherer'larıyla AYNI desen: SADECE gözlem, hiçbir çift
+    filtrelenmiyor/reddedilmiyor, karar hattına hiç bağlanmıyor."""
+    past_by_key: dict[str, list[float]] = {}
+    for snap in past_snapshots:
+        for p in (snap.get("result") or {}).get("pairs") or []:
+            past_by_key.setdefault(p["pair"], []).append(p.get("correlation"))
+
+    for p in pairs:
+        series = [*past_by_key.get(p["pair"], []), p["correlation"]]
+        p["correlation_stability"] = compute_stability(series)
 
 
 def gather_market_state_cluster() -> dict:
     from database.repositories.app_settings_repository import AppSettingsRepository
+    from database.repositories.correlation_report_repository import CorrelationReportRepository
     from database.session_factory import SessionFactory
     from market_data.ingestion.data_provider import RoutingProvider
 
@@ -28,6 +48,9 @@ def gather_market_state_cluster() -> dict:
         watchlist = [s.strip() for s in settings_repo.get("watchlist").split(",") if s.strip()]
         timeframe = settings_repo.get("candle_timeframe")
         lookback = int(settings_repo.get("candle_lookback"))
+        past_correlation_snapshots = CorrelationReportRepository(session).get_recent(
+            STABILITY_LOOKBACK_SNAPSHOTS
+        )
 
     provider = RoutingProvider()
 
@@ -56,4 +79,15 @@ def gather_market_state_cluster() -> dict:
         per_symbol_states[symbol] = compute_market_state(features)
 
     by_symbol = compute_cluster_market_state(returns, per_symbol_states)
-    return {"by_symbol": by_symbol, "n_symbols": len(by_symbol)}
+
+    # Faz 407 — AYNI zaten-çekilmiş `returns`i yeniden kullanıyor, ek bir
+    # API çağrısı yok. market_state ile ayrı bir rapora kaydediliyor
+    # (correlation_report_repository.py) — karar hattına hiç bağlanmıyor,
+    # SADECE gözlem.
+    correlation_pairs = describe_correlation_pairs(returns)
+    _attach_correlation_stability(correlation_pairs, past_correlation_snapshots)
+
+    return {
+        "by_symbol": by_symbol, "n_symbols": len(by_symbol),
+        "correlation_pairs": correlation_pairs,
+    }

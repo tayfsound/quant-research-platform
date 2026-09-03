@@ -1,4 +1,196 @@
-# Mevcut Durum -- v1.138.0 (Market State / Direction Katmanı Faz 0-4 TAMAMLANDI)
+# Mevcut Durum -- v1.142.0 (Faz 407: Ölçüm Stabilitesi — "4. boyut", gözlem-only)
+
+**Tarih:** 2026-09-03
+**Branch:** main
+**Son commit (HEAD):** (bu turda push edilecek) Faz 407: measurement_stability + 5 modüle gözlem-only bağlantı.
+**Servis durumu:** push edilecek, worker+uvicorn yeniden başlatılacak.
+
+**Faz 407 — kullanıcı isteği: "biz bir şeyleri ölçüyoruz ama verinin
+zaman içindeki volatilitesini ölçmüyoruz... dördüncü boyutu
+hesaplarımıza dahil edelim... bunu SADECE en yüksek korelasyon değil
+her yerde uygulayalım, önce veriyi toplayalım sonra emin olduğumuzda
+sıra ile wire edelim."**
+
+**Gerçek kanıt (korelasyon örneğinde, kod yazmadan önce doğrulandı):**
+Gerçek watchlist sembollerinde 90 kayan pencerede (100 saatlik bar,
+canlı sistemle AYNI pencere boyutu): BTC-ETH ortalama korelasyon 0,853,
+std=**0,042** (istikrarlı, hiç eşik geçişi yok) vs **NVDA-AMD** ortalama
+0,524, std=**0,181** (~4,3 kat daha gürültülü, 0,09-0,86 arası sıçrıyor,
+90 pencerenin sadece %19'unda eşiği geçiyor ama geçtiğinde sistem BTC-ETH
+ile AYNI güvenle "aynı bahis" sayıp conviction indirimi uyguluyor).
+
+**Mimari envanter** (arka plan ajanıyla çıkarıldı): 17 modül zaten
+timestamp'li, hiç silinmeyen geçmiş tutuyor (`*_snapshots`/`*_reports`
+tabloları, `get_recent()` metodu) — bunlar için stabilite hesaplamak
+SIFIR yeni altyapı gerektiriyor. 3 modül (barrier_table, self_correction_
+sizing, symbol_performance_sizing) dosya-tabanlı "latest.json" — geçmiş
+yok. Korelasyon ve MoE Regime Router hiç kaydedilmiyor, tamamen anlık.
+
+**Kodlanan (commit bu turda):**
+1. `analytics/measurement_stability.py::compute_stability(values)` —
+   paylaşılan saf yardımcı (mean/std/min/max/coefficient_of_variation),
+   fail-closed None <2 gerçek değerle. `analytics/evaluation_cohort.py`
+   (Faz 400) ile AYNI "tek küçük paylaşılan yardımcı" deseni.
+2. **Korelasyon** — YENİ (`correlation_snapshots` tablosu, migration
+   `faz407`, her iki DB'ye uygulandı) — `services/market_state_gatherer.py`
+   ZATEN her 5dk çektiği watchlist getirilerini yeniden kullanıyor, ek
+   API çağrısı yok. `risk/cross_symbol_correlation.py::describe_
+   correlation_pairs()` (|corr|>=0.5 filtreli, gürültü çiftleri hariç).
+3. **Historical Analog** — `services/historical_analog_gatherer.py`, her
+   kovaya (domains+regime+direction+reversing) `win_rate_stability`.
+4. **Agent Combination Reliability** — aynı desen, her çifte
+   `win_rate_stability`.
+5. **Feature IC** — `analytics/feature_ic.py::attach_ic_stability()`,
+   her feature'a `ic_stability`.
+6. **Calibration (ECE)** — tek skaler, `expected_calibration_error_
+   stability`. Gerçek DB'de doğrulandı: ECE=0,2656, geçmiş 3 ölçümün
+   std'si 0,0125 (CV ~%5 — nispeten istikrarlı).
+
+**HİÇBİRİ karar hattına bağlanmadı** — sadece gözlem/kayıt, mevcut hiçbir
+davranış değişmedi. 5 modül + çekirdek yardımcı için ~25 yeni test,
+hepsi regresyonsuz geçti.
+
+**Kalan 11 modül** (aynı desen, sonraki bir turda): self_model,
+causal_inference, collective_intelligence, mae_mfe_confidence,
+market_world_model, direction_prediction_v2, opportunity_quality,
+agent_ablation, tp_sl_confluence, agent_pairwise_ablation,
+feature_relationship — hepsi `*_snapshots` tablosuna sahip, aynı mekanik
+desenle bağlanabilir. barrier_table/self_correction_sizing/symbol_
+performance_sizing İSE önce dosya-tabanlı "latest.json"dan gerçek
+geçmiş-tutan bir depoya geçmeli (ayrı, daha büyük bir iş).
+
+**Sıradaki karar (kullanıcıya ait):** Yeterli gözlem (özellikle
+korelasyon, en yoğun veri kaynağı — 5dk kadans) birikince, hangi
+modüllerin stabilite bilgisini GERÇEKTEN wire edeceğimize (ör.
+same_direction_correlation indirimini stabiliteye göre ayarlamak/
+tetiklememek) TEK TEK, kanıta dayalı karar verilecek.
+
+**Faz 406 — kullanıcı bulgusu (NEARUSDT/ALGOUSDT, "hedefe ulaştı diyor ama
+pnl ekside") kök nedenine kadar araştırıldı ve İKİ AYRI mekanizma
+düzeltildi (commit `a6a2467`):**
+
+1. **TP/SL Confluence'ın alt tabanı yoktu.** Hedef SADECE sıkılaştırılıyordu
+   (Faz 299) — bant/pivot bölgeleri fiyata çok yakın kümelenince (gerçek
+   örnek: NEARUSDT'de bölge fiyattan %0,26 uzaktaydı) hedef %0,035'e kadar
+   çekilebiliyordu (komisyondan bile küçük). Sistem taraması: son 9 günün
+   kapanmış işlemlerinin **%47'si (1646/3512)** bu <%0,5 hedef kovasındaydı
+   — %87 "kazanma" oranına rağmen ortalama pnl ~$0. `min_target_pct`
+   (varsayılan %0,5) eklendi — min_stop_pct'in AYNI ilkesi, ters yönde.
+2. **Adaptive Barrier Engine'in oran tavanı yoktu** (önceden bulunup
+   beklemeye alınmıştı, kullanıcı bugün onayladı): MAE/MFE yüzdelik
+   dilimlerinden türeyen (sl_pct, tp_pct) çifti sabit oranı hiç
+   korumuyordu (somut örnek: TRXUSDT piramidi, stop=%4,5/hedef=%95,5,
+   oran ~21:1, "transition" kovasında ham oran ~87:1'e kadar çıkıyordu).
+   `MAX_ADAPTIVE_BARRIER_RATIO=5.5` eklendi — aşan öneriler fail-closed
+   statik ATR hesabına düşüyor.
+
+4 yeni test eklendi, 174 ilgili test regresyonsuz geçti.
+
+**Faz 406-devam — Pump-Fade dashboard görünürlük bug'ı (commit `f45ed3e`):**
+Kullanıcı: "kapanmış işlemlerde pump-fade işlemlerini göremiyorum, açık
+kategorisinde de görünmüyor." Kök neden (kapanmış): `GET /trades`
+`pump_fade_v1`'i KOŞULSUZ dışlıyordu (Faz 268-sonrası "dashboard
+contamination" fix'i, haklı bir amaç — ama satır listesini de tamamen
+gizlemişti, Transactions.tsx'teki "Pump-Fade" filtresi hep sıfır sonuç
+dönüyordu). `experiment_bucket` query param'ı eklendi — verilince
+dışlamanın YERİNE geçip sadece o bucket'ı döndürüyor, varsayılan davranış
+değişmedi. Açık pozisyonlar tarafında kod değişikliği gerekmedi — Faz 354
+zaten filtre aktifken tüm pozisyonları (limit=5000) çekiyor, çalışıyor.
+
+**Pump-Fade'in 30 Ağustos temizliğinden sonraki gerçek performansı**
+(kullanıcı isteğiyle ölçüldü): öncesi 249 işlem, ort. pnl -$1988/işlem,
+toplam -$494.986; sonrası (temiz, excluded_from_stats hariç) 18 işlem,
+%66,7 kazanma, ort. pnl -$14,10/işlem, toplam -$253,72. Ortalama zarar
+~140 kat küçüldü, hâlâ net zararda ama artık anlamlı/küçük ölçekte.
+İşlem sıklığı düşük (2 Eylül'de hiç yeni pozisyon yok) — muhtemelen
+sıkılaştırılmış rejim kapısının beklendiği gibi çalışması.
+
+**2026-09-03 (devam) — Market State Reversal Guardian (Faz 403) AÇILDI.**
+Kullanıcı: "1. madde için veri artık destekliyorsa açabiliriz." Faz 2
+(belief eğimi/tilt) ile Faz 3 (guardian) arasında standing "tek seferde
+bir modül" kuralı gereği seçim soruldu, kullanıcı Faz 3'ü (Guardian)
+seçti — somut veriyle en net desteklenen kapı. Açmadan ÖNCE planın
+istediği yanlış-pozitif ölçümü yapıldı: 2026-09-01'den bugüne 3012 uygun
+kapanmış pozisyonun HER BİRİNİN kendi açık-kalma penceresi taranarak
+gerçek `reversing`+ters-yön+güven-eşiği tetiklemesi arandı — sadece 16
+pozisyon tetiklenirdi (%0,5), bunların %87,5'i (14/16) zaten kaybeden
+pozisyonlardı (medyan 4,1 saat, ortalama 6,7 saat erken yakalama), sadece
+%12,5'i (2/16) kârlı bir pozisyonu kısmi (%50) kapatırdı. Bu net, düşük-
+riskli bir kanıt seti — `market_state_reversal_guardian_enabled=true`
+yapıldı (`min_confidence=0.5` varsayılanı korundu). Faz 2 (tilt) HENÜZ
+açılmadı — kendi karşı-olgusal analizi (case #1 + 37-vakalık kohort,
+eğimli/eğimsiz belief.strength karşılaştırması) yapılmadan açılmayacak.
+
+**2026-09-03 (devam) — YENİ BUG: Meta-Learning Effectiveness paneli
+haftalardır boştu, kök neden donmuş veri penceresiymiş.** Kullanıcı:
+"Meta-Learning Effectiveness burada hiç veri yok haftalardır bomboş
+burası çalışmıyor belli ki." `meta_optimizer/agent_tuner.py::
+load_historical_technical_records()` `ORDER BY closed_at ASC LIMIT
+:window` (window=3000) kullanıyordu — toplam uygun kayıt 3000'i geçtiği
+andan itibaren bu SÜREKLİ aynı en eski 3000 satırı döner, tablo ne kadar
+büyürse büyüsün asla ilerlemez. Kanıt: toplam uygun kayıt 6824 iken
+pencere hâlâ 2026-08-11..08-24 arasında donmuştu — son ~10 günün TÜM
+verisi (Faz 396-405 dahil) walk-forward'a hiç girmiyordu. Sibling
+fonksiyon (`services/agent_confidence_model.py::_extract_training_rows`)
+zaten doğru `ORDER BY closed_at DESC LIMIT` desenini kullanıyordu, bu
+fonksiyon ondan sapmıştı. Düzeltildi (commit `88066e4`): en son `window`
+kaydı DESC çekilip Python'da kronolojik sıraya çevriliyor. Yeni regresyon
+testi eklendi (`test_load_historical_technical_records_returns_most_
+recent_window_not_oldest`), canlı doğrulandı: pencere artık 2026-09-01..
+bugün arasını kapsıyor. NOT: bu düzeltme panelin GÖRÜNÜR veri
+üretmesini garanti etmiyor — walk-forward eşiği (Sharpe iyileşmesi
+>= +0.4) hâlâ fail-closed bir kapı, son canlı deneme sharpe_improvement=
+0,027 (eşiğin çok altında, TechnicalAgent'ın mevcut sabit katsayıları
+muhtemelen zaten makul) — bu KENDİ İÇİNDE bir bug değil, tasarımın
+parçası. Panelin hâlâ boş görünmesi normal olabilir, sadece artık GERÇEK
+güncel veriyle değerlendiriliyor.
+
+**2026-09-03 — kullanıcı isteği: "yeterli data olmadığı için bekleyen
+şeyleri tekrar kontrol edelim" (2 gün geçti, 3079+ yeni kapanmış işlem
+birikti). Altı kalemin hepsi tek tek yeniden kontrol edildi:**
+
+1. **Market State (Faz 401) — SAĞLIKLI/OLGUN.** 183 snapshot, 12.149 karar
+   `market_state` girdisi taşıyor. Gerçek değer testi: son 200 kaybeden
+   pozisyonun 32'sinde (%16) kayıptan ~11,89 saat ÖNCE gerçek bir karşı-
+   yönlü `reversing=true` sinyali vardı — guardian (Faz 403) açılsaydı bu
+   16%'yı erken yakalardı. Faz 2/3'ü (`market_state_tilt_enabled`,
+   `market_state_reversal_guardian_enabled`) açma kararı kullanıcıya ait,
+   veri artık buna hazır.
+2. **Faz 404'ün 4. ekseni (`reversing`) — HÂLÂ SEYREK, planın kendi
+   öngördüğü zararsız no-op.** Canlı `gather_historical_analogs()`
+   çağrısı: 90 hücre, 3 `gate_eligible`, 0'ı `reversing=True`. Daha fazla
+   takvim zamanı gerekiyor, kod tarafında yapılacak bir şey yok.
+3. **SHORT Exploration — DEĞİŞMEDİ.** n=8, win_rate %50, net pnl -$4,26 —
+   hâlâ istatistiksel olarak anlamsız, izlemeye devam.
+4. **Concept Drift — TAM ÇÖZÜLMÜŞ.** `get_concept_drift_diagnostics()`:
+   baseline 0,83, recent 0,78, p=0,604 — aktif değil, Faz 398'in piramit-
+   artefakt düzeltmesi kalıcı çalışıyor.
+5. **`agent_combination_force_open_enabled=true` ama sıfır force-open
+   işlem — KÖK NEDEN: kod bug'ı DEĞİL, BAYAT RAPOR.** Kaydedilmiş haftalık
+   rapor 2026-08-28 tarihliydi, 0 `gate_eligible` çift gösteriyordu. Canlı
+   `gather_agent_combination_reliability()` çağrısı 3 gerçek gate_eligible
+   çift buldu. `refresh_agent_combination_reliability_report_task()` elle
+   tetiklendi, yeni rapor kaydedildi (47 çift). Bir sonraki 6 saatlik
+   Celery döngüsünde otomatik tazelenmeye devam edecek.
+6. **YENİ, GERÇEK BUG bulundu ve düzeltildi (yukarıdaki #5'i kontrol
+   ederken, sibling görevi de test edilirken ortaya çıktı):
+   `refresh_historical_analog_report_task` (services/tasks.py) Faz 394'ten
+   (2026-08-31) beri HER çalıştığında `NameError: name 'SessionFactory'
+   is not defined` ile patlıyordu** — eksik `from database.session_
+   factory import SessionFactory` import'u. Bu yüzden
+   `historical_analog_snapshots` tablosu 3 gündür tamamen boştu, kimse
+   fark etmedi çünkü bu göreve dair hiç test yoktu. Düzeltildi (`41cc932`),
+   3 yeni test eklendi (`tests/test_historical_analogs_wiring.py`, sibling
+   `test_agent_combination_reliability_wiring.py`'nin AYNI deseni), canlı
+   doğrulandı (`analog_count: 90`).
+
+**Değişmeyen, bilinçli olarak dokunulmayan:** Adaptive Barrier Engine
+R:R düzeltmesi HÂLÂ kullanıcı onayı bekliyor (aşağıdaki Faz 405 notuna
+bakın) — bu turda hiç dokunulmadı.
+
+---
+
+# Önceki durum -- v1.138.0 (Market State / Direction Katmanı Faz 0-4 TAMAMLANDI)
 
 **Tarih:** 2026-09-01
 **Branch:** main
