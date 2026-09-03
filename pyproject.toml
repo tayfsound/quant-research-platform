@@ -59,6 +59,10 @@ dependencies = [
     # açıkça bildirilmemişti (Sprint 25-26'da alembic/prometheus_client
     # için bulunan AYNI sınıf hata — pyproject.toml'daki üstteki not).
     "scipy>=1.14.0",
+    # Faz 410: sentiment_agent'ın google_trends_score alanı hiçbir zaman
+    # gerçek bir veri kaynağına bağlanmamıştı — resmi olmayan ama yaygın
+    # kullanılan, ücretsiz/API-anahtarsız Google Trends istemcisi.
+    "pytrends>=4.9.2",
 ]
 
 [project.optional-dependencies]

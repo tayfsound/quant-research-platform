@@ -96,6 +96,14 @@ class ContextAdapter:
         from market_data.sentiment.reddit_provider import fetch_social_sentiment
         real_social_sentiment = fetch_social_sentiment()
 
+        # Faz 410 — kullanıcı bulgusu: google_trends_score hiçbir zaman
+        # gerçek bir veri kaynağına bağlanmamıştı, hep varsayılan 50.0'da
+        # (tam nötr) donuk kalıyordu — sentiment_agent'ın >80/<20
+        # eşiklerini asla geçemiyordu. pytrends (ücretsiz, API anahtarı
+        # gerektirmeyen) üzerinden gerçek arama ilgisi çekiliyor.
+        from market_data.sentiment.google_trends_provider import fetch_google_trends_score
+        real_google_trends = fetch_google_trends_score(symbol) if symbol else None
+
         return SentimentContext(
             fear_greed_index=self._get(ctx, "fear_greed_index", real_fgi if real_fgi is not None else 50.0),
             social_media_sentiment=self._get(
@@ -103,6 +111,9 @@ class ContextAdapter:
             ),
             news_tone=self._get(ctx, "news_tone", real_news_tone if real_news_tone is not None else "neutral"),
             positioning=self._get(ctx, "positioning", real_positioning if real_positioning is not None else "neutral"),
+            google_trends_score=self._get(
+                ctx, "google_trends_score", real_google_trends if real_google_trends is not None else 50.0
+            ),
         )
 
     def to_credit(self, ctx: CognitiveCycleContext) -> CreditContext:
