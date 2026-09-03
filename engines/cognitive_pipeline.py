@@ -1468,6 +1468,12 @@ class RecordingStage:
         # eklediği per-sembol market state okuması (visibility-only, HİÇBİR
         # kararı etkilemiyor) — cross_asset_context ile AYNI desende kalıcı.
         market_state_entries = []
+        # Faz 409 — kullanıcı bulgusu: RiskTargetStage'in TP/SL Confluence
+        # etiketi (Faz 299/317) hiç buraya kadar taşınmıyordu — "hedef/stop
+        # neden bu kadar sıkı?" sorusunun cevabı DB'de hiç yoktu. decision_
+        # fusion/market_state ile AYNI desen, visibility-only.
+        tp_sl_confluence_entries = []
+        sl_confluence_entries = []
         experiment_bucket = None
 
         if hasattr(ctx, "cognition"):
@@ -1482,6 +1488,10 @@ class RecordingStage:
                     historical_analog_override_entries.append(item.get("data"))
                 if item.get("type") == "market_state":
                     market_state_entries.append(item.get("data"))
+                if item.get("type") == "tp_sl_confluence":
+                    tp_sl_confluence_entries.append(item.get("data"))
+                if item.get("type") == "sl_confluence":
+                    sl_confluence_entries.append(item.get("data"))
 
             for item in reversed(ctx.cognition.relevant_knowledge):
                 if item.get("type") == "debate_result":
@@ -1508,6 +1518,8 @@ class RecordingStage:
             cross_asset_context_entries=cross_asset_context_entries,
             historical_analog_override_entries=historical_analog_override_entries,
             market_state_entries=market_state_entries,
+            tp_sl_confluence_entries=tp_sl_confluence_entries,
+            sl_confluence_entries=sl_confluence_entries,
         )
 
         from observability.metrics import decisions_total

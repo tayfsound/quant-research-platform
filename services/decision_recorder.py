@@ -37,6 +37,8 @@ class DecisionRecorder:
         cross_asset_context_entries=None,
         historical_analog_override_entries=None,
         market_state_entries=None,
+        tp_sl_confluence_entries=None,
+        sl_confluence_entries=None,
     ) -> DecisionEvent:
 
         direction = (
@@ -111,6 +113,27 @@ class DecisionRecorder:
         for entry in (market_state_entries or []):
             agent_opinions_data.append({
                 "type": "market_state",
+                "data": entry,
+            })
+
+        # Faz 409 — kullanıcı bulgusu (2026-09-03, ölçüm stabilitesi/macro
+        # araştırması sırasında bulundu): engines/cognitive_pipeline.py::
+        # RiskTargetStage'in TP/SL Confluence sıkılaştırması (Faz 299/317)
+        # GERÇEKTEN çalışıyordu (fiyatları doğru ayarlıyordu) ama etiketi
+        # (ctx.cognition.relevant_knowledge'a "tp_sl_confluence"/"sl_
+        # confluence" olarak eklenen) hiçbir zaman buraya kadar
+        # taşınmıyordu — RecordingStage'in çıkarım listesinde YOKTU. Yani
+        # "hedef/stop neden bu kadar sıkı?" sorusunun cevabı DB'de hiç
+        # yoktu, tıpkı Faz 212'nin decision_fusion için düzelttiği AYNI
+        # görünürlük boşluğu. decision_fusion/market_state ile AYNI desen.
+        for entry in (tp_sl_confluence_entries or []):
+            agent_opinions_data.append({
+                "type": "tp_sl_confluence",
+                "data": entry,
+            })
+        for entry in (sl_confluence_entries or []):
+            agent_opinions_data.append({
+                "type": "sl_confluence",
                 "data": entry,
             })
 
