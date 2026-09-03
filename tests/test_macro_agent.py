@@ -65,6 +65,44 @@ def test_contracting_net_liquidity_pushes_toward_short():
     assert opinion.direction == "SHORT"
 
 
+def test_net_liquidity_dominates_when_it_conflicts_with_liquidity_condition():
+    """Faz 408 — kullanıcı bulgusu (ölçüm stabilitesi araştırması,
+    2026-09-03): macro'nun raw_confidence'ı 1812 gerçek karardan
+    HİÇBİRİNDE farklı çıkmıyordu (hep 0.167) — kök neden bug değildi
+    (FRED verisi gerçek/güncel), liquidity_condition (M2SL, "loose"
+    +1.0) ile net_liquidity_trend ("contracting" -1.0) ~1 aydır sürekli
+    TERS yönde çıkıp TAM birbirini götürüyordu, geriye sadece
+    employment_trend'in ±0.5'i kalıyordu. Artık net_liquidity_trend
+    (daha hızlı/güncel, Faz 267) BASKIN (±1.0), liquidity_condition
+    yavaş onaylayıcı (±0.5) — çatıştıklarında TAM iptal yerine net
+    likidite ağır basmalı."""
+    agent = MacroAgent()
+    # Gerçek canlı durum: M2SL "loose" (+), net likidite "contracting" (-).
+    ctx = MacroContext(
+        indicators=[], liquidity_condition="loose", net_liquidity_trend="contracting",
+    )
+    opinion = agent.analyze(ctx)
+    # Eskiden (±1.0/±1.0) bu ikisi TAM birbirini götürürdü (net 0.0).
+    # Artık net_liquidity_trend (±1.0) ağır basıp SHORT'a çekmeli.
+    assert opinion.direction == "SHORT"
+    assert opinion.feature_contributions["net_liquidity_trend"] == -1.0
+    assert opinion.feature_contributions["liquidity_condition"] == 0.5
+
+
+def test_liquidity_signals_still_fully_agree_when_pointing_the_same_way():
+    """Regresyon: ikisi AYNI yönde çıkarsa (M2SL loose + net likidite
+    expanding) hâlâ güçlü şekilde birleşmeli — sadece ÇATIŞMA durumunda
+    net_liquidity_trend ağır basıyor, aynı yöndeyken ikisi de katkı verir."""
+    agent = MacroAgent()
+    ctx = MacroContext(
+        indicators=[], liquidity_condition="loose", net_liquidity_trend="expanding",
+    )
+    opinion = agent.analyze(ctx)
+    assert opinion.direction == "LONG"
+    assert opinion.feature_contributions["net_liquidity_trend"] == 1.0
+    assert opinion.feature_contributions["liquidity_condition"] == 0.5
+
+
 def test_improving_employment_pushes_toward_long():
     """Faz 268h: kritik bulgu — Faz 215'in liquidity_condition için
     düzelttiği asimetri (sadece kötü taraf cezalandırılıyordu) burada da

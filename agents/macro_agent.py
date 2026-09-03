@@ -26,11 +26,28 @@ class MacroAgent:
         # "loose" (genişleyen M2 para arzı — tarihsel olarak risk
         # varlıkları için destekleyici) hiç ödüllendirilmiyordu. Asimetrik:
         # ajan likiditenin sadece kötü tarafını görebiliyordu.
+        #
+        # Faz 408 — kullanıcı isteği (2026-09-03, ölçüm stabilitesi
+        # araştırması sırasında bulundu): macro'nun raw_confidence'ı 1812
+        # gerçek karardan HİÇBİRİNDE farklı çıkmıyordu — hep tam 0.167.
+        # Kök neden bug DEĞİL (FRED_API_KEY çalışıyor, veriler gerçek/
+        # güncel) — GERÇEK bir tasarım zayıflığı: liquidity_condition
+        # (M2SL, ±1.0) ile net_liquidity_trend (aşağıda, ±1.0) son ~1 aydır
+        # sürekli TERS yönde çıkıyor (M2SL "loose" +1.0, net likidite
+        # "contracting" -1.0) ve toplamda birbirini TAM götürüyor — geriye
+        # sadece employment_trend'in ±0.5'i kalıyor, confidence hep
+        # 0.5/3.0=0.167'de donuyor. İkisi FARKLI şeyler ölçüyor (M2SL geniş/
+        # yavaş para arzı, net likidite Fed'in hızlı/güncel operasyonları)
+        # — Faz 267'nin kendi gerekçesi net_liquidity_trend'in DAHA
+        # GÜNCEL/İLGİLİ sinyal olduğunu söylüyor, bu yüzden artık BASKIN
+        # (±1.0) o, liquidity_condition (M2SL) ise YAVAŞ ONAYLAYICI bir
+        # ikincil sinyal (±0.5) — ikisi çatıştığında net likidite ağır
+        # basıyor, tam iptal yerine.
         if context.liquidity_condition == "tight":
-            contributions["liquidity_condition"] = -1.0
+            contributions["liquidity_condition"] = -0.5
             evidence.append("Likidite koşulları kısıtlayıcı")
         elif context.liquidity_condition == "loose":
-            contributions["liquidity_condition"] = 1.0
+            contributions["liquidity_condition"] = 0.5
             evidence.append("Likidite koşulları genişletici")
 
         # Faz 267 — kullanıcı bulgusu: "devletler borçlarını dört yıllık
@@ -39,11 +56,9 @@ class MacroAgent:
         # yavaş. net_liquidity_trend (Fed bilançosu - Hazine nakit hesabı
         # - ters repo) haftalık/günlük, çok daha hızlı. Boş string ("veri
         # yok", API/key eksikse) hiçbir puan vermiyor — icat edilmiş bir
-        # nötr varsayım değil. DİKKAT: bu yeni bir sinyal, henüz gerçek
-        # kapanmış işlemlerle doğrulanmadı (bkz. Faz 258'in volume_
-        # confirmation'da yaptığı gibi bir feature-importance ölçümü
-        # bekliyor) — ağırlığı kasıtlı olarak diğer köklü sinyallerle aynı
-        # (±1.0), ne fazla ne az güveniliyor.
+        # nötr varsayım değil. Faz 408 — artık BASKIN likidite sinyali
+        # (±1.0, yukarıdaki not) — daha hızlı/güncel olduğu için
+        # liquidity_condition'la çatıştığında ağır basıyor.
         if context.net_liquidity_trend == "expanding":
             contributions["net_liquidity_trend"] = 1.0
             evidence.append("Net likidite (Fed bilançosu - Hazine nakit hesabı - ters repo) genişliyor")
