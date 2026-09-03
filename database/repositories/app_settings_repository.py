@@ -152,6 +152,16 @@ DEFAULTS: dict[str, str] = {
     # RiskTargetStage artık hesaplanan stop bu tabanın altına düşerse SL/
     # TP'yi ORANI KORUYARAK genişletiyor (asla daraltmıyor).
     "min_stop_pct": "0.045",
+    # Faz 406 — kullanıcı bulgusu (2026-09-03, NEARUSDT/ALGOUSDT): "hedefe
+    # ulaştı diyor ama pnl ekside". Kök neden: TP/SL Confluence (Faz 299)
+    # hedefi SADECE sıkılaştırıyordu, alt taban yoktu — bant/pivot
+    # bölgeleri fiyata çok yakın kümelenince hedef %0.02-0.03'e kadar
+    # çekilebiliyordu (komisyondan bile küçük). Sistem taraması: son 9
+    # günün kapanmış işlemlerinin %47'si (1646/3512) <%0.5 hedef
+    # kovasındaydı, %87 "kazanma" oranına rağmen ortalama pnl ~$0. min_
+    # stop_pct'nin AYNI ilkesi (asla daraltma), ters yönde: hedef bu
+    # tabanın altına asla inmiyor.
+    "min_target_pct": "0.005",
     # Faz 269-sonrası — kullanıcı bulgusu: pump_fade_v1 (5x kaldıraçlı,
     # az likit/pompalanmış coinlerde SHORT) pozisyonları, stop'u girişe
     # çekmek için gereken TAM 1R (|entry-stop|) mesafeye ulaşmadan —

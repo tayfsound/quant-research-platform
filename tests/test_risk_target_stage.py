@@ -266,6 +266,61 @@ def test_adaptive_barrier_still_respects_the_min_stop_pct_floor(monkeypatch):
         _set_adaptive_barrier_enabled("true")
 
 
+def test_adaptive_barrier_rejects_recommendation_with_a_too_wide_target_stop_ratio(monkeypatch):
+    """Faz 406 — kullanıcı bulgusu (2026-09-01, TRXUSDT 6 bacaklı piramit):
+    barrier tablosu sabit 2.75:1 oranını hiç korumuyordu — bazı kovalarda
+    stop=%4.5, hedef=%95.5 gibi gerçekçi olmayan çiftler üretebiliyordu
+    (oran ~21:1, "transition" kovasında ham oran ~87:1'e kadar çıkıyordu).
+    Oran MAX_ADAPTIVE_BARRIER_RATIO'yu (5.5) aşarsa fail-closed statik
+    ATR hesabına düşülmeli."""
+    from analytics.barrier_table_repository import BarrierTableRepository
+
+    stored = {
+        "sample_count": 250,
+        "group_by": ["direction", "regime", "volatility_regime"],
+        # ratio = 0.60/0.05 = 12 -> tavanın (5.5) çok üstünde.
+        "table": {"direction=LONG|regime=bull_trend|volatility_regime=normal": {"sl_pct": 0.05, "tp_pct": 0.60}},
+    }
+    monkeypatch.setattr(BarrierTableRepository, "get_latest", lambda self: stored)
+    _set_adaptive_barrier_enabled("true")
+    try:
+        ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
+        ctx.market.features = {
+            "daily_atr_pct": 0.02, "long_term_trend_regime": "bull_trend", "volatility_regime": "normal",
+        }
+        ctx = RiskTargetStage().execute(ctx)
+        # Statik ATR'ye düşmeli: stop=100*2.5*0.02=5.0, adaptive'in 5.0 (sl_pct=0.05) DEĞİL.
+        assert abs(ctx.decision.stop_loss_distance - 5.0) < 1e-9
+        assert abs(ctx.decision.take_profit_distance - 13.78) < 1e-9  # statik: 100*6.89*0.02
+    finally:
+        _set_adaptive_barrier_enabled("true")
+
+
+def test_adaptive_barrier_accepts_recommendation_within_the_ratio_cap(monkeypatch):
+    """Oran tavanın (5.5) İÇİNDEYSE adaptive öneri normal şekilde
+    kullanılmaya devam etmeli — regresyon kilidi."""
+    from analytics.barrier_table_repository import BarrierTableRepository
+
+    stored = {
+        "sample_count": 250,
+        "group_by": ["direction", "regime", "volatility_regime"],
+        # ratio = 0.20/0.05 = 4.0 -> tavanın (5.5) altında.
+        "table": {"direction=LONG|regime=bull_trend|volatility_regime=normal": {"sl_pct": 0.05, "tp_pct": 0.20}},
+    }
+    monkeypatch.setattr(BarrierTableRepository, "get_latest", lambda self: stored)
+    _set_adaptive_barrier_enabled("true")
+    try:
+        ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
+        ctx.market.features = {
+            "daily_atr_pct": 0.02, "long_term_trend_regime": "bull_trend", "volatility_regime": "normal",
+        }
+        ctx = RiskTargetStage().execute(ctx)
+        assert abs(ctx.decision.stop_loss_distance - 5.0) < 1e-9    # adaptive: 100*0.05
+        assert abs(ctx.decision.take_profit_distance - 20.0) < 1e-9  # adaptive: 100*0.20
+    finally:
+        _set_adaptive_barrier_enabled("true")
+
+
 def _set_adaptive_barrier_ab_test_enabled(value: str) -> None:
     from database.repositories.app_settings_repository import AppSettingsRepository
     from database.session_factory import SessionFactory
@@ -496,6 +551,27 @@ def test_risk_target_stage_ignores_confluence_zone_beyond_stop():
         {"level": 50.0, "method_count": 2, "contributing_methods": ["sr_support", "pivot_s1"]}
     ]
     result = RiskTargetStage().execute(ctx)
+    assert abs(result.decision.stop_loss_distance - 5.0) < 1e-9
+
+
+def test_risk_target_stage_confluence_target_never_breaches_the_min_target_pct_floor():
+    """Faz 406 — kullanıcı bulgusu (2026-09-03, NEARUSDT/ALGOUSDT gerçek
+    işlemleri): "hedefe ulaştı diyor ama pnl ekside". Kök neden: confluence
+    bölgesi fiyata ÇOK yakın (bantlar/pivotlar doğası gereği kümelenebilir)
+    olduğunda hedef komisyondan bile küçük bir mesafeye çekilebiliyordu.
+    min_stop_pct'nin AYNI ilkesi (asla daraltma), ters yönde: hedef bu
+    tabanın altına asla inmemeli."""
+    ctx = _ctx(direction="LONG", daily_atr_pct=0.02, current_price=100.0)
+    # Ham hedef: 113.78. Fiyata ÇOK yakın (%0.3) bir confluence bölgesi —
+    # taban olmasaydı hedef mesafesi ~%0.05'e (komisyondan bile küçük) çekilirdi.
+    ctx.market.features["confluence_zones"] = [
+        {"level": 100.3, "method_count": 2, "contributing_methods": ["sr_resistance", "pivot_r1"]}
+    ]
+    result = RiskTargetStage().execute(ctx)
+
+    # Hedef tabanın (min_target_pct=%0.5 -> 100*0.005=0.5) altına ASLA inmemeli.
+    assert result.decision.take_profit_distance >= 0.5 - 1e-9
+    # Stop hiç etkilenmemeli.
     assert abs(result.decision.stop_loss_distance - 5.0) < 1e-9
 
 

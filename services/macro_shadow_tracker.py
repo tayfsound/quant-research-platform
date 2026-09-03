@@ -109,7 +109,7 @@ def _atr_based_distance_pct(symbol: str, direction: str, data_provider=None) -> 
     if daily_atr_pct is None:
         return None, None
 
-    stop_mult, target_mult, min_stop_pct = RiskTargetStage()._load_multipliers(direction)
+    stop_mult, target_mult, min_stop_pct, _ = RiskTargetStage()._load_multipliers(direction)
     stop_pct = stop_mult * daily_atr_pct
     target_pct = target_mult * daily_atr_pct
     if stop_pct < min_stop_pct:

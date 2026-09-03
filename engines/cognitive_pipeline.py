@@ -1097,6 +1097,16 @@ class RiskTargetStage:
     # stop bu tabanın altına düşerse SL/TP'yi ORANI KORUYARAK genişletir
     # — asla daraltmaz, sadece "scalp" bölgesine hiç girilmesini engeller.
     DEFAULT_MIN_STOP_PCT = 0.045
+    # Faz 406 — bkz. aşağıdaki min_target_pct uygulama noktasındaki not.
+    # %0.5, gerçek Binance Futures taker komisyonunun (round-trip ~%0.08-0.1)
+    # rahatça üzerinde — komisyonu yiyip bitiren "sahte kazanç" işlemlerini
+    # engelliyor, ama meşru, sıkı confluence-tabanlı hedefleri nadiren
+    # etkiler (analiz eşiğiyle aynı: <%0.5 kovası temiz bir ayrım gösterdi).
+    DEFAULT_MIN_TARGET_PCT = 0.005
+    # Faz 406 — Adaptive Barrier'ın MAE/MFE yüzdelik dilimlerinden
+    # türettiği (sl_pct, tp_pct) çiftine üst oran tavanı. Kullanıcı
+    # kararı (2026-09-03): "~5-6x" önerilen aralığın orta noktası.
+    MAX_ADAPTIVE_BARRIER_RATIO = 5.5
 
     def execute(self, ctx: CognitiveCycleContext, opinions: list | None = None) -> CognitiveCycleContext:
         # 3. taraf inceleme bulgusu — gerçek: PredictiveRiskStage ve
@@ -1122,7 +1132,7 @@ class RiskTargetStage:
         if not daily_atr_pct or daily_atr_pct <= 0 or not current_price or current_price <= 0:
             return ctx
 
-        stop_mult, target_mult, min_stop_pct = self._load_multipliers(direction)
+        stop_mult, target_mult, min_stop_pct, min_target_pct = self._load_multipliers(direction)
 
         # Faz 268-sonrası — kullanıcı isteği: Adaptive Barrier Engine
         # (MAE/MFE'nin GERÇEK koşullu dağılımından türetilmiş SL/TP
@@ -1202,6 +1212,20 @@ class RiskTargetStage:
                     "type": "sl_confluence",
                     "data": {"zone": used_stop_zone, "adjusted_stop_pct": round(stop_pct, 6)},
                 })
+
+        # Faz 406 — kullanıcı bulgusu (2026-09-03, NEARUSDT/ALGOUSDT):
+        # "hedefe ulaştı diyor ama pnl ekside" — kök neden bulundu ve
+        # matematiksel olarak doğrulandı (gerçek fiyatlarla formül birebir
+        # eşleşti): yukarıdaki confluence-snap SADECE sıkılaştırıyor, ama
+        # hiçbir ALT taban yoktu — bant/pivot bölgeleri doğası gereği
+        # fiyata YAKIN kümelenebiliyor, hedef bazen fiyatın %0.02-0.03'üne
+        # kadar çekilebiliyordu (komisyondan bile küçük). Sistem geneli
+        # taraması: son 9 günün kapanmış işlemlerinin %47'si (1646/3512)
+        # hedef mesafesi <%0.5 kovasındaydı — %87 "kazanma" oranına rağmen
+        # ortalama pnl ~$0 (komisyonla siliniyor), sermaye/pozisyon slotu
+        # boşa harcanıyordu. min_stop_pct ile AYNI ilke (asla daraltma
+        # tabanı) — min_target_pct hedefi bu tabanın altına asla indirmiyor.
+        target_pct = max(target_pct, min_target_pct)
 
         ctx.decision.stop_loss_distance = current_price * stop_pct
         ctx.decision.take_profit_distance = current_price * target_pct
@@ -1305,12 +1329,34 @@ class RiskTargetStage:
             recommendation = recommend_barrier(context, stored["table"], group_by=tuple(stored["group_by"]))
             if recommendation is None:
                 return None
-            return recommendation["sl_pct"], recommendation["tp_pct"]
+
+            sl_pct, tp_pct = recommendation["sl_pct"], recommendation["tp_pct"]
+            # Faz 406 — kullanıcı bulgusu (2026-09-01, TRXUSDT 6 bacaklı
+            # piramit): barrier tablosu sabit 2.75:1 (LONG) oranını hiç
+            # korumuyordu — MAE/MFE yüzdelik dilimlerinden türetilen
+            # (sl_pct, tp_pct) çifti bazı kovalarda gerçekçi olmayan
+            # ölçüde asimetrik çıkabiliyordu (somut örnek: stop=%4.5,
+            # hedef=%95.5, oran ~21:1 — "transition" kovasında ham oran
+            # ~87:1'e kadar çıkıyordu). min_stop_pct'nin "asla daraltma"
+            # ilkesiyle AYNI ruhta, ama üst tarafı sınırlayan bir güvenlik:
+            # oran bu tavanı geçerse (herhangi bir yönde) fail-closed None
+            # dönülür, çağıran taraf zaten doğrulanmış statik ATR-tabanlı
+            # hesaba (RiskTargetStage.execute()'daki else dalı) düşer.
+            if sl_pct <= 0 or tp_pct <= 0:
+                return None
+            ratio = tp_pct / sl_pct
+            if ratio > self.MAX_ADAPTIVE_BARRIER_RATIO or ratio < 1.0 / self.MAX_ADAPTIVE_BARRIER_RATIO:
+                logger.info(
+                    "adaptive_barrier_ratio_rejected",
+                    symbol=ctx.market.symbol, sl_pct=sl_pct, tp_pct=tp_pct, ratio=ratio,
+                )
+                return None
+            return sl_pct, tp_pct
         except Exception as exc:
             logger.warning("adaptive_barrier_lookup_failed", error=str(exc))
             return None
 
-    def _load_multipliers(self, direction: str | None = None) -> tuple[float, float, float]:
+    def _load_multipliers(self, direction: str | None = None) -> tuple[float, float, float, float]:
         """Faz 320 — direction=None (yön henüz bilinmiyor, ör. Tokens
         sayfasının önizleme uç noktası) SADECE stop_mult'u kullanan
         çağıranlar için var — stop_mult LONG/SHORT için AYNI (ikisi de
@@ -1332,10 +1378,11 @@ class RiskTargetStage:
                 stop_mult = float(settings_repo.get(stop_key) or default_stop)
                 target_mult = float(settings_repo.get(target_key) or default_target)
                 min_stop_pct = float(settings_repo.get("min_stop_pct") or self.DEFAULT_MIN_STOP_PCT)
-                return stop_mult, target_mult, min_stop_pct
+                min_target_pct = float(settings_repo.get("min_target_pct") or self.DEFAULT_MIN_TARGET_PCT)
+                return stop_mult, target_mult, min_stop_pct, min_target_pct
         except Exception as exc:
             logger.warning("risk_multiplier_settings_load_failed", error=str(exc))
-            return default_stop, default_target, self.DEFAULT_MIN_STOP_PCT
+            return default_stop, default_target, self.DEFAULT_MIN_STOP_PCT, self.DEFAULT_MIN_TARGET_PCT
 
 
 class DecisionFusionStage:
