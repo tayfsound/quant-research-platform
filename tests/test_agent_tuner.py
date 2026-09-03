@@ -194,6 +194,54 @@ def test_load_historical_technical_records_reflects_real_closed_decisions():
     assert len(matching) >= 1
 
 
+def test_load_historical_technical_records_returns_most_recent_window_not_oldest():
+    """2026-09-03 — kullanıcı bulgusu: "Meta-Learning Effectiveness
+    haftalardır boş." Kök neden: eski kod `ORDER BY closed_at ASC LIMIT
+    :window` kullanıyordu — toplam uygun kayıt `window`'u geçtiği andan
+    itibaren bu HER ZAMAN aynı en eski satırları döner, tablo büyüdükçe
+    asla ilerlemezdi (6824 kayıt varken pencere hâlâ 2026-08-11..08-24
+    arasında donmuştu). Bu test bir kaydı GERÇEKTEN eski (2000-01-01),
+    bir kaydı GERÇEKTEN yeni (şimdi) closed_at ile kapatıp window=1
+    isteyince SADECE yeni kaydın döndüğünü doğruluyor — eski kod bu
+    testte eski kaydı (veya ikisini de, DB'deki ilk 1 satıra göre)
+    döndürürdü."""
+    now = datetime.now(UTC)
+    ancient = datetime(2000, 1, 1, tzinfo=UTC)
+
+    def _make_event(symbol: str) -> DecisionEvent:
+        return DecisionEvent(
+            id=uuid4(),
+            symbol=symbol,
+            proposed_direction="LONG",
+            final_action="LONG",
+            final_size=1.0,
+            confidence=0.7,
+            status="open",
+            entry_price=100.0,
+            quantity=1.0,
+            agent_opinions=[
+                {"domain": "technical", "direction": "LONG", "confidence": 0.7, "evidence": [], "caveats": []},
+            ],
+            market_snapshot={"features": {"trend": "bullish", "market_structure": "higher_highs"}},
+        )
+
+    ancient_symbol = f"ATOLD{uuid4().hex[:6]}"
+    recent_symbol = f"ATNEW{uuid4().hex[:6]}"
+    with SessionFactory.get_session() as session:
+        repo = DecisionPersistor(session)
+        ancient_event = _make_event(ancient_symbol)
+        repo.persist(ancient_event)
+        repo.close_position(decision_id=str(ancient_event.id), exit_price=110.0, pnl=1.0, closed_at=ancient)
+
+        recent_event = _make_event(recent_symbol)
+        repo.persist(recent_event)
+        repo.close_position(decision_id=str(recent_event.id), exit_price=110.0, pnl=2.0, closed_at=now)
+
+    records = load_historical_technical_records(window=1)
+    assert len(records) == 1
+    assert abs(records[0].pnl - 2.0) < 1e-6
+
+
 def test_technical_agent_with_tuned_coefficients_is_independent_of_default_instance():
     """agents/technical_agent.py refactor'unun gerçek davranış-koruma
     kanıtı: coefficients=None (varsayılan) hâlâ eski sabit-katsayılı

@@ -74,10 +74,21 @@ class HistoricalTechnicalRecord:
 def load_historical_technical_records(window: int = 3000) -> list[HistoricalTechnicalRecord]:
     """Gerçek kapanmış işlemlerden (agent_contributions içindeki gerçek
     market_snapshot feature'ları), technical ajanın gerçekten oy verdiği
-    kayıtları, ESKİDEN YENİYE (walk-forward için kronolojik) sırayla
-    çeker. agent_confidence_model.py::_extract_training_rows ile aynı
-    ham veri kaynağı/normalize haritalaması — tekerlek yeniden icat
-    edilmedi."""
+    kayıtları, EN SON `window` kayıt, ESKİDEN YENİYE (walk-forward için
+    kronolojik) sırayla döner. agent_confidence_model.py::
+    _extract_training_rows ile aynı ham veri kaynağı/normalize haritalaması
+    — tekerlek yeniden icat edilmedi.
+
+    2026-09-03 — kullanıcı bulgusu: "Meta-Learning Effectiveness haftalardır
+    boş, çalışmıyor belli ki." Kök neden: SQL `ORDER BY closed_at ASC LIMIT
+    :window` kullanıyordu — kapanmış işlem sayısı `window`'u geçtiği andan
+    itibaren bu HER ZAMAN aynı en eski `window` satırı döner, tablo ne kadar
+    büyürse büyüsün asla ilerlemez (sibling `_extract_training_rows`'un
+    doğru DESC+LIMIT deseninden sapmış). Kanıt: toplam uygun kayıt 6824
+    iken pencere hâlâ 2026-08-11 ile 2026-08-24 arasında donmuş kalmıştı —
+    en son ~10 günün TÜM verisi walk-forward'a hiç girmiyordu. Düzeltme:
+    en son `window` kaydı DESC çekip Python'da kronolojik sıraya çeviriyor
+    (sibling fonksiyonla AYNI desen)."""
     from database.session_factory import SessionFactory
 
     with SessionFactory.get_session() as session:
@@ -86,9 +97,10 @@ def load_historical_technical_records(window: int = 3000) -> list[HistoricalTech
             FROM decisions
             WHERE status='closed' AND excluded_from_stats=false AND closed_at IS NOT NULL
                 AND agent_contributions IS NOT NULL
-            ORDER BY closed_at ASC
+            ORDER BY closed_at DESC
             LIMIT :limit
         """), {"limit": window}).mappings().all()
+    rows = list(reversed(rows))
 
     records: list[HistoricalTechnicalRecord] = []
     for r in rows:
