@@ -22,6 +22,11 @@ class PatternContext(BaseModel):
     # kasıtlı olarak kaba genel-rejim yaklaşıklamasından farklı olarak.
     # "spring", "upthrust", "sign_of_strength", "sign_of_weakness", "none".
     wyckoff_event: str = "none"
+    # Faz 411 — kullanıcı isteği: wyckoff_event/structure_phase'in
+    # rejime göre koşullu gerçek edge'i var (bkz. agents/pattern_agent.py
+    # üstündeki not) — context_adapter.py'nin diğer 14 yerde zaten
+    # hesapladığı AYNI f"{trend}_{volatility_regime}" formülü.
+    market_regime: str = "unknown"
     # Faz 268-sonrası — kullanıcı bulgusu: "fiyatın akümüle olduğu
     # bölgeler" (Volume Profile) hiç yoktu — swing high/low tabanlı
     # destek/direnç dışında gerçek bir hacim-fiyat analizi olmadan

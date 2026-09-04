@@ -108,11 +108,21 @@ def test_wyckoff_event_alone_no_longer_influences_direction():
     assert opinion.feature_contributions["wyckoff_event"] == 2.0
 
 
-def test_feature_contributions_reflect_the_fibonacci_confirmation():
+def test_fibonacci_confirmation_no_longer_contributes_to_the_score():
+    """Faz 411 (2026-09-04) — kullanıcı isteği: rejime göre ayrıştırılmış
+    Feature IC denetiminde fibonacci_confirm HİÇBİR rejim segmentinde
+    anlamlı çıkmadı (en yakını bullish_normal'da p=0.083) — gerçekten
+    gürültü, mimariden tamamen kaldırıldı."""
     agent = PatternAgent()
-    opinion = agent.analyze(PatternContext(
+    with_support = agent.analyze(PatternContext(
         structure_phase="accumulation", break_of_structure="bullish",
         swing_structure="higher_highs_higher_lows",
         fibonacci_price_position="at_support",
     ))
-    assert opinion.feature_contributions["fibonacci_confirm"] == 0.5
+    without_support = agent.analyze(PatternContext(
+        structure_phase="accumulation", break_of_structure="bullish",
+        swing_structure="higher_highs_higher_lows",
+        fibonacci_price_position="none",
+    ))
+    assert "fibonacci_confirm" not in with_support.feature_contributions
+    assert with_support.confidence == without_support.confidence

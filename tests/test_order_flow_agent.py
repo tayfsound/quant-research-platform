@@ -20,8 +20,8 @@ def test_ask_heavy_imbalance_generates_short():
 
 def test_wide_spread_dampens_confidence_and_warns():
     agent = OrderFlowAgent()
-    tight = agent.analyze(OrderFlowContext(bid_ask_imbalance=0.5, spread_bps=2.0))
-    wide = agent.analyze(OrderFlowContext(bid_ask_imbalance=0.5, spread_bps=25.0))
+    tight = agent.analyze(OrderFlowContext(aggressive_buy_ratio=0.7, spread_bps=2.0))
+    wide = agent.analyze(OrderFlowContext(aggressive_buy_ratio=0.7, spread_bps=25.0))
     assert wide.confidence < tight.confidence
     assert any("geniş spread" in c.lower() for c in wide.caveats)
 
@@ -32,20 +32,18 @@ def test_balanced_book_waits():
     assert opinion.direction == "WAIT"
 
 
-def test_high_positive_funding_rate_pushes_short_as_contrarian_signal():
-    """Faz 247-249: kalabalık long pozisyonlanma (yüksek pozitif funding)
-    bir onay değil, kontrarian bir uyarı — market_data/sentiment/
-    positioning_provider.py'nin AYNI felsefesi."""
+def test_funding_rate_no_longer_contributes_to_the_score():
+    """Faz 411 (2026-09-04) — kullanıcı isteği: rejime göre ayrıştırılmış
+    Feature IC denetiminde funding_rate HİÇBİR rejim segmentinde anlamlı
+    çıkmadı (overall p=0.97, n=211 — zaten çok zayıf) — Faz 247-249'un
+    kontrarian sinyal varsayımı gerçek veriyle doğrulanamadı, tamamen
+    kaldırıldı."""
     agent = OrderFlowAgent()
-    opinion = agent.analyze(OrderFlowContext(funding_rate=0.001))
-    assert opinion.direction == "SHORT"
-    assert any("funding rate" in e.lower() for e in opinion.evidence)
-
-
-def test_high_negative_funding_rate_pushes_long_as_contrarian_signal():
-    agent = OrderFlowAgent()
-    opinion = agent.analyze(OrderFlowContext(funding_rate=-0.001))
-    assert opinion.direction == "LONG"
+    with_positive = agent.analyze(OrderFlowContext(funding_rate=0.001))
+    with_negative = agent.analyze(OrderFlowContext(funding_rate=-0.001))
+    assert with_positive.direction == with_negative.direction == "WAIT"
+    assert "funding_rate" not in with_positive.feature_contributions
+    assert "funding_rate" not in with_negative.feature_contributions
 
 
 def test_normal_funding_rate_has_no_effect():
@@ -65,16 +63,16 @@ def test_missing_funding_rate_has_no_effect():
 
 def test_rising_open_interest_amplifies_an_existing_directional_score():
     agent = OrderFlowAgent()
-    without_oi = agent.analyze(OrderFlowContext(bid_ask_imbalance=0.5, open_interest_trend="unknown"))
-    with_rising_oi = agent.analyze(OrderFlowContext(bid_ask_imbalance=0.5, open_interest_trend="rising"))
+    without_oi = agent.analyze(OrderFlowContext(aggressive_buy_ratio=0.7, open_interest_trend="unknown"))
+    with_rising_oi = agent.analyze(OrderFlowContext(aggressive_buy_ratio=0.7, open_interest_trend="rising"))
     assert with_rising_oi.confidence > without_oi.confidence
     assert any("open interest" in e.lower() for e in with_rising_oi.evidence)
 
 
 def test_falling_open_interest_dampens_confidence_and_warns():
     agent = OrderFlowAgent()
-    stable = agent.analyze(OrderFlowContext(bid_ask_imbalance=0.5, open_interest_trend="stable"))
-    falling = agent.analyze(OrderFlowContext(bid_ask_imbalance=0.5, open_interest_trend="falling"))
+    stable = agent.analyze(OrderFlowContext(aggressive_buy_ratio=0.7, open_interest_trend="stable"))
+    falling = agent.analyze(OrderFlowContext(aggressive_buy_ratio=0.7, open_interest_trend="falling"))
     assert falling.confidence < stable.confidence
     assert any("open interest) azalıyor" in c.lower() for c in falling.caveats)
 
@@ -93,9 +91,9 @@ def test_feature_contributions_sum_to_the_implied_raw_score():
     zaman GERÇEK score'a (confidence = min(|score|/3.5, 0.8)) eşit
     toplanmalı."""
     agent = OrderFlowAgent()
-    opinion = agent.analyze(OrderFlowContext(bid_ask_imbalance=0.5, funding_rate=-0.001))
+    opinion = agent.analyze(OrderFlowContext(aggressive_buy_ratio=0.7, open_interest_trend="rising"))
     implied_score = sum(opinion.feature_contributions.values())
-    assert abs(abs(implied_score) - opinion.confidence * 3.5) < 1e-6
+    assert abs(abs(implied_score) - opinion.confidence * 3.5) < 5e-3
 
 
 def test_feature_contributions_are_empty_when_no_signal_fires():
@@ -107,21 +105,18 @@ def test_feature_contributions_are_empty_when_no_signal_fires():
 def test_feature_contributions_names_the_active_signals():
     agent = OrderFlowAgent()
     opinion = agent.analyze(OrderFlowContext(
-        bid_ask_imbalance=0.5, aggressive_buy_ratio=0.7, spread_bps=2.0,
-        funding_rate=-0.001, open_interest_trend="rising",
+        aggressive_buy_ratio=0.7, spread_bps=2.0, open_interest_trend="rising",
     ))
-    assert opinion.feature_contributions["bid_ask_imbalance"] > 0
     assert opinion.feature_contributions["aggressive_buy_ratio"] > 0
-    assert opinion.feature_contributions["funding_rate"] > 0
     assert opinion.feature_contributions["open_interest_confirm"] > 0
 
 
 def test_feature_contributions_reflect_the_wide_spread_discount():
     """Geniş spread indirimi (scale_all(0.5)) O ANA KADAR birikmiş
-    katkılara uygulanmalı — sonradan eklenen funding_rate/open_interest
-    katkıları bundan ETKİLENMEMELİ (orijinal `score *= 0.5`'in tam
-    sıralamasıyla birebir aynı)."""
+    katkılara uygulanmalı — sonradan eklenen open_interest katkıları
+    bundan ETKİLENMEMELİ (orijinal `score *= 0.5`'in tam sıralamasıyla
+    birebir aynı)."""
     agent = OrderFlowAgent()
-    tight = agent.analyze(OrderFlowContext(bid_ask_imbalance=0.5, spread_bps=2.0))
-    wide = agent.analyze(OrderFlowContext(bid_ask_imbalance=0.5, spread_bps=25.0))
-    assert abs(wide.feature_contributions["bid_ask_imbalance"] - tight.feature_contributions["bid_ask_imbalance"] * 0.5) < 1e-6
+    tight = agent.analyze(OrderFlowContext(aggressive_buy_ratio=0.7, spread_bps=2.0))
+    wide = agent.analyze(OrderFlowContext(aggressive_buy_ratio=0.7, spread_bps=25.0))
+    assert abs(wide.feature_contributions["aggressive_buy_ratio"] - tight.feature_contributions["aggressive_buy_ratio"] * 0.5) < 1e-6

@@ -413,6 +413,13 @@ class ContextAdapter:
         )
 
     def to_pattern(self, ctx: CognitiveCycleContext) -> PatternContext:
+        # Faz 411 — kullanıcı isteği: wyckoff_event/structure_phase'in
+        # rejime göre koşullu gerçek edge'i var. Diğer 14 yerin (Market
+        # State planı) kullandığı AYNI f"{trend}_{volatility_regime}"
+        # formülü — yeni bir hesaplama icat edilmiyor.
+        trend = self._get(ctx, "trend", "neutral")
+        volatility_regime = self._get(ctx, "volatility_regime", "normal")
+        market_regime = f"{trend}_{volatility_regime}" if trend != "neutral" else "unknown"
         return PatternContext(
             structure_phase=self._get(ctx, "structure_phase", "neutral"),
             break_of_structure=self._get(ctx, "break_of_structure", "none"),
@@ -423,6 +430,7 @@ class ContextAdapter:
             fibonacci_nearest_level=self._get(ctx, "fibonacci_nearest_level", "none"),
             fibonacci_price_position=self._get(ctx, "fibonacci_price_position", "none"),
             wyckoff_event=self._get(ctx, "wyckoff_event", "none"),
+            market_regime=self._get(ctx, "market_regime", market_regime),
         )
 
     def to_quant(self, ctx: CognitiveCycleContext) -> QuantContext:

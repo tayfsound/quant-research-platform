@@ -22,13 +22,11 @@ class OrderFlowAgent:
             for key in contributions:
                 contributions[key] *= factor
 
-        # Bid/Ask dengesizliği
-        if context.bid_ask_imbalance > 0.3:
-            contributions["bid_ask_imbalance"] = 1.5
-            evidence.append(f"Alış-yönü dengesizliği {context.bid_ask_imbalance:.2f} — alım baskısı")
-        elif context.bid_ask_imbalance < -0.3:
-            contributions["bid_ask_imbalance"] = -1.5
-            evidence.append(f"Satış-yönü dengesizliği {context.bid_ask_imbalance:.2f} — satım baskısı")
+        # Faz 411 — kullanıcı isteği: "gerçekten gürültü olduğunu tespit
+        # ettiğimiz bütün sinyalleri mimariden temizleyelim." bid_ask_
+        # imbalance, rejime göre ayrıştırılmış Feature IC denetiminde
+        # HİÇBİR rejim segmentinde anlamlı çıkmadı (en yakını bearish_
+        # normal'da p=0.317) — gerçekten gürültü. Kaldırıldı.
 
         # Agresif alış/satış oranı (taker flow)
         if context.aggressive_buy_ratio > 0.65:
@@ -45,19 +43,11 @@ class OrderFlowAgent:
         elif context.spread_bps == 0:
             caveats.append("Spread verisi mevcut değil")
 
-        # Faz 247-249: funding rate — sentiment_agent'ın positioning
-        # yorumuyla AYNI kontrarian felsefe (market_data/sentiment/
-        # positioning_provider.py). Kalabalık pozisyonlanma (aşırı pozitif
-        # funding = long'lar sıkışık) bir onay değil, bir uyarı — eşikler
-        # Binance'in normal 8 saatlik funding aralığına (~±0.01%) göre,
-        # >0.05% endüstri genelinde "yüksek" kabul edilir.
-        if context.funding_rate is not None:
-            if context.funding_rate > 0.0005:
-                contributions["funding_rate"] = -0.6
-                evidence.append(f"Funding rate {context.funding_rate:.4%} — kalabalık long pozisyonlanma (kontraryan)")
-            elif context.funding_rate < -0.0005:
-                contributions["funding_rate"] = 0.6
-                evidence.append(f"Funding rate {context.funding_rate:.4%} — kalabalık short pozisyonlanma (kontraryan)")
+        # Faz 411 — kullanıcı isteği: "gerçekten gürültü olduğunu tespit
+        # ettiğimiz bütün sinyalleri mimariden temizleyelim." funding_rate,
+        # rejime göre ayrıştırılmış Feature IC denetiminde hiçbir rejim
+        # segmentinde anlamlı çıkmadı (overall p=0.97, n=211 — zaten çok
+        # zayıf) — gerçekten gürültü. Kaldırıldı.
 
         # Open interest trend — technical_agent'taki ADX'in rolüyle aynı
         # desen: yön belirlemiyor, mevcut yönü (yukarıdaki imbalance/

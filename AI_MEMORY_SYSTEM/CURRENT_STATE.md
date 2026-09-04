@@ -1,9 +1,101 @@
-# Mevcut Durum -- v1.143.0 (Faz 407 TAMAMLANDI: Ölçüm Stabilitesi 17/17 modüle bağlandı)
+# Mevcut Durum -- v1.145.0 (Faz 411: rejime göre ayrıştırılmış gürültü denetimi — gerçek gürültü sinyalleri mimariden temizlendi)
 
-**Tarih:** 2026-09-03
+**Tarih:** 2026-09-04
 **Branch:** main
-**Son commit (HEAD):** `c363fd7` Faz 407: Ölçüm Stabilitesi ("4. boyut") — gözlem-only, 5 modüle bağlandı (+ bu turda 12 modül daha, push edilecek).
-**Servis durumu:** push edilecek, worker+uvicorn yeniden başlatılacak (trading cycle zaten bitti).
+**Son commit (HEAD):** push edilecek (bu turda).
+**Servis durumu:** commit/push edilecek, worker+uvicorn yeniden başlatılacak.
+
+**Faz 411 — kullanıcı isteği: "Doğrulamadığımız sinyalleri de kontrol
+edip doğrulayalım... Veri kaynakları canlı mı diye denetim yapalım...
+wyckoff_event'i rejime göre yapılandıralım. Gerçekten gürültü olduğunu
+tespit ettiğimiz bütün sinyalleri mimariden temizleyelim."**
+
+Rejime göre ayrıştırılmış (time-split + market_regime-split) Feature IC
+denetimi ile her feature dört kategoriden birine ayrıldı:
+1. **Kanıtlanmış saf gürültü** (hiçbir rejim segmentinde anlamlı) —
+   mimariden TAMAMEN kaldırıldı: `macro_agent.py`'de `liquidity_condition`
+   (Faz 408'in "ikincil sinyal" uzlaşması yerine artık tam kaldırıldı),
+   `order_flow_agent.py`'de `bid_ask_imbalance` ve `funding_rate`,
+   `pattern_agent.py`'de `fibonacci_confirm` ve `liquidity_sweep`.
+2. **Rejim-koşullu gerçek sinyal** (toplamda iptal oluyor ama iki rejimde
+   ZIT işaretli anlamlı IC var) — yeni `PatternContext.market_regime`
+   alanı + `pattern_agent.py`'deki `_regime_gated()` yardımcı fonksiyonu
+   ile SADECE kanıtlanmış rejimde skora giriyor: `wyckoff_event`
+   (bullish_low'da olduğu gibi, bearish_low'da işaret ters çevrilerek),
+   `structure_phase` (sadece bearish_low'da, ters çevrilerek). Diğer
+   rejimlerde hâlâ `shadow_contributions`'a yazılıp Feature IC tarafından
+   izleniyor (sıfır skor etkisi).
+3. **Rejim-geçiş artefaktı** (Ağu 21-22 gerçek piyasa rejim değişimi,
+   kalıcı bug değil) — `trend`, `momentum`, `ema_alignment`,
+   `swing_structure`, `break_of_structure`, `aggressive_buy_ratio` —
+   DOKUNULMADI, zaten geçerli sinyaller.
+4. **Kanıtlanmamış zayıf/kırılgan** (marjinal p<0.05 ama yarı-örneklemde
+   tutarsız) — `volume_confirmation` — DOKUNULMADI, izlemeye devam.
+
+`services/context_adapter.py::to_pattern()` artık `market_regime`'i
+hesaplayıp `PatternContext`'e geçiriyor. Tüm test dosyaları (macro/
+order_flow/pattern) güncellendi, tam regresyon: 2291 passed (2 flaky
+test-sırası hatası izole çalıştırıldığında geçti, Faz 411 ile ilgisiz —
+bkz. shared_test_state_bloat).
+
+**Kapsam dışı bırakılanlar (kullanıcı sadece wyckoff_event'i adlandırdı):**
+`break_of_structure`'ın kendi rejim-koşullu gerçek sinyali var ama
+dokunulmadı; `aggressive_buy_ratio` aynı şekilde.
+
+**Sıradaki iş (kullanıcı isteği, henüz başlanmadı):** "Bizzat ajanlarda
+gürültü yapıyor olabilir onları da kontrol edelim" — 10 oy veren ajan
+domain'inin (aynı rejim/time-split titizliğiyle) kendisinin net-pozitif
+katkı yapıp yapmadığının denetimi.
+
+**Bağlam:** Kullanıcı dashboard'da gördü — 78-82% kazanma oranına
+rağmen PnL negatif (1 Eylül: -$70.165, -%17). "Sistemi test moduna
+aldığımızdan beri yaşayıp çözemediğimiz problem" dedi. Ölçüm
+Stabilitesi (Faz 407) çalışması sırasında bulunan macro ajanının garip
+davranışından (raw_confidence hep 0.167) başlayıp kök nedene inildi.
+
+**Faz 408 — MacroAgent'ın likidite sinyalleri birbirini tam götürüyordu.**
+Bug değildi (FRED verisi gerçek/güncel) — liquidity_condition (M2SL,
+±1.0) ile net_liquidity_trend (±1.0) ~1 aydır sürekli TERS çıkıp TAM
+iptal ediyordu, geriye employment_trend'in ±0.5'i kalıyordu (0.5/3.0=
+0.167, hep aynı). net_liquidity_trend artık baskın (±1.0, Faz 267'nin
+kendi gerekçesiyle daha güncel/ilgili), liquidity_condition ikincil
+(±0.5) — çatıştıklarında tam iptal yerine net likidite ağır basıyor.
+
+**Faz 409 — ASIL BÜYÜK BULGU: TP/SL Confluence'ın etiketi hiç
+kaydedilmiyordu.** RiskTargetStage'in confluence sıkılaştırması (Faz
+299/317) GERÇEKTEN çalışıyordu ama RecordingStage'in çıkarım listesinde
+"tp_sl_confluence"/"sl_confluence" hiç yoktu — decision_fusion/
+market_state ile AYNI görünürlük boşluğu, hiç fark edilmemiş. Ölçüm:
+son ~2 saatteki 217 kararın **%99,5'inde** en az bir "güçlü" (≥2
+yöntem) confluence bölgesi vardı, en yakın bölge medyan **%0,35**
+uzakta (6-8 farklı teknik yöntem hep fiyatın etrafında kümelenip
+"nadir istisna" mekanizmasını neredeyse HER kararda tetikliyor). Bu,
+kullanıcının PnL şikayetinin gerçek kök nedeni — Faz 406'nın min_
+target_pct tabanı SEMPTOMU (mikro-hedefler) durdurmuştu ama confluence
+neden bu kadar sık/agresif sıkıştırıyor sorusu görünmezdi. Şimdi
+gerçekten agent_contributions'a ulaşıyor — kök-neden düzeltmesi
+(confluence bölgesi için min_distance_pct, ör. %1) bu gözlem birikince
+ayrı bir turda değerlendirilecek (kullanıcı bilinçli olarak erteledi:
+"önce veriyi toplayalım").
+
+**Diğer ajanların derin incelemesi (macro'ya bakıldığı gibi):**
+pattern/quant'ın düşük confidence çeşitliliği BİLİNÇLİ tasarım (Faz
+302/339), bug değil. **Ama quant'ın z-score mean-reversion sinyali
+(oylarının %95'i) post-Faz-339 gerçek veride %43,6-50 isabet —
+rastgeleden farklı değil** (Faz 339'un dayandığı n=17/%76,5 iyimser
+tahminiyle ÇELİŞİYOR) — otokorelasyon dalı hâlâ iyi görünüyor (%83,3)
+ama n=6, henüz kanıt değil. **Bu ayrı bir inceleme konusu, kullanıcı
+"inceleyelim" dedi, henüz derinleşilmedi — SIRADA.**
+
+**Faz 410 — sentiment'in google_trends_score'u canlandırıldı.**
+Hiçbir zaman gerçek veriye bağlanmamıştı (hep sabit 50.0). pytrends
+(ücretsiz) ile bağlandı, canlı doğrulandı (BTCUSDT: 99.0, gerçek zirve
+arama ilgisi). `social_media_sentiment` (Reddit engelli) için alternatif
+araştırıldı — **gerçekten ücretsiz hiçbir seçenek yok** (Santiment Pro
+$49/ay en makul, LunarCrush $90/ay) — kullanıcı kararını bekliyor,
+dokunulmadı.
+
+---
 
 **Faz 407-devam (aynı gün) — kalan 12 modül de bağlandı, envanterin
 TAMAMI (17/17) artık gözlem-only stabilite üretiyor:**

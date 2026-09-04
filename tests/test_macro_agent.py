@@ -65,42 +65,24 @@ def test_contracting_net_liquidity_pushes_toward_short():
     assert opinion.direction == "SHORT"
 
 
-def test_net_liquidity_dominates_when_it_conflicts_with_liquidity_condition():
-    """Faz 408 — kullanıcı bulgusu (ölçüm stabilitesi araştırması,
-    2026-09-03): macro'nun raw_confidence'ı 1812 gerçek karardan
-    HİÇBİRİNDE farklı çıkmıyordu (hep 0.167) — kök neden bug değildi
-    (FRED verisi gerçek/güncel), liquidity_condition (M2SL, "loose"
-    +1.0) ile net_liquidity_trend ("contracting" -1.0) ~1 aydır sürekli
-    TERS yönde çıkıp TAM birbirini götürüyordu, geriye sadece
-    employment_trend'in ±0.5'i kalıyordu. Artık net_liquidity_trend
-    (daha hızlı/güncel, Faz 267) BASKIN (±1.0), liquidity_condition
-    yavaş onaylayıcı (±0.5) — çatıştıklarında TAM iptal yerine net
-    likidite ağır basmalı."""
+def test_liquidity_condition_no_longer_contributes_to_the_score():
+    """Faz 411 (2026-09-04) — kullanıcı isteği: rejime göre ayrıştırılmış
+    Feature IC denetiminde liquidity_condition HİÇBİR rejim segmentinde
+    anlamlı çıkmadı (gerçekten gürültü) — Faz 408'in "ikincil sinyal"
+    uzlaşması yerine tamamen kaldırıldı. Artık ne "loose"/"tight" ne de
+    net_liquidity_trend'le çatışması hiçbir şeyi değiştirmiyor — SADECE
+    net_liquidity_trend skora giriyor."""
     agent = MacroAgent()
-    # Gerçek canlı durum: M2SL "loose" (+), net likidite "contracting" (-).
-    ctx = MacroContext(
+    with_loose = agent.analyze(MacroContext(
         indicators=[], liquidity_condition="loose", net_liquidity_trend="contracting",
-    )
-    opinion = agent.analyze(ctx)
-    # Eskiden (±1.0/±1.0) bu ikisi TAM birbirini götürürdü (net 0.0).
-    # Artık net_liquidity_trend (±1.0) ağır basıp SHORT'a çekmeli.
-    assert opinion.direction == "SHORT"
-    assert opinion.feature_contributions["net_liquidity_trend"] == -1.0
-    assert opinion.feature_contributions["liquidity_condition"] == 0.5
-
-
-def test_liquidity_signals_still_fully_agree_when_pointing_the_same_way():
-    """Regresyon: ikisi AYNI yönde çıkarsa (M2SL loose + net likidite
-    expanding) hâlâ güçlü şekilde birleşmeli — sadece ÇATIŞMA durumunda
-    net_liquidity_trend ağır basıyor, aynı yöndeyken ikisi de katkı verir."""
-    agent = MacroAgent()
-    ctx = MacroContext(
-        indicators=[], liquidity_condition="loose", net_liquidity_trend="expanding",
-    )
-    opinion = agent.analyze(ctx)
-    assert opinion.direction == "LONG"
-    assert opinion.feature_contributions["net_liquidity_trend"] == 1.0
-    assert opinion.feature_contributions["liquidity_condition"] == 0.5
+    ))
+    with_tight = agent.analyze(MacroContext(
+        indicators=[], liquidity_condition="tight", net_liquidity_trend="contracting",
+    ))
+    assert "liquidity_condition" not in with_loose.feature_contributions
+    assert with_loose.direction == with_tight.direction == "SHORT"
+    assert with_loose.confidence == with_tight.confidence
+    assert with_loose.feature_contributions["net_liquidity_trend"] == -1.0
 
 
 def test_improving_employment_pushes_toward_long():
@@ -143,10 +125,9 @@ def test_feature_contributions_are_empty_when_no_signal_fires():
 def test_feature_contributions_names_the_active_signals():
     agent = MacroAgent()
     opinion = agent.analyze(MacroContext(
-        indicators=[], inflation_trend="rising", liquidity_condition="tight",
+        indicators=[], inflation_trend="rising",
         central_bank_bias="hawkish", employment_trend="weakening",
     ))
     assert opinion.feature_contributions["inflation"] < 0
-    assert opinion.feature_contributions["liquidity_condition"] < 0
     assert opinion.feature_contributions["central_bank_bias"] < 0
     assert opinion.feature_contributions["employment_trend"] < 0
