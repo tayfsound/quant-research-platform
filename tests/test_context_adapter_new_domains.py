@@ -91,6 +91,18 @@ def test_to_order_flow_defaults_when_no_db_row_and_no_override():
     assert result.spread_bps == 0.0
 
 
+def test_to_order_flow_computes_market_regime_same_as_pattern():
+    """Faz 412 — kullanıcı isteği: order_flow'un bullish_low'da zararlı
+    olduğu bulundu, pattern_agent'ın (Faz 411) AYNI market_regime
+    formülünü kullanıyor — ContextAdapter._compute_market_regime()
+    tek yerde hesaplanıp iki to_*() metoduna da geçiyor."""
+    ctx = CognitiveCycleContext(market={
+        "symbol": "NEVERINGESTEDXYZ", "raw_snapshot": {"trend": "bullish", "volatility_regime": "low"},
+    })
+    result = ContextAdapter().to_order_flow(ctx)
+    assert result.market_regime == "bullish_low"
+
+
 def test_to_order_flow_explicit_override_wins_over_db():
     ctx = CognitiveCycleContext(market={"symbol": "BTCUSDT", "raw_snapshot": {"bid_ask_imbalance": 0.9}})
     result = ContextAdapter().to_order_flow(ctx)

@@ -412,14 +412,16 @@ class ContextAdapter:
             higher_timeframe_trend=self._get(ctx, "higher_timeframe_trend", None),
         )
 
-    def to_pattern(self, ctx: CognitiveCycleContext) -> PatternContext:
-        # Faz 411 — kullanıcı isteği: wyckoff_event/structure_phase'in
-        # rejime göre koşullu gerçek edge'i var. Diğer 14 yerin (Market
-        # State planı) kullandığı AYNI f"{trend}_{volatility_regime}"
-        # formülü — yeni bir hesaplama icat edilmiyor.
+    def _compute_market_regime(self, ctx: CognitiveCycleContext) -> str:
+        """Faz 411 — Market State planının 14+ yerde kullandığı AYNI
+        f"{trend}_{volatility_regime}" formülü. Faz 412'de pattern
+        dışına (order_flow) da taşındığı için tek yere çıkarıldı."""
         trend = self._get(ctx, "trend", "neutral")
         volatility_regime = self._get(ctx, "volatility_regime", "normal")
-        market_regime = f"{trend}_{volatility_regime}" if trend != "neutral" else "unknown"
+        return f"{trend}_{volatility_regime}" if trend != "neutral" else "unknown"
+
+    def to_pattern(self, ctx: CognitiveCycleContext) -> PatternContext:
+        market_regime = self._compute_market_regime(ctx)
         return PatternContext(
             structure_phase=self._get(ctx, "structure_phase", "neutral"),
             break_of_structure=self._get(ctx, "break_of_structure", "none"),
@@ -481,6 +483,7 @@ class ContextAdapter:
             aggressive_buy_ratio=self._get(ctx, "aggressive_buy_ratio", aggressive_buy_ratio),
             funding_rate=self._get(ctx, "funding_rate", funding_rate),
             open_interest_trend=self._get(ctx, "open_interest_trend", open_interest_trend),
+            market_regime=self._get(ctx, "market_regime", self._compute_market_regime(ctx)),
         )
 
     def to_time(self, ctx: CognitiveCycleContext) -> TimeContext:

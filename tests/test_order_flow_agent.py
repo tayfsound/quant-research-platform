@@ -18,6 +18,31 @@ def test_ask_heavy_imbalance_generates_short():
     assert opinion.direction == "SHORT"
 
 
+def test_bullish_low_regime_shadows_the_entire_domain():
+    """Faz 412 — kullanıcı isteği: order_flow'un bullish_low rejiminde
+    net zararlı olduğu bulundu (ablation: -193$/işlem beklenti; yönlü
+    IC: p=0,014) — TEK bir feature değil, TÜM domain (aggressive_buy_
+    ratio + open_interest_confirm) bu rejimde skora sıfır etki yapmalı,
+    ama feature_ic'in izleyebilmesi için feature_contributions'ta
+    gölge olarak kalmalı (pattern_agent.py::_regime_gated ile AYNI
+    disiplin)."""
+    agent = OrderFlowAgent()
+    opinion = agent.analyze(OrderFlowContext(
+        aggressive_buy_ratio=0.7, open_interest_trend="rising", market_regime="bullish_low",
+    ))
+    assert opinion.direction == "WAIT"
+    assert opinion.confidence == 0.0
+    assert opinion.feature_contributions["aggressive_buy_ratio"] == 1.0
+    assert opinion.feature_contributions["open_interest_confirm"] == 0.3
+
+
+def test_other_regimes_keep_order_flow_active():
+    agent = OrderFlowAgent()
+    for regime in ("bullish_normal", "bearish_low", "unknown"):
+        opinion = agent.analyze(OrderFlowContext(aggressive_buy_ratio=0.7, market_regime=regime))
+        assert opinion.direction == "LONG"
+
+
 def test_wide_spread_dampens_confidence_and_warns():
     agent = OrderFlowAgent()
     tight = agent.analyze(OrderFlowContext(aggressive_buy_ratio=0.7, spread_bps=2.0))

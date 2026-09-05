@@ -39,6 +39,7 @@ class DecisionRecorder:
         market_state_entries=None,
         tp_sl_confluence_entries=None,
         sl_confluence_entries=None,
+        tp_sl_ratio_guard_entries=None,
     ) -> DecisionEvent:
 
         direction = (
@@ -134,6 +135,18 @@ class DecisionRecorder:
         for entry in (sl_confluence_entries or []):
             agent_opinions_data.append({
                 "type": "sl_confluence",
+                "data": entry,
+            })
+
+        # Faz 413 — kullanıcı bulgusu (JPMUSDT: hedefe ulaştı, pnl $0.49):
+        # RiskTargetStage'in TP/SL oran güvenlik ağı (min_target_pct
+        # tabanından SONRA, stop:hedef oranı 5.5'i aşarsa hedefi genişleten
+        # son kontrol) tp_sl_confluence ile AYNI görünürlük deseninde
+        # kalıcı — "hedef neden bu kadar geniş?" sorusunun cevabı da
+        # DB'de bulunsun, Faz 409'un unuttuğu şey burada tekrarlanmasın.
+        for entry in (tp_sl_ratio_guard_entries or []):
+            agent_opinions_data.append({
+                "type": "tp_sl_ratio_guard",
                 "data": entry,
             })
 

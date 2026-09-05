@@ -17,24 +17,40 @@ class OrderFlowAgent:
         # (scale_all) O ANA KADAR birikmiş katkılara uygulanıyor — orijinal
         # `score *= X` sıralamasıyla birebir aynı.
         contributions: dict[str, float] = {}
+        # Faz 412 — kullanıcı isteği: "bizzat ajanlarda gürültü yapıyor
+        # olabilir onları da kontrol edelim." Domain-seviyesi denetimde
+        # order_flow'un bullish_low rejiminde net ZARARLI olduğu bulundu
+        # (ablation: pivotal olduğu 22 kararda toplam -4248$, işlem başına
+        # -193$ beklenti; yönlü IC: p=0,014 anlamlı negatif) — ama TEK TEK
+        # feature'lar (aggressive_buy_ratio kendi başına p=0,18) wyckoff_
+        # event/structure_phase'in (Faz 411, p<0,001) geçtiği çıtayı
+        # geçmiyor. Kök neden muhtemelen open_interest_confirm'ün zayıf/
+        # belirsiz bir sinyali güçlendirmesi — o yüzden TEK bir feature
+        # değil, TÜM domain bullish_low'da gölgeleniyor (skora sıfır
+        # etki, feature_ic ile izlemeye devam).
+        shadow_contributions: dict[str, float] = {}
+        is_shadow_regime = context.market_regime == "bullish_low"
 
         def scale_all(factor: float) -> None:
             for key in contributions:
                 contributions[key] *= factor
 
-        # Faz 411 — kullanıcı isteği: "gerçekten gürültü olduğunu tespit
-        # ettiğimiz bütün sinyalleri mimariden temizleyelim." bid_ask_
-        # imbalance, rejime göre ayrıştırılmış Feature IC denetiminde
-        # HİÇBİR rejim segmentinde anlamlı çıkmadı (en yakını bearish_
-        # normal'da p=0.317) — gerçekten gürültü. Kaldırıldı.
+        def _place(key: str, raw_value: float, evidence_text: str) -> None:
+            if is_shadow_regime:
+                shadow_contributions[key] = raw_value
+                evidence.append(f"{evidence_text} (bullish_low rejiminde zararlı bulundu — ağırlığı sıfır, izleniyor)")
+            else:
+                contributions[key] = raw_value
+                evidence.append(evidence_text)
+
+        # Faz 411 — bid_ask_imbalance, rejime göre ayrıştırılmış Feature IC
+        # denetiminde HİÇBİR rejim segmentinde anlamlı çıkmadı — kaldırıldı.
 
         # Agresif alış/satış oranı (taker flow)
         if context.aggressive_buy_ratio > 0.65:
-            contributions["aggressive_buy_ratio"] = 1.0
-            evidence.append(f"Agresif alış oranı {context.aggressive_buy_ratio:.2f} — taker-yönlü alım")
+            _place("aggressive_buy_ratio", 1.0, f"Agresif alış oranı {context.aggressive_buy_ratio:.2f} — taker-yönlü alım")
         elif context.aggressive_buy_ratio < 0.35:
-            contributions["aggressive_buy_ratio"] = -1.0
-            evidence.append(f"Agresif alış oranı {context.aggressive_buy_ratio:.2f} — taker-yönlü satım")
+            _place("aggressive_buy_ratio", -1.0, f"Agresif alış oranı {context.aggressive_buy_ratio:.2f} — taker-yönlü satım")
 
         # Geniş spread — düşük likidite, güveni azalt
         if context.spread_bps > 10:
@@ -43,19 +59,23 @@ class OrderFlowAgent:
         elif context.spread_bps == 0:
             caveats.append("Spread verisi mevcut değil")
 
-        # Faz 411 — kullanıcı isteği: "gerçekten gürültü olduğunu tespit
-        # ettiğimiz bütün sinyalleri mimariden temizleyelim." funding_rate,
-        # rejime göre ayrıştırılmış Feature IC denetiminde hiçbir rejim
-        # segmentinde anlamlı çıkmadı (overall p=0.97, n=211 — zaten çok
-        # zayıf) — gerçekten gürültü. Kaldırıldı.
+        # Faz 411 — funding_rate, rejime göre ayrıştırılmış Feature IC
+        # denetiminde hiçbir rejim segmentinde anlamlı çıkmadı — kaldırıldı.
 
         # Open interest trend — technical_agent'taki ADX'in rolüyle aynı
         # desen: yön belirlemiyor, mevcut yönü (yukarıdaki imbalance/
         # taker akışından gelen) teyit ediyor ya da güveni azaltıyor.
-        current_score = sum(contributions.values())
-        if context.open_interest_trend == "rising" and current_score != 0:
-            contributions["open_interest_confirm"] = 0.3 if current_score > 0 else -0.3
-            evidence.append("Açık pozisyon (open interest) artıyor — yeni para yönü teyit ediyor")
+        # Faz 412: bullish_low'da referans skor GERÇEK contributions değil
+        # shadow_contributions'tan alınıyor — o rejimde aggressive_buy_
+        # ratio zaten shadow'da, gerçek skor hep 0 olurdu ve bu blok hiç
+        # tetiklenmezdi; shadow'daki yönü referans alarak feature_ic'in
+        # izlemeye devam edebilmesi sağlanıyor.
+        reference_score = sum(shadow_contributions.values()) if is_shadow_regime else sum(contributions.values())
+        if context.open_interest_trend == "rising" and reference_score != 0:
+            _place(
+                "open_interest_confirm", 0.3 if reference_score > 0 else -0.3,
+                "Açık pozisyon (open interest) artıyor — yeni para yönü teyit ediyor",
+            )
         elif context.open_interest_trend == "falling":
             caveats.append("Açık pozisyon (open interest) azalıyor — pozisyon kapatma, azaltılmış güven")
             scale_all(0.85)
@@ -82,5 +102,5 @@ class OrderFlowAgent:
             source_reliability=0.8,
             evidence=evidence,
             caveats=caveats,
-            feature_contributions={k: round(v, 4) for k, v in contributions.items()},
+            feature_contributions={k: round(v, 4) for k, v in {**shadow_contributions, **contributions}.items()},
         ).recalculate()

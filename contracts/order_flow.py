@@ -17,4 +17,8 @@ class OrderFlowContext(BaseModel):
     # olmayan bir sembolde (fail-closed) None/"unknown" kalır.
     funding_rate: float | None = None  # 8 saatlik oran; pozitif = long'lar short'lara ödüyor
     open_interest_trend: str = "unknown"  # "rising" | "falling" | "stable" | "unknown"
+    # Faz 412 — kullanıcı isteği: order_flow domain'inin bullish_low
+    # rejiminde zararlı olduğu (ablation: -193$/işlem beklenti; yönlü IC:
+    # p=0.014) bulundu — pattern_agent.py'deki AYNI market_regime deseni.
+    market_regime: str = "unknown"
     timestamp: datetime = Field(default_factory=datetime.now)

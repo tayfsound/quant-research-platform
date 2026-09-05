@@ -207,7 +207,27 @@ class RealtimePositionMonitor:
                     )
 
     async def _handle_tick(self, symbol: str, price: float) -> None:
-        if symbol not in self._positions_by_symbol:
+        # Faz 414 (2026-09-06) — kullanıcı bulgusu: WS "keepalive ping
+        # timeout" ile ortalama her 10-30 dakikada bir kopuyordu (log:
+        # yüzlerce olay/gün), ve bu boşluklarda REST güvenlik ağı
+        # (close_due_positions_task) bazı pozisyonları planlanan stop
+        # mesafesinin 6,5 katına kadar aşarak kapatıyordu (ARBUSDT: %4,5
+        # stop yerine %29 zarar). Kök neden bulundu: BU FONKSİYON, o
+        # sembolde HERHANGİ bir açık pozisyon varsa (fiyat hiçbir stop/
+        # hedef/likidasyon seviyesine yakın olmasa bile) HER TEK trade
+        # tick'inde `asyncio.to_thread` ile tam bir thread-havuzu gidiş-
+        # dönüşü ödüyordu — `async for` döngüsü içinde SIRAYLA await
+        # edildiği için, BTCUSDT/ETHUSDT gibi saniyede onlarca trade
+        # üreten semboller event loop'u WS'nin 20sn'lik ping/pong
+        # keepalive'ını zamanında işleyemeyecek kadar tıkayabiliyordu.
+        # `_is_price_triggered` saf/ucuz (I/O yok) olduğu için artık ÖNCE
+        # senkron kontrol ediliyor — thread'e SADECE gerçek bir aday
+        # varsa (nadir) gidiliyor, `_close_triggered_positions_sync`'in
+        # kendi (güvenlik ağı olarak kalan) iç kontrolü DEĞİŞMEDİ.
+        positions = self._positions_by_symbol.get(symbol)
+        if not positions:
+            return
+        if not any(_is_price_triggered(pos, price) for pos in positions):
             return
         await asyncio.to_thread(self._close_triggered_positions_sync, symbol, price)
 

@@ -1,9 +1,70 @@
-# Mevcut Durum -- v1.145.0 (Faz 411: rejime göre ayrıştırılmış gürültü denetimi — gerçek gürültü sinyalleri mimariden temizlendi)
+# Mevcut Durum -- v1.148.0 (Faz 412-414: ajan-seviyesi gürültü denetimi + TP/SL oran güvenlik ağı + WS event-loop tıkanıklığı)
 
-**Tarih:** 2026-09-04
+**Tarih:** 2026-09-06
 **Branch:** main
 **Son commit (HEAD):** push edilecek (bu turda).
-**Servis durumu:** commit/push edilecek, worker+uvicorn yeniden başlatılacak.
+**Servis durumu:** commit/push edilecek, worker+uvicorn+realtime_position_monitor yeniden başlatılacak.
+
+**Bağlam:** Kullanıcı gerçek bir pozisyon buldu (JPMUSDT, "hedefe ulaştı"
+diyordu ama pnl $0,49) ve ayrıca "%75 kazanma oranıyla hâlâ zarar
+ediyoruz, test moduna geçtiğimizden beri düzeltemedik" dedi. Üç ayrı
+bulgu/düzeltme:
+
+**Faz 412 — ajan-seviyesi gürültü denetimi.** 6000 gerçek kapanmış karar
+üzerinden ablation (leave-one-out) + yönlü-güven IC, 12 oy veren
+domain'in tamamına uygulandı. credit/volatility ajanlarının hiç yön
+söylemediği (5752/5751-6000 WAIT) ama BUG OLMADIĞI (canlı FRED/Deribit
+verisi bizzat sorgulandı, sadece eşikleri geçen olay yok) doğrulandı.
+order_flow'un bullish_low'da net zararlı olduğu bulundu (ablation:
+-193$/işlem; yönlü IC p=0,014) — TÜM domain (aggressive_buy_ratio +
+open_interest_confirm) o rejimde gölgelendi (yeni `OrderFlowContext.
+market_regime`, `context_adapter.py::_compute_market_regime()` artık
+pattern VE order_flow ile paylaşılıyor). macro'da güven arttıkça
+doğruluğun DÜŞTÜĞÜ bir paradoks bulundu (tüm boğa rejimlerinde) —
+liquidity_condition'a (Faz 411) bağlanamadı (bu pencerede %100 kapsıyor,
+karşılaştırma alt kümesi yok), gözlem kuyruğuna alındı.
+
+**Faz 413 — TP/SL oran güvenlik ağı.** JPMUSDT eski (Faz 406 öncesi)
+bir pozisyondu ama araştırırken Faz 406 SONRASI 619 pozisyonun **%68'i
+(423)** hâlâ stop:hedef oranı 5,5'i aşıyordu (medyan 9:1, en kötü
+22,3:1) — kök neden: `MAX_ADAPTIVE_BARRIER_RATIO` SADECE Adaptive
+Barrier tablosunu kontrol ediyordu, TP/SL Confluence'ın bundan SONRA
+hedefi bağımsız sıkıştırması hiç kontrol edilmiyordu. `engines/
+cognitive_pipeline.py::RiskTargetStage`'e min_target_pct tabanından
+SONRA çalışan son bir kontrol eklendi — oran hâlâ 5,5'i aşıyorsa stop'a
+DOKUNMADAN hedef genişletiliyor. Faz 409'un görünürlük dersiyle AYNI
+desende `tp_sl_ratio_guard` etiketi RecordingStage/DecisionRecorder'a
+da eklendi.
+
+**Faz 414 — ASIL BÜYÜK BULGU: WS event-loop tıkanıklığı.** Kullanıcının
+"%75 kazanıp zarar ediyoruz" şikayeti araştırılırken (5 Eylül: -$1125,
+%75 kazanma) 36 pozisyonun planlanan stop mesafesini **%15-550**
+aşarak kapandığı bulundu (ARBUSDT: %4,5 stop yerine %29 zarar, ~$225/gün
+fazladan zarar). Kök neden: `services/realtime_position_monitor.py`
+WS'i "keepalive ping timeout" ile ortalama her 10-30 dakikada bir
+kopuyordu (log: yüzlerce olay/gün) — `_handle_tick`, sembolde HERHANGİ
+bir pozisyon varsa (fiyat hiçbir seviyeye yakın olmasa bile) HER trade
+tick'inde `asyncio.to_thread` ile tam bir thread-havuzu gidiş-dönüşü
+ödüyordu, `async for` döngüsü SIRAYLA await ettiği için BTCUSDT/ETHUSDT
+gibi yüksek hacimli semboller event loop'u WS'nin 20sn ping/pong
+keepalive'ını zamanında işleyemeyecek kadar tıkıyordu. Ucuz/saf
+`_is_price_triggered` kontrolü artık thread'e gitmeden ÖNCE senkron
+çalıştırılıyor — thread SADECE gerçek bir aday varken (nadir)
+kullanılıyor. **Gözlem gerekiyor**: WS disconnect sıklığının gerçekten
+düştüğünü birkaç günlük taze logla doğrulamak lazım, henüz canlı
+doğrulanmadı.
+
+**AÇIK MADDELER:**
+1. macro'nun güven/doğruluk paradoksu (Faz 412) — Faz 411 sonrası taze
+   veri biriktiğinde tekrar kontrol edilmeli.
+2. Faz 414'ün gerçekten WS disconnect sıklığını düşürdüğü — birkaç
+   günlük taze log ile doğrulanmalı, henüz yapılmadı.
+3. `close_due_positions_task`'ın bazı yoğun pencerelerde (Sep5 04:53-
+   08:00) normal ~1-3dk yerine 15-25dk'da bir çalıştığı gözlemlendi —
+   muhtemelen paylaşılan Binance rate limit + pozisyon sayısı (kod
+   kendi docstring'inde zaten "REST tek başına yetersiz" diyor, WS'nin
+   VAR OLMA sebebi bu) — Faz 414 WS'i güvenilir kılarsa bu ikincil
+   kalır, ayrıca dokunulmadı.
 
 **Faz 411 — kullanıcı isteği: "Doğrulamadığımız sinyalleri de kontrol
 edip doğrulayalım... Veri kaynakları canlı mı diye denetim yapalım...

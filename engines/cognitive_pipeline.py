@@ -1227,6 +1227,26 @@ class RiskTargetStage:
         # tabanı) — min_target_pct hedefi bu tabanın altına asla indirmiyor.
         target_pct = max(target_pct, min_target_pct)
 
+        # Faz 413 (2026-09-06) — kullanıcı bulgusu (JPMUSDT: hedefe ulaştı,
+        # pnl $0.49): MAX_ADAPTIVE_BARRIER_RATIO SADECE Adaptive Barrier
+        # tablosundan gelen (sl_pct, tp_pct) çiftini kontrol ediyordu —
+        # yukarıdaki confluence-snap + min_target_pct tabanı bundan SONRA,
+        # stop'a hiç bakmadan hedefi bağımsız sıkıştırabiliyordu. Gerçek
+        # ölçüm: Faz 406 dağıtımından sonra açılan 619 pozisyonun %68'i
+        # (423) bu oranı aşıyordu (medyan 9:1, en kötüsü AEROUSDT 22.3:1).
+        # min_stop_pct/min_target_pct'in AYNI "asla daraltma" ilkesi —
+        # stop hiç değişmiyor, SADECE hedef (oranı koruyacak kadar hâlâ
+        # daha yakın kalarak) genişletiliyor. LONG'un kasıtlı olarak
+        # BÜYÜK hedef/stop oranı (Faz 320, ~2.75) buradan ETKİLENMİYOR —
+        # sadece hedefin stop'a göre orantısız KÜÇÜK kaldığı yön korunuyor.
+        if target_pct > 0 and target_pct / stop_pct < 1.0 / self.MAX_ADAPTIVE_BARRIER_RATIO:
+            widened_target_pct = stop_pct / self.MAX_ADAPTIVE_BARRIER_RATIO
+            ctx.cognition.relevant_knowledge.append({
+                "type": "tp_sl_ratio_guard",
+                "data": {"stop_pct": round(stop_pct, 6), "pre_guard_target_pct": round(target_pct, 6), "widened_target_pct": round(widened_target_pct, 6)},
+            })
+            target_pct = widened_target_pct
+
         ctx.decision.stop_loss_distance = current_price * stop_pct
         ctx.decision.take_profit_distance = current_price * target_pct
 
@@ -1474,6 +1494,11 @@ class RecordingStage:
         # fusion/market_state ile AYNI desen, visibility-only.
         tp_sl_confluence_entries = []
         sl_confluence_entries = []
+        # Faz 413 — Faz 409'un AYNI görünürlük dersi: RiskTargetStage'in
+        # yeni tp_sl_ratio_guard genişletmesi (bkz. yukarıdaki not) baştan
+        # itibaren buraya taşınıyor, tp_sl_confluence gibi sessizce
+        # unutulmasın.
+        tp_sl_ratio_guard_entries = []
         experiment_bucket = None
 
         if hasattr(ctx, "cognition"):
@@ -1492,6 +1517,8 @@ class RecordingStage:
                     tp_sl_confluence_entries.append(item.get("data"))
                 if item.get("type") == "sl_confluence":
                     sl_confluence_entries.append(item.get("data"))
+                if item.get("type") == "tp_sl_ratio_guard":
+                    tp_sl_ratio_guard_entries.append(item.get("data"))
 
             for item in reversed(ctx.cognition.relevant_knowledge):
                 if item.get("type") == "debate_result":
@@ -1520,6 +1547,7 @@ class RecordingStage:
             market_state_entries=market_state_entries,
             tp_sl_confluence_entries=tp_sl_confluence_entries,
             sl_confluence_entries=sl_confluence_entries,
+            tp_sl_ratio_guard_entries=tp_sl_ratio_guard_entries,
         )
 
         from observability.metrics import decisions_total
