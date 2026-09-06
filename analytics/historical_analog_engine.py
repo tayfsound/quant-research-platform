@@ -42,10 +42,14 @@ from analytics.collective_intelligence import compute_accuracy_confidence_interv
 DEFAULT_COMBINATION_SIZES = (2, 3)
 
 
+DEFAULT_MIN_DISTINCT_DAYS = 5
+
+
 def compute_historical_analogs(
     records: list[dict],
     combination_sizes: tuple[int, ...] = DEFAULT_COMBINATION_SIZES,
     min_group_size: int = MIN_GROUP_SIZE,
+    min_distinct_days: int = DEFAULT_MIN_DISTINCT_DAYS,
 ) -> dict:
     """records: her biri {'agreeing_domains': frozenset[str], 'market_regime':
     str | None, 'direction': 'LONG'|'SHORT', 'win': bool, 'closed_at':
@@ -143,12 +147,22 @@ def compute_historical_analogs(
         del c["_wins"]
         c["win_rate_delta_vs_baseline"] = round(c["win_rate"] - baseline_win_rate, 4)
         c["fdr_significant"] = fdr_ok
-        # agent_combination_reliability.py'nin AYNI üç-şartlı bayrağı:
-        # FDR-anlamlı + OOS'ta tekrarlanmış + yeterli bağımsız örneklem.
-        # Kasıtlı olarak SADECE bir etiket — hiçbir gate/karar hattına
-        # bağlı değil, bu turda insan (kullanıcı) bunu SADECE görüyor.
+        # Faz 422 (2026-09-06) — GPT'nin dış incelemesi + kullanıcı onayı:
+        # gate_eligible olan analogların TAMAMI distinct_days=2 çıkıyordu
+        # (ör. order_flow+technical/bullish_normal/LONG: win_rate=0,94,
+        # eff_n=27, SADECE 2 farklı gün) — "2 ayrı zaman kesitinde
+        # doğrulandı" gerçek bir zamansal dayanıklılık kanıtı için ÇOK
+        # ZAYIF, agent_combination_reliability_gate.py'nin ZATEN
+        # kullandığı AYNI min_distinct_days=5 eşiği burada YOKTU. HISTORICAL_
+        # ANALOG_OVERRIDE_ENABLED=true iken bu, belief.strength'i sadece
+        # 2 günlük kanıtla 0,94'e sıçratabiliyordu, hiçbir küçültme
+        # (shrinkage) olmadan — kanıtlanmamış zamansal genelleme riski
+        # gerçekti, teorik değil.
         c["gate_eligible"] = bool(
-            fdr_ok and c["oos_survival"] is True and c["effective_sample_size"] >= min_group_size
+            fdr_ok
+            and c["oos_survival"] is True
+            and c["effective_sample_size"] >= min_group_size
+            and (c["distinct_days"] or 0) >= min_distinct_days
         )
         analogs.append(c)
 

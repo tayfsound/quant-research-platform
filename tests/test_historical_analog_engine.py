@@ -17,6 +17,36 @@ def _record(domains, regime, direction, win, closed_at=None, reversing=False):
     }
 
 
+def test_gate_eligible_requires_minimum_distinct_days():
+    """Faz 422 (2026-09-06) — GPT'nin dış incelemesi + kullanıcı onayı:
+    gate_eligible olan analogların TAMAMI distinct_days=2 çıkıyordu
+    (ör. gerçek canlı veri: order_flow+technical/bullish_normal/LONG,
+    win_rate=0,94, eff_n=27, sadece 2 farklı gün) —
+    agent_combination_reliability_gate.py'nin ZATEN kullandığı
+    min_distinct_days=5 eşiği burada yoktu. FDR+OOS+effective_sample_size
+    hepsi geçse bile, sadece 2 (ya da her hâlükârda <5) farklı güne
+    dayanan GÜÇLÜ görünen bir örüntü artık gate_eligible=False olmalı."""
+    from datetime import UTC, datetime, timedelta
+
+    base_time = datetime(2026, 8, 1, tzinfo=UTC)
+    # hours=i -> 40 kayit sadece ~1.67 gune yayiliyor (distinct_days<5).
+    strong = [
+        _record({"technical", "macro"}, "bullish_low", "LONG", i % 10 != 0, base_time + timedelta(hours=i))
+        for i in range(40)
+    ]
+    baseline = [
+        _record({"quant"}, "bullish_low", "LONG", i < 10, base_time + timedelta(hours=i))
+        for i in range(40)
+    ]
+    result = compute_historical_analogs(strong + baseline, combination_sizes=(2,), min_group_size=20)
+    analog = next(a for a in result["analogs"] if set(a["domains"]) == {"technical", "macro"})
+    assert analog["fdr_significant"] is True
+    assert analog["oos_survival"] is True
+    assert analog["effective_sample_size"] >= 20
+    assert analog["distinct_days"] < 5
+    assert analog["gate_eligible"] is False
+
+
 def test_empty_input_is_fail_closed():
     result = compute_historical_analogs([])
     assert result == {"analogs": [], "baseline_win_rate": None, "baseline_sample_size": 0}
@@ -112,13 +142,17 @@ def test_records_with_missing_or_non_bool_reversing_are_excluded_fail_closed():
 
 
 def test_gate_eligible_requires_fdr_and_oos_and_effective_sample_size_together():
+    # Faz 422 — kullanıcı bulgusu: gate_eligible olan analogların TAMAMI
+    # distinct_days=2 çıkıyordu (sadece 2 farklı gün). timedelta(days=i)
+    # kullanılıyor (hours=i DEĞİL) — yeni min_distinct_days=5 şartını da
+    # gerçekten test etsin diye, kayıtlar 40 FARKLI takvim gününe yayılıyor.
     base_time = datetime(2026, 8, 1, tzinfo=UTC)
     strong = [
-        _record({"technical", "macro"}, "bullish_low", "LONG", i % 10 != 0, base_time + timedelta(hours=i))
+        _record({"technical", "macro"}, "bullish_low", "LONG", i % 10 != 0, base_time + timedelta(days=i))
         for i in range(40)
     ]
     baseline = [
-        _record({"quant"}, "bullish_low", "LONG", i < 10, base_time + timedelta(hours=i))
+        _record({"quant"}, "bullish_low", "LONG", i < 10, base_time + timedelta(days=i))
         for i in range(40)
     ]
     result = compute_historical_analogs(strong + baseline, combination_sizes=(2,), min_group_size=20)
@@ -126,6 +160,7 @@ def test_gate_eligible_requires_fdr_and_oos_and_effective_sample_size_together()
     assert analog["fdr_significant"] is True
     assert analog["oos_survival"] is True
     assert analog["effective_sample_size"] >= 20
+    assert analog["distinct_days"] >= 5
     assert analog["gate_eligible"] is True
 
     # closed_at yoksa (oos_survival=None) AYNI güçlü desen bile gate_eligible=False olmalı.
