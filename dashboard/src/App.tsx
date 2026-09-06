@@ -25,6 +25,7 @@ import HistoricalAnalogs from './views/HistoricalAnalogs';
 import StrategyRegimeCompatibility from './views/StrategyRegimeCompatibility';
 import StrategyHypothesisScanner from './views/StrategyHypothesisScanner';
 import ResearchSummary from './views/ResearchSummary';
+import MeasurementStability from './views/MeasurementStability';
 import Sidebar from './components/Sidebar';
 import { clearToken, hasToken } from './api/auth';
 
@@ -108,6 +109,7 @@ function App() {
           {view === 'strategy-regime-compatibility' && <StrategyRegimeCompatibility />}
           {view === 'strategy-hypothesis-scanner' && <StrategyHypothesisScanner />}
           {view === 'research-summary' && <ResearchSummary onNavigate={setView} />}
+          {view === 'measurement-stability' && <MeasurementStability />}
         </div>
       </main>
     </div>

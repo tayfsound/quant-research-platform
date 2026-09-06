@@ -44,3 +44,39 @@ def compute_stability(values: list[float | None]) -> dict | None:
         "max": max(clean),
         "coefficient_of_variation": (s / abs(m)) if m != 0 else None,
     }
+
+
+# Faz 415 (2026-09-06) — kullanıcı isteği: "son eklediğimiz modüllerden
+# aldığımız verilerin zaman içindeki tutarlılığını gösteren verileri
+# dashboard'da göremiyorum." Faz 407 kasıtlı olarak backend-only kaldı
+# (gözlem-only, hiçbir dashboard kapsamda değildi) — TP/SL Confluence'ın
+# (Faz 409) aynı "ölçülüyor ama görünmez" boşluğu. compute_stability()'nin
+# ürettiği `*_stability` alanları her modülün kendi iç yapısında farklı
+# derinliklerde gömülü (ör. `by_domain.macro.brier_score_stability`,
+# `analogs[0].win_rate_stability`) — bu fonksiyon herhangi bir gather_*()
+# çıktısını (Research Summary'nin zaten paralel canlı çektiği AYNI veri)
+# tek tip, düz bir listeye indiriyor, yeni bir hesaplama yapmıyor.
+def extract_stability_summary(result: object, _path: str = "") -> list[dict]:
+    """result: herhangi bir gather_*() fonksiyonunun döndürdüğü ham dict/
+    liste. Anahtarı "_stability" ile biten VE compute_stability()'nin
+    şeklini taşıyan (coefficient_of_variation alanlı) her sözlüğü
+    {"path", **stat} olarak düz bir listeye toplar. Liste elemanları
+    ilk 20 ile sınırlı — bazı modüllerde (ör. feature_ic) yüzlerce isimli
+    alt-anahtar olabiliyor, dashboard'da tek bir kart taşacak kadar
+    büyümesin diye (tam veri yine de kendi sayfasında var)."""
+    found: list[dict] = []
+    if isinstance(result, dict):
+        for key, value in result.items():
+            # Gerçek bulgu: bazı modüllerin (ör. market_world_model'in
+            # block_size_sensitivity.by_block_size) sözlük anahtarları
+            # int (5, 10, 20, 30) — .endswith() burada patlıyordu.
+            key_str = key if isinstance(key, str) else str(key)
+            path = f"{_path}.{key_str}" if _path else key_str
+            if key_str.endswith("_stability") and isinstance(value, dict) and "coefficient_of_variation" in value:
+                found.append({"path": path, **value})
+            else:
+                found.extend(extract_stability_summary(value, path))
+    elif isinstance(result, list):
+        for i, item in enumerate(result[:20]):
+            found.extend(extract_stability_summary(item, f"{_path}[{i}]"))
+    return found

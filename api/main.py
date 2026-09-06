@@ -30,6 +30,7 @@ from api.rest import (
     mae_mfe_confidence,
     market_data,
     market_world_model,
+    measurement_stability,
     memory,
     meta_learning_effectiveness,
     model_drift,
@@ -151,6 +152,7 @@ app.include_router(agent_ablation.router, prefix="/api/v1")
 app.include_router(agent_pairwise_ablation.router, prefix="/api/v1")
 app.include_router(tp_sl_confluence.router, prefix="/api/v1")
 app.include_router(research_summary.router, prefix="/api/v1")
+app.include_router(measurement_stability.router, prefix="/api/v1")
 app.include_router(shadow.router, prefix="/api/v1")
 app.include_router(model_drift.router, prefix="/api/v1")
 app.include_router(seasonality.router, prefix="/api/v1")
