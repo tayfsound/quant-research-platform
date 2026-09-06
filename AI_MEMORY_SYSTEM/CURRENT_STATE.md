@@ -1,9 +1,65 @@
-# Mevcut Durum -- v1.149.0 (Faz 415: Ölçüm Stabilitesi dashboard'ı + GPT raporu doğrulaması + gerçek pozitif kenar bulgusu)
+# Mevcut Durum -- v1.152.0 (Faz 417-418: Approvals auth bug'ı + agent_combination_reliability'nin daralan penceresi düzeltildi)
 
 **Tarih:** 2026-09-06
 **Branch:** main
-**Son commit (HEAD):** `18054bd` Faz 415: Ölçüm Stabilitesi dashboard görünümü.
-**Servis durumu:** push edildi, uvicorn yeniden başlatıldı (sağlıklı), celery worker/realtime_position_monitor Faz 412-414'ten beri zaten güncel kodda.
+**Son commit (HEAD):** push edilecek (bu turda).
+**Servis durumu:** Faz 417 frontend-only (vite otomatik yeniler), Faz 418 backend gatherer (uvicorn restart gerekmiyor — sadece bir sonraki `/api/v1/research-summary/`ya da `/api/v1/measurement-stability/` isteğinde taze kod çalışır, ayrı bir servis süreci değil).
+
+**Faz 417 — Approvals sayfası sessizce boş görünüyordu.** Kullanıcı
+bulgusu: "Approvals kısmına uzun zamandır onay gelmiyor." Kök neden:
+`PendingApprovals.tsx`'in `load()`'daki iki GET isteği (`/api/v1/
+weights/pending`, `/api/v1/strategy-gates/pending`) `authHeaders()`
+göndermiyordu (decide()/decideStrategyGate() doğru gönderiyordu, sadece
+ilk yükleme unutulmuştu) — her istek sessizce 401 dönüyordu, `data.
+pending` undefined oluyordu, `|| []` bunu sessizce boş listeye
+çeviriyordu. Gerçekte 7 bekleyen ağırlık onayı vardı (en yenisi o gün
+11:34'te). Düzeltildi.
+
+**Faz 418 — agent_combination_reliability'nin penceresi sessizce
+daralmıştı.** Kullanıcı bulgusu: "eskiden 6-8 kombinasyon kapıya uygundu,
+şimdi sıfır — ajanlar kötüleşmiş olmalı." Araştırıldı, ajanlar
+kötüleşmedi: `MAX_DECISIONS=2000` (karar SAYISINA göre sabit) gerçek
+işlem hacmi arttıkça (5 Eylül'de tek günde 1225+ işlem) sessizce ~1,5
+güne kadar daralmıştı — Faz 373'ün örtüşme-düzeltmesi (effective_
+sample_size) bu kısa pencerede yeterli BAĞIMSIZ kanıt bulamayıp
+haklı olarak sıfır aday üretiyordu (46 kombinasyonun 33'ünde örtüşme
+≥%90). Sabit sayı yerine sabit 30 GÜNLÜK pencereye geçildi (kullanıcı
+kararı: "tüm veri" değil, GPT raporunun "recency" uyarısıyla dengeli
+30 gün). Canlı doğrulandı: 30 günlük pencereyle tam olarak **7**
+gate_eligible kombinasyon çıktı — kullanıcının hatırladığı sayıyla
+birebir örtüştü.
+
+**Ayrıca bu turda:** onchain ajanının son 7 günde sadece %0,2 oy
+kullandığı (30 günde %16,4'e karşı) araştırıldı — bozuk DEĞİL, BTCUSDT
+için hâlâ %100 oy kullanıyor, sadece yapısal olarak sadece birkaç
+majör coin'i kapsıyor ve sistemin hacmi altcoin'lere kaydığı için payı
+matematiksel olarak eridi. Aksiyon gerekmiyor.
+
+**Faz 416 — strategy_hypothesis_scanner'a pozitif-kenar tarafı eklendi.**
+Kullanıcı isteği: bulunan "LONG scalp + düşük konsensüs" kenarını
+scanner'ın resmi FDR+OOS makinesinden geçirelim. `scan_for_gate_
+candidates`/`validate_candidate_out_of_sample` artık `direction`
+parametresiyle simetrik — `scan_for_positive_candidates()` yeni,
+`POSITIVE_EFFECT_THRESHOLD=0.20` (negatif tarafla AYNI büyüklük).
+Geriye dönük tam uyumlu (mevcut çağıranlar — strategy_gate_proposer.py
+— değişmedi).
+
+**Dürüst sonuç: resmi 0,20 delta eşiğini HİÇBİR hücre geçmedi** —
+LONG scalp'in "geri kalanı" zaten güçlü bir tabanda (%75-90) olduğu
+için bullish_normal'daki %90,8 yeterince BÜYÜK bir sıçrama değil (kötü
+tarafta SHORT/bearish_low'un -0,65'lik çöküşüyle simetrik değil —
+metodolojik bulgu: iyi/kötü kenarlar büyüklük olarak simetrik olmuyor).
+Ama zaman-ikiye-bölünmüş OOS'ta LONG scalp (düşük konsensüs) ×
+bullish_normal **iki bağımsız yarıda da pozitif kaldı**: erken %94,5
+(n=325, +$2,25/işlem) → geç %87,1 (n=326, +$3,10/işlem, PnL hatta
+iyileşti). bullish_high'da da tutarlı (%79,1→%81,8). **Uyarı**: orta-
+konsensüs versiyonu (aynı strateji+rejim) erken %93,2'den geç %67,6'ya
+düşmüş — güvenilmemeli.
+
+**Sonuç:** eşik düşürülüp "geçti" denmedi (p-hacking olurdu) — gerçek,
+dürüst durum "resmi gate-kanıtı değil ama iki-yarı-PnL-doğrulanmış
+gözlemsel bulgu." Hiçbir canlı gate/wiring değişmedi, sadece ölçüm
+makinesi genellendi.
 
 **Faz 415 — Ölçüm Stabilitesi dashboard'ı.** Kullanıcı "Faz 407'nin
 ürettiği stabilite verilerini dashboard'da göremiyorum" dedi — gerçekten

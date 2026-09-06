@@ -3,6 +3,8 @@ toplayan tek kaynak — Faz 331. analytics/agent_combination_reliability.py
 saf (pure) kalıyor, gerçek veriye dokunan kod burada. pump_fade_v1 hariç
 (council oylaması yok, mekanik strateji — anlaşma kavramı anlamsız) —
 Opportunity Quality/Agent Ablation ile AYNI dışlama."""
+from datetime import UTC, datetime, timedelta
+
 from analytics.agent_combination_reliability import (
     agreeing_domains_for_decision,
     compute_combination_reliability,
@@ -11,7 +13,16 @@ from analytics.evaluation_cohort import describe_evaluation_window
 from analytics.measurement_stability import compute_stability
 from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMENT_BUCKET
 
-MAX_DECISIONS = 2000
+# Faz 418 (2026-09-06) — kullanıcı bulgusu: sabit MAX_DECISIONS=2000 (karar
+# SAYISINA göre) gerçek gündelik hacim arttıkça (5 Eylül'de tek başına
+# 1225+ işlem) sessizce ~1.5 güne kadar daralmıştı — kullanıcının daha
+# önce gördüğü 6-8 gate_eligible kombinasyon, ajanların kötüleşmesinden
+# DEĞİL, örtüşme-düzeltmesinin (Faz 373) artık çok dar bir pencerede
+# yeterli BAĞIMSIZ kanıt bulamamasından sıfıra düşmüştü. Sabit sayı
+# yerine sabit ZAMAN penceresi — GPT raporunun kendi "recency" uyarısıyla
+# (çok eski veri güncel ajan davranışını yansıtmaz) dengelenmiş, kullanıcı
+# kararı: 30 gün (ne çok dar ne "tüm zamanlar" kadar bayat).
+WINDOW_DAYS = 30
 STABILITY_LOOKBACK_SNAPSHOTS = 12
 
 
@@ -40,9 +51,10 @@ def gather_agent_combination_reliability() -> dict:
     from database.repositories.decision_persistor import DecisionPersistor
     from database.session_factory import SessionFactory
 
+    min_opened_at = datetime.now(UTC) - timedelta(days=WINDOW_DAYS)
     with SessionFactory.get_session() as session:
         closed_trades = DecisionPersistor(session).list_closed_trades(
-            limit=MAX_DECISIONS, exclude_experiment_bucket=PUMP_FADE_EXPERIMENT_BUCKET
+            limit=None, min_opened_at=min_opened_at, exclude_experiment_bucket=PUMP_FADE_EXPERIMENT_BUCKET
         )
         past_snapshots = AgentCombinationReliabilityReportRepository(session).get_recent(
             STABILITY_LOOKBACK_SNAPSHOTS
@@ -67,6 +79,6 @@ def gather_agent_combination_reliability() -> dict:
     # KULLANILAN alt kümeyi (usable contributions/direction/pnl), evaluation_
     # window ise SORGULANAN ham pencereyi anlatıyor — ikisi kasıtlı olarak farklı.
     result["evaluation_window"] = describe_evaluation_window(
-        closed_trades, limit=MAX_DECISIONS, exclude_experiment_buckets=[PUMP_FADE_EXPERIMENT_BUCKET],
+        closed_trades, limit=None, exclude_experiment_buckets=[PUMP_FADE_EXPERIMENT_BUCKET],
     )
     return result
