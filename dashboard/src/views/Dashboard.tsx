@@ -923,15 +923,23 @@ export default function Dashboard() {
                     }`}
                   >
                     <span className="block">{label}</span>
-                    <div className="flex items-center justify-between mt-1">
+                    <div className="flex items-center justify-between mt-1 gap-1">
                       <span className="text-[10px] opacity-80">{enabled ? "Açık" : "Kapalı"}</span>
                       {stat && (
-                        <span
-                          className={`text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded ${
-                            stat.win_rate >= 0.5 ? "bg-white/20 text-white" : "bg-fall text-white"
-                          }`}
-                        >
-                          %{(stat.win_rate * 100).toFixed(0)}
+                        <span className="flex items-center gap-1">
+                          <span className="text-[10px] font-mono opacity-70">%{(stat.win_rate * 100).toFixed(0)}</span>
+                          {/* Kullanıcı bulgusu (2026-09-06): "roi yanıltabiliyor,
+                              başarılı görünüp başarılı olmayanlar var" — win_rate
+                              yüksek ama total_pnl negatif olabiliyor (bugün defalarca
+                              doğrulanan R:R skewi). Renk artık win_rate'e değil
+                              GERÇEK PnL işaretine göre — asıl soru "kazandırdı mı?" */}
+                          <span
+                            className={`text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded ${
+                              stat.total_pnl >= 0 ? "bg-white/20 text-white" : "bg-fall text-white"
+                            }`}
+                          >
+                            {stat.total_pnl >= 0 ? "+" : ""}${stat.total_pnl.toFixed(0)}
+                          </span>
                         </span>
                       )}
                     </div>
@@ -941,7 +949,7 @@ export default function Dashboard() {
             </div>
             {regimePerf && (
               <p className="text-xs text-ink-faint mt-3">
-                Yüzdeler son {regimePerf.n_trades_analyzed} AI konseyi kararı üzerinden gerçek kazanma oranı (Pump-Fade/Basis-Arb hariç).
+                Küçük yüzde: kazanma oranı. Renkli rozet: son {regimePerf.n_trades_analyzed} AI konseyi kararı üzerinden gerçek toplam PnL (Pump-Fade/Basis-Arb hariç) — yüksek kazanma oranı PnL negatif olsa bile kırmızı gösterilir.
               </p>
             )}
           </Card>
