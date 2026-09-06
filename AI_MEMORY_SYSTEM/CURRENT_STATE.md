@@ -1,9 +1,35 @@
-# Mevcut Durum -- v1.148.0 (Faz 412-414: ajan-seviyesi gürültü denetimi + TP/SL oran güvenlik ağı + WS event-loop tıkanıklığı)
+# Mevcut Durum -- v1.149.0 (Faz 415: Ölçüm Stabilitesi dashboard'ı + GPT raporu doğrulaması + gerçek pozitif kenar bulgusu)
 
 **Tarih:** 2026-09-06
 **Branch:** main
-**Son commit (HEAD):** push edilecek (bu turda).
-**Servis durumu:** commit/push edilecek, worker+uvicorn+realtime_position_monitor yeniden başlatılacak.
+**Son commit (HEAD):** `18054bd` Faz 415: Ölçüm Stabilitesi dashboard görünümü.
+**Servis durumu:** push edildi, uvicorn yeniden başlatıldı (sağlıklı), celery worker/realtime_position_monitor Faz 412-414'ten beri zaten güncel kodda.
+
+**Faz 415 — Ölçüm Stabilitesi dashboard'ı.** Kullanıcı "Faz 407'nin
+ürettiği stabilite verilerini dashboard'da göremiyorum" dedi — gerçekten
+hiç görünüm yoktu (kasıtlı backend-only kalmıştı). Yeni `/api/v1/
+measurement-stability/` + `MeasurementStability.tsx`, research_summary_
+gatherer'ın zaten paralel çektiği ~20 modülü + korelasyon/feature IC'yi
+tek listede topluyor. Canlı taramada gerçek bug bulundu+düzeltildi:
+market_world_model'in int-anahtarlı `by_block_size` sözlüğü `extract_
+stability_summary`'yi patlatıyordu.
+
+**GPT'nin 2026-09-06 takip raporu doğrulandı** (bkz. memory
+`project_gpt_architecture_report_2026_09_06`) — sayılar neredeyse
+birebir gerçek sistemle eşleşti (uydurma değil). Ama raporun "SHORT
+self-correction gerçek iyileşme" yorumu EKSİKTİ: kazanma oranı %22→%66
+ama avg_pnl -$4,91→-$4,52 (neredeyse değişmedi) — Faz 413'ün hedef
+aldığı R:R skewinin aynı imzası. Ayrıca raporun "SHORT swing×bearish_low
+OOS'ta %94,3" yorumu yanlış anlaşılmıştı — Strateji Hipotez Tarayıcı
+SADECE kötü hücrelerin kötülüğünün kalıcı olup olmadığını test ediyor,
+pozitif kenar aramıyor.
+
+**Gerçek pozitif kenar bulundu (gözlemsel, henüz resmi OOS'tan
+geçmedi):** LONG + scalp + düşük-konsensüs, bearish_low HARİÇ her
+rejimde net kârlı — en büyük hücre bullish_normal'da n=670, %90,8
+kazanma, +$2,63/işlem (toplam +$1.760). SHORT + swing ise GÖSTERİLEN
+HER rejimde net zararda (bearish_normal'da bile -$8,91/işlem, n=485).
+Kullanıcıya resmi OOS+FDR doğrulaması teklif edildi, henüz karar yok.
 
 **Bağlam:** Kullanıcı gerçek bir pozisyon buldu (JPMUSDT, "hedefe ulaştı"
 diyordu ama pnl $0,49) ve ayrıca "%75 kazanma oranıyla hâlâ zarar

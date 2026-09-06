@@ -4,6 +4,7 @@ import numpy as np
 
 from analytics.strategy_hypothesis_scanner import (
     scan_for_gate_candidates,
+    scan_for_positive_candidates,
     validate_candidate_out_of_sample,
 )
 
@@ -105,6 +106,60 @@ def test_validate_out_of_sample_flags_non_replication():
     )
     candidate = {"strategy": "test_strategy", "market_regime": "bad_regime"}
     result = validate_candidate_out_of_sample(records, candidate, min_group_size=30)
+    assert result["replicated_out_of_sample"] is False
+
+
+def test_scan_for_positive_candidates_detects_a_real_injected_positive_effect():
+    """Faz 416 — kullanıcı isteği: kötü hücreleri bulan AYNI makineyle
+    GERÇEK pozitif kenar da bulunabilmeli. LONG scalp'in gerçek desenine
+    benzer: bir hücre %90 isabetli, aynı stratejinin geri kalanı %55
+    isabetli."""
+    records = (
+        _records("test_strategy", "good_regime", n=300, win_rate=0.90, seed=1)
+        + _records("test_strategy", "mediocre_regime_a", n=300, win_rate=0.55, seed=2)
+        + _records("test_strategy", "mediocre_regime_b", n=300, win_rate=0.55, seed=3)
+    )
+    candidates = scan_for_positive_candidates(records)
+    flagged = {(c["strategy"], c["market_regime"]) for c in candidates}
+    assert ("test_strategy", "good_regime") in flagged
+    assert ("test_strategy", "mediocre_regime_a") not in flagged
+
+
+def test_scan_for_positive_candidates_respects_effect_threshold():
+    records = (
+        _records("test_strategy", "slightly_better", n=500, win_rate=0.65, seed=1)
+        + _records("test_strategy", "baseline", n=500, win_rate=0.60, seed=2)
+    )
+    candidates = scan_for_positive_candidates(records, effect_threshold=0.20)
+    assert candidates == []
+
+
+def test_validate_out_of_sample_positive_direction_flags_replication():
+    """Gerçek pozitif kenar HEM erken HEM geç yarıda tekrarlanıyorsa
+    replicated_out_of_sample=True olmalı — negatif yönün simetriği."""
+    records = (
+        _records("test_strategy", "good_regime", n=100, win_rate=0.90, seed=1)
+        + _records("test_strategy", "mediocre_regime", n=100, win_rate=0.55, seed=2)
+        + _records("test_strategy", "good_regime", n=100, win_rate=0.88, seed=3)
+        + _records("test_strategy", "mediocre_regime", n=100, win_rate=0.57, seed=4)
+    )
+    candidate = {"strategy": "test_strategy", "market_regime": "good_regime"}
+    result = validate_candidate_out_of_sample(records, candidate, min_group_size=30, direction="positive")
+    assert result["replicated_out_of_sample"] is True
+
+
+def test_validate_out_of_sample_positive_direction_flags_non_replication():
+    """Pozitif görünüm SADECE erken yarıda var, geç yarıda normale
+    dönmüşse (tek dönemin tesadüfü) replicated_out_of_sample=False
+    olmalı."""
+    records = (
+        _records("test_strategy", "good_regime", n=100, win_rate=0.90, seed=1)
+        + _records("test_strategy", "mediocre_regime", n=100, win_rate=0.55, seed=2)
+        + _records("test_strategy", "good_regime", n=100, win_rate=0.58, seed=3)
+        + _records("test_strategy", "mediocre_regime", n=100, win_rate=0.57, seed=4)
+    )
+    candidate = {"strategy": "test_strategy", "market_regime": "good_regime"}
+    result = validate_candidate_out_of_sample(records, candidate, min_group_size=30, direction="positive")
     assert result["replicated_out_of_sample"] is False
 
 

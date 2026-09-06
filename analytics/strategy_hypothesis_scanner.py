@@ -38,6 +38,13 @@ MIN_GROUP_SIZE = 30
 # olarak biraz daha sıkı tutuldu (gürültüyü elemek için).
 EFFECT_THRESHOLD = -0.20
 SIGNIFICANCE_LEVEL = 0.05
+# Faz 416 (2026-09-06) — kullanıcı isteği: kötü hücreleri bulan AYNI
+# titizlikle (FDR + kontaminasyonsuz rest-karşılaştırması + OOS
+# tekrarlanma) GERÇEK POZİTİF kenarları da kanıtlayabilelim — "sadece
+# hangi hücre kötü değil, hangi hücre gerçekten iyi" sorusu. EFFECT_
+# THRESHOLD'un (-0.20) AYNI büyüklükte simetriği — icat edilmiş yeni
+# bir sayı değil, ters yöndeki aynı ekonomik-anlamlılık çıtası.
+POSITIVE_EFFECT_THRESHOLD = 0.20
 
 
 def _rest_based_win_rate_and_delta(
@@ -72,18 +79,25 @@ def _rest_based_win_rate_and_delta(
     return bucket["win_rate"], cell_n, delta_vs_rest
 
 
-def scan_for_gate_candidates(
+def scan_for_candidates(
     records: list[dict],
+    direction: str = "negative",
     min_group_size: int = MIN_GROUP_SIZE,
-    effect_threshold: float = EFFECT_THRESHOLD,
+    effect_threshold: float | None = None,
     alpha: float = SIGNIFICANCE_LEVEL,
 ) -> list[dict]:
     """records: compute_strategy_regime_compatibility'nin beklediği AYNI
-    şekil ({'strategy', 'market_regime', 'win'}). Döner: her biri
-    {'strategy', 'market_regime', 'sample_size', 'win_rate',
+    şekil ({'strategy', 'market_regime', 'win'}). direction="negative"
+    (varsayılan, orijinal davranış) kötü hücreleri, "positive" GERÇEK
+    pozitif kenar hücrelerini arar — AYNI istatistiksel makine (FDR +
+    kontaminasyonsuz rest-karşılaştırması), sadece yön simetrik. Döner:
+    her biri {'strategy', 'market_regime', 'sample_size', 'win_rate',
     'rest_win_rate', 'delta_vs_rest', 'p_value'} olan, FDR
     düzeltmesinden GEÇEN aday listesi (boş girdi/aday yoksa [])."""
     from statsmodels.stats.proportion import proportions_ztest
+
+    if effect_threshold is None:
+        effect_threshold = EFFECT_THRESHOLD if direction == "negative" else POSITIVE_EFFECT_THRESHOLD
 
     compat = compute_strategy_regime_compatibility(records, min_group_size=min_group_size)
 
@@ -115,8 +129,12 @@ def scan_for_gate_candidates(
                 continue
             rest_win_rate = rest_wins / rest_n
             delta_vs_rest = round(bucket["win_rate"] - rest_win_rate, 4)
-            if delta_vs_rest > effect_threshold:
-                continue
+            if direction == "negative":
+                if delta_vs_rest > effect_threshold:
+                    continue
+            else:
+                if delta_vs_rest < effect_threshold:
+                    continue
 
             try:
                 _, p_value = proportions_ztest(
@@ -142,21 +160,48 @@ def scan_for_gate_candidates(
     return [c for c, sig in zip(raw_candidates, significant) if sig]
 
 
+def scan_for_gate_candidates(
+    records: list[dict],
+    min_group_size: int = MIN_GROUP_SIZE,
+    effect_threshold: float = EFFECT_THRESHOLD,
+    alpha: float = SIGNIFICANCE_LEVEL,
+) -> list[dict]:
+    """Geriye dönük uyumluluk için ince sarmalayıcı — orijinal (negatif/
+    gate-adayı) davranış birebir korunuyor."""
+    return scan_for_candidates(records, direction="negative", min_group_size=min_group_size, effect_threshold=effect_threshold, alpha=alpha)
+
+
+def scan_for_positive_candidates(
+    records: list[dict],
+    min_group_size: int = MIN_GROUP_SIZE,
+    effect_threshold: float = POSITIVE_EFFECT_THRESHOLD,
+    alpha: float = SIGNIFICANCE_LEVEL,
+) -> list[dict]:
+    """scan_for_gate_candidates'ın simetriği — kanıtlanmış GERÇEK pozitif
+    kenar adayları arar (ör. "LONG scalp düşük-konsensüs, bullish_normal
+    rejiminde")."""
+    return scan_for_candidates(records, direction="positive", min_group_size=min_group_size, effect_threshold=effect_threshold, alpha=alpha)
+
+
 def validate_candidate_out_of_sample(
     records_sorted_by_time: list[dict],
     candidate: dict,
     train_fraction: float = 0.5,
     embargo_fraction: float = 0.02,
     min_group_size: int = MIN_GROUP_SIZE,
-    effect_threshold: float = EFFECT_THRESHOLD,
+    effect_threshold: float | None = None,
+    direction: str = "negative",
 ) -> dict:
     """records_sorted_by_time: AYNI kayıtlar ama zaman sırasına göre
     (en eski -> en yeni). walk_forward_validate'in (agent_tuner.py) ruhu:
     aday desen SADECE erken yarıda değil, hiç görülmemiş GEÇ yarıda da
     (embargo boşluklu — sınırdaki bir kaydın erken tarafa sızmaması için)
-    AYNI yönde kötü çıkıyor mu. İki yarı arasında `replicated_out_of_
-    sample` (bool) — desen gerçekten tekrarlanan mı yoksa tek bir
-    dönemin tesadüfü mü."""
+    AYNI yönde (direction="negative" kötü, "positive" iyi) çıkıyor mu.
+    İki yarı arasında `replicated_out_of_sample` (bool) — desen
+    gerçekten tekrarlanan mı yoksa tek bir dönemin tesadüfü mü."""
+    if effect_threshold is None:
+        effect_threshold = EFFECT_THRESHOLD if direction == "negative" else POSITIVE_EFFECT_THRESHOLD
+
     n = len(records_sorted_by_time)
     train_end = int(n * train_fraction)
     test_start = train_end + int(n * embargo_fraction)
@@ -174,13 +219,15 @@ def validate_candidate_out_of_sample(
         test_compat, candidate["strategy"], candidate["market_regime"], min_group_size,
     )
 
-    # Herhangi bir negatif delta değil — AYNI (ekonomik olarak anlamlı)
-    # kötülük derecesi, KONTAMİNASYONSUZ (hücre hariç "geri kalan"a
-    # karşı) tekrarlanmalı — aksi halde hücre kendi stratejisinin
-    # çoğunluğuysa (ör. bu strateji zaten neredeyse hep bu rejimde
-    # işlem görüyorsa) küçük görünen bir kirli delta yanlışlıkla
-    # "tekrarlanmadı" sayılırdı.
-    replicated = test_delta_vs_rest is not None and test_delta_vs_rest <= effect_threshold
+    # AYNI (ekonomik olarak anlamlı) etki derecesi, KONTAMİNASYONSUZ
+    # (hücre hariç "geri kalan"a karşı) tekrarlanmalı — aksi halde hücre
+    # kendi stratejisinin çoğunluğuysa (ör. bu strateji zaten neredeyse
+    # hep bu rejimde işlem görüyorsa) küçük görünen bir kirli delta
+    # yanlışlıkla "tekrarlanmadı" sayılırdı.
+    if direction == "negative":
+        replicated = test_delta_vs_rest is not None and test_delta_vs_rest <= effect_threshold
+    else:
+        replicated = test_delta_vs_rest is not None and test_delta_vs_rest >= effect_threshold
 
     return {
         "train_win_rate": train_win_rate,
