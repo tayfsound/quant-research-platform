@@ -22,7 +22,15 @@ _TEST_VOL = "gateblockvisibility"
 _TEST_REGIME = f"{_TEST_TREND}_{_TEST_VOL}"
 
 
-def _ctx(symbol: str, direction: str = "LONG", trend: str = "bullish", volatility_regime: str = "normal") -> CognitiveCycleContext:
+def _ctx(
+    symbol: str, direction: str = "LONG", trend: str = "bullish", volatility_regime: str = "normal",
+    confidence: float = 0.9,
+) -> CognitiveCycleContext:
+    # Faz 421 — confidence varsayılan YÜKSEK (0.9): min_confidence_gate
+    # artık varsayılan AÇIK (0.7 taban) — bu dosyadaki diğer testler
+    # KENDİ gate'lerini izole test ediyor, confidence düşük kalırsa
+    # (varsayılan 0.0) benim yeni kapım ONLARDAN ÖNCE bloke edip yanlış
+    # gate_block nedeni raporlardı.
     return CognitiveCycleContext(
         market={
             "symbol": symbol,
@@ -32,6 +40,7 @@ def _ctx(symbol: str, direction: str = "LONG", trend: str = "bullish", volatilit
         decision={
             "proposed_direction": direction, "final_action": direction,
             "final_size": 10.0, "stop_loss_distance": 5.0, "take_profit_distance": 5.0,
+            "confidence": confidence,
         },
         risk={"evaluation": {"verdict": "approved"}},
     )
@@ -146,6 +155,41 @@ def test_regime_trading_gate_long_override_does_not_help_short():
             AppSettingsRepository(session).set(
                 "regime_trading_long_override", json.dumps(["bearish_normal"]), updated_by="test",
             )
+
+
+def test_min_confidence_gate_logs_a_gate_block():
+    """Faz 421 — kullanıcı isteği: gerçek confidence kovası verisiyle
+    LONG'da confidence≈0,7'nin hem yüksek kazanma oranı HEM gerçek
+    pozitif PnL verdiği bulundu — bu tabanın altındaki kararlar
+    engellenmeli."""
+    with SessionFactory.get_session() as session:
+        AppSettingsRepository(session).set("min_confidence_gate_enabled", "true", updated_by="test")
+        AppSettingsRepository(session).set("min_confidence_gate_min_confidence", "0.7", updated_by="test")
+    try:
+        symbol = f"MCGTEST{uuid.uuid4().hex[:6]}USDT"
+        event = DecisionRecorder().record(_ctx(symbol, confidence=0.5), [])
+        assert event.status == "no_trade"
+        gate_blocks = [o for o in event.agent_opinions if o.get("type") == "gate_block" and o["data"].get("gate") == "min_confidence_gate"]
+        assert len(gate_blocks) == 1
+        assert gate_blocks[0]["data"]["confidence"] == 0.5
+        assert gate_blocks[0]["data"]["min_confidence"] == 0.7
+    finally:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("min_confidence_gate_enabled", "false", updated_by="test")
+
+
+def test_min_confidence_gate_lets_high_confidence_through():
+    with SessionFactory.get_session() as session:
+        AppSettingsRepository(session).set("min_confidence_gate_enabled", "true", updated_by="test")
+        AppSettingsRepository(session).set("min_confidence_gate_min_confidence", "0.7", updated_by="test")
+    try:
+        symbol = f"MCGTEST{uuid.uuid4().hex[:6]}USDT"
+        event = DecisionRecorder().record(_ctx(symbol, confidence=0.85), [])
+        gate_blocks = [o for o in event.agent_opinions if o.get("type") == "gate_block" and o["data"].get("gate") == "min_confidence_gate"]
+        assert gate_blocks == []
+    finally:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("min_confidence_gate_enabled", "false", updated_by="test")
 
 
 def test_asset_class_trading_gate_logs_a_gate_block():

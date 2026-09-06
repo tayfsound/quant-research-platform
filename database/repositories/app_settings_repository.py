@@ -724,6 +724,17 @@ DEFAULTS: dict[str, str] = {
     # kapatırım" — hiçbir analiz/rapor bu anahtarı otomatik değiştirmemeli.
     "direction_trading_enabled": '{"LONG": true, "SHORT": true}',
 
+    # Faz 421 (2026-09-06) — kullanıcı isteği: gerçek confidence kovası
+    # verisiyle bulunan "tatlı nokta" tabanı — LONG'da confidence≈0,7
+    # hem %85,2 kazanma HEM +$11,65/işlem gerçek pozitif PnL (n=1260)
+    # veriyordu, 0,3/0,5/0,6 gibi kovalar yüksek kazanma oranına rağmen
+    # derin PnL negatifiydi. Kullanıcı açık isteği ("canlıda sadece 0,7
+    # confidence bulduğunda değerlendirsin") üzerine varsayılan AÇIK —
+    # diğer kapılardan (varsayılan kapalı/nötr) FARKLI, bilinçli bir
+    # kullanıcı kararı. bkz. analytics/confidence_gate.py.
+    "min_confidence_gate_enabled": "true",
+    "min_confidence_gate_min_confidence": "0.7",
+
     # Kullanıcı isteği (2026-08-28): "kararı vermeden önce burayı
     # tarayacak, ajan gruplarının başarısını ölçecek — eşiğin altında
     # kalıyorsa pozisyonu açmayacak." bkz. analytics/agent_combination_

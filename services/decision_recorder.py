@@ -323,6 +323,33 @@ class DecisionRecorder:
                     },
                 })
 
+        # Faz 421 (2026-09-06) — kullanıcı isteği: gerçek confidence
+        # kovası verisiyle (LONG'da confidence≈0,7 hem %85,2 kazanma HEM
+        # +$11,65/işlem gerçek pozitif PnL, n=1260 — 0,3/0,5/0,6 gibi
+        # kovalar yüksek kazanma oranına rağmen derin PnL negatifiydi)
+        # bulunan "tatlı nokta" tabanı — "canlıda sadece 0,7 confidence
+        # bulduğunda değerlendirsin." bkz. analytics/confidence_gate.py.
+        if opens_position and experiment_bucket is None:
+            from analytics.confidence_gate import is_confidence_trading_blocked
+            from database.repositories.app_settings_repository import AppSettingsRepository
+
+            settings_repo = AppSettingsRepository(self.session)
+            confidence_gate_enabled = settings_repo.get("min_confidence_gate_enabled") == "true"
+            min_confidence_raw = settings_repo.get("min_confidence_gate_min_confidence")
+            min_confidence = float(min_confidence_raw) if min_confidence_raw else 0.7
+            confidence_value = getattr(ctx.decision, "confidence", None)
+            if is_confidence_trading_blocked(confidence_value, confidence_gate_enabled, min_confidence):
+                opens_position = False
+                agent_opinions_data.append({
+                    "type": "gate_block",
+                    "data": {
+                        "gate": "min_confidence_gate",
+                        "reason": "confidence_below_evidence_based_threshold",
+                        "confidence": confidence_value,
+                        "min_confidence": min_confidence,
+                    },
+                })
+
         # Kullanıcı isteği (2026-08-28): canlıya kademeli geçiş için,
         # yukarıdaki rejim kapısından DAHA GRANÜLER bir kontrol — MAE/MFE
         # Güven Aralığı sayfasının (direction|regime|volatility_regime)
