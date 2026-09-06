@@ -268,12 +268,22 @@ class DecisionRecorder:
                 regime_enabled_map = _json.loads(raw_map) if raw_map else {}
             except (ValueError, TypeError):
                 regime_enabled_map = {}
+            # Faz 420 — kullanıcı bulgusu: kapalı rejimlerde kayıp neredeyse
+            # tamamen SHORT'tan geliyordu, LONG bearish_normal'da GÜÇLÜ
+            # kârlıydı (+$620,65, %88,9, n=225) — bkz. regime_trading_gate.py
+            # docstring'i. Bu küme SADECE LONG'u rejim kapalıyken bile açık
+            # tutuyor, SHORT hâlâ tam engelli.
+            raw_long_override = AppSettingsRepository(self.session).get("regime_trading_long_override")
+            try:
+                long_override_regimes = set(_json.loads(raw_long_override)) if raw_long_override else set()
+            except (ValueError, TypeError):
+                long_override_regimes = set()
             features = ctx.market.features or {}
             trend = features.get("trend", "unknown")
             market_regime = (
                 f"{trend}_{features.get('volatility_regime', 'normal')}" if trend != "unknown" else None
             )
-            if is_regime_trading_blocked(market_regime, regime_enabled_map):
+            if is_regime_trading_blocked(market_regime, regime_enabled_map, direction, long_override_regimes):
                 opens_position = False
                 agent_opinions_data.append({
                     "type": "gate_block",

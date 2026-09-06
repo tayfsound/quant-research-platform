@@ -162,6 +162,19 @@ def _validate(key: str, value: str) -> None:
             raise HTTPException(
                 400, "regime_trading_enabled must be a JSON object of {regime: true|false}"
             )
+    elif key == "regime_trading_long_override":
+        # Faz 420 — regime_trading_enabled ile AYNI desen ama liste
+        # (regime_trading_enabled'da KAPALI olsa bile SADECE LONG'un
+        # açık kalacağı rejimler, SHORT hâlâ tam engelli).
+        import json as _json
+        try:
+            items = _json.loads(value)
+            if not isinstance(items, list) or not all(isinstance(v, str) for v in items):
+                raise ValueError
+        except (ValueError, TypeError):
+            raise HTTPException(
+                400, "regime_trading_long_override must be a JSON array of regime name strings"
+            )
     elif key == "mae_mfe_bucket_trading_enabled":
         # Kullanıcı isteği (2026-08-28) — regime_trading_enabled ile AYNI
         # desen (sabit bir anahtar kümesi YOK, kova sayısı zamanla

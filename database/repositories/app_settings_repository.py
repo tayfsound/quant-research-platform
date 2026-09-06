@@ -696,6 +696,17 @@ DEFAULTS: dict[str, str] = {
         '{"bullish_high": true, "bullish_normal": true, "bullish_low": true, '
         '"bearish_high": true, "bearish_normal": true, "bearish_low": true}'
     ),
+    # Faz 420 (2026-09-06) — kullanıcı bulgusu: kullanıcı 3 düşüş rejimini
+    # regime_trading_enabled'dan kapattı, ama gerçek veri kaybın neredeyse
+    # tamamının SHORT'tan geldiğini gösterdi — bearish_normal'da LONG
+    # GÜÇLÜ kârlıydı (n=225, %88,9 kazanma, +$620,65) SHORT aynı rejimde
+    # -$5.728 kaybediyordu. Bu liste — rejim regime_trading_enabled'da
+    # KAPALI olsa bile SADECE LONG kararlarının hâlâ açılabileceği
+    # rejimler (SHORT o rejimde hâlâ tam engelli, bkz. analytics/
+    # regime_trading_gate.py). Varsayılan SADECE bearish_normal — kanıt
+    # SADECE orada yeterince güçlüydü (bearish_low başabaş, bearish_high
+    # n=4 önemsiz), icat edilmiş bir genelleme değil.
+    "regime_trading_long_override": '["bearish_normal"]',
     # Kullanıcı isteği (2026-08-28): yukarıdakinden DAHA GRANÜLER —
     # MAE/MFE Güven Aralığı sayfasının (direction|regime|volatility_regime)
     # kovaları, bkz. analytics/mae_mfe_bucket_trading_gate.py. Boş harita

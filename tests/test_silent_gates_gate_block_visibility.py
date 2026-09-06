@@ -84,6 +84,70 @@ def test_regime_trading_gate_logs_a_gate_block():
             )
 
 
+def test_regime_trading_gate_long_override_lets_long_through():
+    """Faz 420 — kullanıcı bulgusu: bearish_normal'da LONG GÜÇLÜ kârlıydı
+    (+$620,65, %88,9, n=225) SHORT aynı rejimde -$5.728 kaybediyordu.
+    regime_trading_long_override'da olan bir rejimde LONG, rejim kapalı
+    olsa bile açılabilmeli."""
+    with SessionFactory.get_session() as session:
+        AppSettingsRepository(session).set(
+            "regime_trading_enabled",
+            json.dumps({"bullish_high": True, "bullish_normal": True, "bullish_low": True,
+                        "bearish_high": True, "bearish_normal": False, "bearish_low": True}),
+            updated_by="test",
+        )
+        AppSettingsRepository(session).set(
+            "regime_trading_long_override", json.dumps(["bearish_normal"]), updated_by="test",
+        )
+    try:
+        symbol = f"RTGLOTEST{uuid.uuid4().hex[:6]}USDT"
+        event = DecisionRecorder().record(_ctx(symbol, "LONG", trend="bearish", volatility_regime="normal"), [])
+        gate_blocks = [o for o in event.agent_opinions if o.get("type") == "gate_block" and o["data"].get("gate") == "regime_trading_gate"]
+        assert gate_blocks == []
+    finally:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set(
+                "regime_trading_enabled",
+                json.dumps({"bullish_high": True, "bullish_normal": True, "bullish_low": True,
+                            "bearish_high": True, "bearish_normal": True, "bearish_low": True}),
+                updated_by="test",
+            )
+            AppSettingsRepository(session).set(
+                "regime_trading_long_override", json.dumps(["bearish_normal"]), updated_by="test",
+            )
+
+
+def test_regime_trading_gate_long_override_does_not_help_short():
+    """Aynı senaryoda SHORT hâlâ tam engelli kalmalı — override SADECE LONG."""
+    with SessionFactory.get_session() as session:
+        AppSettingsRepository(session).set(
+            "regime_trading_enabled",
+            json.dumps({"bullish_high": True, "bullish_normal": True, "bullish_low": True,
+                        "bearish_high": True, "bearish_normal": False, "bearish_low": True}),
+            updated_by="test",
+        )
+        AppSettingsRepository(session).set(
+            "regime_trading_long_override", json.dumps(["bearish_normal"]), updated_by="test",
+        )
+    try:
+        symbol = f"RTGLOSTEST{uuid.uuid4().hex[:6]}USDT"
+        event = DecisionRecorder().record(_ctx(symbol, "SHORT", trend="bearish", volatility_regime="normal"), [])
+        assert event.status == "no_trade"
+        gate_blocks = [o for o in event.agent_opinions if o.get("type") == "gate_block" and o["data"].get("gate") == "regime_trading_gate"]
+        assert len(gate_blocks) == 1
+    finally:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set(
+                "regime_trading_enabled",
+                json.dumps({"bullish_high": True, "bullish_normal": True, "bullish_low": True,
+                            "bearish_high": True, "bearish_normal": True, "bearish_low": True}),
+                updated_by="test",
+            )
+            AppSettingsRepository(session).set(
+                "regime_trading_long_override", json.dumps(["bearish_normal"]), updated_by="test",
+            )
+
+
 def test_asset_class_trading_gate_logs_a_gate_block():
     with SessionFactory.get_session() as session:
         AppSettingsRepository(session).set(
