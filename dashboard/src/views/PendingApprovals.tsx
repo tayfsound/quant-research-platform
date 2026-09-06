@@ -144,10 +144,19 @@ export default function PendingApprovals() {
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = () => {
-    fetch("/api/v1/weights/pending?limit=10")
+    // Faz 417 (2026-09-06) — kullanıcı bulgusu: "Approvals kısmına uzun
+    // zamandır onay gelmiyor." Kök neden bulundu: bu iki istek authHeaders()
+    // GÖNDERMİYORDU — /api/v1/weights/pending ve /api/v1/strategy-gates/
+    // pending İKİSİ de auth gerektiriyor (decide()/decideStrategyGate()
+    // zaten doğru şekilde gönderiyordu, SADECE ilk yükleme unutulmuştu).
+    // Sonuç: her istek sessizce 401 dönüyordu, data.pending undefined
+    // oluyordu, `|| []` bunu SESSİZCE boş listeye çeviriyordu — hiçbir
+    // hata görünmüyordu ama gerçekte 7 bekleyen onay vardı, hiç
+    // gösterilmiyordu.
+    fetch("/api/v1/weights/pending?limit=10", { headers: authHeaders() })
       .then((r) => r.json())
       .then((data) => setApprovals(data.pending || []));
-    fetch("/api/v1/strategy-gates/pending?limit=10")
+    fetch("/api/v1/strategy-gates/pending?limit=10", { headers: authHeaders() })
       .then((r) => r.json())
       .then((data) => setStrategyGates(data.pending || []));
   };
