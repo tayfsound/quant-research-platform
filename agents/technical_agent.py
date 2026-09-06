@@ -79,6 +79,20 @@ class TechnicalAgent:
         # etki) — sonradan eklenen katkılar (ör. adx_strong, obv) indirimden
         # etkilenmez, tıpkı eski kodda olduğu gibi.
         contributions: dict[str, float] = {}
+        # Faz 423 (2026-09-06) — kullanıcı bulgusu ("aynı sinyallerse
+        # kaldıralım"): feature_relationship denetiminde momentum/
+        # ema_alignment/bollinger_confirm/adx_strong_confirm'ün `trend`
+        # ile korelasyonu 1.000 çıktı (GPT dış incelemesi + bu turda
+        # doğrulandı) — üçü zaten KOD SEVİYESİNDE `context.trend==...`
+        # şartına bağlı (trend ateşlenmeden ateşlenemezler), ema_alignment
+        # da AYNI EMA verisinden besleniyor. Yani bunlar 4 BAĞIMSIZ oy
+        # değil, TEK bir trend sinyalinin 4 kez sayılması — confidence
+        # (score/5.0) bu yüzden yapay olarak şişiyordu. Artık SADECE
+        # `trend` gerçek skora giriyor, diğer 4'ü feature_ic'in izlemeye
+        # devam edebilmesi için shadow_contributions'a yazılıyor (Faz
+        # 411'in pattern_agent.py'de kurduğu AYNI desen) — hiçbir bilgi
+        # kaybolmuyor, sadece 5 kez sayılmıyor.
+        shadow_contributions: dict[str, float] = {}
 
         def scale_all(factor: float) -> None:
             for key in contributions:
@@ -92,12 +106,14 @@ class TechnicalAgent:
             contributions["trend"] = -c.trend_weight
             evidence.append("Piyasa düşüş trendinde")
 
-        # Momentum
+        # Momentum — bkz. yukarıdaki Faz 423 notu: trend ile korelasyon
+        # 1.000, kendi şartı zaten trend'e bağlı — shadow (izleme amaçlı,
+        # skora girmiyor).
         if context.momentum == "strengthening" and context.trend == "bullish":
-            contributions["momentum"] = c.momentum_weight
+            shadow_contributions["momentum"] = c.momentum_weight
             evidence.append("Yükseliş momentumu güçleniyor")
         elif context.momentum == "weakening" and context.trend == "bearish":
-            contributions["momentum"] = -c.momentum_weight
+            shadow_contributions["momentum"] = -c.momentum_weight
             evidence.append("Düşüş momentumu güçleniyor")
 
         # Piyasa yapısı
@@ -110,12 +126,13 @@ class TechnicalAgent:
         elif context.market_structure == "ranging":
             caveats.append("Piyasa konsolidasyonda — güven için kırılım gerekiyor")
 
-        # EMA dizilimi
+        # EMA dizilimi — bkz. yukarıdaki Faz 423 notu: trend ile
+        # korelasyon 1.000 (aynı EMA verisinden besleniyor) — shadow.
         if context.ema_alignment == "bullish_aligned":
-            contributions["ema_alignment"] = c.ema_alignment_weight
+            shadow_contributions["ema_alignment"] = c.ema_alignment_weight
             evidence.append("EMA'lar yükseliş yönünde dizilmiş")
         elif context.ema_alignment == "bearish_aligned":
-            contributions["ema_alignment"] = -c.ema_alignment_weight
+            shadow_contributions["ema_alignment"] = -c.ema_alignment_weight
             evidence.append("EMA'lar düşüş yönünde dizilmiş")
 
         # RSI aşırı bölgeler
@@ -156,11 +173,13 @@ class TechnicalAgent:
         # yönde kullanılıyor (trend güçlüyken bandın dışına taşmak devam
         # sinyali — trend yokken aşırı bölge yorumu QuantAgent'ın zaten
         # kapsadığı z-score'la çakışırdı).
+        # Faz 423 — momentum ile korelasyon 1.000 (bkz. yukarıdaki not),
+        # kendi şartı zaten trend'e bağlı — shadow.
         if context.bollinger_percent_b > 1.0 and context.trend == "bullish":
-            contributions["bollinger_confirm"] = c.bollinger_confirm_weight
+            shadow_contributions["bollinger_confirm"] = c.bollinger_confirm_weight
             evidence.append(f"Fiyat üst Bollinger Bandının üzerinde ({context.bollinger_percent_b:.2f}) — yükseliş trendini teyit ediyor")
         elif context.bollinger_percent_b < 0.0 and context.trend == "bearish":
-            contributions["bollinger_confirm"] = -c.bollinger_confirm_weight
+            shadow_contributions["bollinger_confirm"] = -c.bollinger_confirm_weight
             evidence.append(f"Fiyat alt Bollinger Bandının altında ({context.bollinger_percent_b:.2f}) — düşüş trendini teyit ediyor")
 
         # Faz 357 — kullanıcı bulgusu + gerçek veri: "vwap_confirm" (Faz 237,
@@ -186,11 +205,13 @@ class TechnicalAgent:
             caveats.append(f"ADX {context.adx:.1f} — zayıf/yatay trend, düşük güven")
             scale_all(c.adx_weak_discount)
         elif context.adx > 25:
+            # Faz 423 — trend ile korelasyon 1.000, kendi şartı zaten
+            # trend'e bağlı — shadow.
             if context.di_plus > context.di_minus and context.trend == "bullish":
-                contributions["adx_strong_confirm"] = c.adx_strong_confirm_weight
+                shadow_contributions["adx_strong_confirm"] = c.adx_strong_confirm_weight
                 evidence.append(f"ADX {context.adx:.1f} — güçlü trend, DI+ yükseliş yönünü teyit ediyor")
             elif context.di_minus > context.di_plus and context.trend == "bearish":
-                contributions["adx_strong_confirm"] = -c.adx_strong_confirm_weight
+                shadow_contributions["adx_strong_confirm"] = -c.adx_strong_confirm_weight
                 evidence.append(f"ADX {context.adx:.1f} — güçlü trend, DI- düşüş yönünü teyit ediyor")
 
         # Faz 237: OBV ıraksaması — gerçek hacim akışı fiyatı desteklemiyorsa
@@ -274,5 +295,5 @@ class TechnicalAgent:
             source_reliability=0.75,
             evidence=evidence,
             caveats=caveats,
-            feature_contributions={k: round(v, 4) for k, v in contributions.items()},
+            feature_contributions={k: round(v, 4) for k, v in {**shadow_contributions, **contributions}.items()},
         ).recalculate()

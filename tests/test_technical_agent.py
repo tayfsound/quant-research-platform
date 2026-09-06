@@ -115,13 +115,18 @@ def test_no_external_signal_means_no_extra_evidence_or_caveat():
 def test_feature_contributions_sum_to_the_implied_raw_score():
     """Faz 268-sonrası: Feature Importance — feature_contributions her
     zaman GERÇEK score'a (confidence = min(|score|/5.0, 0.85)) eşit
-    toplanmalı, tıpkı QuantAgent'ta olduğu gibi."""
+    toplanmalı, tıpkı QuantAgent'ta olduğu gibi.
+
+    Faz 423 — momentum/ema_alignment artık trend ile %100 redundant
+    oldukları için shadow (skora katkısı yok) — implied score SADECE
+    gerçekten skora giren feature'ları kapsamalı."""
     agent = TechnicalAgent()
     opinion = agent.analyze(TechnicalContext(
         trend="bullish", momentum="strengthening", market_structure="higher_highs",
         ema_alignment="bullish_aligned", adx=10.0,
     ))
-    implied_score = sum(opinion.feature_contributions.values())
+    shadow_keys = {"momentum", "ema_alignment", "bollinger_confirm", "adx_strong_confirm"}
+    implied_score = sum(v for k, v in opinion.feature_contributions.items() if k not in shadow_keys)
     assert abs(abs(implied_score) - opinion.confidence * 5.0) < 1e-6
 
 
