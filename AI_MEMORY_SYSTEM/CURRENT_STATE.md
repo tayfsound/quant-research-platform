@@ -251,6 +251,22 @@ mevcut dosyalara eklenenler) + 73+62 bağımlı test dosyası geçti (1
 bilinen/ilgisiz flaky: test_memory_engine_wiring.py, torch/mock state
 sızıntısı, izole çalıştırılınca geçiyor).
 
+**2026-09-07 (devam) — Faz 437: ATR ham değeri + genişleme/daralma
+oranı (kullanıcı önceliği ②).** `signal_engine.py::compute_technical_
+signals()`'a `atr_expansion_ratio` eklendi (kısa dönem/14 ATR'nin uzun
+dönem/50 ATR'ye oranı, atr_long==0 ise None). `contracts/technical.py`
++ `context_adapter.py::to_technical()`'a `atr`/`atr_expansion_ratio`
+alanları eklendi. `technical_agent.py`'ye SADECE bilgilendirici bir
+caveat eklendi (>1.5 genişliyor, <0.67 daralıyor) — **shadow_
+contributions'tan KASITLI olarak farklı**: shadow, daha önce GERÇEKTEN
+skorlanmış ama redundant bulunan (bilinen işaretli) sinyaller içindi
+(Faz 423); atr_expansion_ratio hiç skorlanmamıştı, yönü (bullish mi
+bearish mi) bilinmiyor, icat edilmiş bir işaret verilmedi — düz bir
+gözlem notu, feature_contributions'a hiç girmiyor, confidence'a sıfır
+etki (testle doğrulandı). Gerçek veriyle (BTCUSDT 100 gerçek 1m mum)
+doğrulandı: atr_expansion_ratio=1,26. 14 yeni test + 147 bağımlı test
+geçti.
+
 **Açık/gözlem bekleyen:** SHORT geçici olarak kapalı (yeniden açma planı yok, gözlem sürüyor). WS disconnect düzelmesi (Faz 414) hâlâ taze logla doğrulanmadı. Kullanıcı iki büyük GPT mimari raporu daha paylaştı (Incremental Value/Conditional Lift/Pattern Coverage/Temporal Decay/Negative Evidence önerisi + OI/Funding/Liquidation/ATR/RSI-detay gibi yeni ham feature adayları, önceliklendirilmiş: ①OI+Funding+Price ②ATR/realized vol ③RSI ham+slope+divergence) — kullanıcının kendi çerçevesi gereği ("ilk fırsatta, detaylıca") bunlar TODO'ya (`project_open_items_2026_08_31.md`) detaylıca eklendi, HENÜZ uygulanmadı.
 
 **Faz 417 — Approvals sayfası sessizce boş görünüyordu.** Kullanıcı

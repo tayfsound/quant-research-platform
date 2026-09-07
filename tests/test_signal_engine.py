@@ -817,3 +817,28 @@ def test_fibonacci_price_levels_returns_none_for_insufficient_data():
     from market_data.features.signal_engine import compute_fibonacci_price_levels
 
     assert compute_fibonacci_price_levels(_bars([100.0, 101.0])) is None
+
+
+def test_atr_expansion_ratio_is_above_1_when_recent_volatility_is_wider():
+    """Faz 437 (2026-09-07) — kullanıcı önceliği ②: ATR ham değeri zaten
+    hesaplanıyordu ama genişleme/daralma oranı hiç yoktu. İlk 40 bar
+    sıkı (~%0.1 aralık), son 14 bar geniş bir salınım -> kısa dönem ATR,
+    uzun dönem ortalamanın belirgin üzerinde olmalı."""
+    tight = [100.0] * 40
+    wide = [100.0 + (5 if i % 2 == 0 else -5) for i in range(14)]
+    result = compute_technical_signals(_bars(tight + wide))
+    assert result["atr_expansion_ratio"] is not None
+    assert result["atr_expansion_ratio"] > 1.0
+
+
+def test_atr_expansion_ratio_is_below_1_when_recent_volatility_is_narrower():
+    wide = [100.0 + (5 if i % 2 == 0 else -5) for i in range(40)]
+    tight = [100.0] * 14
+    result = compute_technical_signals(_bars(wide + tight))
+    assert result["atr_expansion_ratio"] is not None
+    assert result["atr_expansion_ratio"] < 1.0
+
+
+def test_atr_expansion_ratio_is_none_with_insufficient_bars():
+    result = compute_technical_signals(_bars([100.0] * 3))
+    assert result["atr_expansion_ratio"] is None

@@ -410,6 +410,8 @@ class ContextAdapter:
             obv_trend=self._get(ctx, "obv_trend", "flat"),
             price_obv_divergence=self._get(ctx, "price_obv_divergence", "none"),
             higher_timeframe_trend=self._get(ctx, "higher_timeframe_trend", None),
+            atr=self._get(ctx, "atr", 0.0),
+            atr_expansion_ratio=self._get(ctx, "atr_expansion_ratio", None),
         )
 
     def _compute_market_regime(self, ctx: CognitiveCycleContext) -> str:

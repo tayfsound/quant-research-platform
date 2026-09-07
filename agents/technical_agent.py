@@ -167,6 +167,29 @@ class TechnicalAgent:
         if context.volatility_regime == "high":
             caveats.append("Yüksek volatilite rejimi — pozisyon büyüklüğünün azaltılması önerilir")
 
+        # Faz 437 (2026-09-07) — kullanıcı önceliği ②: ATR genişleme/
+        # daralma oranı. volatility_regime İLE AYNI ilke (yukarıda) —
+        # SADECE bilgilendirici caveat, hiçbir skora/feature_
+        # contributions'a girmiyor. shadow_contributions'tan KASITLI
+        # olarak farklı: shadow, daha önce GERÇEKTEN skorlanmış ama
+        # redundant bulunan (bilinen işaretli) sinyaller için (Faz 423) —
+        # atr_expansion_ratio hiç skorlanmamıştı, yönü (bullish mi
+        # bearish mi) BİLİNMİYOR, icat edilmiş bir işaret vermemek için
+        # düz bir gözlem notu olarak kalıyor. Gerçek yön/edge kanıtı
+        # (ctx.market.features üzerinden, market_snapshot'ta zaten
+        # gözlemleniyor) birikince ayrı bir karar.
+        if context.atr_expansion_ratio is not None:
+            if context.atr_expansion_ratio > 1.5:
+                caveats.append(
+                    f"ATR genişliyor (kısa/uzun dönem oranı {context.atr_expansion_ratio:.2f}) — "
+                    "volatilite artıyor, gözlem-only"
+                )
+            elif context.atr_expansion_ratio < 0.67:
+                caveats.append(
+                    f"ATR daralıyor (kısa/uzun dönem oranı {context.atr_expansion_ratio:.2f}) — "
+                    "volatilite azalıyor, gözlem-only"
+                )
+
         # Faz 237: Bollinger Bands — bandın DIŞINA taşmak (percent_b<0 ya da
         # >1) genelde ya gerçek bir kırılım ya da aşırı-uzama/dönüş adayı;
         # burada "mean-reversion" yorumuyla DEĞİL, mevcut trend'i DOĞRULAYAN

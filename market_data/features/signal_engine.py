@@ -63,7 +63,7 @@ def compute_technical_signals(data: list[OHLCV]) -> dict:
             "RSI": 50.0, "ema": data[-1].close if data else 0.0, "macd": 0.0,
             "trend": "neutral", "momentum": "neutral", "market_structure": "neutral",
             "ema_alignment": "neutral", "volatility_regime": "normal", "volume_confirmation": False,
-            "atr": 0.0,
+            "atr": 0.0, "atr_expansion_ratio": None,
             "bollinger_percent_b": 0.5, "bollinger_bandwidth": 0.0, "vwap_deviation_pct": 0.0,
             "adx": 0.0, "di_plus": 0.0, "di_minus": 0.0,
             "obv_trend": "flat", "price_obv_divergence": "none",
@@ -115,6 +115,17 @@ def compute_technical_signals(data: list[OHLCV]) -> dict:
     period = min(14, n - 1)
     rsi_value = _rsi(closes, period)
     atr_value = _atr(data, min(14, n - 1))
+    # Faz 437 (2026-09-07) — kullanıcı önceliği ②: ham ATR zaten
+    # hesaplanıyordu ama sadece stop/target ölçeklendirmesinde
+    # (compute_daily_atr_pct) kullanılıyordu, hiçbir agent'a YÖN/
+    # volatilite sinyali olarak ulaşmıyordu — sadece kaba volatility_
+    # regime (low/normal/high) etiketi vardı. Genişleme/daralma oranı:
+    # kısa dönem (14) ATR'nin daha UZUN bir taban dönemin (50, ya da
+    # mevcut veri kadarı) ATR'sine oranı — >1 volatilite genişliyor,
+    # <1 daralıyor. atr_long==0 ise (dejenere/sabit fiyat) None
+    # (fail-closed, icat edilmiş bir oran asla üretilmez).
+    atr_long = _atr(data, min(50, n - 1))
+    atr_expansion_ratio = round(atr_value / atr_long, 4) if atr_long > 0 else None
 
     # Faz 237: kullanıcı isteği — "eklenebilecek bütün teknik analiz
     # yöntemlerini ekleyelim eğer matematiksel bir yöntemse." Bollinger/
@@ -144,6 +155,7 @@ def compute_technical_signals(data: list[OHLCV]) -> dict:
         "volatility_regime": volatility_regime,
         "volume_confirmation": volume_confirmation,
         "atr": round(float(atr_value), 6),
+        "atr_expansion_ratio": atr_expansion_ratio,
         "bollinger_percent_b": round(float(bollinger_percent_b), 3),
         "bollinger_bandwidth": round(float(bollinger_bandwidth), 4),
         "vwap_deviation_pct": round(float(vwap_deviation_pct), 4),

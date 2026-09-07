@@ -44,3 +44,11 @@ class TechnicalContext(BaseModel):
     # compute_higher_timeframe_trend docstring'i) — "bullish"/"bearish"/
     # "neutral"/None (veri yoksa).
     higher_timeframe_trend: str | None = None
+    # Faz 437 (2026-09-07) — kullanıcı önceliği ②: ham ATR + genişleme/
+    # daralma oranı zaten hesaplanıyordu (market_data/features/
+    # signal_engine.py) ama hiçbir agent Context'ine ulaşmıyordu, sadece
+    # kaba volatility_regime (yukarıda) vardı. atr_expansion_ratio: kısa
+    # dönem ATR'nin daha uzun bir taban dönemin ATR'sine oranı — >1
+    # genişliyor, <1 daralıyor, None hesaplanamadıysa (fail-closed).
+    atr: float = 0.0
+    atr_expansion_ratio: float | None = None
