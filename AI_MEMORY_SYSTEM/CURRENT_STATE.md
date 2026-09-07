@@ -395,10 +395,68 @@ neredeyse HİÇ öğrenilmemiş, birincisi bariyer mekaniğiyle (dar TP,
 R:R asimetrisi) yapay olarak şişiyor. 1 yeni test (gatherer/DB
 round-trip). Offline/rapor-only, canlı karara bağlı değil.
 
-**SIRADAKİ:** Faz 447 (Council'in evidence-provider'a geçişi) AYRI
-kullanıcı onayı gerektiriyor — Faz 441-446'nın ürettiği bu somut kanıt
-(AI direction Brier'i randomdan kötü) doğrultusunda kullanıcıyla mimari
-tartışma yapılacak, henüz kodlanmadı.
+**2026-09-08 — Faz 447'den ÖNCE derin kök-neden araştırması: SHORT'un
+direction sorunu MetaStage'e kadar izlendi, somut bir kod düzeltmesi
+(Faz 448) yazıldı ama HENÜZ CANLIYA ALINMADI (kullanıcı canlıda ayrı
+bir test yürütüyor, worker restart edilmedi — kod commit edildi, çalışan
+worker eski davranışta).**
+
+Zincir-atıf testiyle (üç confidence sütunu: council_confidence→pre_
+fusion_confidence→confidence arasındaki korelasyon SHORT'ta +0,022→
+-0,029→-0,018 işaret değiştiriyor) MetaStage şüpheli bulundu.
+`services/metacognition.py::evaluate_confidence()`'ın gerçek formülü
+okundu: `model_confidence = belief.strength`, sonra memory_insight ve
+`timeframe_belief` (MTF, çapraz-zaman-dilimi — 4h) ile `max()` alınarak
+YÜKSELTİLİYOR (uyuşuyorsa) ya da çarpanla düşürülüyor (çelişiyorsa).
+
+**Kritik bulgu — MTF suçlu değil, UZLAŞMA suçlu:** 4h katmanının KENDİ
+başına yön çağrısı test edildi (primary karardan bağımsız, aynı gerçek
+1sa ileri fiyat hedefine karşı): 4h SHORT dediğinde %49,85 isabet
+(n=1715, primary'nin %38,1'inden İYİ), 4h LONG dediğinde %52,89 (n=4891,
+primary'nin %46,2'sinden de İYİ) — 4h katmanı bozuk DEĞİL. Ama primary
+VE 4h AYNI ANDA SHORT dediğinde (uzlaşma anı) isabet **%34,9**'a
+düşüyor (n=1083) — ikisinin KENDİ başına isabetinden bile kötü.
+Counterfactual: MTF-uzlaşan SHORT kararları örneklemden çıkarınca
+confidence↔doğruluk korelasyonu -0,018'den **+0,0066**'ya dönüyor
+(işaret düzeliyor). LONG'da AYNI zarar YOK (uzlaşma %46,3 vs uzlaşmama
+%46,5 — anlamlı fark yok, n=2636/1581) — MTF-boost mekanizması LONG'da
+zararsız, SADECE SHORT'ta zararlı.
+
+**Faz 448 (kodlandı, TEST EDİLDİ, CANLIYA ALINMADI):**
+`services/metacognition.py::evaluate_confidence()`'te SHORT için MTF-
+uzlaşma boost'u kaldırıldı (`if belief_direction != "SHORT": model_
+confidence = max(...)`) — çelişki cezası (disagreement penalty) HER
+İKİ yön için de AYNEN korundu, LONG'un davranışı hiç değişmedi. 2 yeni
+test + 13/13 mevcut metacognition testi + 54 bağlı MetaStage/DecisionFusion
+testi geçti. **AÇIK MADDE — kullanıcı onayı bekliyor:** kullanıcı şu an
+`direction_trading_enabled.SHORT=true` ile canlı bir test yürütüyor,
+worker restart'ını (dolayısıyla bu düzeltmenin canlıya yansımasını)
+açıkça ERTELEDİ ("test yapıyorum testlerimi bozma") — kod hazır,
+deploy kararı kullanıcıda.
+
+**Ayrıca bulunan, henüz kodlanmayan gözlem gaps:** `belief.strength`/
+`cluster_balance`/`crowding_penalty` (BeliefEngine'in gerçek çıktısı)
+hiçbir zaman `agent_contributions`'a kaydedilmiyor — SADECE
+`timeframe_belief` bu şekilde persist ediliyor (Faz 268c). Tam
+agreement/crowding/meta waterfall attribution'ı için bu telemetri
+eksikliği kapatılmalı (timeframe_belief ile AYNI desen) — henüz
+yapılmadı, ayrı bir faz olabilir.
+
+**2026-09-08 devamı — kullanıcı büyük mimari soruyu açtı:** MetaStage
+mikro-düzeltmeleriyle (Faz 448 gibi) uğraşmak yerine doğrudan Örüntü
+Tanıma / Historical Analog tabanlı karar mimarisine geçilirse (bkz.
+[[project_pattern_recognition_over_voting_vision]]) confidence/direction
+mekanizmasının TAMAMEN gereksizleşebileceğini söyledi — kendi sözü:
+"birkaç tane bile olsa, yeter ki gerçek edge taşısın, bunların hiçbirine
+gerek kalmayacak." Bu, kullanıcının 2026-09-06'da zaten aldığı mimari
+kararla (voting temelden kusurlu) birebir aynı çizgide — henüz kodlanmadı,
+ayrı bir tasarım oturumu bekliyor (kullanıcının kendi daha önceki kararı).
+
+**SIRADAKİ:** Faz 447 (Council'in evidence-provider'a geçişi) hâlâ AYRI
+kullanıcı onayı gerektiriyor. Faz 448'in canlıya alınma kararı kullanıcıda.
+Örüntü-tanıma mimarisine geçiş kararı da AYRI, kendi tasarım oturumunu
+bekliyor — bugünkü Faz 445 (`compute_direction_analogs`) zaten bu yöne
+atılmış ilk somut adım.
 
 **Açık/gözlem bekleyen:** SHORT geçici olarak kapalı (yeniden açma planı yok, gözlem sürüyor). WS disconnect düzelmesi (Faz 414) hâlâ taze logla doğrulanmadı. Kullanıcı iki büyük GPT mimari raporu daha paylaştı (Incremental Value/Conditional Lift/Pattern Coverage/Temporal Decay/Negative Evidence önerisi + OI/Funding/Liquidation/ATR/RSI-detay gibi yeni ham feature adayları, önceliklendirilmiş: ①OI+Funding+Price ②ATR/realized vol ③RSI ham+slope+divergence) — kullanıcının kendi çerçevesi gereği ("ilk fırsatta, detaylıca") bunlar TODO'ya (`project_open_items_2026_08_31.md`) detaylıca eklendi, HENÜZ uygulanmadı.
 

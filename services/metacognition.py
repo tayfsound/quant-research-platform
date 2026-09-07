@@ -65,7 +65,19 @@ class Metacognition:
             combined_direction = tf_data.get("combined_direction")
             combined_confidence = tf_data.get("combined_confidence") or 0.0
             if combined_direction == belief_direction:
-                model_confidence = max(model_confidence, combined_confidence)
+                # Faz 448 (2026-09-08) — gerçek veriyle bulundu: SHORT'ta
+                # çapraz-zaman-dilimi UZLAŞMASI bağımsız doğrulayıcı kanıt
+                # değil, aşırı-uzamış/tükeniş rejiminin işareti çıktı.
+                # n=1083 gerçek karar: primary+4h ikisi de SHORT dediğinde
+                # gerçek isabet %34,9 — ne primary'nin kendi başına isabetinden
+                # (%38,1) ne 4h'nin kendi başına isabetinden (%49,85) iyi,
+                # ikisinden de KÖTÜ (bkz. analytics/direction_calibration_
+                # gatherer.py'nin Faz 446 bulgusu + oturum içi MTF-attribution
+                # analizi). LONG'da AYNI zarar YOK (uzlaşma %46,3 vs
+                # uzlaşmama %46,5 — anlamlı fark yok) — bu yüzden boost
+                # SADECE SHORT için kaldırıldı, LONG'un davranışı DEĞİŞMEDİ.
+                if belief_direction != "SHORT":
+                    model_confidence = max(model_confidence, combined_confidence)
             elif combined_direction is not None:
                 model_confidence = model_confidence * (1 - combined_confidence * 0.3)
 

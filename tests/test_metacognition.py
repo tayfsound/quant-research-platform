@@ -128,6 +128,47 @@ def test_disagreeing_timeframe_belief_reduces_confidence():
     assert result["confidence"] < 0.6  # çelişki confidence'ı aşağı çekti
 
 
+def test_agreeing_timeframe_belief_does_not_boost_short_confidence():
+    """Faz 448 (2026-09-08) — gerçek veriyle bulundu: SHORT'ta primary+4h
+    aynı anda SHORT dediğinde (uzlaşma) gerçek isabet %34,9 — ikisinin
+    KENDİ başına isabetinden (primary %38,1, 4h %49,85) bile kötü. Uzlaşma
+    bağımsız doğrulayıcı kanıt değil, aşırı-uzamış/tükeniş rejiminin
+    işareti. LONG'daki AYNI test (yukarıda) hâlâ boost bekliyor — bu
+    SADECE SHORT'a özel bir davranış farkı."""
+    meta = Metacognition(act_threshold=0.7, reduce_threshold=0.4)
+    ctx = CognitiveCycleContext()
+    ctx.cognition.relevant_knowledge.append({
+        "type": "timeframe_belief",
+        "data": {"combined_direction": "SHORT", "combined_confidence": 0.9},
+    })
+
+    result = meta.evaluate_confidence(
+        ctx, {"risk_flags": []}, {"conflict_level": 0.0},
+        belief_strength=0.5, belief_direction="SHORT",
+    )
+
+    assert result["confidence"] == 0.5  # boost verilmedi, belief_strength degismeden kaldi
+
+
+def test_disagreeing_timeframe_belief_still_reduces_short_confidence():
+    """Faz 448'in kaldırdığı SADECE uzlaşma (agreement) boost'u — çelişki
+    (disagreement) cezası her iki yön için de AYNEN korunuyor, sadece
+    SHORT'un kendi çelişki senaryosuyla da doğrulanıyor."""
+    meta = Metacognition(act_threshold=0.7, reduce_threshold=0.4)
+    ctx = CognitiveCycleContext()
+    ctx.cognition.relevant_knowledge.append({
+        "type": "timeframe_belief",
+        "data": {"combined_direction": "LONG", "combined_confidence": 0.9},
+    })
+
+    result = meta.evaluate_confidence(
+        ctx, {"risk_flags": []}, {"conflict_level": 0.0},
+        belief_strength=0.6, belief_direction="SHORT",
+    )
+
+    assert result["confidence"] < 0.6
+
+
 def test_no_timeframe_belief_present_is_a_no_op():
     """Multi-Timeframe Cascade kapalıyken (varsayılan) hiç timeframe_belief
     enjekte edilmez — bu durumda davranış eskisiyle birebir aynı kalmalı."""
