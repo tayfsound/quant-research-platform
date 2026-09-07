@@ -24,13 +24,17 @@ _TEST_REGIME = f"{_TEST_TREND}_{_TEST_VOL}"
 
 def _ctx(
     symbol: str, direction: str = "LONG", trend: str = "bullish", volatility_regime: str = "normal",
-    confidence: float = 0.9,
+    confidence: float = 0.9, stop_loss_distance: float = 5.0, take_profit_distance: float = 5.0,
 ) -> CognitiveCycleContext:
     # Faz 421 — confidence varsayılan YÜKSEK (0.9): min_confidence_gate
     # artık varsayılan AÇIK (0.7 taban) — bu dosyadaki diğer testler
     # KENDİ gate'lerini izole test ediyor, confidence düşük kalırsa
     # (varsayılan 0.0) benim yeni kapım ONLARDAN ÖNCE bloke edip yanlış
     # gate_block nedeni raporlardı.
+    # Faz 426 — stop_loss_distance/take_profit_distance parametrelendi:
+    # close=100 tabanında varsayılan 5.0 -> %5 stop mesafesi (swing,
+    # short_scalp_only_gate testleri için), scalp testi daha küçük bir
+    # mesafe geçmeli.
     return CognitiveCycleContext(
         market={
             "symbol": symbol,
@@ -39,7 +43,7 @@ def _ctx(
         },
         decision={
             "proposed_direction": direction, "final_action": direction,
-            "final_size": 10.0, "stop_loss_distance": 5.0, "take_profit_distance": 5.0,
+            "final_size": 10.0, "stop_loss_distance": stop_loss_distance, "take_profit_distance": take_profit_distance,
             "confidence": confidence,
         },
         risk={"evaluation": {"verdict": "approved"}},
@@ -214,3 +218,50 @@ def test_asset_class_trading_gate_logs_a_gate_block():
                 json.dumps({"crypto": True, "commodity": True, "equity": True}),
                 updated_by="test",
             )
+
+
+def test_short_scalp_only_gate_logs_a_gate_block_for_swing():
+    """Faz 426 — kullanıcı isteği: "scalp only kapı ayarlayalım." Faz
+    425'in ızgara taraması: swing-mesafeli SHORT'ta hiçbir stop/hedef
+    çifti pozitif EV vermiyor — bu kapı SADECE bu durumu engellemeli."""
+    with SessionFactory.get_session() as session:
+        AppSettingsRepository(session).set("short_scalp_only_enabled", "true", updated_by="test")
+    try:
+        symbol = f"SSOGTEST{uuid.uuid4().hex[:6]}USDT"
+        # close=100, stop_loss_distance=5.0 -> %5 stop mesafesi -> swing (>=%4.5).
+        event = DecisionRecorder().record(_ctx(symbol, direction="SHORT", stop_loss_distance=5.0), [])
+        assert event.status == "no_trade"
+        gate_blocks = [o for o in event.agent_opinions if o.get("type") == "gate_block" and o["data"].get("gate") == "short_scalp_only_gate"]
+        assert len(gate_blocks) == 1
+        assert gate_blocks[0]["data"]["trade_type"] == "swing"
+    finally:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("short_scalp_only_enabled", "false", updated_by="test")
+
+
+def test_short_scalp_only_gate_lets_scalp_distance_short_through():
+    with SessionFactory.get_session() as session:
+        AppSettingsRepository(session).set("short_scalp_only_enabled", "true", updated_by="test")
+    try:
+        symbol = f"SSOGTEST{uuid.uuid4().hex[:6]}USDT"
+        # close=100, stop_loss_distance=3.0 -> %3 stop mesafesi -> scalp (<%4.5).
+        event = DecisionRecorder().record(_ctx(symbol, direction="SHORT", stop_loss_distance=3.0), [])
+        gate_blocks = [o for o in event.agent_opinions if o.get("type") == "gate_block" and o["data"].get("gate") == "short_scalp_only_gate"]
+        assert gate_blocks == []
+    finally:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("short_scalp_only_enabled", "false", updated_by="test")
+
+
+def test_short_scalp_only_gate_never_blocks_long():
+    with SessionFactory.get_session() as session:
+        AppSettingsRepository(session).set("short_scalp_only_enabled", "true", updated_by="test")
+    try:
+        symbol = f"SSOGTEST{uuid.uuid4().hex[:6]}USDT"
+        # LONG + swing-mesafeli (%5 stop) -- kapı yine de hiç dokunmamalı.
+        event = DecisionRecorder().record(_ctx(symbol, direction="LONG", stop_loss_distance=5.0), [])
+        gate_blocks = [o for o in event.agent_opinions if o.get("type") == "gate_block" and o["data"].get("gate") == "short_scalp_only_gate"]
+        assert gate_blocks == []
+    finally:
+        with SessionFactory.get_session() as session:
+            AppSettingsRepository(session).set("short_scalp_only_enabled", "false", updated_by="test")

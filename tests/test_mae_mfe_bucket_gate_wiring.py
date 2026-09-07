@@ -20,6 +20,12 @@ def _reset_defaults() -> None:
 
 
 def _ctx(symbol: str, direction: str = "LONG", regime: str = "bull_trend", volatility_regime: str = "normal") -> CognitiveCycleContext:
+    # Faz 426 — stop_loss_distance 5.0'dan 3.0'a düşürüldü (%5 -> %3):
+    # bu dosya SADECE mae_mfe_bucket_trading_gate'i izole test ediyor,
+    # %5 (swing) yeni short_scalp_only_gate'i (varsayılan AÇIK) SHORT
+    # testlerinde ONDAN ÖNCE tetikleyip yanlış gate_block nedeni
+    # raporlardı — Faz 421'de min_confidence_gate için uygulanan AYNI
+    # düzeltme deseni.
     return CognitiveCycleContext(
         market={
             "symbol": symbol,
@@ -31,7 +37,7 @@ def _ctx(symbol: str, direction: str = "LONG", regime: str = "bull_trend", volat
         },
         decision={
             "proposed_direction": direction, "final_action": direction,
-            "final_size": 10.0, "stop_loss_distance": 5.0, "take_profit_distance": 5.0,
+            "final_size": 10.0, "stop_loss_distance": 3.0, "take_profit_distance": 3.0,
         },
         risk={"evaluation": {"verdict": "approved"}},
     )

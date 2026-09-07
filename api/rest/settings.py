@@ -432,6 +432,9 @@ def _validate(key: str, value: str) -> None:
     elif key == "min_confidence_gate_enabled":
         if value not in ("true", "false"):
             raise HTTPException(400, "min_confidence_gate_enabled must be 'true' or 'false'")
+    elif key == "short_scalp_only_enabled":
+        if value not in ("true", "false"):
+            raise HTTPException(400, "short_scalp_only_enabled must be 'true' or 'false'")
     elif key == "min_confidence_gate_min_confidence":
         try:
             v = float(value)

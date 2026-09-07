@@ -433,6 +433,34 @@ def test_market_state_tilt_and_guardian_settings_accept_valid_and_reject_invalid
                 )
 
 
+def test_short_scalp_only_enabled_accepts_valid_and_rejects_invalid_values():
+    """Faz 426 — kullanıcı isteği: "scalp only kapı ayarlayalım." bkz.
+    analytics/short_scalp_only_gate.py."""
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        client = _client()
+        try:
+            ok = client.post(
+                "/api/v1/settings/short_scalp_only_enabled",
+                params={"value": "false"},
+                headers=make_authed_headers(Role.ADMIN),
+            )
+            assert ok.status_code == 200
+            with SessionFactory.get_session() as session:
+                assert AppSettingsRepository(session).get("short_scalp_only_enabled") == "false"
+
+            bad = client.post(
+                "/api/v1/settings/short_scalp_only_enabled",
+                params={"value": "yolo"},
+                headers=make_authed_headers(Role.ADMIN),
+            )
+            assert bad.status_code == 400
+        finally:
+            with SessionFactory.get_session() as session:
+                AppSettingsRepository(session).set(
+                    "short_scalp_only_enabled", DEFAULTS["short_scalp_only_enabled"], updated_by="test"
+                )
+
+
 def test_currency_rates_endpoint_returns_real_live_rates():
     with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
         client = _client()

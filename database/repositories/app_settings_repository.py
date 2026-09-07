@@ -753,6 +753,20 @@ DEFAULTS: dict[str, str] = {
     "min_confidence_gate_enabled": "true",
     "min_confidence_gate_min_confidence": "0.7",
 
+    # Faz 426 (2026-09-07) — kullanıcı isteği: "scalp only kapı
+    # ayarlayalım." Faz 425'in ızgara taraması: scalp-mesafeli SHORT'ta
+    # (gerçek stop%<%4.5) gerçek kenar var, swing-mesafeli SHORT'ta HİÇBİR
+    # stop/hedef çifti pozitif EV vermiyor (Faz 320'nin bağımsız
+    # doğrulaması). target_atr_mult_short tek global çarpan olduğu için
+    # SHORT'u direction_trading_enabled ile açmak swing'i de geri getirir
+    # — bu kapı SADECE swing-mesafeli SHORT'u engeller, scalp'e dokunmaz,
+    # LONG'a hiç dokunmaz. Saf bir EK KISITLAMA (var olan davranışı
+    # gevşetmiyor) olduğu için min_confidence_gate ile AYNI ilkeyle
+    # varsayılan AÇIK — SHORT şu an zaten direction_trading_enabled ile
+    # tamamen kapalı, canlı etkisi yok. bkz. analytics/short_scalp_only_
+    # gate.py.
+    "short_scalp_only_enabled": "true",
+
     # Kullanıcı isteği (2026-08-28): "kararı vermeden önce burayı
     # tarayacak, ajan gruplarının başarısını ölçecek — eşiğin altında
     # kalıyorsa pozisyonu açmayacak." bkz. analytics/agent_combination_

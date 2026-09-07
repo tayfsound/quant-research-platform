@@ -30,6 +30,51 @@ bulgu:
    script) HENÜZ yazılmadı — bkz. memory `feedback_debug_scripts_must_
    target_test_db` üçüncü olay + `project_open_items_2026_08_31`.
 
+**2026-09-07 (devam) — Faz 425: scalp-mesafeli SHORT'un R:R'ı düzeltildi.**
+Kullanıcı "bazı rejimlerde SHORT iyi kazanıyor, neden tamamen kapalı"
+sorusundan başladı. Gerçek MAE/MFE verisiyle (`compute_optimal_barrier`,
+path-relabeling) tam ızgara taraması: swing-mesafeli SHORT'ta (n=2511)
+HİÇBİR stop/hedef çifti pozitif EV vermiyor (Faz 320'nin bağımsız
+doğrulaması — gerçek yönsel kenar yok, R:R'la düzelmez). Scalp-mesafeli
+SHORT'ta (n=172) AYRI taranınca pozitif kenar bulundu — eski oranın
+(hedef stop'tan dar) TAM TERSİ bir oran gerekiyormuş. `target_atr_mult_
+short` 1.4→3.5 yapıldı (stop sabit 2.5x ATR), commit `3f5fd60`, 80/80
+test geçti, worker+uvicorn yeniden başlatıldı. SHORT hâlâ tamamen kapalı
+(`direction_trading_enabled`) — tek global çarpan olduğu için scalp-only
+bir giriş kapısı inşa edilmeden yeniden açılmamalı (açık madde).
+
+Ayrıca aynı gün doğrulanan iki yan bulgu: (1) kullanıcının "SL'lerin
+%90'ı yön hatası" hatırlaması gerçek veride %90 değil ~%47-51 çıktı
+(kalanı bariyer-kalibrasyon sorunu); (2) LONG'un başarısının ne kadarının
+"gerçek yön becerisi" ne kadarının "sürekli boğa piyasasında olmak"
+(beta) olduğu — BTC'nin değerlendirme penceresinde (5 Ağu-7 Eyl) hiç
+sürdürülebilir düşüş yaşamadığı doğrulandı, bu soru kapatılamayan gerçek
+bir kör nokta olarak kaldı (gerçek ayı piyasası görülmeden çözülemez).
+
+**2026-09-07 (devam) — Faz 426: SHORT sadece-scalp giriş kapısı.**
+Kullanıcı isteği: "scalp only kapı ayarlayalım" — Faz 425'in tek global
+`target_atr_mult_short` çarpanı scalp/swing ayrımı yapmadığı için, SHORT
+`direction_trading_enabled` ile yeniden açılırsa swing'i de geri
+getirirdi. Yeni `analytics/short_scalp_only_gate.py::is_short_swing_
+blocked()` — SADECE direction=="SHORT" VE gerçek stop_loss_price'tan
+türetilen trade_type=="swing" iken engelliyor, `services/strategy_
+regime_compatibility_gatherer.py::_trade_type()` ile AYNI %4,5 eşiği
+kullanıyor, `decision_recorder.py`'ye stop_loss_price hesaplandıktan
+SONRA (strategy_regime_gate'in AYNI kısıtlaması) bağlandı. Yeni ayar
+`short_scalp_only_enabled` — saf bir EK kısıtlama olduğu için (var olan
+davranışı gevşetmiyor) `min_confidence_gate` ile AYNI ilkeyle varsayılan
+AÇIK. 2 eski test (`test_direction_trading_gate_wiring.py`, `test_mae_
+mfe_bucket_gate_wiring.py`) SHORT'u varsayılan %5 (swing) mesafeyle açık
+bekliyordu, yeni kapı bunları da bloke etti — o dosyaların `_ctx()`
+varsayılan mesafesi %3'e (scalp) düşürülerek düzeltildi (Faz 421'in
+confidence=0.9 düzeltmesiyle AYNI desen). Yeni + ilgili tüm kapı testleri
+92/92 geçti, tam regresyon çalışıyor.
+
+SHORT hâlâ `direction_trading_enabled` ile tamamen kapalı — bu kapı R:R
+düzeltmesiyle (Faz 425) birlikte SHORT'u yeniden açmayı güvenli hale
+getiren mekanizma, ama açma kararı henüz verilmedi (kullanıcıya ait,
+sıradaki adım).
+
 **Açık/gözlem bekleyen:** SHORT geçici olarak kapalı (yeniden açma planı yok, gözlem sürüyor). WS disconnect düzelmesi (Faz 414) hâlâ taze logla doğrulanmadı. Kullanıcı iki büyük GPT mimari raporu daha paylaştı (Incremental Value/Conditional Lift/Pattern Coverage/Temporal Decay/Negative Evidence önerisi + OI/Funding/Liquidation/ATR/RSI-detay gibi yeni ham feature adayları, önceliklendirilmiş: ①OI+Funding+Price ②ATR/realized vol ③RSI ham+slope+divergence) — kullanıcının kendi çerçevesi gereği ("ilk fırsatta, detaylıca") bunlar TODO'ya (`project_open_items_2026_08_31.md`) detaylıca eklendi, HENÜZ uygulanmadı.
 
 **Faz 417 — Approvals sayfası sessizce boş görünüyordu.** Kullanıcı

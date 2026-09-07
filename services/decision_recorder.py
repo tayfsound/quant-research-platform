@@ -511,6 +511,33 @@ class DecisionRecorder:
                     stop_loss_price = entry_price + risk_mag
                     take_profit_price = entry_price - reward_mag
 
+        # Faz 426 (2026-09-07) — kullanıcı isteği: "scalp only kapı
+        # ayarlayalım." Faz 425'in ızgara taraması: swing-mesafeli SHORT'ta
+        # (gerçek stop%>=%4.5) hiçbir stop/hedef çifti pozitif EV vermiyor,
+        # scalp-mesafeli SHORT'ta (stop%<%4.5) gerçek kenar var.
+        # target_atr_mult_short tek global çarpan olduğu için trade_type
+        # (scalp/swing), diğer sınıflandırmalarla AYNI stop_loss_price'a
+        # bağlı — bu kapı da stop_loss_price hesaplandıktan SONRA çalışmak
+        # zorunda, strategy_regime_gate'in AYNI kısıtlaması (bkz. aşağıdaki
+        # not). bkz. analytics/short_scalp_only_gate.py.
+        if opens_position and entry_price and stop_loss_price and experiment_bucket is None:
+            from analytics.short_scalp_only_gate import is_short_swing_blocked
+            from database.repositories.app_settings_repository import AppSettingsRepository
+            from services.strategy_regime_compatibility_gatherer import _trade_type
+
+            short_scalp_only_enabled = AppSettingsRepository(self.session).get("short_scalp_only_enabled") == "true"
+            trade_type = _trade_type(entry_price, stop_loss_price)
+            if is_short_swing_blocked(direction, trade_type, short_scalp_only_enabled):
+                opens_position = False
+                agent_opinions_data.append({
+                    "type": "gate_block",
+                    "data": {
+                        "gate": "short_scalp_only_gate",
+                        "reason": "short_swing_has_no_verified_edge",
+                        "trade_type": trade_type,
+                    },
+                })
+
         # Faz 366 — kullanıcı isteği: "ürettiği strateji insan onayına
         # sunulur böyle bir yapı ayarlamıştık" — analytics/strategy_
         # hypothesis_scanner.py'nin (Faz 346) bulup services/strategy_
