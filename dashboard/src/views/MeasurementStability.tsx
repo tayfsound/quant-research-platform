@@ -31,26 +31,49 @@ type ModuleEntry = {
 
 type VolatileField = StabilityField & { module_key: string; module_label: string };
 
-function cvTone(cv: number | null): "rise" | "warn" | "fall" | "neutral" {
+// Faz 435 (2026-09-07) — kullanıcı isteği: dashboard'da N ile CV her
+// zaman birlikte gösterilsin, düşük N + iyi-görünen CV durumu görsel
+// olarak uyarsın. Bugünkü GERÇEK örnek tam bu: correlation_stability
+// n=2 (Faz 432'den önce, ham/örtüşen snapshot'larla n=12) CV=0,00098
+// gösteriyordu — "çok istikrarlı" görünüp aslında sadece 2 (ya da daha
+// az) gerçekten bağımsız gözleme dayanıyordu. Eşik (5), oturum boyunca
+// tekrarlanan min_distinct_days=5 ile AYNI — "en az 5 bağımsız gözlem"
+// bu kod tabanında zaten kanıtlanmış bir taban.
+const LOW_N_THRESHOLD = 5;
+
+function cvTone(cv: number | null, n: number): "rise" | "warn" | "fall" | "neutral" {
+  if (n < LOW_N_THRESHOLD) return "warn";
   if (cv === null) return "neutral";
   if (cv < 0.15) return "rise";
   if (cv < 0.5) return "warn";
   return "fall";
 }
 
-function cvLabel(cv: number | null): string {
+function cvLabel(cv: number | null, n: number): string {
+  if (n < LOW_N_THRESHOLD) return cv === null ? `n=${n} — az veri` : `CV ${cv.toFixed(3)} (n=${n}, az veri)`;
   if (cv === null) return "—";
   return `CV ${cv.toFixed(3)}`;
+}
+
+function NCell({ n }: { n: number }) {
+  return (
+    <td
+      className={`py-1.5 pr-3 tabular-nums ${n < LOW_N_THRESHOLD ? "text-warn font-semibold" : "text-ink-faint"}`}
+      title={n < LOW_N_THRESHOLD ? `Sadece ${n} gözlem — güvenilir bir istikrar sonucu için yetersiz (taban: ${LOW_N_THRESHOLD})` : undefined}
+    >
+      {n}
+    </td>
+  );
 }
 
 function FieldRow({ f }: { f: StabilityField }) {
   return (
     <tr className="border-t border-line-soft">
       <td className="py-1.5 pr-3 text-ink-soft font-mono text-[11px] break-all">{f.path}</td>
-      <td className="py-1.5 pr-3 text-ink-faint tabular-nums">{f.n}</td>
+      <NCell n={f.n} />
       <td className="py-1.5 pr-3 text-ink-soft tabular-nums">{f.mean.toFixed(4)}</td>
       <td className="py-1.5">
-        <Badge tone={cvTone(f.coefficient_of_variation)}>{cvLabel(f.coefficient_of_variation)}</Badge>
+        <Badge tone={cvTone(f.coefficient_of_variation, f.n)}>{cvLabel(f.coefficient_of_variation, f.n)}</Badge>
       </td>
     </tr>
   );
@@ -88,13 +111,25 @@ export default function MeasurementStability() {
     <div>
       <PageHeader
         title="Ölçüm Stabilitesi"
-        description="Sistemin ölçtüğü her nokta-tahminin (korelasyon, isabet oranı, Brier skoru, IC…) zaman içinde ne kadar istikrarlı olduğunu gösterir — düşük CV güvenilir/tutarlı, yüksek CV gürültülü/oynak demek. Faz 407: gözlem-only, hiçbir canlı kararı değiştirmiyor."
+        description="Sistemin ölçtüğü her nokta-tahminin (korelasyon, isabet oranı, Brier skoru, IC…) zaman içinde ne kadar istikrarlı (aynı okumaya yakın kalıyor) olduğunu gösterir. Faz 407: gözlem-only, hiçbir canlı kararı değiştirmiyor."
         action={
           <Button onClick={generate} disabled={loading}>
             {loading ? "Taranıyor…" : "Taze Tara"}
           </Button>
         }
       />
+      {/* Faz 435 (2026-09-07) — kullanıcı isteği: "Modül tanımını
+          netleştir: Stability ≠ Reliability, ayrı bir iddia." Bu sayfa
+          bir ölçümün DOĞRU olduğunu değil, zaman içinde TUTARLI
+          kaldığını gösteriyor — sistematik olarak yanlış ama istikrarlı
+          bir ölçüm mükemmel bir CV alabilir (bkz. n<{LOW_N_THRESHOLD}
+          uyarısı: az veriyle "istikrarlı" görünen bir ölçüm hem yanlış
+          hem yanıltıcı derecede güvenli görünebilir). */}
+      <p className="text-xs text-ink-faint mb-4 max-w-3xl">
+        İstikrar (stability) doğruluk (reliability) DEĞİLDİR — burada düşük CV, ölçümün zaman içinde tutarlı
+        kaldığını gösterir, ölçümün doğru/isabetli olduğunu değil. Ayrıca n&lt;{LOW_N_THRESHOLD} olan satırlar
+        turuncu uyarılıdır — çok az gözleme dayanan bir CV yanıltıcı derecede istikrarlı görünebilir.
+      </p>
 
       {error && <ErrorNote>{error}</ErrorNote>}
 
@@ -133,9 +168,9 @@ export default function MeasurementStability() {
                       <tr key={i} className="border-t border-line-soft">
                         <td className="py-1.5 pr-3 text-ink-soft">{f.module_label}</td>
                         <td className="py-1.5 pr-3 text-ink-soft font-mono text-[11px] break-all">{f.path}</td>
-                        <td className="py-1.5 pr-3 text-ink-faint tabular-nums">{f.n}</td>
+                        <NCell n={f.n} />
                         <td className="py-1.5">
-                          <Badge tone={cvTone(f.coefficient_of_variation)}>{cvLabel(f.coefficient_of_variation)}</Badge>
+                          <Badge tone={cvTone(f.coefficient_of_variation, f.n)}>{cvLabel(f.coefficient_of_variation, f.n)}</Badge>
                         </td>
                       </tr>
                     ))}

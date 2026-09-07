@@ -191,6 +191,26 @@ GPT'nin "Mart→Ağustos" örneği gibi ay ölçeğinde DEĞİL — hacim düş�
 (ya da MAX_DECISIONS penceresi genişletilince) otomatik olarak daha
 uzun vadeli bir decay yakalayacak, şu an kısa-vadeli drift ölçüyor.
 
+**2026-09-07 (devam) — Faz 435: küçük Ölçüm Stabilitesi v2 kalemleri
+(kullanıcı: "küçük olanlardan devam edelim").** İki UI/dokümantasyon
+işi:
+1. Dashboard'da N+CV birlikte uyarı: `MeasurementStability.tsx`'e
+   `LOW_N_THRESHOLD=5` (min_distinct_days=5 ile AYNI taban) — n<5 olan
+   satırlar artık turuncu (`text-warn`), CV rozeti de zorla "warn"
+   tonuna düşüyor ve "(n=X, az veri)" etiketi ekliyor, tooltip ile
+   açıklıyor. Bugünkü GERÇEK örnek (Faz 432 öncesi correlation_
+   stability n=2, CV=0,00098 "çok istikrarlı" görünüyordu) tam bunu
+   hedefliyor.
+2. Modül tanımı netleştirildi: `analytics/measurement_stability.py`
+   docstring'ine + dashboard sayfasına açık bir "Stability ≠
+   Reliability" notu eklendi — sistematik yanlış ama tutarlı bir ölçüm
+   mükemmel bir stability skoru alabilir, bu modül doğruluk iddia
+   etmiyor.
+`npx tsc -b`: temiz. Backend testleri (23/23) geçti. Ekran görüntüsü
+alınamadı (bu oturumun araç setinde tarayıcı/screenshot aracı yok) —
+TypeScript derlemesi + vite'ın dosyayı hatasız servis etmesiyle
+doğrulandı, kullanıcının kendi gözüyle kontrol etmesi önerilir.
+
 **Açık/gözlem bekleyen:** SHORT geçici olarak kapalı (yeniden açma planı yok, gözlem sürüyor). WS disconnect düzelmesi (Faz 414) hâlâ taze logla doğrulanmadı. Kullanıcı iki büyük GPT mimari raporu daha paylaştı (Incremental Value/Conditional Lift/Pattern Coverage/Temporal Decay/Negative Evidence önerisi + OI/Funding/Liquidation/ATR/RSI-detay gibi yeni ham feature adayları, önceliklendirilmiş: ①OI+Funding+Price ②ATR/realized vol ③RSI ham+slope+divergence) — kullanıcının kendi çerçevesi gereği ("ilk fırsatta, detaylıca") bunlar TODO'ya (`project_open_items_2026_08_31.md`) detaylıca eklendi, HENÜZ uygulanmadı.
 
 **Faz 417 — Approvals sayfası sessizce boş görünüyordu.** Kullanıcı

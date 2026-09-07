@@ -13,7 +13,16 @@ geçmişi, ya da canlı hesaplanan bir seri) saf bir GÖZLEM istatistiği
 üretiyor. Kullanıcı kararı: "önce veriyi toplayacağız, sonra emin
 olduğumuzda sıra ile wire edeceğiz" — feedback_new_complexity_must_
 prove_its_edge ve feedback_incremental_module_activation ile AYNI
-disiplin, sadece GÖZLEM aşaması batch, WIRE aşaması tek-tek olacak."""
+disiplin, sadece GÖZLEM aşaması batch, WIRE aşaması tek-tek olacak.
+
+Faz 435 (2026-09-07) — kullanıcı isteği: modül tanımını netleştir.
+KESİN TANIM: "Stability" = bir ölçümün zaman içinde AYNI okumaya yakın
+kalması (tutarlılık/oynaklık). Bu "Reliability" (güvenilirlik/doğruluk)
+İLE AYNI ŞEY DEĞİL — sistematik olarak YANLIŞ ama zaman içinde tutarlı
+bir ölçüm (ör. hep aynı yanlı sonucu veren bozuk bir sensör) mükemmel
+bir stability skoru alabilir. Bu modül SADECE tutarlılığı ölçüyor,
+doğruluğu/isabet oranını iddia etmiyor — o, bambaşka bir modülün
+(ör. compute_accuracy_confidence_interval, feature_ic) işi."""
 from datetime import datetime
 from statistics import mean, pstdev
 
