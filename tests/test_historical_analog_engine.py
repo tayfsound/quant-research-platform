@@ -3,7 +3,11 @@ test_agent_combination_reliability.py'yi izliyor (üçüncü eksen olarak
 market_regime eklendiği için)."""
 from datetime import UTC, datetime, timedelta
 
-from analytics.historical_analog_engine import apply_confidence_shrinkage, compute_historical_analogs
+from analytics.historical_analog_engine import (
+    apply_confidence_shrinkage,
+    compute_historical_analogs,
+    compute_recency_decay,
+)
 
 
 def _record(domains, regime, direction, win, closed_at=None, reversing=False):
@@ -311,3 +315,56 @@ def test_apply_confidence_shrinkage_matches_hand_computed_example():
         raw_win_rate=0.951, effective_sample_size=26.0, strength_before=0.3521,
     )
     assert abs(result - 0.6521) < 1e-4
+
+
+def _dated_group(wins: list[bool]) -> list[dict]:
+    base = datetime(2026, 6, 1, tzinfo=UTC)
+    return [{"win": w, "closed_at": base + timedelta(days=i)} for i, w in enumerate(wins)]
+
+
+def test_compute_recency_decay_detects_a_declining_pattern():
+    """Faz 434 — kullanıcı isteği: "Temporal Decay/Recency" (GPT'nin
+    örneği: bir örüntü zamanla bozuluyor olabilir, aggregate sayı bunu
+    gizler). Erken yarı %90, geç yarı %20 -> belirgin negatif decay."""
+    wins = [i < 18 for i in range(20)] + [i < 4 for i in range(20)]  # 20 erken (%90) + 20 geç (%20)
+    result = compute_recency_decay(_dated_group(wins))
+    assert result["early_win_rate"] == 0.9
+    assert result["late_win_rate"] == 0.2
+    assert result["decay"] == -0.7
+    assert result["early_n"] == 20
+    assert result["late_n"] == 20
+
+
+def test_compute_recency_decay_detects_an_improving_pattern():
+    wins = [i < 4 for i in range(20)] + [i < 18 for i in range(20)]  # 20 erken (%20) + 20 geç (%90)
+    result = compute_recency_decay(_dated_group(wins))
+    assert result["decay"] == 0.7
+
+
+def test_compute_recency_decay_is_none_when_either_half_is_too_small():
+    """MIN_OOS_TEST_SIZE=8 — 10 kayıtlık bir grupta her iki yarı da
+    bunun altında kalır, icat edilmiş bir eğim üretilmemeli."""
+    wins = [True] * 10
+    assert compute_recency_decay(_dated_group(wins)) is None
+
+
+def test_compute_recency_decay_is_none_without_closed_at():
+    records = [{"win": True, "closed_at": None} for _ in range(40)]
+    assert compute_recency_decay(records) is None
+
+
+def test_recency_decay_is_attached_to_historical_analog_candidates():
+    base_time = datetime(2026, 8, 1, tzinfo=UTC)
+    records = [
+        _record({"technical", "macro"}, "bullish_low", "LONG", i < 18 if i < 20 else i < 24,
+                base_time + timedelta(days=i))
+        for i in range(40)
+    ]
+    baseline = [
+        _record({"quant"}, "bullish_low", "LONG", i < 20, base_time + timedelta(days=i))
+        for i in range(40)
+    ]
+    result = compute_historical_analogs(records + baseline, combination_sizes=(2,), min_group_size=20)
+    analog = next(a for a in result["analogs"] if set(a["domains"]) == {"technical", "macro"})
+    assert analog["recency_decay"] is not None
+    assert "decay" in analog["recency_decay"]

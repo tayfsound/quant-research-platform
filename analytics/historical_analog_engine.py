@@ -33,6 +33,9 @@ from itertools import combinations
 
 from analytics.agent_combination_reliability import (
     MIN_GROUP_SIZE,
+    MIN_OOS_TEST_SIZE,
+    OOS_EMBARGO_FRACTION,
+    OOS_TRAIN_FRACTION,
     compute_oos_survival,
     two_proportion_p_value,
 )
@@ -50,6 +53,51 @@ DEFAULT_MIN_DISTINCT_DAYS = 5
 # rejim×yön×tür eksenine özel bir tarayıcı, burası ayrı bir istatistiksel
 # iskelet — sadece eşik büyüklüğü paylaşılıyor).
 HARMFUL_EFFECT_THRESHOLD = -0.20
+
+
+# Faz 434 (2026-09-07) — kullanıcı isteği: "Temporal Decay/Recency"
+# (GPT'nin örneği: bir örüntü Mart'ta %91 iken Ağustos'ta %73'e
+# bozulmuş olabilir, "toplam %84" diye görünüp aslında çürüyor).
+# Doğal yol haftalık snapshot geçmişinden (Measurement Stability'nin
+# compute_stability'si) olurdu — ama gerçek veri kontrol edildi:
+# historical_analog_snapshots'ta şu an sadece 2 nokta var (Faz 431'in
+# bulduğu AYNI veri kıtlığı, hafta hafta bir trend hesaplamaya yetmiyor).
+# Bunun yerine, compute_oos_survival()'ın ZATEN kullandığı kronolojik
+# erken/geç yarı bölünmesi (embargo boşluklu) genişletiliyor — SADECE
+# bool bir "hayatta kaldı mı" değil, gerçek erken/geç win_rate
+# SAYILARINI açığa çıkarıyor. Snapshot geçmişi beklemeden BUGÜN, mevcut
+# 2000-karar penceresinin İÇİNDEN hesaplanabiliyor.
+def compute_recency_decay(group: list[dict]) -> dict | None:
+    """group: AYNI analog hücresine düşen kararlar. compute_oos_survival
+    ile AYNI train/test bölünmesi (OOS_TRAIN_FRACTION/OOS_EMBARGO_
+    FRACTION) — ama sonucu bool'a indirgemek yerine iki yarının GERÇEK
+    win_rate'ini döndürüyor. Her iki yarı da MIN_OOS_TEST_SIZE'ı
+    geçmezse None (icat edilmiş bir eğim asla üretilmez)."""
+    dated = sorted(
+        (r for r in group if r.get("closed_at") is not None),
+        key=lambda r: r["closed_at"],
+    )
+    n = len(dated)
+    if n == 0:
+        return None
+    train_end = int(n * OOS_TRAIN_FRACTION)
+    test_start = train_end + int(n * OOS_EMBARGO_FRACTION)
+    early_records = dated[:train_end]
+    late_records = dated[test_start:]
+    if len(early_records) < MIN_OOS_TEST_SIZE or len(late_records) < MIN_OOS_TEST_SIZE:
+        return None
+
+    early_win_rate = round(sum(1 for r in early_records if r["win"]) / len(early_records), 4)
+    late_win_rate = round(sum(1 for r in late_records if r["win"]) / len(late_records), 4)
+    return {
+        "early_win_rate": early_win_rate,
+        "late_win_rate": late_win_rate,
+        "decay": round(late_win_rate - early_win_rate, 4),
+        "early_n": len(early_records),
+        "late_n": len(late_records),
+        "early_period_end": early_records[-1]["closed_at"].isoformat(),
+        "late_period_start": late_records[0]["closed_at"].isoformat(),
+    }
 
 
 def compute_historical_analogs(
@@ -149,6 +197,9 @@ def compute_historical_analogs(
         # fonksiyonun Faz 428 notu) — pozitif tarafın "OOS'ta baseline'ın
         # ÜSTÜNDE kaldı mı" sorusunun tam simetriği.
         oos_survival_negative = compute_oos_survival(group, baseline_win_rate, direction="negative")
+        # Faz 434 — "Temporal Decay/Recency": aynı train/test bölünmesinin
+        # GERÇEK erken/geç win_rate sayıları (bkz. modül başındaki not).
+        recency_decay = compute_recency_decay(group)
         win_rate = round(wins / len(group), 4)
 
         # Faz 427 — "rejim/yön/reversing ile koşullandırmak, sadece bu
@@ -181,6 +232,7 @@ def compute_historical_analogs(
             "distinct_days": len(closed_dates) if closed_dates else None,
             "oos_survival": oos_survival,
             "oos_survival_negative": oos_survival_negative,
+            "recency_decay": recency_decay,
             "conditioning_incremental_value": conditioning_incremental_value,
             "coverage_pct": coverage_pct,
             "_wins": wins,

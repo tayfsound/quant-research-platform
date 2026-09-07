@@ -175,6 +175,22 @@ tazelendi — yeni raporda gate_eligible=0 (3 riskli giriş artık doğru
 şekilde distinct_days<5'te takılıyor), harmful_eligible=0. Canlı risk
 tamamen kapandı.
 
+**2026-09-07 (devam) — Faz 434: Temporal Decay/Recency (kullanıcı:
+"devam edelim").** Haftalık snapshot geçmişinden hesaplamak istenirdi
+ama gerçek veri kontrol edildi: `historical_analog_snapshots`'ta sadece
+2 nokta var (Faz 431'in bulduğu AYNI veri kıtlığı). Bunun yerine
+`compute_oos_survival()`'ın zaten kullandığı kronolojik erken/geç yarı
+bölünmesi genişletildi — yeni `compute_recency_decay()`, bool yerine
+gerçek erken/geç `win_rate` sayılarını + `decay` (fark) döndürüyor,
+mevcut 2000-karar penceresinin İÇİNDEN, snapshot geçmişi beklemeden
+bugün çalışıyor. 15 yeni test + 141 bağımlı test geçti.
+
+**Gerçek veri notu (dürüstlük):** bugünkü yüksek karar hacminde erken/
+geç yarı bölünmesi sadece SAATLER arasında kalıyor (ör. 10:23→10:58),
+GPT'nin "Mart→Ağustos" örneği gibi ay ölçeğinde DEĞİL — hacim düşünce
+(ya da MAX_DECISIONS penceresi genişletilince) otomatik olarak daha
+uzun vadeli bir decay yakalayacak, şu an kısa-vadeli drift ölçüyor.
+
 **Açık/gözlem bekleyen:** SHORT geçici olarak kapalı (yeniden açma planı yok, gözlem sürüyor). WS disconnect düzelmesi (Faz 414) hâlâ taze logla doğrulanmadı. Kullanıcı iki büyük GPT mimari raporu daha paylaştı (Incremental Value/Conditional Lift/Pattern Coverage/Temporal Decay/Negative Evidence önerisi + OI/Funding/Liquidation/ATR/RSI-detay gibi yeni ham feature adayları, önceliklendirilmiş: ①OI+Funding+Price ②ATR/realized vol ③RSI ham+slope+divergence) — kullanıcının kendi çerçevesi gereği ("ilk fırsatta, detaylıca") bunlar TODO'ya (`project_open_items_2026_08_31.md`) detaylıca eklendi, HENÜZ uygulanmadı.
 
 **Faz 417 — Approvals sayfası sessizce boş görünüyordu.** Kullanıcı
