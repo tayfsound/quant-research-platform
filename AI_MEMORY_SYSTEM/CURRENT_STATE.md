@@ -121,6 +121,22 @@ her hafta p<0.05 kalıp etki büyüklüğü dramatik dalgalanabilir — artık b
 ayrı ayrı görünür. 1 yeni test + tüm wiring/research_summary testleri
 geçti (gerçek piyasa verisiyle, ~4dk).
 
+**2026-09-07 (devam) — Faz 431: non-overlapping window ARAŞTIRMASI
+(kod yok, salt-okunur). Onaylı 5-fazlı plan TAMAMLANDI (427-431).**
+Gerçek snapshot geçmişiyle üç FARKLI örtüşme profili bulundu:
+1. `correlation_stability` (market_state_gatherer, ~18dk kadans, 250
+   mumluk kayan pencere) — **~%99+ örtüşme**, GPT'nin uyarısı birebir
+   gerçek, Faz 407'nin kendi motive edici örneği tam bu seri.
+2. `causal_inference` (haftalık, 200sa≈8,3gün pencere) — **~%16
+   örtüşme**, makul, ciddi sorun değil.
+3. `historical_analog`/`agent_combination_reliability` (haftalık kadans,
+   SAYI-tabanlı 2000-karar pencere) — TERS sorun: bugünkü yüksek hacimde
+   pencere kadanstan KISA (~2 gün vs 7 gün), **boşluk** var, örtüşme
+   değil. `historical_analog_snapshots`'ta sadece 1 satır var, stabilite
+   henüz hesaplanamıyor bile.
+Kod değişikliği yapılmadı (planın kuralı) — düzeltme modül-özel, ayrı
+bir karar/faz olarak kullanıcıya bırakıldı.
+
 **Açık/gözlem bekleyen:** SHORT geçici olarak kapalı (yeniden açma planı yok, gözlem sürüyor). WS disconnect düzelmesi (Faz 414) hâlâ taze logla doğrulanmadı. Kullanıcı iki büyük GPT mimari raporu daha paylaştı (Incremental Value/Conditional Lift/Pattern Coverage/Temporal Decay/Negative Evidence önerisi + OI/Funding/Liquidation/ATR/RSI-detay gibi yeni ham feature adayları, önceliklendirilmiş: ①OI+Funding+Price ②ATR/realized vol ③RSI ham+slope+divergence) — kullanıcının kendi çerçevesi gereği ("ilk fırsatta, detaylıca") bunlar TODO'ya (`project_open_items_2026_08_31.md`) detaylıca eklendi, HENÜZ uygulanmadı.
 
 **Faz 417 — Approvals sayfası sessizce boş görünüyordu.** Kullanıcı
