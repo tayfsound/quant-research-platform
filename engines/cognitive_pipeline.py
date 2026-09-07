@@ -1086,7 +1086,7 @@ class RiskTargetStage:
     DEFAULT_STOP_ATR_MULT_LONG = 2.5
     DEFAULT_TARGET_ATR_MULT_LONG = 6.89
     DEFAULT_STOP_ATR_MULT_SHORT = 2.5
-    DEFAULT_TARGET_ATR_MULT_SHORT = 1.8
+    DEFAULT_TARGET_ATR_MULT_SHORT = 3.5
     # Faz 268-sonrası — gerçek bulgu: kapanmış işlemleri "scalp" (stop <
     # %4.5, bkz. api/rest/positions.py::_SCALP_MAX_STOP_PCT) / gün_içi /
     # swing türüne göre ayırınca, scalp TEK BAŞINA toplam zararın %92'sini

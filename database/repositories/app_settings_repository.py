@@ -141,10 +141,28 @@ DEFAULTS: dict[str, str] = {
     # tutulup (kabul edilmiş risk mesafesi, Faz 261'deki AYNI yöntem)
     # SADECE LONG hedefi empirik oranla ölçeklendi: 2.5 * 2.7548 ≈ 6.89.
     # SHORT bilinçli olarak ESKİ tek-oran değerinde (1.4) bırakıldı.
+    # Faz 425 (2026-09-07) — Faz 320'nin "SHORT'ta hiçbir R:R oranı EV'yi
+    # pozitife çevirmiyor" bulgusu 4h/1d (orta-vadeli, ~1098 örneklem)
+    # kohortuyla yapılmıştı — o kohort fiilen swing-mesafeli SHORT'a
+    # ağırlıklıydı. Bugün TÜM kapanmış SHORT'lar gerçek stop mesafesine
+    # göre scalp (<%4.5)/swing ikiye ayrılıp AYRI AYRI compute_optimal_
+    # barrier() ile tarandı: swing (n=2511) için Faz 320'yle AYNI sonuç
+    # doğrulandı (ızgaradaki HİÇBİR (sl,tp) çifti pozitif EV vermiyor —
+    # R:R ayarıyla düzelmiyor, gerçek yönsel kenar yok). Ama scalp
+    # (n=172, dar MAE/MFE mesafesi) AYRI taranınca gizlenmiş bir pozitif
+    # kenar bulundu: en sağlam aday sl=%3,59/tp=%5,09 (R:R≈1,417,
+    # n=58 karar, 9 farklı gün 19 Ağu-6 Eyl, %86,2 kazanma, EV≈+%0,038).
+    # STOP sabit (2.5) tutulup SADECE hedef bu oranla yeniden ölçeklendi:
+    # 2.5 * 1.417 ≈ 3.5 — eski 1.4'ün (hedef stop'tan DAR) TAM TERSİ,
+    # artık hedef stop'tan GENİŞ. Bu tek global çarpan hâlâ swing-mesafeli
+    # SHORT'a da uygulanıyor (ayrı bir scalp/swing giriş kapısı yok) ama
+    # SHORT şu an zaten `direction_trading_enabled=false` ile tamamen
+    # kapalı, canlı etkisi yok — scalp SHORT yeniden açılırsa hazır olsun
+    # diye düzeltildi.
     "stop_atr_mult_long": "2.5",
     "target_atr_mult_long": "6.89",
     "stop_atr_mult_short": "2.5",
-    "target_atr_mult_short": "1.4",
+    "target_atr_mult_short": "3.5",
     # Faz 268-sonrası — gerçek bulgu: trade_type'a göre ayrılmış kapanmış
     # işlemlerde "scalp" (stop < %4.5, api/rest/positions.py::_SCALP_MAX_
     # STOP_PCT ile AYNI eşik) TEK BAŞINA toplam zararın %92'siydi (-$1954/
