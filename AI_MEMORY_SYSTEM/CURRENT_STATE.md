@@ -351,8 +351,27 @@ fiyatlarını çeker). Gerçek veriyle doğrulandı (son 10 gün, n=2786
 karşılaştırılabilir karar): ufuklar arasında **%45,66** (1272/2786)
 uyuşmazlık — GPT'nin verdiği örneğin (15m DOWN, 1h/4h UP) gerçek bir
 karşılığı bulundu (ör. ARKMUSDT). 6 yeni test geçti (5 saf fonksiyon +
-1 gatherer/DB round-trip). Faz 441-444 tamamlandı; sırada Faz 445
-(Direction Analog — `historical_analog_engine.py`'nin 4. genişlemesi).
+1 gatherer/DB round-trip). Faz 441-444 tamamlandı.
+
+**2026-09-07 (devam) — Faz 445: "Direction Analog" — historical_analog_
+engine.py'nin 4. genişlemesi.** `analytics/historical_analog_engine.py::
+compute_direction_analogs()` — mevcut `compute_historical_analogs()`'u
+SIFIRDAN yazmıyor, `win` (pnl>0) yerine Faz 441'in UP/DOWN/NEUTRAL
+etiketiyle ÜÇ kez (her etiket için ayrı ikili soru: P(UP|bağlam)?/
+P(DOWN|bağlam)?/P(NEUTRAL|bağlam)?) çağırıyor — AYNI FDR/OOS/distinct_
+days/effective_sample_size iskeleti. Yeni `services/direction_analog_
+gatherer.py` (historical_analog_gatherer.py'nin agreeing_domains/
+market_regime/reversing çıkarımı + direction_baseline_gatherer.py'nin
+LATERAL JOIN'i). Gerçek veriyle doğrulandı (n=2000): P(UP)=%50,45/
+P(DOWN)=%37,0/P(NEUTRAL)=%12,55 taban dağılımı, analog hücreleri gerçek
+win_rate'lerle hesaplanıyor — ama pencere sadece **3 farklı güne**
+yayıldığı için (bugünkü yüksek hacim, Faz 431/434'te ZATEN bilinen aynı
+veri kıtlığı) Faz 422'nin `min_distinct_days=5` güvenlik ağı hiçbirini
+`gate_eligible` yapmıyor — beklenen, zararsız sonuç, win/loss motorunun
+DAVRANIŞIYLA birebir tutarlı. 5 yeni test (4 saf fonksiyon + 1 gatherer/
+DB round-trip). Offline/
+rapor-only, canlı karara bağlı değil, restart gerekmez. Sırada Faz 446
+(Brier/ECE'yi direction hedefine EK olarak bağlama).
 
 **Açık/gözlem bekleyen:** SHORT geçici olarak kapalı (yeniden açma planı yok, gözlem sürüyor). WS disconnect düzelmesi (Faz 414) hâlâ taze logla doğrulanmadı. Kullanıcı iki büyük GPT mimari raporu daha paylaştı (Incremental Value/Conditional Lift/Pattern Coverage/Temporal Decay/Negative Evidence önerisi + OI/Funding/Liquidation/ATR/RSI-detay gibi yeni ham feature adayları, önceliklendirilmiş: ①OI+Funding+Price ②ATR/realized vol ③RSI ham+slope+divergence) — kullanıcının kendi çerçevesi gereği ("ilk fırsatta, detaylıca") bunlar TODO'ya (`project_open_items_2026_08_31.md`) detaylıca eklendi, HENÜZ uygulanmadı.
 

@@ -312,6 +312,48 @@ DEFAULT_SHRINKAGE_K = 20.0
 MAX_UPLIFT = 0.3
 
 
+# Faz 445 (2026-09-07) — "Direction Analog": GPT'nin 7 numaralı önceliği
+# ("Historical Analog → koşullu direction probability"). compute_
+# historical_analogs()'u SIFIRDAN yeniden yazmıyor — o fonksiyon zaten
+# "bu koşullar altında win_rate ne" sorusuna FDR+OOS+distinct_days+
+# effective_sample_size ile cevap veriyor; burada tek fark 'win'in ne
+# anlama geldiği: trade kârlılığı (pnl>0) yerine Faz 441'in `label_
+# forward_direction()`'ından gelen sabit-ufuklu UP/DOWN/NEUTRAL etiketi.
+# Üç ayrı ikili soru olarak sırayla compute_historical_analogs()'a
+# devrediliyor ("bu bağlamda P(UP)?", "P(DOWN)?", "P(NEUTRAL)?") — AYNI
+# istatistiksel iskelet üç kez, hiçbir yeni hesap makinesi icat edilmeden.
+DIRECTION_LABELS = ("UP", "DOWN", "NEUTRAL")
+
+
+def compute_direction_analogs(
+    records: list[dict],
+    combination_sizes: tuple[int, ...] = DEFAULT_COMBINATION_SIZES,
+    min_group_size: int = MIN_GROUP_SIZE,
+    min_distinct_days: int = DEFAULT_MIN_DISTINCT_DAYS,
+) -> dict:
+    """records: compute_historical_analogs()'un beklediği AYNI alanlar
+    ('agreeing_domains', 'market_regime', 'direction' — kararın kendi
+    LONG/SHORT'u, 'reversing', 'closed_at') + YENİ 'forward_label':
+    'UP'|'DOWN'|'NEUTRAL'|None (Faz 441'in label_forward_direction()'ından
+    — bu fonksiyon etiketi HESAPLAMIYOR, hazır bekliyor, tek sorumluluk
+    ilkesi). forward_label'ı None/DIRECTION_LABELS dışı olan kayıtlar
+    dışlanır (fail-closed). Dönen sözlük {'UP': {...}, 'DOWN': {...},
+    'NEUTRAL': {...}} — her biri compute_historical_analogs()'un TAM
+    kendi çıktısı (analogs/baseline_win_rate/baseline_sample_size), ama
+    burada 'win_rate' alanı GERÇEKTE o etiketin koşullu olasılığı: bir
+    hücrenin UP sonucundaki win_rate'i = P(UP | o hücrenin bağlamı)."""
+    labeled = [r for r in records if r.get("forward_label") in DIRECTION_LABELS]
+    return {
+        label: compute_historical_analogs(
+            [{**r, "win": r["forward_label"] == label} for r in labeled],
+            combination_sizes=combination_sizes,
+            min_group_size=min_group_size,
+            min_distinct_days=min_distinct_days,
+        )
+        for label in DIRECTION_LABELS
+    }
+
+
 def apply_confidence_shrinkage(
     raw_win_rate: float,
     effective_sample_size: float,

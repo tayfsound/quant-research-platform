@@ -4,7 +4,9 @@ market_regime eklendiği için)."""
 from datetime import UTC, datetime, timedelta
 
 from analytics.historical_analog_engine import (
+    DIRECTION_LABELS,
     apply_confidence_shrinkage,
+    compute_direction_analogs,
     compute_historical_analogs,
     compute_recency_decay,
 )
@@ -16,6 +18,17 @@ def _record(domains, regime, direction, win, closed_at=None, reversing=False):
         "market_regime": regime,
         "direction": direction,
         "win": win,
+        "closed_at": closed_at,
+        "reversing": reversing,
+    }
+
+
+def _direction_record(domains, regime, direction, forward_label, closed_at=None, reversing=False):
+    return {
+        "agreeing_domains": frozenset(domains),
+        "market_regime": regime,
+        "direction": direction,
+        "forward_label": forward_label,
         "closed_at": closed_at,
         "reversing": reversing,
     }
@@ -367,4 +380,63 @@ def test_recency_decay_is_attached_to_historical_analog_candidates():
     result = compute_historical_analogs(records + baseline, combination_sizes=(2,), min_group_size=20)
     analog = next(a for a in result["analogs"] if set(a["domains"]) == {"technical", "macro"})
     assert analog["recency_decay"] is not None
-    assert "decay" in analog["recency_decay"]
+
+
+# Faz 445 (2026-09-07) — "Direction Analog": compute_historical_analogs()'u
+# DEĞİŞTİRMİYOR, 'win'i (pnl>0) 'forward_label==hedef' ile değiştirip AYNI
+# fonksiyonu üç kez (UP/DOWN/NEUTRAL) çağırıyor.
+def test_direction_analogs_returns_exactly_the_three_labels():
+    result = compute_direction_analogs([_direction_record({"technical", "macro"}, "bullish_low", "LONG", "UP")])
+    assert set(result.keys()) == set(DIRECTION_LABELS)
+
+
+def test_direction_analogs_finds_a_strong_up_pattern_and_the_same_cell_is_weak_for_down():
+    base_time = datetime(2026, 8, 1, tzinfo=UTC)
+    strong = [
+        _direction_record({"technical", "macro"}, "bullish_low", "LONG",
+                           "UP" if i % 10 != 0 else "DOWN", base_time + timedelta(days=i))
+        for i in range(40)
+    ]
+    baseline = [
+        _direction_record({"quant"}, "bullish_low", "LONG",
+                           "UP" if i < 10 else "DOWN", base_time + timedelta(days=i))
+        for i in range(40)
+    ]
+    result = compute_direction_analogs(strong + baseline, combination_sizes=(2,), min_group_size=20)
+
+    up_analog = next(a for a in result["UP"]["analogs"] if set(a["domains"]) == {"technical", "macro"})
+    assert up_analog["fdr_significant"] is True
+    assert up_analog["oos_survival"] is True
+    assert up_analog["distinct_days"] >= 5
+    assert up_analog["gate_eligible"] is True
+    assert up_analog["win_rate"] > 0.85  # P(UP | bu bağlam)
+
+    # AYNI hücre, DOWN sorusuna karşı simetrik olarak ZAYIF olmalı --
+    # icat edilmiş bir DOWN sinyali üretilmemeli.
+    down_analog = next(a for a in result["DOWN"]["analogs"] if set(a["domains"]) == {"technical", "macro"})
+    assert down_analog["win_rate"] < 0.15
+
+
+def test_direction_analogs_excludes_records_without_a_valid_forward_label():
+    records = [
+        _direction_record({"technical", "macro"}, "bullish_low", "LONG", None),
+        {**_direction_record({"technical", "macro"}, "bullish_low", "LONG", "UP"), "forward_label": "sideways"},
+    ]
+    result = compute_direction_analogs(records)
+    for label in DIRECTION_LABELS:
+        assert result[label]["baseline_sample_size"] == 0
+
+
+def test_direction_analogs_baseline_reflects_unconditional_label_share():
+    """baseline_win_rate, o etiketin GENEL (koşulsuz) payını yansıtmalı --
+    P(UP) gibi -- Faz 441'in gerçek UP/DOWN/NEUTRAL dağılımıyla AYNI
+    yorum: bir analog hücresinin win_rate'i bu tabana göre anlamlı olur."""
+    records = (
+        [_direction_record({"technical"}, "bullish_low", "LONG", "UP") for _ in range(6)]
+        + [_direction_record({"technical"}, "bullish_low", "LONG", "DOWN") for _ in range(3)]
+        + [_direction_record({"technical"}, "bullish_low", "LONG", "NEUTRAL") for _ in range(1)]
+    )
+    result = compute_direction_analogs(records)
+    assert result["UP"]["baseline_win_rate"] == 0.6
+    assert result["DOWN"]["baseline_win_rate"] == 0.3
+    assert result["NEUTRAL"]["baseline_win_rate"] == 0.1
