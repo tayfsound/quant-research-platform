@@ -329,6 +329,31 @@ Always-LONG %52,3) neredeyse birebir yeniden üretti (random tek farkı
 0,499→0,5, kasıtlı — artık simülasyon değil, tam beklenen değer). 9
 yeni test geçti.
 
+**2026-09-07 (devam) — Faz 443: SL hata ayrıştırması (gerçek yön hatası
+vs zamanlama hatası) resmi hâle getirildi.** `analytics/sl_error_
+decomposition.py::classify_sl_error()` (saf fonksiyon — MFE'nin gerçek
+take_profit mesafesine oranı: ≥0,5 timing_error, <0,1 genuine_direction_
+error, arası partial_move; `mae_mfe.py`'nin YANINDA, onu OPTİMİZE etmiyor
+GERÇEKLEŞEN bariyeri TEŞHİS ediyor) + `compute_sl_error_decomposition()`
+(yöne göre ayrıştırır). Gerçek veriyle doğrulandı: bugünkü elle bulunan
+LONG %65,5/SHORT %56,4 gerçek-yön-hatası oranını BİREBİR yeniden üretti.
+9 yeni test geçti (1 test float hassasiyeti yüzünden `mfe_pct=0,0101`ye
+düzeltildi — 0,01/0,1 tam 0,1 vermiyor).
+
+**2026-09-07 (devam) — Faz 444: 15m/1h/4h ayrı ufuk ölçümü + uyuşmazlık
+raporu.** `analytics/multi_horizon_direction.py::label_multi_horizon()`
+(Faz 441'in `label_forward_direction()`'ını 3 ayrı ufukla çağırıp
+`all_agree`'yi SADECE yönlü — NEUTRAL olmayan — ufuklar arasında
+değerlendirir, <2 yönlü ufukla None) + `compute_disagreement_rate()`
+(<10 karşılaştırılabilir kayıtla fail-closed None) + `services/multi_
+horizon_direction_gatherer.py` (3'lü LATERAL JOIN, tek sorguda 15m/1h/4h
+fiyatlarını çeker). Gerçek veriyle doğrulandı (son 10 gün, n=2786
+karşılaştırılabilir karar): ufuklar arasında **%45,66** (1272/2786)
+uyuşmazlık — GPT'nin verdiği örneğin (15m DOWN, 1h/4h UP) gerçek bir
+karşılığı bulundu (ör. ARKMUSDT). 6 yeni test geçti (5 saf fonksiyon +
+1 gatherer/DB round-trip). Faz 441-444 tamamlandı; sırada Faz 445
+(Direction Analog — `historical_analog_engine.py`'nin 4. genişlemesi).
+
 **Açık/gözlem bekleyen:** SHORT geçici olarak kapalı (yeniden açma planı yok, gözlem sürüyor). WS disconnect düzelmesi (Faz 414) hâlâ taze logla doğrulanmadı. Kullanıcı iki büyük GPT mimari raporu daha paylaştı (Incremental Value/Conditional Lift/Pattern Coverage/Temporal Decay/Negative Evidence önerisi + OI/Funding/Liquidation/ATR/RSI-detay gibi yeni ham feature adayları, önceliklendirilmiş: ①OI+Funding+Price ②ATR/realized vol ③RSI ham+slope+divergence) — kullanıcının kendi çerçevesi gereği ("ilk fırsatta, detaylıca") bunlar TODO'ya (`project_open_items_2026_08_31.md`) detaylıca eklendi, HENÜZ uygulanmadı.
 
 **Faz 417 — Approvals sayfası sessizce boş görünüyordu.** Kullanıcı
