@@ -369,9 +369,36 @@ yayıldığı için (bugünkü yüksek hacim, Faz 431/434'te ZATEN bilinen aynı
 veri kıtlığı) Faz 422'nin `min_distinct_days=5` güvenlik ağı hiçbirini
 `gate_eligible` yapmıyor — beklenen, zararsız sonuç, win/loss motorunun
 DAVRANIŞIYLA birebir tutarlı. 5 yeni test (4 saf fonksiyon + 1 gatherer/
-DB round-trip). Offline/
-rapor-only, canlı karara bağlı değil, restart gerekmez. Sırada Faz 446
-(Brier/ECE'yi direction hedefine EK olarak bağlama).
+DB round-trip). Offline/rapor-only, canlı karara bağlı değil, restart
+gerekmez.
+
+**2026-09-07 (devam) — Faz 446: Brier/ECE'yi direction hedefine EK
+olarak bağlandı — ÇARPICI, GPT'nin teşhisini SAYISALLAŞTIRAN sonuç.**
+`analytics/direction_prediction_v2.py::compute_brier_score()` ve
+`analytics/calibration_uncertainty.py::compute_expected_calibration_
+error()` HİÇ değiştirilmedi (zaten tamamen jenerik, `[(olasılık, doğru
+mu)]` bekliyorlar) — yeni `services/direction_calibration_gatherer.py`
+AYNI karar kümesinden hem direction (Faz 441 forward_label'a göre
+LONG↔UP/SHORT↔DOWN eşleşmesi, NEUTRAL dışlanır) hem trade-outcome
+(pnl>0, mevcut yönteme DOKUNULMADI) tahmin-sonuç çiftini üretiyor.
+
+Gerçek veride (n=8000, son 8000 kapanmış karar, confidence dolu):
+**Direction Brier=0,271 (RANDOM'DAN KÖTÜ, better_than_random=False)**
+vs **trade-outcome Brier=0,253 (rastgeleye yakın)**. Daha çarpıcısı:
+direction doğruluğu HER güven kovasında ~%42-46 arasında DÜZ kalıyor
+(ör. confidence=0,82 kovasında bile doğruluk sadece %43,6) — yani AI'nin
+kendi güveni, gerçek yön isabetini AYIRT ETMİYOR (sıfır çözünürlük).
+Buna karşın AYNI kararların trade-outcome doğruluğu her kovada %70-89
+arası — GPT'nin TAM iddia ettiği şey sayısal olarak doğrulandı: mevcut
+sistem "kazandı mı" ile "yönü doğru bildi mi"yi karıştırıyor, ikincisi
+neredeyse HİÇ öğrenilmemiş, birincisi bariyer mekaniğiyle (dar TP,
+R:R asimetrisi) yapay olarak şişiyor. 1 yeni test (gatherer/DB
+round-trip). Offline/rapor-only, canlı karara bağlı değil.
+
+**SIRADAKİ:** Faz 447 (Council'in evidence-provider'a geçişi) AYRI
+kullanıcı onayı gerektiriyor — Faz 441-446'nın ürettiği bu somut kanıt
+(AI direction Brier'i randomdan kötü) doğrultusunda kullanıcıyla mimari
+tartışma yapılacak, henüz kodlanmadı.
 
 **Açık/gözlem bekleyen:** SHORT geçici olarak kapalı (yeniden açma planı yok, gözlem sürüyor). WS disconnect düzelmesi (Faz 414) hâlâ taze logla doğrulanmadı. Kullanıcı iki büyük GPT mimari raporu daha paylaştı (Incremental Value/Conditional Lift/Pattern Coverage/Temporal Decay/Negative Evidence önerisi + OI/Funding/Liquidation/ATR/RSI-detay gibi yeni ham feature adayları, önceliklendirilmiş: ①OI+Funding+Price ②ATR/realized vol ③RSI ham+slope+divergence) — kullanıcının kendi çerçevesi gereği ("ilk fırsatta, detaylıca") bunlar TODO'ya (`project_open_items_2026_08_31.md`) detaylıca eklendi, HENÜZ uygulanmadı.
 
