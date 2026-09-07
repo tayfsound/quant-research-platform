@@ -317,6 +317,18 @@ bulunan dağılımı (UP %46,1/DOWN %42,0/NEUTRAL %11,9) BİREBİR yeniden
 yanlış hedefi (trade outcome) ölçüyorlar — plan bunları YENİDEN
 KULLANMAYI hedefliyor, sıfırdan yazmayı değil.
 
+**2026-09-07 (devam) — Faz 442: Direction Baseline karşılaştırma
+raporu resmi hâle getirildi.** `analytics/direction_baseline_
+comparison.py::compute_baseline_comparison()` (saf fonksiyon — Random/
+Always-LONG/Always-SHORT/Momentum/AI/Council'i AYNI forward-direction
+hedefine karşı ölçüyor, "random" DETERMİNİSTİK %50 — simüle edilmiyor,
+tekrarlanabilir) + `services/direction_baseline_gatherer.py` (bugünkü
+LATERAL JOIN'in resmi, parametrik hâli). Gerçek veriyle doğrulandı:
+bugünkü elle bulunan sayıları (AI %43,8, Council %45,5, Momentum %46,9,
+Always-LONG %52,3) neredeyse birebir yeniden üretti (random tek farkı
+0,499→0,5, kasıtlı — artık simülasyon değil, tam beklenen değer). 9
+yeni test geçti.
+
 **Açık/gözlem bekleyen:** SHORT geçici olarak kapalı (yeniden açma planı yok, gözlem sürüyor). WS disconnect düzelmesi (Faz 414) hâlâ taze logla doğrulanmadı. Kullanıcı iki büyük GPT mimari raporu daha paylaştı (Incremental Value/Conditional Lift/Pattern Coverage/Temporal Decay/Negative Evidence önerisi + OI/Funding/Liquidation/ATR/RSI-detay gibi yeni ham feature adayları, önceliklendirilmiş: ①OI+Funding+Price ②ATR/realized vol ③RSI ham+slope+divergence) — kullanıcının kendi çerçevesi gereği ("ilk fırsatta, detaylıca") bunlar TODO'ya (`project_open_items_2026_08_31.md`) detaylıca eklendi, HENÜZ uygulanmadı.
 
 **Faz 417 — Approvals sayfası sessizce boş görünüyordu.** Kullanıcı
