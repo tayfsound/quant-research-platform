@@ -3,7 +3,9 @@ stabilitesini de ölçelim ("dördüncü boyut"). compute_stability() saf
 matematiğini test ediyor — gerçek modüllere bağlanması ayrı testlerde
 (ör. tests/test_cross_symbol_correlation.py, tests/test_historical_
 analog_engine.py)."""
-from analytics.measurement_stability import compute_stability
+from datetime import UTC, datetime, timedelta
+
+from analytics.measurement_stability import compute_stability, select_non_overlapping_snapshots
 
 
 def test_returns_none_for_fewer_than_two_values():
@@ -81,3 +83,54 @@ def test_sign_consistency_pct_is_none_when_mean_is_zero():
     icat edilmiş bir sonuç asla üretilmez."""
     result = compute_stability([-0.5, 0.5])
     assert result["sign_consistency_pct"] is None
+
+
+def _snap(minutes_ago: int) -> dict:
+    ts = datetime(2026, 9, 7, 12, 0, tzinfo=UTC) - timedelta(minutes=minutes_ago)
+    return {"created_at": ts.isoformat()}
+
+
+def test_select_non_overlapping_snapshots_thins_a_densely_sampled_series():
+    """Faz 431 — kullanıcı isteği: "düzeltelim." Gerçek bulgu:
+    correlation_snapshots ~18dk kadansla kaydediliyor ama 250 mumluk
+    (~2,6 gün) kayan pencereden hesaplanıyor — ardışık snapshot'lar
+    ~%99 aynı ham veriyi paylaşıyor. min_spacing_minutes pencere
+    uzunluğu kadar (ör. 3750dk) verilince, sadece GERÇEKTEN o kadar
+    aralıklı olan snapshot'lar seçilmeli."""
+    dense = [_snap(m) for m in range(0, 300, 18)]  # ~18dk aralıklı, 0-282dk
+    selected = select_non_overlapping_snapshots(dense, min_spacing_minutes=100)
+    # 100dk aralıkla en fazla ~3 tane (0, ~108, ~216) seçilebilir -- kesin
+    # sayı yerine üst sınırı ve gerçekten aralıklı olduğunu doğruluyoruz.
+    assert len(selected) < len(dense)
+    kept_minutes = sorted(
+        (datetime(2026, 9, 7, 12, 0, tzinfo=UTC) - datetime.fromisoformat(s["created_at"])).total_seconds() / 60
+        for s in selected
+    )
+    for a, b in zip(kept_minutes, kept_minutes[1:]):
+        assert (b - a) >= 100 - 1e-6
+
+
+def test_select_non_overlapping_snapshots_keeps_everything_when_spacing_is_already_sufficient():
+    sparse = [_snap(0), _snap(200), _snap(400)]
+    selected = select_non_overlapping_snapshots(sparse, min_spacing_minutes=100)
+    assert len(selected) == 3
+
+
+def test_select_non_overlapping_snapshots_returns_few_points_when_history_is_too_short():
+    """Faz 431'in gerçek canlı durumu: sadece ~4 günlük ham geçmiş var,
+    2,6 günlük pencereyle 12 bağımsız nokta için ~31 gün gerekir — icat
+    edilmiş fazladan nokta üretilmez, gerçek veri kadarı döner."""
+    only_four_days = [_snap(m) for m in range(0, 4 * 24 * 60, 18)]
+    selected = select_non_overlapping_snapshots(only_four_days, min_spacing_minutes=3750)
+    assert 1 <= len(selected) <= 2
+
+
+def test_select_non_overlapping_snapshots_is_a_noop_for_non_positive_spacing():
+    dense = [_snap(m) for m in range(0, 50, 5)]
+    assert select_non_overlapping_snapshots(dense, min_spacing_minutes=0) == dense
+
+
+def test_select_non_overlapping_snapshots_respects_limit():
+    sparse = [_snap(0), _snap(200), _snap(400), _snap(600)]
+    selected = select_non_overlapping_snapshots(sparse, min_spacing_minutes=100, limit=2)
+    assert len(selected) == 2

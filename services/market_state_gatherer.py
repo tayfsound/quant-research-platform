@@ -14,12 +14,24 @@ hattının GERÇEKTEN gördüğü rejimle tutarlı olsun."""
 from concurrent.futures import ThreadPoolExecutor
 
 from analytics.market_state_cluster_engine import compute_cluster_market_state
-from analytics.measurement_stability import compute_stability
+from analytics.measurement_stability import compute_stability, select_non_overlapping_snapshots
 from market_data.features.market_state_engine import compute_market_state
 from market_data.features.signal_engine import compute_quant_signals, compute_technical_signals
 from risk.cross_symbol_correlation import describe_correlation_pairs
 
 STABILITY_LOOKBACK_SNAPSHOTS = 12
+
+# Faz 431 (2026-09-07) — kullanıcı isteği: "düzeltelim." Gerçek örtüşme
+# ölçümü: correlation_snapshots ~18dk kadansla kaydediliyor, ardışık iki
+# snapshot 250 mumluk (candle_lookback) kayan pencerenin ~%99'unu
+# paylaşıyor — CV'nin öne sürdüğü istikrar büyük ölçüde otokorelasyon
+# (bkz. analytics/measurement_stability.py::select_non_overlapping_
+# snapshots'ın Faz 431 notu). Ham havuz, gerçekten bağımsız
+# STABILITY_LOOKBACK_SNAPSHOTS kadar nokta bulmaya yetecek kadar geniş
+# tutuluyor — mevcut veri yetersizse (bugünkü durum) az sayıda (hatta 1)
+# nokta döner, icat edilmiş bir tane asla üretilmez.
+RAW_SNAPSHOT_POOL_SIZE = 3000
+TIMEFRAME_MINUTES = {"1m": 1, "5m": 5, "15m": 15, "1h": 60, "4h": 240, "1d": 1440}
 
 
 def _attach_correlation_stability(pairs: list[dict], past_snapshots: list[dict]) -> None:
@@ -48,9 +60,19 @@ def gather_market_state_cluster() -> dict:
         watchlist = [s.strip() for s in settings_repo.get("watchlist").split(",") if s.strip()]
         timeframe = settings_repo.get("candle_timeframe")
         lookback = int(settings_repo.get("candle_lookback"))
-        past_correlation_snapshots = CorrelationReportRepository(session).get_recent(
-            STABILITY_LOOKBACK_SNAPSHOTS
+        raw_past_correlation_snapshots = CorrelationReportRepository(session).get_recent(
+            RAW_SNAPSHOT_POOL_SIZE
         )
+
+    # Faz 431 — ham havuzdan (kadans ~18dk) GERÇEKTEN bağımsız, pencere
+    # uzunluğu kadar aralıklı bir alt-küme seçiliyor (bkz. modül başındaki
+    # not). timeframe TIMEFRAME_MINUTES'te yoksa (icat edilmiş bir süre
+    # asla üretilmez) spacing kontrolü atlanır — eski (ham, en yeni N)
+    # davranışa güvenli şekilde düşer.
+    min_spacing_minutes = lookback * TIMEFRAME_MINUTES.get(timeframe, 0)
+    past_correlation_snapshots = select_non_overlapping_snapshots(
+        raw_past_correlation_snapshots, min_spacing_minutes, limit=STABILITY_LOOKBACK_SNAPSHOTS,
+    )
 
     provider = RoutingProvider()
 

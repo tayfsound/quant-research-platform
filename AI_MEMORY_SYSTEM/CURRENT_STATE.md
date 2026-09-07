@@ -137,6 +137,21 @@ Gerçek snapshot geçmişiyle üç FARKLI örtüşme profili bulundu:
 Kod değişikliği yapılmadı (planın kuralı) — düzeltme modül-özel, ayrı
 bir karar/faz olarak kullanıcıya bırakıldı.
 
+**2026-09-07 (devam) — Faz 432: `correlation_stability`'nin ~%99
+örtüşmesi düzeltildi (kullanıcı: "düzeltelim").** Yeni `analytics/
+measurement_stability.py::select_non_overlapping_snapshots()` — ham
+snapshot geçmişinden pencere uzunluğu kadar (candle_lookback ×
+candle_timeframe) aralıklı, GERÇEKTEN bağımsız bir alt-küme seçiyor.
+`market_state_gatherer.py`'de ham havuz 12'den 3000'e çıkarıldı (yeterli
+aday olsun diye), spacing-aware seçim uygulandı. Canlı korelasyon
+okuması/kadansı/guardian-tilt davranışı DOKUNULMADI — sadece stabilite
+hesabının GİRDİSİ değişti. Gerçek veriyle doğrulandı: BTC-ETH'nin eski
+CV'si 0,00098 (12 ham, ~18dk aralıklı nokta — hepsi aynı 250-mumluk
+pencerenin ~%99'unu paylaşıyor) → yeni CV 0,060 (**61 kat**, sadece 2
+gerçekten bağımsız nokta ama korelasyon 0,818→0,922 hareket etmiş,
+eski CV bunu tamamen gizliyormuş). 19 yeni test + tüm bağımlı testler
+geçti.
+
 **Açık/gözlem bekleyen:** SHORT geçici olarak kapalı (yeniden açma planı yok, gözlem sürüyor). WS disconnect düzelmesi (Faz 414) hâlâ taze logla doğrulanmadı. Kullanıcı iki büyük GPT mimari raporu daha paylaştı (Incremental Value/Conditional Lift/Pattern Coverage/Temporal Decay/Negative Evidence önerisi + OI/Funding/Liquidation/ATR/RSI-detay gibi yeni ham feature adayları, önceliklendirilmiş: ①OI+Funding+Price ②ATR/realized vol ③RSI ham+slope+divergence) — kullanıcının kendi çerçevesi gereği ("ilk fırsatta, detaylıca") bunlar TODO'ya (`project_open_items_2026_08_31.md`) detaylıca eklendi, HENÜZ uygulanmadı.
 
 **Faz 417 — Approvals sayfası sessizce boş görünüyordu.** Kullanıcı

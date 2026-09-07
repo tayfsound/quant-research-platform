@@ -14,6 +14,7 @@ geçmişi, ya da canlı hesaplanan bir seri) saf bir GÖZLEM istatistiği
 olduğumuzda sıra ile wire edeceğiz" — feedback_new_complexity_must_
 prove_its_edge ve feedback_incremental_module_activation ile AYNI
 disiplin, sadece GÖZLEM aşaması batch, WIRE aşaması tek-tek olacak."""
+from datetime import datetime
 from statistics import mean, pstdev
 
 
@@ -98,3 +99,51 @@ def extract_stability_summary(result: object, _path: str = "") -> list[dict]:
         for i, item in enumerate(result[:20]):
             found.extend(extract_stability_summary(item, f"{_path}[{i}]"))
     return found
+
+
+# Faz 431 (2026-09-07) — kullanıcı isteği: "non-overlapping window
+# stability"nin araştırma bulgusu. Gerçek snapshot geçmişi ölçüldü:
+# `market_state_gatherer.py`'nin `correlation_stability`'si ~18dk kadansla
+# kaydediliyor ama 250 mumluk (15dk zaman diliminde ~2,6 gün) kayan bir
+# pencereden hesaplanıyor — ardışık iki snapshot ~%99+ aynı ham veriyi
+# paylaşıyor, CV'nin öne sürdüğü "istikrar" büyük ölçüde otokorelasyon.
+# Bu fonksiyon, ham snapshot geçmişinden GERÇEKTEN bağımsız (pencere
+# uzunluğu kadar aralıklı) bir alt-küme seçiyor — en yeniden geriye doğru
+# açgözlü (greedy) seçim, `min_spacing_minutes`'tan daha yakın olan her
+# aday atlanıyor. Yeterli geçmiş yoksa (mevcut durum — correlation_
+# snapshots'ta sadece ~4 günlük veri var, 2,6 günlük pencereyle 12
+# bağımsız nokta için ~31 gün gerekir) az sayıda (hatta 1) sonuç döner —
+# icat edilmiş bir nokta asla üretilmez, veri zamanla organik olarak
+# birikince nokta sayısı kendiliğinden artar.
+def select_non_overlapping_snapshots(
+    snapshots: list[dict], min_spacing_minutes: float, created_at_key: str = "created_at",
+    limit: int | None = None,
+) -> list[dict]:
+    """snapshots: `created_at_key`'i ISO-format bir zaman damgası (string)
+    olan sözlükler, HERHANGİ bir sırada olabilir (önce kronolojik olarak
+    en yeniden en eskiye sıralanır). min_spacing_minutes <= 0 ise TÜM
+    snapshot'lar döner (spacing kontrolü anlamsız — no-op)."""
+    if min_spacing_minutes <= 0:
+        return list(snapshots) if limit is None else list(snapshots)[:limit]
+
+    dated = []
+    for snap in snapshots:
+        raw = snap.get(created_at_key)
+        if not raw:
+            continue
+        try:
+            ts = datetime.fromisoformat(raw) if isinstance(raw, str) else raw
+        except ValueError:
+            continue
+        dated.append((ts, snap))
+    dated.sort(key=lambda item: item[0], reverse=True)
+
+    selected: list[dict] = []
+    last_ts = None
+    for ts, snap in dated:
+        if last_ts is None or (last_ts - ts).total_seconds() / 60.0 >= min_spacing_minutes:
+            selected.append(snap)
+            last_ts = ts
+            if limit is not None and len(selected) >= limit:
+                break
+    return selected
