@@ -36,6 +36,23 @@ def compute_stability(values: list[float | None]) -> dict | None:
         return None
     m = mean(clean)
     s = pstdev(clean)
+    # Faz 429 (2026-09-07) — kullanıcı isteği: "sign_stability" — CV'nin
+    # YAKALAYAMADIĞI bir boyut. Düşük CV bile (ör. korelasyon +0.3/-0.2/
+    # +0.4, std ölçekle kıyasla küçük görünebilir) işaret SÜREKLİ
+    # değişiyorsa güvenilmez olabilir — CV bunu ayırt edemez. `mean`'in
+    # işaretini "gerçek" kabul edip, kaç değerin AYNI işarette olduğunu
+    # ölçüyor. mean==0 iken CV ile AYNI ilke: tanımsız (fail-closed None,
+    # icat edilmiş bir sonuç yok) — hangi işaretin "doğru" olduğu belli
+    # değil. Batch olarak TÜM mevcut *_stability çağrı noktalarına
+    # otomatik uygulanıyor (yeni bir çağırma noktası eklenmedi, sadece
+    # bu tek fonksiyonun döndürdüğü dict genişledi) —
+    # feedback_observation_can_batch_wiring_cannot.
+    if m > 0:
+        sign_consistency_pct = sum(1 for v in clean if v > 0) / len(clean)
+    elif m < 0:
+        sign_consistency_pct = sum(1 for v in clean if v < 0) / len(clean)
+    else:
+        sign_consistency_pct = None
     return {
         "n": len(clean),
         "mean": m,
@@ -43,6 +60,7 @@ def compute_stability(values: list[float | None]) -> dict | None:
         "min": min(clean),
         "max": max(clean),
         "coefficient_of_variation": (s / abs(m)) if m != 0 else None,
+        "sign_consistency_pct": sign_consistency_pct,
     }
 
 

@@ -58,3 +58,26 @@ def test_zero_mean_gives_undefined_coefficient_of_variation():
     result = compute_stability([-0.5, 0.5])
     assert result["mean"] == 0.0
     assert result["coefficient_of_variation"] is None
+
+
+def test_sign_consistency_pct_is_1_when_all_values_share_the_mean_sign():
+    result = compute_stability([0.8, 0.9, 0.7])
+    assert result["sign_consistency_pct"] == 1.0
+
+
+def test_sign_consistency_pct_catches_a_flipping_series_low_cv_can_miss():
+    """Faz 429 — CV'nin YAKALAYAMADIĞI durum: işaret sürekli değişiyor
+    (+0.3/-0.2/+0.4/-0.3/+0.2) ama std/|mean| oranı (CV) küçük bir
+    ortalamaya göre yüksek çıkmayabilir. sign_consistency_pct bunu
+    doğrudan ölçüyor."""
+    flipping = compute_stability([0.3, -0.2, 0.4, -0.3, 0.2])
+    assert flipping["mean"] > 0
+    # 5 değerden 3'ü pozitif (mean'in işareti) -> %60.
+    assert flipping["sign_consistency_pct"] == 0.6
+
+
+def test_sign_consistency_pct_is_none_when_mean_is_zero():
+    """CV ile AYNI ilke: mean==0 iken 'hangi işaret doğru' tanımsız —
+    icat edilmiş bir sonuç asla üretilmez."""
+    result = compute_stability([-0.5, 0.5])
+    assert result["sign_consistency_pct"] is None
