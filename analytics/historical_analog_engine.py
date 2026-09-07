@@ -217,6 +217,22 @@ def compute_historical_analogs(
         # eşik değil) — sadece "yüksek win_rate ama kararların %0,3'ünü
         # kapsıyor" durumunu şeffaf bırakmak için.
         coverage_pct = round(len(group) / len(valid), 6) if valid else None
+        # Faz 449 (2026-09-08) — "Pattern Coverage"nin ertelenmiş küçük
+        # parçası: coverage_pct ve conditioning_incremental_value Faz
+        # 427'den beri AYRI AYRI mevcuttu ("WR yüksek ama kararların
+        # %0,3'ünü kapsıyorsa sınırlı fayda" sorusuna cevap vermek için
+        # ikisi BİRLİKTE okunmalıydı, kullanıcı henüz tek bir bileşik
+        # skor istemişti). İşaretini KORUYOR (negatif bir incremental
+        # value + yüksek coverage = gerçekten zararlı VE yaygın bir
+        # örüntü, aynı ilke coverage_pct=0 civarındayken her iki yönde
+        # de sıfıra çekiliyor) — icat edilmiş bir ağırlıklandırma değil,
+        # basit çarpım (coverage_pct∈[0,1] olduğu için işaret asla
+        # değişmez, sadece büyüklük coverage ile ölçekleniyor).
+        coverage_weighted_incremental_value = (
+            round(coverage_pct * conditioning_incremental_value, 6)
+            if coverage_pct is not None and conditioning_incremental_value is not None
+            else None
+        )
 
         candidates.append({
             "domains": list(domains),
@@ -235,6 +251,7 @@ def compute_historical_analogs(
             "recency_decay": recency_decay,
             "conditioning_incremental_value": conditioning_incremental_value,
             "coverage_pct": coverage_pct,
+            "coverage_weighted_incremental_value": coverage_weighted_incremental_value,
             "_wins": wins,
         })
 

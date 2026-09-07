@@ -249,6 +249,37 @@ def test_coverage_pct_reflects_share_of_total_valid_sample():
     assert analog["coverage_pct"] == round(20 / 100, 6)
 
 
+# Faz 449 (2026-09-08) — "Pattern Coverage"nin ertelenmiş küçük parçası:
+# coverage_pct × conditioning_incremental_value TEK bir bileşik skor.
+def test_coverage_weighted_incremental_value_is_the_product_and_keeps_sign():
+    base_time = datetime(2026, 8, 1, tzinfo=UTC)
+    good_regime = [
+        _record({"technical", "macro"}, "bullish_low", "LONG", True, base_time + timedelta(days=i))
+        for i in range(20)
+    ]
+    bad_regime = [
+        _record({"technical", "macro"}, "bearish_low", "LONG", False, base_time + timedelta(days=i))
+        for i in range(20)
+    ]
+    baseline = [_record({"quant"}, "bullish_low", "LONG", i % 2 == 0) for i in range(40)]
+    result = compute_historical_analogs(
+        good_regime + bad_regime + baseline, combination_sizes=(2,), min_group_size=20,
+    )
+    good = next(
+        a for a in result["analogs"]
+        if set(a["domains"]) == {"technical", "macro"} and a["market_regime"] == "bullish_low"
+    )
+    bad = next(
+        a for a in result["analogs"]
+        if set(a["domains"]) == {"technical", "macro"} and a["market_regime"] == "bearish_low"
+    )
+    # good: coverage_pct=20/80=0.25, conditioning_incremental_value=0.5 -> 0.125
+    assert good["coverage_weighted_incremental_value"] == round(0.25 * 0.5, 6)
+    # bad: isaret NEGATIF kalmali (zararli VE ne kadar yaygin oldugu birlikte gorunur)
+    assert bad["coverage_weighted_incremental_value"] == round(0.25 * -0.5, 6)
+    assert bad["coverage_weighted_incremental_value"] < 0
+
+
 def test_harmful_eligible_requires_fdr_and_negative_oos_and_effective_sample_size_together():
     """Faz 428 — kullanıcı isteği: "Negative Evidence" — gate_eligible'ın
     TAM SİMETRİK negatif hâli. Bir kombinasyon HİÇ kazanmıyorsa (baseline'ın
