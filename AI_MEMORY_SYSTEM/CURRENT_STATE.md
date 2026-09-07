@@ -167,14 +167,13 @@ ilgisiz flaky) geçti.
 override_enabled=true` iken şu an OKUNAN rapor 3 Eylül'den (Faz 422'nin
 6 Eylül'deki `min_distinct_days` düzeltmesinden ÖNCE) — 3 `gate_
 eligible=True` girişin ÜÇÜ de `distinct_days=2` (tam olarak Faz 422'nin
-engellemesi gereken tür). Rapor tazeleme görevi 2 kez kuyruğa alındı
-ama worker ~100 bekleyen görevle TIKANIK (muhtemelen bugünkü çok sayıda
-restart'ın birikimi) — henüz işlenmedi. Faz 433'ün deploy'u bu riski
-AZALTIYOR (artık raw win_rate yerine +0,30 tavanlı artış) ama TAM
-gidermiyor; rapor işlendiğinde (organik olarak, kuyruk boşaldıkça)
-gate_eligible bu 3 girişi zaten temizleyecek. **AÇIK MADDE:** kuyruk
-tıkanıklığının kök nedeni (bugünkü ~9 worker restart'ının birikimi mi,
-yoksa kalıcı bir yavaşlama mı) henüz araştırılmadı.
+engellemesi gereken tür). Rapor tazeleme görevi 2 kez kuyruğa alındı,
+worker ~100 bekleyen görevle TIKANIKTI (muhtemelen bugünkü çok sayıda
+restart'ın birikimi). **ÇÖZÜLDÜ (aynı gün, 15:17 UTC):** Faz 433 deploy'u
+için worker restart edilince kuyruk kendiliğinden boşaldı, rapor
+tazelendi — yeni raporda gate_eligible=0 (3 riskli giriş artık doğru
+şekilde distinct_days<5'te takılıyor), harmful_eligible=0. Canlı risk
+tamamen kapandı.
 
 **Açık/gözlem bekleyen:** SHORT geçici olarak kapalı (yeniden açma planı yok, gözlem sürüyor). WS disconnect düzelmesi (Faz 414) hâlâ taze logla doğrulanmadı. Kullanıcı iki büyük GPT mimari raporu daha paylaştı (Incremental Value/Conditional Lift/Pattern Coverage/Temporal Decay/Negative Evidence önerisi + OI/Funding/Liquidation/ATR/RSI-detay gibi yeni ham feature adayları, önceliklendirilmiş: ①OI+Funding+Price ②ATR/realized vol ③RSI ham+slope+divergence) — kullanıcının kendi çerçevesi gereği ("ilk fırsatta, detaylıca") bunlar TODO'ya (`project_open_items_2026_08_31.md`) detaylıca eklendi, HENÜZ uygulanmadı.
 
