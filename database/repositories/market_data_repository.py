@@ -4,7 +4,7 @@
 tasarlanmıştı (time/exchange/symbol/resolution/OHLCV/quality) ama hiçbir
 repository onu kalıcı kılmıyordu — bu, o eksik parça.
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
 from sqlalchemy import text
@@ -204,3 +204,35 @@ class MarketDataRepository:
             {"exchange": exchange.value, "symbol": symbol, "limit": limit},
         ).mappings().all()
         return [dict(r) for r in rows]
+
+    # Faz 441 (2026-09-07) — Direction Prediction Engine (bkz.
+    # ~/.claude/plans/velvety-whistling-parasol.md): bugünkü LATERAL JOIN
+    # prototipinin (bir karar zamanına en yakın "1 saat sonraki" gerçek
+    # fiyatı bulmak) resmi, tek-satırlık hâli. analytics/forward_
+    # direction.py::label_forward_direction()'ın girdisini üretiyor —
+    # trade'in KENDİ stop/target/tutma süresinden TAMAMEN bağımsız,
+    # sabit bir zaman ufkundaki gerçek piyasa fiyatı.
+    def get_price_at_horizon(
+        self, exchange: DataSource, symbol: str, target_time: datetime,
+        tolerance_minutes: float = 5.0, resolution: Resolution = Resolution.M1,
+    ) -> float | None:
+        """target_time'a en yakın (±tolerance_minutes içinde) gerçek
+        mum kapanışını döner. Eşleşme yoksa (o dönemde veri toplanmamış,
+        sembol henüz izlenmiyordu vb.) None — icat edilmiş bir fiyat
+        asla üretilmez."""
+        row = self.session.execute(
+            text("""
+                SELECT close FROM market_snapshots
+                WHERE exchange = :exchange AND symbol = :symbol AND resolution = :resolution
+                  AND time BETWEEN :lower AND :upper
+                ORDER BY abs(extract(epoch FROM (time - :target_time)))
+                LIMIT 1
+            """),
+            {
+                "exchange": exchange.value, "symbol": symbol, "resolution": resolution.value,
+                "lower": target_time - timedelta(minutes=tolerance_minutes),
+                "upper": target_time + timedelta(minutes=tolerance_minutes),
+                "target_time": target_time,
+            },
+        ).first()
+        return float(row[0]) if row else None

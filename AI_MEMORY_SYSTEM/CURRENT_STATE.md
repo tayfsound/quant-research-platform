@@ -286,6 +286,37 @@ gözlemleniyor, ayrı bir caveat metni gerekmiyor. Gerçek veriyle
 (kendi son dağılımının dibinde) — tutarlı, anlamlı. 18 yeni test + 156
 bağımlı test geçti.
 
+**2026-09-07 (devam) — Faz 441: Direction Prediction Engine başladı
+(kullanıcı GPT ile "yön tahmini" konusunu tartıştı, sonra "baseline
+karşılaştırmasına bakalım sonra mimari planlamayı yapalım" dedi).
+Onaylı plan: `~/.claude/plans/velvety-whistling-parasol.md` (3. plan —
+ham feature planının üzerine yazıldı, eski plan arşiv olarak korundu).**
+
+Bugün ÜÇ gerçek veri testiyle GPT'nin teşhisi (sistem "trade kazandı mı"
+ile "fiyat hangi yöne gitti"yi karıştırıyor) doğrulandı: (1) SL'lerde
+MFE/hedef-mesafesi oranıyla gerçek yön hatası LONG %65,5/SHORT %56,4
+(önceki kaba ölçümün üstünde); (2) gerçek 1sa ileri fiyat yönüne karşı
+(n≈6.900, son 10 gün) AI'nin nihai kararı **%43,8** — random'ın (%49,9)
+ALTINDA, her zaman LONG'un (%52,3) belirgin altında; (3) kod taramasıyla
+(`services/learning_loop.py:77`) doğrulandı — `was_correct` HER YERDE
+(confidence_calibration, direction_prediction_v2 Brier, collective_
+intelligence Condorcet) trade-kârlılığı tabanlı, yön-doğruluğu değil.
+
+Faz 441 uygulandı: `analytics/forward_direction.py::label_forward_
+direction()` (saf fonksiyon, sabit ufuklu UP/DOWN/NEUTRAL etiketleme,
+trade'in kendi stop/target'ından TAMAMEN bağımsız) + `market_data_
+repository.py::get_price_at_horizon()` (bugünkü LATERAL JOIN
+prototipinin resmi hâli). Gerçek veriyle doğrulandı: bugünkü elle
+bulunan dağılımı (UP %46,1/DOWN %42,0/NEUTRAL %11,9) BİREBİR yeniden
+üretti. 13 yeni test + 53 bağımlı test geçti.
+
+**Mimari içgörü (plana yazıldı):** sıfırdan inşa YANLIŞ olur —
+`historical_analog_engine.py` (bugün Faz 427/428/434'te genişletildi),
+`direction_prediction_v2.py` (Brier), `calibration_uncertainty.py`
+(ECE), `collective_intelligence.py` (Condorcet) hepsi ZATEN var, SADECE
+yanlış hedefi (trade outcome) ölçüyorlar — plan bunları YENİDEN
+KULLANMAYI hedefliyor, sıfırdan yazmayı değil.
+
 **Açık/gözlem bekleyen:** SHORT geçici olarak kapalı (yeniden açma planı yok, gözlem sürüyor). WS disconnect düzelmesi (Faz 414) hâlâ taze logla doğrulanmadı. Kullanıcı iki büyük GPT mimari raporu daha paylaştı (Incremental Value/Conditional Lift/Pattern Coverage/Temporal Decay/Negative Evidence önerisi + OI/Funding/Liquidation/ATR/RSI-detay gibi yeni ham feature adayları, önceliklendirilmiş: ①OI+Funding+Price ②ATR/realized vol ③RSI ham+slope+divergence) — kullanıcının kendi çerçevesi gereği ("ilk fırsatta, detaylıca") bunlar TODO'ya (`project_open_items_2026_08_31.md`) detaylıca eklendi, HENÜZ uygulanmadı.
 
 **Faz 417 — Approvals sayfası sessizce boş görünüyordu.** Kullanıcı

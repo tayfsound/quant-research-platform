@@ -95,3 +95,39 @@ def test_get_recent_order_book_snapshots_is_empty_for_never_ingested_symbol():
     with SessionFactory.get_session() as session:
         rows = MarketDataRepository(session).get_recent_order_book_snapshots(DataSource.BINANCE, symbol, limit=10)
     assert rows == []
+
+
+def test_get_price_at_horizon_finds_the_closest_candle_within_tolerance():
+    """Faz 441 (2026-09-07) — Direction Prediction Engine: bugünkü
+    LATERAL JOIN prototipinin (bir karar zamanına en yakın '1 saat
+    sonraki' gerçek fiyatı bulmak) resmi hâli."""
+    symbol = f"MDTEST{uuid4().hex[:6]}"
+    base = datetime.now(UTC).replace(microsecond=0)
+
+    with SessionFactory.get_session() as session:
+        repo = MarketDataRepository(session)
+        # hedef zamandan 2dk uzakta (tolerans içinde) ve 20dk uzakta (dışında) iki mum.
+        repo.upsert_snapshot(MarketSnapshot(
+            time=base + timedelta(hours=1, minutes=2), exchange=DataSource.BINANCE, symbol=symbol,
+            resolution=Resolution.M1, open=100.0, high=100.0, low=100.0, close=105.0, volume=1.0,
+            source_version="v1",
+        ))
+        repo.upsert_snapshot(MarketSnapshot(
+            time=base + timedelta(hours=1, minutes=20), exchange=DataSource.BINANCE, symbol=symbol,
+            resolution=Resolution.M1, open=100.0, high=100.0, low=100.0, close=999.0, volume=1.0,
+            source_version="v1",
+        ))
+        price = repo.get_price_at_horizon(
+            DataSource.BINANCE, symbol, base + timedelta(hours=1), tolerance_minutes=5.0,
+        )
+
+    assert price == 105.0  # tolerans dışındaki (999.0) satır asla seçilmemeli
+
+
+def test_get_price_at_horizon_returns_none_when_nothing_is_within_tolerance():
+    symbol = f"MDTEST{uuid4().hex[:6]}NOMATCH"
+    with SessionFactory.get_session() as session:
+        price = MarketDataRepository(session).get_price_at_horizon(
+            DataSource.BINANCE, symbol, datetime.now(UTC), tolerance_minutes=5.0,
+        )
+    assert price is None
