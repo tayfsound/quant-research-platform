@@ -37,6 +37,24 @@ async def test_fetch_open_interest_returns_a_real_positive_value():
 
 
 @pytest.mark.asyncio
+async def test_fetch_premium_index_returns_a_real_plausible_basis():
+    """Faz 440: fetch_funding_rate/fetch_open_interest İLE AYNI desen,
+    GERÇEK Binance premiumIndex uç noktasına karşı test ediliyor."""
+    adapter = BinanceAdapter()
+    await adapter.connect()
+    try:
+        premium = await adapter.fetch_premium_index("BTCUSDT")
+    finally:
+        await adapter.disconnect()
+
+    assert premium["mark_price"] > 0
+    assert premium["index_price"] > 0
+    # BTC gibi likit bir sembolde mark/index farkı tipik olarak ±%1'in
+    # çok altında kalır -- gerçekçi bir üst/alt sınır, icat edilmiş değil.
+    assert -0.01 < premium["basis_pct"] < 0.01
+
+
+@pytest.mark.asyncio
 async def test_fetch_funding_rate_uses_the_futures_domain_not_spot():
     """Düzeltmeden önceki gerçek hata (403 Forbidden, spot alan adı futures
     yolunu tanımıyor) bir daha geri gelmemeli — istek gerçekten

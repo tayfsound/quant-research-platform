@@ -109,6 +109,17 @@ class IngestionPipeline:
                         open_interest_trend = "stable"
             except Exception:
                 pass
+
+            # Faz 440: basis (futures premium/iskonto) — exchange_gateway/
+            # binance/adapter.py::fetch_premium_index() funding_rate/
+            # open_interest İLE AYNI desen (fail-closed None, icat edilmiş
+            # bir sayı asla yazılmaz).
+            basis_pct = None
+            try:
+                premium_index = await self.adapter.fetch_premium_index(symbol)
+                basis_pct = premium_index["basis_pct"]
+            except Exception:
+                pass
         finally:
             await self.adapter.disconnect()
 
@@ -135,6 +146,7 @@ class IngestionPipeline:
                 funding_rate=funding_rate,
                 open_interest=open_interest,
                 open_interest_trend=open_interest_trend,
+                basis_pct=basis_pct,
             )
 
         return {
@@ -148,6 +160,7 @@ class IngestionPipeline:
             "funding_rate": funding_rate,
             "open_interest": open_interest,
             "open_interest_trend": open_interest_trend,
+            "basis_pct": basis_pct,
         }
 
     def _to_snapshot(self, symbol: str, timeframe: str, candle: dict) -> MarketSnapshot:

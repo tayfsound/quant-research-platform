@@ -298,6 +298,24 @@ def build_cognitive_context(
         ctx.market.features["order_flow_relationship_price_change_pct"] = relationship["price_change_pct"]
         ctx.market.features["order_flow_relationship_oi_change_pct"] = relationship["oi_change_pct"]
         ctx.market.features["order_flow_relationship_funding_rate"] = relationship["funding_rate"]
+    # Faz 439 (2026-09-08) — kullanıcı önceliği ① devamı: Binance'in
+    # ücretsiz forceOrder akışından likidasyon baskısı, order_flow_
+    # relationship İLE AYNI desen (gözlem-only, ctx.market.features,
+    # hiçbir agent'ın skoruna girmiyor). Bu ortamda `liquidation_events`
+    # hep 0 satır (MempoolAgent/BehavioralAgent İLE AYNI coğrafi WS
+    # kısıtı) — fail-closed "no_data" kalır, cycle asla patlamaz; üretim
+    # sunucusunda gerçek veriyle AYRICA doğrulanmalı.
+    try:
+        from analytics.liquidation_pressure_signal import compute_liquidation_pressure_signal
+        from market_data.liquidations.liquidation_provider import fetch_liquidation_pressure
+
+        liquidation_signal = compute_liquidation_pressure_signal(fetch_liquidation_pressure(symbol))
+    except Exception:
+        liquidation_signal = None
+    if liquidation_signal is not None:
+        ctx.market.features["liquidation_pressure_category"] = liquidation_signal["category"]
+        ctx.market.features["liquidation_pressure_long_usd"] = liquidation_signal["long_liquidated_usd"]
+        ctx.market.features["liquidation_pressure_short_usd"] = liquidation_signal["short_liquidated_usd"]
     # Faz 251: kullanıcı kararı — risk (stop/target) ölçeklendirmesi sinyal
     # zaman diliminden (genelde 1m, gürültü seviyesinde ATR) bağımsız,
     # daha yavaş bir bar setinden türetiliyor (bkz. signal_engine.

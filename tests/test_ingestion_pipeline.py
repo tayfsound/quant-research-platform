@@ -101,6 +101,23 @@ async def test_ingest_order_book_persists_real_funding_rate_and_open_interest():
 
 
 @pytest.mark.asyncio
+async def test_ingest_order_book_persists_real_basis_pct():
+    """Faz 440: exchange_gateway/binance/adapter.py::fetch_premium_index()
+    -- funding_rate/open_interest İLE AYNI desen, gerçek uçtan uca yol:
+    gerçek Binance premiumIndex uç noktası -> order_book_snapshots satırı."""
+    pipeline = IngestionPipeline(BinanceAdapter())
+    result = await pipeline.ingest_order_book("BTCUSDT", depth=10)
+
+    assert result["basis_pct"] is not None
+    assert -0.01 < result["basis_pct"] < 0.01  # BTC gibi likit bir semboldeki gercekci aralik
+
+    with SessionFactory.get_session() as session:
+        row = MarketDataRepository(session).get_latest_order_book_snapshot(DataSource.BINANCE, "BTCUSDT")
+
+    assert row["basis_pct"] == result["basis_pct"]
+
+
+@pytest.mark.asyncio
 async def test_ingest_order_book_computes_open_interest_trend_from_previous_snapshot():
     """İlk çağrıda önceki bir satır yoksa trend "unknown" kalmalı (fail-
     closed); ikinci çağrıda gerçek OI farkına göre rising/falling/stable

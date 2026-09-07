@@ -235,3 +235,23 @@ class BinanceAdapter(BaseExchangeAdapter):
         resp.raise_for_status()
         data = resp.json()
         return float(data["openInterest"])
+
+    async def fetch_premium_index(self, symbol: str) -> dict:
+        # Faz 440 — fetch_funding_rate/fetch_open_interest İLE AYNI desen
+        # (futures alan adı, throttle). Binance'in premiumIndex uç noktası
+        # markPrice (futures) ile indexPrice'ı (spot sepeti) birlikte
+        # döndürüyor — basis_pct = (markPrice-indexPrice)/indexPrice,
+        # pozitif = futures spot'a göre primli (contango), negatif =
+        # iskontolu (backwardation).
+        await _throttle_binance_request()
+        resp = await self._client.get(f"{FUTURES_BASE_URL}/fapi/v1/premiumIndex", params={"symbol": symbol})
+        resp.raise_for_status()
+        data = resp.json()
+        mark_price = float(data["markPrice"])
+        index_price = float(data["indexPrice"])
+        basis_pct = (mark_price - index_price) / index_price if index_price else 0.0
+        return {
+            "mark_price": mark_price,
+            "index_price": index_price,
+            "basis_pct": basis_pct,
+        }

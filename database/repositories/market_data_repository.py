@@ -148,15 +148,16 @@ class MarketDataRepository:
         funding_rate: float | None = None,
         open_interest: float | None = None,
         open_interest_trend: str | None = None,
+        basis_pct: float | None = None,
     ) -> None:
         self.session.execute(
             text("""
                 INSERT INTO order_book_snapshots
                     (exchange, symbol, time, best_bid, best_ask, bid_volume, ask_volume, imbalance, spread_bps,
-                     aggressive_buy_ratio, funding_rate, open_interest, open_interest_trend)
+                     aggressive_buy_ratio, funding_rate, open_interest, open_interest_trend, basis_pct)
                 VALUES
                     (:exchange, :symbol, :time, :best_bid, :best_ask, :bid_volume, :ask_volume, :imbalance, :spread_bps,
-                     :aggressive_buy_ratio, :funding_rate, :open_interest, :open_interest_trend)
+                     :aggressive_buy_ratio, :funding_rate, :open_interest, :open_interest_trend, :basis_pct)
             """),
             {
                 "exchange": exchange.value,
@@ -172,6 +173,7 @@ class MarketDataRepository:
                 "open_interest": open_interest,
                 "open_interest_trend": open_interest_trend,
                 "aggressive_buy_ratio": aggressive_buy_ratio,
+                "basis_pct": basis_pct,
             },
         )
         self.session.commit()

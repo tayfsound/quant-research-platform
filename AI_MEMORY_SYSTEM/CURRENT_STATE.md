@@ -1,9 +1,9 @@
-# Mevcut Durum -- v1.157.0 (Faz 419-423: regime/direction/confidence gate zinciri + historical analog distinct_days + technical_agent redundancy temizliği)
+# Mevcut Durum -- v1.164.0 (Faz 441-448: Direction Prediction Engine + MetaStage kök-neden düzeltmesi + Ham Feature Ingestion tamamlandı)
 
-**Tarih:** 2026-09-07
+**Tarih:** 2026-09-08
 **Branch:** main
-**Son commit (HEAD):** `b01a85a` (Faz 423), push edildi.
-**Servis durumu:** Faz 423 celery worker kod değişikliği (agent scoring) — worker force-kill edildi, watchdog (`scripts/service_watchdog.sh`, 60sn kontrol aralığı) yeniden başlattı, taze kod canlıda.
+**Son commit (HEAD):** Faz 440 (Ham Feature Ingestion tamamlandı), push edilecek.
+**Servis durumu:** Faz 448 (metacognition.py, SHORT'ta MTF-uzlaşma boost'u kaldırıldı) celery worker'a alındı — worker force-kill edildi, watchdog yeniden başlattı, taze kod canlıda (kullanıcı onayıyla). Faz 439/440 (orchestrator.py/pipeline.py) HENÜZ restart edilmedi — bir sonraki worker restart'ında canlıya yansıyacak.
 
 **Faz 419-423 özet (bu turda, sırayla):**
 - **Faz 419**: Dashboard "Rejime Göre AI Konseyi Girişleri" kartına win_rate yanında `total_pnl` rozeti eklendi (renk PnL işaretine göre) — kullanıcı bulgusu: "ROI yanıltabiliyor, başarılı görünüp başarılı olmayanlar var."
@@ -452,11 +452,50 @@ gerek kalmayacak." Bu, kullanıcının 2026-09-06'da zaten aldığı mimari
 kararla (voting temelden kusurlu) birebir aynı çizgide — henüz kodlanmadı,
 ayrı bir tasarım oturumu bekliyor (kullanıcının kendi daha önceki kararı).
 
+**2026-09-08 devamı — Faz 448 CANLIYA ALINDI** (kullanıcı onayı: "yaptığımız
+değişiklikleri canlıya alalım"). Celery worker `pkill -9` ile force-kill
+edildi, watchdog yeniden başlattı, yeni PID'ler doğrulandı — SHORT'un
+MTF-uzlaşma boost'u artık canlıda kapalı.
+
+**2026-09-08 devamı — Ham Feature Ingestion planının kalan maddeleri
+(Faz 439/440) TAMAMLANDI.** Kullanıcı "todo'ya alalım (örüntü tanıma
+mimarisi), önce kalan görevlere devam edelim" dedi, sonra "Ham Feature
+Ingestion kalanları"nı seçti.
+
+**Faz 439 — Likidasyon baskısı sinyali (gözlem-only).** Yeni
+`analytics/liquidation_pressure_signal.py::compute_liquidation_pressure_
+signal()` (saf fonksiyon — long/short likide edilen notional'i
+`long_liquidation_dominant`/`short_liquidation_dominant`/`balanced`/
+`no_data` kategorilerine ayırıyor, min_total_usd altında fail-closed
+"no_data", YÖN/skor kararı VERMİYOR). `services/orchestrator.py`'ye Faz
+436 İLE AYNI desen (try/except, `ctx.market.features`, hiçbir agent
+skoruna girmiyor). **Bu ortamda `liquidation_events` hâlâ 0 satır**
+(MempoolAgent/BehavioralAgent İLE AYNI coğrafi WS kısıtı, Faz 365'ten
+beri bilinen) — testler SENTETİK veriyle yazıldı (6 saf fonksiyon + 2
+orchestrator wiring, gerçek DB round-trip), üretim sunucusunda gerçek
+veriyle AYRICA doğrulanmalı, açıkça belgelendi.
+
+**Faz 440 — Basis/futures premium ingestion (gerçekten yeni entegrasyon).**
+`exchange_gateway/binance/adapter.py::fetch_premium_index()` (fetch_
+funding_rate İLE AYNI desen, Binance'in `/fapi/v1/premiumIndex` uç
+noktası — mark/index price farkından `basis_pct`). `order_book_
+snapshots` tablosuna migration (`faz440_order_book_basis_pct.py`,
+quantdb VE quantdb_test'e uygulandı) + `market_data_repository.py::
+save_order_book_snapshot()` + `market_data/ingestion/pipeline.py::
+ingest_order_book()`'a wiring (funding_rate/open_interest İLE AYNI
+fail-closed try/except deseni). **Gerçek Binance API'sine karşı uçtan
+uca doğrulandı** (BTCUSDT, basis_pct gerçekçi ±%1 aralığında) — bu
+ortamın coğrafi kısıtı SADECE futures WebSocket'i etkiliyor, REST
+(premiumIndex dahil) sorunsuz çalışıyor. 2 yeni test (adapter + pipeline
+round-trip), ikisi de GERÇEK canlı veriyle geçti.
+
+**Ham Feature Ingestion planı (①OI+Funding+Price ②ATR ③RSI ④Liquidation
+⑤Basis) artık TAMAMEN bitti — Faz 436-440 hepsi kodlandı/test edildi.**
+
 **SIRADAKİ:** Faz 447 (Council'in evidence-provider'a geçişi) hâlâ AYRI
-kullanıcı onayı gerektiriyor. Faz 448'in canlıya alınma kararı kullanıcıda.
-Örüntü-tanıma mimarisine geçiş kararı da AYRI, kendi tasarım oturumunu
-bekliyor — bugünkü Faz 445 (`compute_direction_analogs`) zaten bu yöne
-atılmış ilk somut adım.
+kullanıcı onayı gerektiriyor. Örüntü-tanıma mimarisine geçiş kararı da
+AYRI, kendi tasarım oturumunu bekliyor — bugünkü Faz 445
+(`compute_direction_analogs`) zaten bu yöne atılmış ilk somut adım.
 
 **Açık/gözlem bekleyen:** SHORT geçici olarak kapalı (yeniden açma planı yok, gözlem sürüyor). WS disconnect düzelmesi (Faz 414) hâlâ taze logla doğrulanmadı. Kullanıcı iki büyük GPT mimari raporu daha paylaştı (Incremental Value/Conditional Lift/Pattern Coverage/Temporal Decay/Negative Evidence önerisi + OI/Funding/Liquidation/ATR/RSI-detay gibi yeni ham feature adayları, önceliklendirilmiş: ①OI+Funding+Price ②ATR/realized vol ③RSI ham+slope+divergence) — kullanıcının kendi çerçevesi gereği ("ilk fırsatta, detaylıca") bunlar TODO'ya (`project_open_items_2026_08_31.md`) detaylıca eklendi, HENÜZ uygulanmadı.
 
