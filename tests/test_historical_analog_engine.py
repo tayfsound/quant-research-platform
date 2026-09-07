@@ -3,7 +3,7 @@ test_agent_combination_reliability.py'yi izliyor (üçüncü eksen olarak
 market_regime eklendiği için)."""
 from datetime import UTC, datetime, timedelta
 
-from analytics.historical_analog_engine import compute_historical_analogs
+from analytics.historical_analog_engine import apply_confidence_shrinkage, compute_historical_analogs
 
 
 def _record(domains, regime, direction, win, closed_at=None, reversing=False):
@@ -274,3 +274,40 @@ def test_harmful_eligible_is_false_for_a_neutral_or_positive_pattern():
     analog = next(a for a in result["analogs"] if set(a["domains"]) == {"technical", "macro"})
     assert analog["gate_eligible"] is True
     assert analog["harmful_eligible"] is False
+
+
+def test_apply_confidence_shrinkage_never_decreases_below_strength_before():
+    """Faz 433 — stage'in kendi 'SADECE YÜKSELTİR' ilkesiyle AYNI garanti,
+    fonksiyon seviyesinde: raw_win_rate strength_before'ın altındaysa
+    (yükseltmeyen bir eşleşme) hiç değişiklik yapılmamalı."""
+    result = apply_confidence_shrinkage(
+        raw_win_rate=0.5, effective_sample_size=100.0, strength_before=0.7,
+    )
+    assert result == 0.7
+
+
+def test_apply_confidence_shrinkage_is_capped_at_max_uplift():
+    result = apply_confidence_shrinkage(
+        raw_win_rate=0.99, effective_sample_size=1000.0, strength_before=0.1,
+    )
+    assert abs(result - (0.1 + 0.3)) < 1e-9
+
+
+def test_apply_confidence_shrinkage_weak_evidence_gets_less_uplift_than_strong():
+    """AYNI ham win_rate/strength_before, sadece effective_sample_size
+    farklı — daha güçlü kanıt daha büyük (ama hâlâ tavana kadar) bir
+    uplift'e izin vermeli."""
+    weak = apply_confidence_shrinkage(raw_win_rate=0.85, effective_sample_size=5.0, strength_before=0.4)
+    strong = apply_confidence_shrinkage(raw_win_rate=0.85, effective_sample_size=200.0, strength_before=0.4)
+    assert weak < strong
+    assert weak > 0.4
+    assert strong <= 0.4 + 0.3
+
+
+def test_apply_confidence_shrinkage_matches_hand_computed_example():
+    """eff_n=26, shrinkage_k=20 (varsayılan) -> weight=26/46≈0.5652,
+    ham uplift=0.5652*(0.951-0.3521)≈0.3386 -> 0.3 tavanına takılır."""
+    result = apply_confidence_shrinkage(
+        raw_win_rate=0.951, effective_sample_size=26.0, strength_before=0.3521,
+    )
+    assert abs(result - 0.6521) < 1e-4

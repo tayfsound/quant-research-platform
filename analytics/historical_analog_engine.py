@@ -234,3 +234,45 @@ def compute_historical_analogs(
         "baseline_win_rate": baseline_win_rate,
         "baseline_sample_size": len(valid),
     }
+
+
+# Faz 433 (2026-09-07) — kullanıcı isteği: "1'den devam edelim" (GPT'nin
+# listesindeki "confidence override'ı ham win_rate yerine shrinkage/
+# posterior düzeltilmiş bir değerle + maksimum uplift cap'iyle yap"
+# maddesi). engines/cognitive_pipeline.py::HistoricalAnalogOverrideStage
+# şu an `belief.strength = best["win_rate"]` ile ham değeri DOĞRUDAN
+# yazıyor — gate_eligible zaten min_group_size/FDR/OOS/min_distinct_days
+# şartlarını sağlıyor ama bu, örneklem gürültüsünün belief.strength'e
+# HİÇ küçültülmeden (shrinkage'sız) sızmayacağını garanti etmiyor (küçük
+# bir örneklemde şanslı bir seri hâlâ gate_eligible olabilir).
+#
+# min_group_size (=20) civarındaki bir effective_sample_size, gerçek
+# istatistiksel EŞİĞİ geçmiş olsa da hâlâ NİSPETEN az kanıt demek —
+# bu yüzden uplift miktarının kendisi (raw_win_rate - strength_before,
+# override'ın "kaç puan artıracağı"), effective_sample_size shrinkage_k'yı
+# ne kadar AŞTIĞINA göre ölçeklendiriliyor: eff_n=shrinkage_k iken
+# uplift'in SADECE yarısı güvenilir sayılır, eff_n büyüdükçe tam uplift'e
+# yaklaşılır. `strength_before`'IN ALTINA asla inmez (stage'in kendi
+# "SADECE YÜKSELTİR" ilkesiyle AYNI) VE `max_uplift` ile üst sınırlanır
+# (market_state_tilt.py::MAX_TILT=0.3 ile AYNI büyüklük — hiçbir tek
+# mekanizma belief.strength'i tek seferde aşırı sıçratamaz).
+DEFAULT_SHRINKAGE_K = 20.0
+MAX_UPLIFT = 0.3
+
+
+def apply_confidence_shrinkage(
+    raw_win_rate: float,
+    effective_sample_size: float,
+    strength_before: float,
+    shrinkage_k: float = DEFAULT_SHRINKAGE_K,
+    max_uplift: float = MAX_UPLIFT,
+) -> float:
+    """gate_eligible bir analogun ham win_rate'ini, effective_sample_size'a
+    göre küçültülmüş (shrunk) bir uplift'e çevirip strength_before'a
+    ekler. raw_win_rate <= strength_before ise (yükseltmeyen bir eşleşme)
+    hiç değişiklik yapılmaz — 0 <= weight <= 1 olduğu için sonuç HER ZAMAN
+    [strength_before, strength_before + max_uplift] aralığında kalır."""
+    weight = effective_sample_size / (effective_sample_size + shrinkage_k)
+    uplift = weight * (raw_win_rate - strength_before)
+    uplift = min(max(uplift, 0.0), max_uplift)
+    return strength_before + uplift

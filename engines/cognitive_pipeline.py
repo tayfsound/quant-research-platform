@@ -225,7 +225,14 @@ class HistoricalAnalogOverrideStage:
 
     SADECE confidence'ı YÜKSELTİR (gate_eligible = yüksek win_rate),
     hiçbir zaman düşürmez — test modundaki "engelsiz, geniş veri
-    toplama" hedefiyle (Faz 388) çelişmiyor, ondan bağımsız çalışıyor."""
+    toplama" hedefiyle (Faz 388) çelişmiyor, ondan bağımsız çalışıyor.
+
+    Faz 433 (2026-09-07) — kullanıcı isteği: ham win_rate'i DOĞRUDAN
+    yazmak yerine `analytics.historical_analog_engine.apply_confidence_
+    shrinkage()` ile küçültülmüş (shrinkage'lı) bir uplift + maksimum
+    uplift tavanı (0.3) uygulanıyor — gate_eligible istatistiksel eşiği
+    geçmiş olsa da min_group_size civarındaki bir örneklem hâlâ
+    nispeten az kanıt, tek seferde aşırı bir sıçramaya izin verilmiyor."""
 
     def execute(self, ctx: CognitiveCycleContext, belief: Belief, opinions: list[AgentOpinion]) -> Belief:
         from database.repositories.app_settings_repository import AppSettingsRepository
@@ -269,7 +276,14 @@ class HistoricalAnalogOverrideStage:
 
         best = max(matches, key=lambda a: a["win_rate"])
         strength_before = belief.strength
-        belief.strength = best["win_rate"]
+
+        from analytics.historical_analog_engine import apply_confidence_shrinkage
+
+        belief.strength = apply_confidence_shrinkage(
+            raw_win_rate=best["win_rate"],
+            effective_sample_size=best["effective_sample_size"],
+            strength_before=strength_before,
+        )
         ctx.cognition.relevant_knowledge.append({
             "type": "historical_analog_override",
             "data": {
@@ -280,6 +294,7 @@ class HistoricalAnalogOverrideStage:
                 "sample_size": best["sample_size"],
                 "effective_sample_size": best["effective_sample_size"],
                 "strength_before": strength_before,
+                "strength_after_shrinkage": belief.strength,
             },
         })
         return belief

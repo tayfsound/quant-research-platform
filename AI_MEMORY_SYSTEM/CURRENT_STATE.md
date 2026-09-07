@@ -152,6 +152,30 @@ gerçekten bağımsız nokta ama korelasyon 0,818→0,922 hareket etmiş,
 eski CV bunu tamamen gizliyormuş). 19 yeni test + tüm bağımlı testler
 geçti.
 
+**2026-09-07 (devam) — Faz 433: confidence override'a shrinkage +
+maksimum uplift tavanı (kullanıcı: "1'den devam edelim").**
+`HistoricalAnalogOverrideStage`'in `belief.strength = best["win_rate"]`
+ham ataması, yeni `analytics/historical_analog_engine.py::apply_
+confidence_shrinkage()` ile değiştirildi — uplift miktarı effective_
+sample_size'a göre küçültülüyor (eff_n=shrinkage_k=20'de uplift'in
+yarısı, eff_n büyüdükçe tama yaklaşır) VE max_uplift=0.3 (market_state_
+tilt.py::MAX_TILT ile AYNI) ile üst sınırlanıyor, `strength_before`'ın
+ALTINA asla inmiyor. 10 yeni test + 168/169 bağımlı test (1 bilinen/
+ilgisiz flaky) geçti.
+
+**Yan bulgu, canlı risk:** bunu araştırırken `historical_analog_
+override_enabled=true` iken şu an OKUNAN rapor 3 Eylül'den (Faz 422'nin
+6 Eylül'deki `min_distinct_days` düzeltmesinden ÖNCE) — 3 `gate_
+eligible=True` girişin ÜÇÜ de `distinct_days=2` (tam olarak Faz 422'nin
+engellemesi gereken tür). Rapor tazeleme görevi 2 kez kuyruğa alındı
+ama worker ~100 bekleyen görevle TIKANIK (muhtemelen bugünkü çok sayıda
+restart'ın birikimi) — henüz işlenmedi. Faz 433'ün deploy'u bu riski
+AZALTIYOR (artık raw win_rate yerine +0,30 tavanlı artış) ama TAM
+gidermiyor; rapor işlendiğinde (organik olarak, kuyruk boşaldıkça)
+gate_eligible bu 3 girişi zaten temizleyecek. **AÇIK MADDE:** kuyruk
+tıkanıklığının kök nedeni (bugünkü ~9 worker restart'ının birikimi mi,
+yoksa kalıcı bir yavaşlama mı) henüz araştırılmadı.
+
 **Açık/gözlem bekleyen:** SHORT geçici olarak kapalı (yeniden açma planı yok, gözlem sürüyor). WS disconnect düzelmesi (Faz 414) hâlâ taze logla doğrulanmadı. Kullanıcı iki büyük GPT mimari raporu daha paylaştı (Incremental Value/Conditional Lift/Pattern Coverage/Temporal Decay/Negative Evidence önerisi + OI/Funding/Liquidation/ATR/RSI-detay gibi yeni ham feature adayları, önceliklendirilmiş: ①OI+Funding+Price ②ATR/realized vol ③RSI ham+slope+divergence) — kullanıcının kendi çerçevesi gereği ("ilk fırsatta, detaylıca") bunlar TODO'ya (`project_open_items_2026_08_31.md`) detaylıca eklendi, HENÜZ uygulanmadı.
 
 **Faz 417 — Approvals sayfası sessizce boş görünüyordu.** Kullanıcı

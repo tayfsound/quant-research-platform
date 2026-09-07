@@ -70,7 +70,12 @@ def test_disabled_by_default_leaves_belief_unchanged():
     assert result is belief
 
 
-def test_enabled_and_matching_overrides_strength_to_empirical_win_rate():
+def test_enabled_and_matching_overrides_strength_with_shrinkage():
+    """Faz 433 — kullanıcı isteği: ham win_rate'i DOĞRUDAN yazmak yerine
+    apply_confidence_shrinkage() ile küçültülmüş bir uplift uygulanıyor
+    (bkz. analytics/historical_analog_engine.py). eff_n=26,
+    shrinkage_k=20 -> weight=26/46≈0.565, ham uplift=0.565*(0.951-0.3521)
+    ≈0.339 -> max_uplift=0.3 tavanına takılıyor -> 0.3521+0.3=0.6521."""
     _reset_defaults()
     _enable_override()
     _save_report([_GATE_ELIGIBLE_ANALOG])
@@ -80,7 +85,8 @@ def test_enabled_and_matching_overrides_strength_to_empirical_win_rate():
 
         result = HistoricalAnalogOverrideStage().execute(_ctx(), belief, opinions)
 
-        assert result.strength == 0.951
+        assert abs(result.strength - 0.6521) < 1e-4
+        assert result.strength < 0.951  # ham değere DOKUNULMADI, küçültüldü
         assert result.direction == "LONG"
     finally:
         _reset_defaults()
@@ -173,6 +179,11 @@ def test_enabled_with_no_saved_report_leaves_belief_unchanged():
 
 
 def test_multiple_matches_picks_the_highest_win_rate():
+    """Faz 433 sonrası: iki adayın da shrinkage sonrası uplift'i
+    max_uplift tavanına takılabileceği için (bkz. yukarıdaki test)
+    belief.strength artık HANGİ adayın seçildiğini ayırt etmeye
+    yetmeyebilir — doğrudan relevant_knowledge'a yazılan
+    matched_win_rate ile hangi analogun seçildiği doğrulanıyor."""
     _reset_defaults()
     _enable_override()
     weaker = {**_GATE_ELIGIBLE_ANALOG, "domains": ["sentiment"], "win_rate": 0.80}
@@ -182,8 +193,13 @@ def test_multiple_matches_picks_the_highest_win_rate():
         belief = Belief(direction="LONG", strength=0.3521)
         opinions = _opinions([AgentDomain.SENTIMENT, AgentDomain.TECHNICAL], "LONG")
 
-        result = HistoricalAnalogOverrideStage().execute(_ctx(), belief, opinions)
+        ctx = _ctx()
+        result = HistoricalAnalogOverrideStage().execute(ctx, belief, opinions)
 
-        assert result.strength == 0.98
+        override_entry = next(
+            k for k in ctx.cognition.relevant_knowledge if k.get("type") == "historical_analog_override"
+        )
+        assert override_entry["data"]["matched_win_rate"] == 0.98
+        assert result.strength > 0.3521
     finally:
         _reset_defaults()
