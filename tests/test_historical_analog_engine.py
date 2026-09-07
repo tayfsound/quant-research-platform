@@ -181,3 +181,96 @@ def test_noise_does_not_survive_fdr():
     analog = next(a for a in result["analogs"] if set(a["domains"]) == {"technical", "macro"})
     assert analog["fdr_significant"] is False
     assert analog["gate_eligible"] is False
+
+
+def test_conditioning_incremental_value_compares_against_domain_only_baseline():
+    """Faz 427 — kullanıcı isteği: "incremental value" ölçümü. Aynı ajan
+    kombinasyonu iki farklı rejimde TAM ZIT sonuç veriyorsa, her hücrenin
+    win_rate'i domain-only (rejimden bağımsız, TÜM kayıtlar havuzlanmış)
+    ortalamaya göre eşit ve zıt yönde bir conditioning_incremental_value
+    üretmeli."""
+    base_time = datetime(2026, 8, 1, tzinfo=UTC)
+    good_regime = [
+        _record({"technical", "macro"}, "bullish_low", "LONG", True, base_time + timedelta(days=i))
+        for i in range(20)
+    ]
+    bad_regime = [
+        _record({"technical", "macro"}, "bearish_low", "LONG", False, base_time + timedelta(days=i))
+        for i in range(20)
+    ]
+    baseline = [_record({"quant"}, "bullish_low", "LONG", i % 2 == 0) for i in range(40)]
+    result = compute_historical_analogs(
+        good_regime + bad_regime + baseline, combination_sizes=(2,), min_group_size=20,
+    )
+    good = next(
+        a for a in result["analogs"]
+        if set(a["domains"]) == {"technical", "macro"} and a["market_regime"] == "bullish_low"
+    )
+    bad = next(
+        a for a in result["analogs"]
+        if set(a["domains"]) == {"technical", "macro"} and a["market_regime"] == "bearish_low"
+    )
+    # domain-only (rejimden bağımsız) havuz: 20 kazanan + 20 kaybeden -> %50.
+    assert good["win_rate"] == 1.0
+    assert bad["win_rate"] == 0.0
+    assert good["conditioning_incremental_value"] == 0.5
+    assert bad["conditioning_incremental_value"] == -0.5
+
+
+def test_coverage_pct_reflects_share_of_total_valid_sample():
+    """coverage_pct = hücrenin gerçek örneklem sayısı / TÜM geçerli
+    kayıtların sayısı — yeni bir hesaplama değil, zaten var olan iki
+    alandan türetilen şeffaflık amaçlı bir oran."""
+    base_time = datetime(2026, 8, 1, tzinfo=UTC)
+    strong = [
+        _record({"technical", "macro"}, "bullish_low", "LONG", i % 10 != 0, base_time + timedelta(days=i))
+        for i in range(20)
+    ]
+    baseline = [_record({"quant"}, "bullish_low", "LONG", i < 10) for i in range(80)]
+    result = compute_historical_analogs(strong + baseline, combination_sizes=(2,), min_group_size=20)
+    analog = next(a for a in result["analogs"] if set(a["domains"]) == {"technical", "macro"})
+    assert analog["coverage_pct"] == round(20 / 100, 6)
+
+
+def test_harmful_eligible_requires_fdr_and_negative_oos_and_effective_sample_size_together():
+    """Faz 428 — kullanıcı isteği: "Negative Evidence" — gate_eligible'ın
+    TAM SİMETRİK negatif hâli. Bir kombinasyon HİÇ kazanmıyorsa (baseline'ın
+    çok altında, OOS'ta da AYNI kalıyorsa) harmful_eligible=True olmalı."""
+    base_time = datetime(2026, 8, 1, tzinfo=UTC)
+    harmful = [
+        _record({"macro", "order_flow"}, "bearish_low", "SHORT", False, base_time + timedelta(days=i))
+        for i in range(40)
+    ]
+    baseline = [
+        _record({"quant"}, "bearish_low", "SHORT", i < 30, base_time + timedelta(days=i))
+        for i in range(40)
+    ]
+    result = compute_historical_analogs(harmful + baseline, combination_sizes=(2,), min_group_size=20)
+    analog = next(a for a in result["analogs"] if set(a["domains"]) == {"macro", "order_flow"})
+    assert analog["win_rate"] == 0.0
+    assert analog["win_rate_delta_vs_baseline"] <= -0.20
+    assert analog["fdr_significant"] is True
+    assert analog["oos_survival_negative"] is True
+    assert analog["oos_survival"] is False
+    assert analog["effective_sample_size"] >= 20
+    assert analog["distinct_days"] >= 5
+    assert analog["harmful_eligible"] is True
+    # Aynı hücre asla gate_eligible (pozitif) OLAMAZ -- iki bayrak
+    # birbirini dışlamalı.
+    assert analog["gate_eligible"] is False
+
+
+def test_harmful_eligible_is_false_for_a_neutral_or_positive_pattern():
+    base_time = datetime(2026, 8, 1, tzinfo=UTC)
+    strong = [
+        _record({"technical", "macro"}, "bullish_low", "LONG", i % 10 != 0, base_time + timedelta(days=i))
+        for i in range(40)
+    ]
+    baseline = [
+        _record({"quant"}, "bullish_low", "LONG", i < 10, base_time + timedelta(days=i))
+        for i in range(40)
+    ]
+    result = compute_historical_analogs(strong + baseline, combination_sizes=(2,), min_group_size=20)
+    analog = next(a for a in result["analogs"] if set(a["domains"]) == {"technical", "macro"})
+    assert analog["gate_eligible"] is True
+    assert analog["harmful_eligible"] is False

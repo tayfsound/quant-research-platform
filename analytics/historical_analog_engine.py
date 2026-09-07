@@ -44,6 +44,13 @@ DEFAULT_COMBINATION_SIZES = (2, 3)
 
 DEFAULT_MIN_DISTINCT_DAYS = 5
 
+# Faz 428 — analytics/strategy_hypothesis_scanner.py::EFFECT_THRESHOLD ile
+# AYNI büyüklük (-0.20) — "Negative Evidence"nin agent-kombinasyon
+# eksenindeki simetriği, kasıtlı olarak oradan import EDİLMİYOR (o modül
+# rejim×yön×tür eksenine özel bir tarayıcı, burası ayrı bir istatistiksel
+# iskelet — sadece eşik büyüklüğü paylaşılıyor).
+HARMFUL_EFFECT_THRESHOLD = -0.20
+
 
 def compute_historical_analogs(
     records: list[dict],
@@ -84,12 +91,29 @@ def compute_historical_analogs(
         all_domains |= r["agreeing_domains"]
 
     groups: dict[tuple, list[dict]] = defaultdict(list)
+    # Faz 427 — kullanıcı isteği: "incremental value" ölçümü. agent_
+    # combination_reliability.py'nin KENDİ "bir ajan daha eklemenin
+    # değeri" sorusundan FARKLI bir soru: "rejim/yön/reversing ile
+    # KOŞULLANDIRMAK, sadece ajan kombinasyonunu bilmekten daha mı iyi?"
+    # domain_groups, AYNI iç döngüde (ikinci bir geçiş gerekmeden) SADECE
+    # domains anahtarıyla (rejim/yön/reversing yok sayılarak) gruplanıyor.
+    domain_groups: dict[tuple, list[dict]] = defaultdict(list)
     for size in combination_sizes:
         for combo in combinations(sorted(all_domains), size):
             combo_set = frozenset(combo)
             for r in valid:
                 if combo_set <= r["agreeing_domains"]:
                     groups[(combo, r["market_regime"], r["direction"], r["reversing"])].append(r)
+                    domain_groups[combo].append(r)
+
+    # min_group_size altındaki bir domain-only grup icat edilmiş bir
+    # karşılaştırma taban değeri üretir — o kombinasyonlar için
+    # conditioning_incremental_value aşağıda None kalır (fail-closed).
+    domain_only_win_rates = {
+        combo: sum(1 for r in group if r["win"]) / len(group)
+        for combo, group in domain_groups.items()
+        if len(group) >= min_group_size
+    }
 
     # agent_combination_reliability.py'deki AYNI örtüşme mantığı: bir
     # işlem birden fazla (domain, rejim, yön) hücresine birden girebilir
@@ -119,6 +143,30 @@ def compute_historical_analogs(
         closed_dates = {r["closed_at"].date() for r in group if r.get("closed_at") is not None}
         effective_sample_size = round(len(group) * (1 - max_overlap_pct), 2)
         oos_survival = compute_oos_survival(group, baseline_win_rate)
+        # Faz 428 — "Negative Evidence": strategy_hypothesis_scanner.py'nin
+        # pozitif/negatif simetrisiyle AYNI ilke, ama agent-kombinasyon
+        # ekseninde. compute_oos_survival'ın YÖN parametresi (bkz. o
+        # fonksiyonun Faz 428 notu) — pozitif tarafın "OOS'ta baseline'ın
+        # ÜSTÜNDE kaldı mı" sorusunun tam simetriği.
+        oos_survival_negative = compute_oos_survival(group, baseline_win_rate, direction="negative")
+        win_rate = round(wins / len(group), 4)
+
+        # Faz 427 — "rejim/yön/reversing ile koşullandırmak, sadece bu
+        # ajan kombinasyonunu bilmekten daha mı iyi?" domain_only_win_
+        # rates'te karşılaştırılabilir bir taban yoksa None (icat
+        # edilmiş bir fark asla üretilmez) — agent_combination_
+        # reliability.py'nin incremental_value'suyla AYNI fail-closed
+        # ilke.
+        domain_baseline = domain_only_win_rates.get(domains)
+        conditioning_incremental_value = (
+            round(win_rate - domain_baseline, 4) if domain_baseline is not None else None
+        )
+        # Faz 427 — "Pattern Coverage": bu hücrenin TÜM örneklemin ne
+        # kadarını temsil ettiği. gate_eligible'a KATILMIYOR (zorla bir
+        # eşik değil) — sadece "yüksek win_rate ama kararların %0,3'ünü
+        # kapsıyor" durumunu şeffaf bırakmak için.
+        coverage_pct = round(len(group) / len(valid), 6) if valid else None
+
         candidates.append({
             "domains": list(domains),
             "market_regime": regime,
@@ -127,11 +175,14 @@ def compute_historical_analogs(
             "combination_size": len(domains),
             "sample_size": len(group),
             "effective_sample_size": effective_sample_size,
-            "win_rate": round(wins / len(group), 4),
+            "win_rate": win_rate,
             "win_rate_ci": compute_accuracy_confidence_interval(wins, len(group)),
             "max_shared_trade_overlap_pct": round(max_overlap_pct, 4),
             "distinct_days": len(closed_dates) if closed_dates else None,
             "oos_survival": oos_survival,
+            "oos_survival_negative": oos_survival_negative,
+            "conditioning_incremental_value": conditioning_incremental_value,
+            "coverage_pct": coverage_pct,
             "_wins": wins,
         })
 
@@ -163,6 +214,17 @@ def compute_historical_analogs(
             and c["oos_survival"] is True
             and c["effective_sample_size"] >= min_group_size
             and (c["distinct_days"] or 0) >= min_distinct_days
+        )
+        # Faz 428 — kullanıcı isteği: "Negative Evidence" — gate_eligible
+        # ile TAM SİMETRİK ama negatif yönde. Kasıtlı olarak SADECE bir
+        # etiket (gate_eligible gibi) — hiçbir gate/karar hattına
+        # otomatik bağlanmıyor, insan onayı hâlâ ayrı ve gerekli.
+        c["harmful_eligible"] = bool(
+            fdr_ok
+            and c["oos_survival_negative"] is True
+            and c["effective_sample_size"] >= min_group_size
+            and (c["distinct_days"] or 0) >= min_distinct_days
+            and c["win_rate_delta_vs_baseline"] <= HARMFUL_EFFECT_THRESHOLD
         )
         analogs.append(c)
 

@@ -83,19 +83,29 @@ def agreeing_domains_for_decision(agent_contributions: list[dict], final_directi
     return frozenset(o.domain.value for o in opinions if o.direction == final_direction)
 
 
-def compute_oos_survival(group: list[dict], baseline_win_rate: float) -> bool | None:
+def compute_oos_survival(
+    group: list[dict], baseline_win_rate: float, direction: str = "positive",
+) -> bool | None:
     """strategy_hypothesis_scanner.py::validate_candidate_out_of_sample ile
     AYNI walk-forward ruhu: grubun KENDİ kayıtları zaman sırasına göre
     (closed_at) ikiye bölünür (embargo boşluklu), aday örüntü SADECE erken
-    yarıda değil hiç görülmemiş GEÇ yarıda da (win_rate > baseline) tekrar
-    ediyor mu. Yeterli veri yoksa (test yarısı MIN_OOS_TEST_SIZE'ın altında,
-    ya da closed_at eksikse) None — icat edilmiş bir sonuç üretilmez.
+    yarıda değil hiç görülmemiş GEÇ yarıda da (win_rate > baseline, ya da
+    direction="negative" iken win_rate < baseline) tekrar ediyor mu.
+    Yeterli veri yoksa (test yarısı MIN_OOS_TEST_SIZE'ın altında, ya da
+    closed_at eksikse) None — icat edilmiş bir sonuç üretilmez.
 
     FIL Faz D (2026-08-31) — analytics/historical_analog_engine.py'de de
     AYNEN yeniden kullanılıyor, bu yüzden public (underscore'suz) hâle
     getirildi: bu bir private implementation detail değil, projenin
     doğrulanmış OOS-doğrulama yöntemi (strategy_hypothesis_scanner.py'nin
-    canlıda başarılı olmuş tek gerçek örneğiyle AYNI mantık)."""
+    canlıda başarılı olmuş tek gerçek örneğiyle AYNI mantık).
+
+    Faz 428 — `direction` parametresi eklendi (varsayılan "positive",
+    mevcut iki çağıran da bunu KULLANIYOR, davranışları değişmedi):
+    strategy_hypothesis_scanner.py'nin pozitif/negatif simetrisiyle AYNI
+    ilke — "harmful_eligible" (zararlı örüntü) OOS'ta win_rate'in
+    baseline'ın ALTINDA KALMAYA devam ettiğini doğrulamalı, üstüne
+    çıkmasını değil."""
     dated = sorted(
         (r for r in group if r.get("closed_at") is not None),
         key=lambda r: r["closed_at"],
@@ -110,6 +120,8 @@ def compute_oos_survival(group: list[dict], baseline_win_rate: float) -> bool | 
         return None
     test_wins = sum(1 for r in test_records if r["win"])
     test_win_rate = test_wins / len(test_records)
+    if direction == "negative":
+        return test_win_rate < baseline_win_rate
     return test_win_rate > baseline_win_rate
 
 

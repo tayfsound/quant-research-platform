@@ -75,6 +75,31 @@ düzeltmesiyle (Faz 425) birlikte SHORT'u yeniden açmayı güvenli hale
 getiren mekanizma, ama açma kararı henüz verilmedi (kullanıcıya ait,
 sıradaki adım).
 
+**2026-09-07 (devam) — Faz 427-428: Tarihsel Analog Motoru'na incremental
+value + negative evidence.** Onaylı plan: `~/.claude/plans/velvety-
+whistling-parasol.md`. Plan yazılırken kritik bir gerçek bulundu:
+`incremental_value` GPT'nin "eksik" dediği gibi değil, **Faz 373'te
+`agent_combination_reliability.py`'ye zaten eklenmişti** — sadece
+`historical_analog_engine.py`'ye hiç taşınmamıştı.
+
+- **Faz 427**: `conditioning_incremental_value` (rejim/yön/reversing ile
+  koşullamak, sadece ajan kombinasyonunu bilmekten daha mı iyi?) +
+  `coverage_pct` eklendi. Gerçek veriyle (2000 kapanmış karar)
+  doğrulandı: **±%42 puana kadar** gerçek, anlamlı fark bulundu (ör.
+  pattern+sentiment+technical/bullish_low/LONG domain-only ortalamadan
+  %38 daha iyi) — koşullamanın gerçekten değer kattığı doğrulandı.
+- **Faz 428**: `harmful_eligible` (gate_eligible'ın negatif simetriği).
+  `compute_oos_survival()`'a `direction` parametresi eklendi (varsayılan
+  "positive", mevcut çağıranlar etkilenmedi). Gerçek veride 0 `harmful_
+  eligible` bulundu ama bu bir eksiklik değil — güçlü negatif desenler
+  VAR (delta -%37 ila -%50, FDR anlamlı, OOS negatif yönde doğrulanmış)
+  ama hepsi distinct_days=2-3'te takılıyor (Faz 422'nin min_distinct_
+  days=5 güvenlik ağı TAM OLARAK amaçlandığı gibi çalışıyor — zamansal
+  olarak olgunlaşmamış kanıtı sertifikalandırmıyor).
+- Her ikisi de offline/analiz-only kaldı (kararlara bağlanmadı). 14 yeni/
+  güncellenen test + 119 bağımlı modül testi geçti, tam regresyon
+  çalışıyor.
+
 **Açık/gözlem bekleyen:** SHORT geçici olarak kapalı (yeniden açma planı yok, gözlem sürüyor). WS disconnect düzelmesi (Faz 414) hâlâ taze logla doğrulanmadı. Kullanıcı iki büyük GPT mimari raporu daha paylaştı (Incremental Value/Conditional Lift/Pattern Coverage/Temporal Decay/Negative Evidence önerisi + OI/Funding/Liquidation/ATR/RSI-detay gibi yeni ham feature adayları, önceliklendirilmiş: ①OI+Funding+Price ②ATR/realized vol ③RSI ham+slope+divergence) — kullanıcının kendi çerçevesi gereği ("ilk fırsatta, detaylıca") bunlar TODO'ya (`project_open_items_2026_08_31.md`) detaylıca eklendi, HENÜZ uygulanmadı.
 
 **Faz 417 — Approvals sayfası sessizce boş görünüyordu.** Kullanıcı
