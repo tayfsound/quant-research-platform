@@ -366,6 +366,73 @@ def test_pairs_trading_leg_capital_usd_accepts_valid_and_rejects_invalid_values(
                 )
 
 
+def test_market_state_tilt_and_guardian_settings_accept_valid_and_reject_invalid_values():
+    """Faz 402/403 (Market State Katmanı) — `_validate()`'e hiç eklenmemiş
+    kalmışlardı: dashboard'dan bu ayarları değiştirmeye çalışan bir istek
+    'unknown setting key' ile 400 alıyordu (bkz. güncel guardian_enabled=
+    true DB satırı, muhtemelen API dışından bir yolla yazılmış)."""
+    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
+        client = _client()
+        try:
+            ok_tilt = client.post(
+                "/api/v1/settings/market_state_tilt_enabled",
+                params={"value": "true"},
+                headers=make_authed_headers(Role.ADMIN),
+            )
+            assert ok_tilt.status_code == 200
+            with SessionFactory.get_session() as session:
+                assert AppSettingsRepository(session).get("market_state_tilt_enabled") == "true"
+
+            bad_tilt = client.post(
+                "/api/v1/settings/market_state_tilt_enabled",
+                params={"value": "yolo"},
+                headers=make_authed_headers(Role.ADMIN),
+            )
+            assert bad_tilt.status_code == 400
+
+            ok_guardian = client.post(
+                "/api/v1/settings/market_state_reversal_guardian_enabled",
+                params={"value": "false"},
+                headers=make_authed_headers(Role.ADMIN),
+            )
+            assert ok_guardian.status_code == 200
+
+            bad_guardian = client.post(
+                "/api/v1/settings/market_state_reversal_guardian_enabled",
+                params={"value": "yolo"},
+                headers=make_authed_headers(Role.ADMIN),
+            )
+            assert bad_guardian.status_code == 400
+
+            ok_conf = client.post(
+                "/api/v1/settings/market_state_reversal_guardian_min_confidence",
+                params={"value": "0.6"},
+                headers=make_authed_headers(Role.ADMIN),
+            )
+            assert ok_conf.status_code == 200
+
+            bad_conf = client.post(
+                "/api/v1/settings/market_state_reversal_guardian_min_confidence",
+                params={"value": "1.5"},
+                headers=make_authed_headers(Role.ADMIN),
+            )
+            assert bad_conf.status_code == 400
+        finally:
+            with SessionFactory.get_session() as session:
+                repo = AppSettingsRepository(session)
+                repo.set("market_state_tilt_enabled", DEFAULTS["market_state_tilt_enabled"], updated_by="test")
+                repo.set(
+                    "market_state_reversal_guardian_enabled",
+                    DEFAULTS["market_state_reversal_guardian_enabled"],
+                    updated_by="test",
+                )
+                repo.set(
+                    "market_state_reversal_guardian_min_confidence",
+                    DEFAULTS["market_state_reversal_guardian_min_confidence"],
+                    updated_by="test",
+                )
+
+
 def test_currency_rates_endpoint_returns_real_live_rates():
     with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
         client = _client()

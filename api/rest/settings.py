@@ -358,6 +358,18 @@ def _validate(key: str, value: str) -> None:
     elif key == "portfolio_stress_guardian_enabled":
         if value not in ("true", "false"):
             raise HTTPException(400, "portfolio_stress_guardian_enabled must be 'true' or 'false'")
+    elif key == "market_state_tilt_enabled":
+        if value not in ("true", "false"):
+            raise HTTPException(400, "market_state_tilt_enabled must be 'true' or 'false'")
+    elif key == "market_state_reversal_guardian_enabled":
+        if value not in ("true", "false"):
+            raise HTTPException(400, "market_state_reversal_guardian_enabled must be 'true' or 'false'")
+    elif key == "market_state_reversal_guardian_min_confidence":
+        try:
+            if not (0.0 <= float(value) <= 1.0):
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "market_state_reversal_guardian_min_confidence must be between 0 and 1")
     elif key in ("portfolio_stress_guardian_window_days", "portfolio_stress_guardian_history_days"):
         try:
             if int(value) < 1:

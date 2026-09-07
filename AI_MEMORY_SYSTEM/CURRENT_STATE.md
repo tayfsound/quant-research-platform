@@ -1,9 +1,36 @@
-# Mevcut Durum -- v1.152.0 (Faz 417-418: Approvals auth bug'ı + agent_combination_reliability'nin daralan penceresi düzeltildi)
+# Mevcut Durum -- v1.157.0 (Faz 419-423: regime/direction/confidence gate zinciri + historical analog distinct_days + technical_agent redundancy temizliği)
 
-**Tarih:** 2026-09-06
+**Tarih:** 2026-09-07
 **Branch:** main
-**Son commit (HEAD):** push edilecek (bu turda).
-**Servis durumu:** Faz 417 frontend-only (vite otomatik yeniler), Faz 418 backend gatherer (uvicorn restart gerekmiyor — sadece bir sonraki `/api/v1/research-summary/`ya da `/api/v1/measurement-stability/` isteğinde taze kod çalışır, ayrı bir servis süreci değil).
+**Son commit (HEAD):** `b01a85a` (Faz 423), push edildi.
+**Servis durumu:** Faz 423 celery worker kod değişikliği (agent scoring) — worker force-kill edildi, watchdog (`scripts/service_watchdog.sh`, 60sn kontrol aralığı) yeniden başlattı, taze kod canlıda.
+
+**Faz 419-423 özet (bu turda, sırayla):**
+- **Faz 419**: Dashboard "Rejime Göre AI Konseyi Girişleri" kartına win_rate yanında `total_pnl` rozeti eklendi (renk PnL işaretine göre) — kullanıcı bulgusu: "ROI yanıltabiliyor, başarılı görünüp başarılı olmayanlar var."
+- **Faz 420**: Bearish rejimlerde kayıpların TAMAMEN SHORT'tan geldiği bulundu (LONG o rejimlerde de kanıtlı kârlı). `regime_trading_long_override` mekanizması eklendi (varsayılan: sadece `bearish_normal`) — bir rejim genel olarak KAPALI olsa bile LONG ayrıca izin verilebiliyor, SHORT tamamen bloklu kalıyor. SHORT'un yapısal kök nedeni bulundu: `target_atr_mult_short=1.4` vs `stop_atr_mult_long=2.5` (Faz 320/368'den kalma R:R asimetrisi). Kullanıcı SHORT'u tamamen kapattı (`direction_trading_enabled`) + 3 bearish rejimi dashboard kartından kapattı — ikisi de doğrulandı, farklı ama tutarlı mekanizmalar (rejim kartı her iki yönü de bloklar, direction toggle sadece SHORT'u).
+- **Faz 421**: confidence≥0.7'de LONG için gerçek bir "sweet spot" bulundu (%85,2 kazanma, +$11,65/işlem, n=1260). Kullanıcı isteği: **"Confidence gate'ini buna göre yapılandır, canlıda 0.7 bulduğunda değerlendirsin."** Yeni `analytics/confidence_gate.py::is_confidence_trading_blocked()` + `min_confidence_gate_enabled`(varsayılan true)/`min_confidence_gate_min_confidence`(0.7) ayarları, `decision_recorder.py`'ye bağlandı. Hacim endişesi ("gate üzerine gate") gerçek simülasyonla giderildi: ~30/ay gerçek-execution sembolleri için hâlâ geçiyor (kullanıcının "ayda 10-20 yeter" barının üstünde).
+- **Faz 422**: GPT'nin Historical Analog eleştirisi doğrulanırken CANLI RİSK bulundu — `historical_analog_engine.py`'de sibling modülde (`agent_combination_reliability_gate.py`) zaten var olan `min_distinct_days=5` güvenlik ağı YOKTU; o an `gate_eligible=True` olan 4 analogun hepsi sadece `distinct_days=2`. `historical_analog_override_enabled=true` iken bu canlı risk taşıyordu. Eklendi, doğrulandı (gate_eligible 4→0).
+- **Faz 423**: Kullanıcı isteği "Aynı sinyallerse kaldıralım o halde" — `technical_agent.py`'de momentum/ema_alignment/bollinger_confirm/adx_strong_confirm, trend ile ~%100 korelasyonlu (Faz 368/411 ölçümü) olduğu için shadow_contributions'a alındı (feature_ic izlemesi devam, skora katkı sıfır). Sadece trend/market_structure/rsi_extreme/volume_confirmation/obv_divergence artık gerçek katkı veriyor.
+
+**2026-09-07 (devam) — Market State Faz 2 (tilt) açıldı + Settings API
+eksikliği + production users tablosu kirliliği bulundu/temizlendi.**
+Kullanıcı "yeteri kadar zaman geçmiştir" dedi, `market_state_tilt_
+enabled=true` yapıldı (guardian Faz 3 zaten 3 Eylül'den beri açıktı —
+Market State projesinin tüm katmanları artık canlı). Bunu yaparken 2 yan
+bulgu:
+1. `api/rest/settings.py::_validate()`'te market_state_tilt_enabled/
+   market_state_reversal_guardian_enabled/_min_confidence hiç yoktu
+   (dashboard'dan asla değiştirilemezlerdi) — 3 blok + test eklendi.
+2. **Production `users` tablosunda 1.245 sahte hesap bulundu** (en
+   yenisi 6 Eylül) — kök neden: ayar değiştirmek için kullanılan
+   "güvenli" TestClient+make_authed_headers() yöntemi pytest dışında
+   her seferinde gerçek DB'ye bir test-kullanıcısı yazıyormuş. Kullanıcı
+   onayıyla temizlendi (51 api_keys + 1244 users silindi), sadece gerçek
+   `admin` hesabı kaldı. Kök neden (kalıcı, kirletmeyen bir yardımcı
+   script) HENÜZ yazılmadı — bkz. memory `feedback_debug_scripts_must_
+   target_test_db` üçüncü olay + `project_open_items_2026_08_31`.
+
+**Açık/gözlem bekleyen:** SHORT geçici olarak kapalı (yeniden açma planı yok, gözlem sürüyor). WS disconnect düzelmesi (Faz 414) hâlâ taze logla doğrulanmadı. Kullanıcı iki büyük GPT mimari raporu daha paylaştı (Incremental Value/Conditional Lift/Pattern Coverage/Temporal Decay/Negative Evidence önerisi + OI/Funding/Liquidation/ATR/RSI-detay gibi yeni ham feature adayları, önceliklendirilmiş: ①OI+Funding+Price ②ATR/realized vol ③RSI ham+slope+divergence) — kullanıcının kendi çerçevesi gereği ("ilk fırsatta, detaylıca") bunlar TODO'ya (`project_open_items_2026_08_31.md`) detaylıca eklendi, HENÜZ uygulanmadı.
 
 **Faz 417 — Approvals sayfası sessizce boş görünüyordu.** Kullanıcı
 bulgusu: "Approvals kısmına uzun zamandır onay gelmiyor." Kök neden:
@@ -140,7 +167,11 @@ doğrulanmadı.
 1. macro'nun güven/doğruluk paradoksu (Faz 412) — Faz 411 sonrası taze
    veri biriktiğinde tekrar kontrol edilmeli.
 2. Faz 414'ün gerçekten WS disconnect sıklığını düşürdüğü — birkaç
-   günlük taze log ile doğrulanmalı, henüz yapılmadı.
+   günlük taze log ile doğrulanmalı, henüz yapılmadı. **İLK POZİTİF
+   SİNYAL (2026-09-07)**: scalp LONG (stop<%4,5, en overshoot-savunmasız
+   grup) deploy öncesi -$10,10/işlem (n=5801) → sonrası +$1,81/işlem
+   (n=577) — ama örneklem hâlâ küçük (~1,5 gün), kesin doğrulama için
+   birkaç gün daha gerekiyor.
 3. `close_due_positions_task`'ın bazı yoğun pencerelerde (Sep5 04:53-
    08:00) normal ~1-3dk yerine 15-25dk'da bir çalıştığı gözlemlendi —
    muhtemelen paylaşılan Binance rate limit + pozisyon sayısı (kod
