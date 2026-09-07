@@ -412,6 +412,9 @@ class ContextAdapter:
             higher_timeframe_trend=self._get(ctx, "higher_timeframe_trend", None),
             atr=self._get(ctx, "atr", 0.0),
             atr_expansion_ratio=self._get(ctx, "atr_expansion_ratio", None),
+            rsi_slope=self._get(ctx, "rsi_slope", None),
+            rsi_percentile=self._get(ctx, "rsi_percentile", None),
+            rsi_divergence=self._get(ctx, "rsi_divergence", "none"),
         )
 
     def _compute_market_regime(self, ctx: CognitiveCycleContext) -> str:

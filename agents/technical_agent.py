@@ -190,6 +190,18 @@ class TechnicalAgent:
                     "volatilite azalıyor, gözlem-only"
                 )
 
+        # Faz 438 (2026-09-07) — kullanıcı önceliği ③: RSI ıraksaması.
+        # AYNI ilke: price_obv_divergence'ın AKSİNE (o, KANITLANMIŞ bir
+        # skorlu sinyal — contributions'a giriyor) rsi_divergence hiç
+        # skorlanmamıştı, henüz kanıt yok — SADECE caveat, feature_
+        # contributions'a girmiyor. rsi_slope/rsi_percentile'ın kendisi
+        # ctx.market.features üzerinden zaten gözlemleniyor (market_
+        # snapshot'ta), burada ayrıca bir caveat metnine ihtiyaçları yok.
+        if context.rsi_divergence == "bearish_divergence":
+            caveats.append("Fiyat yükseliyor ama RSI düşüyor — düşüş yönlü momentum ıraksaması, gözlem-only")
+        elif context.rsi_divergence == "bullish_divergence":
+            caveats.append("Fiyat düşüyor ama RSI yükseliyor — yükseliş yönlü momentum ıraksaması, gözlem-only")
+
         # Faz 237: Bollinger Bands — bandın DIŞINA taşmak (percent_b<0 ya da
         # >1) genelde ya gerçek bir kırılım ya da aşırı-uzama/dönüş adayı;
         # burada "mean-reversion" yorumuyla DEĞİL, mevcut trend'i DOĞRULAYAN

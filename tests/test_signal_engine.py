@@ -842,3 +842,50 @@ def test_atr_expansion_ratio_is_below_1_when_recent_volatility_is_narrower():
 def test_atr_expansion_ratio_is_none_with_insufficient_bars():
     result = compute_technical_signals(_bars([100.0] * 3))
     assert result["atr_expansion_ratio"] is None
+
+
+def _monotonic_rising(start: float, step: float, length: int) -> list[float]:
+    return [start + i * step for i in range(length)]
+
+
+def test_rsi_slope_is_positive_when_recent_gains_accelerate():
+    """Faz 438 (2026-09-07) — kullanıcı önceliği ③: rsi_value zaten
+    akıyordu, slope/percentile/divergence hiç yoktu. 30 bar düşüş,
+    ardından 15 bar SAF yükseliş -> "şimdi" penceresi (son 15 bar)
+    tamamen yükseliş segmentinde (RSI=100), "10 bar önce" penceresi
+    (closes[:-10]'un son 15'i) düşüş+yükselişin karışımı (RSI<100) ->
+    pozitif eğim."""
+    declining = [100.0 - i * 0.5 for i in range(30)]
+    rising = [declining[-1] + i * 1.0 for i in range(1, 16)]
+    result = compute_technical_signals(_bars(declining + rising))
+    assert result["rsi_slope"] is not None
+    assert result["rsi_slope"] > 0
+
+
+def test_rsi_percentile_is_between_0_and_1():
+    closes = _oscillating_trend(100, 0.5, 80)
+    result = compute_technical_signals(_bars(closes))
+    assert result["rsi_percentile"] is not None
+    assert 0.0 <= result["rsi_percentile"] <= 1.0
+
+
+def test_rsi_bearish_divergence_when_price_rises_but_rsi_falls():
+    """Fiyat son 10 barda net yükseliyor ama ivme kaybediyor (RSI
+    düşüyor) — _obv_signal'daki AYNI ıraksama mantığı, RSI'ye
+    uygulanmış. 30 bar SAF (güçlü) yükseliş (RSI~100'e doyar), ardından
+    15 bar zayıf-ama-net-pozitif bir 'topallama' (küçük geri çekilmelerle
+    -> RSI 100'ün epey altına düşer, ama fiyat yine de net yukarı)."""
+    strong = [100.0 + i * 1.0 for i in range(30)]
+    weak_tail = [strong[-1]]
+    step_pattern = [0.5, 0.5, -0.3]
+    for i in range(15):
+        weak_tail.append(weak_tail[-1] + step_pattern[i % len(step_pattern)])
+    result = compute_technical_signals(_bars(strong + weak_tail[1:]))
+    assert result["rsi_divergence"] == "bearish_divergence"
+
+
+def test_rsi_detail_fields_are_none_with_insufficient_bars():
+    result = compute_technical_signals(_bars([100.0] * 3))
+    assert result["rsi_slope"] is None
+    assert result["rsi_percentile"] is None
+    assert result["rsi_divergence"] == "none"

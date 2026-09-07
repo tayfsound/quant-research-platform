@@ -52,3 +52,12 @@ class TechnicalContext(BaseModel):
     # genişliyor, <1 daralıyor, None hesaplanamadıysa (fail-closed).
     atr: float = 0.0
     atr_expansion_ratio: float | None = None
+    # Faz 438 (2026-09-07) — kullanıcı önceliği ③: rsi_value (yukarıda)
+    # zaten akıyordu, sadece <25/>75 eşik-only kullanılıyordu. slope
+    # (son 10 barlık RSI değişimi), percentile (kendi son 50 barlık
+    # dağılımı içindeki yeri, 0-1) ve divergence (fiyatla RSI'nin ters
+    # yöne gitmesi — price_obv_divergence ile AYNI ilke, RSI'ye
+    # uygulanmış) YENİ türetilmiş istatistikler.
+    rsi_slope: float | None = None
+    rsi_percentile: float | None = None
+    rsi_divergence: str = "none"  # "bullish_divergence" | "bearish_divergence" | "none"

@@ -267,6 +267,25 @@ etki (testle doğrulandı). Gerçek veriyle (BTCUSDT 100 gerçek 1m mum)
 doğrulandı: atr_expansion_ratio=1,26. 14 yeni test + 147 bağımlı test
 geçti.
 
+**2026-09-07 (devam) — Faz 438: RSI slope + percentile + divergence
+(kullanıcı önceliği ③). Ham feature planının küçük kısmı TAMAMEN
+bitti (Faz 436-438) — büyükler (liquidation Faz 439, basis/premium Faz
+440) TODO'da bekliyor, sırada kullanıcının yön-tahmini konusu var.**
+
+`signal_engine.py::_rsi_detail()` (yeni) — `_rsi()`'yi farklı
+pencerelerde tekrar çağırarak (yeni bir hesap makinesi değil) slope
+(son 10 bar), percentile (kendi son 50 barlık dağılımı içindeki yeri,
+0-1) ve divergence (`_obv_signal()` ile AYNI ilke — fiyat bir yöne,
+RSI ters yöne) üretiyor. `contracts/technical.py` + `context_adapter.py`
+alanları taşıyor. `technical_agent.py`'ye SADECE `rsi_divergence` için
+caveat eklendi (Faz 437 ile AYNI ilke — `price_obv_divergence`'ın
+AKSİNE bu hiç skorlanmamıştı, icat edilmiş bir işaret verilmedi);
+slope/percentile'ın kendisi `ctx.market.features` üzerinden zaten
+gözlemleniyor, ayrı bir caveat metni gerekmiyor. Gerçek veriyle
+(BTCUSDT) doğrulandı: RSI=11,98 (aşırı satım), rsi_percentile=0,0
+(kendi son dağılımının dibinde) — tutarlı, anlamlı. 18 yeni test + 156
+bağımlı test geçti.
+
 **Açık/gözlem bekleyen:** SHORT geçici olarak kapalı (yeniden açma planı yok, gözlem sürüyor). WS disconnect düzelmesi (Faz 414) hâlâ taze logla doğrulanmadı. Kullanıcı iki büyük GPT mimari raporu daha paylaştı (Incremental Value/Conditional Lift/Pattern Coverage/Temporal Decay/Negative Evidence önerisi + OI/Funding/Liquidation/ATR/RSI-detay gibi yeni ham feature adayları, önceliklendirilmiş: ①OI+Funding+Price ②ATR/realized vol ③RSI ham+slope+divergence) — kullanıcının kendi çerçevesi gereği ("ilk fırsatta, detaylıca") bunlar TODO'ya (`project_open_items_2026_08_31.md`) detaylıca eklendi, HENÜZ uygulanmadı.
 
 **Faz 417 — Approvals sayfası sessizce boş görünüyordu.** Kullanıcı

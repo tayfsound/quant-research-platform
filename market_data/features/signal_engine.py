@@ -64,6 +64,7 @@ def compute_technical_signals(data: list[OHLCV]) -> dict:
             "trend": "neutral", "momentum": "neutral", "market_structure": "neutral",
             "ema_alignment": "neutral", "volatility_regime": "normal", "volume_confirmation": False,
             "atr": 0.0, "atr_expansion_ratio": None,
+            "rsi_slope": None, "rsi_percentile": None, "rsi_divergence": "none",
             "bollinger_percent_b": 0.5, "bollinger_bandwidth": 0.0, "vwap_deviation_pct": 0.0,
             "adx": 0.0, "di_plus": 0.0, "di_minus": 0.0,
             "obv_trend": "flat", "price_obv_divergence": "none",
@@ -126,6 +127,7 @@ def compute_technical_signals(data: list[OHLCV]) -> dict:
     # (fail-closed, icat edilmiş bir oran asla üretilmez).
     atr_long = _atr(data, min(50, n - 1))
     atr_expansion_ratio = round(atr_value / atr_long, 4) if atr_long > 0 else None
+    rsi_detail = _rsi_detail(closes, period)
 
     # Faz 237: kullanıcı isteği — "eklenebilecek bütün teknik analiz
     # yöntemlerini ekleyelim eğer matematiksel bir yöntemse." Bollinger/
@@ -156,6 +158,9 @@ def compute_technical_signals(data: list[OHLCV]) -> dict:
         "volume_confirmation": volume_confirmation,
         "atr": round(float(atr_value), 6),
         "atr_expansion_ratio": atr_expansion_ratio,
+        "rsi_slope": rsi_detail["rsi_slope"],
+        "rsi_percentile": rsi_detail["rsi_percentile"],
+        "rsi_divergence": rsi_detail["rsi_divergence"],
         "bollinger_percent_b": round(float(bollinger_percent_b), 3),
         "bollinger_bandwidth": round(float(bollinger_bandwidth), 4),
         "vwap_deviation_pct": round(float(vwap_deviation_pct), 4),
@@ -304,6 +309,47 @@ def _rsi(closes: np.ndarray, period: int) -> float:
         return 100.0
     rs = avg_gain / avg_loss
     return 100.0 - (100.0 / (1.0 + rs))
+
+
+# Faz 438 (2026-09-07) — kullanıcı önceliği ③: RSI ham değeri zaten
+# TechnicalContext.rsi_value'da akıyordu, sadece <25/>75 eşiği
+# kullanılıyordu. slope/percentile/divergence YENİ veri DEĞİL, aynı
+# _rsi()'nin farklı pencerelerde tekrar çağrılmasından türetiliyor —
+# _obv_signal()'ın AYNI "kendi son penceredeki değişim + fiyatla
+# ıraksama" ilkesi, RSI'ye uygulanmış.
+_RSI_DIVERGENCE_WINDOW = 10
+_RSI_PERCENTILE_LOOKBACK = 50
+
+
+def _rsi_detail(closes: np.ndarray, period: int) -> dict:
+    """rsi_slope: son `_RSI_DIVERGENCE_WINDOW` bar içindeki RSI değişimi.
+    rsi_percentile: mevcut RSI'nin, kendi son `_RSI_PERCENTILE_LOOKBACK`
+    barlık dağılımı içindeki yüzdelik dilimi (0-1). rsi_divergence:
+    fiyat bir yöne giderken RSI TERS yöne gidiyorsa (_obv_signal ile
+    AYNI mantık). Yeterli veri yoksa (fail-closed) None/'none' döner —
+    icat edilmiş bir eğim/yüzdelik/ıraksama asla üretilmez."""
+    window = _RSI_DIVERGENCE_WINDOW
+    min_needed = period + window + 1
+    if len(closes) < min_needed:
+        return {"rsi_slope": None, "rsi_percentile": None, "rsi_divergence": "none"}
+
+    rsi_now = _rsi(closes, period)
+    rsi_earlier = _rsi(closes[:-window], period)
+    rsi_slope = round(float(rsi_now - rsi_earlier), 4)
+
+    price_change = closes[-1] - closes[-1 - window]
+    if price_change > 0 and rsi_slope < 0:
+        divergence = "bearish_divergence"
+    elif price_change < 0 and rsi_slope > 0:
+        divergence = "bullish_divergence"
+    else:
+        divergence = "none"
+
+    lookback = min(_RSI_PERCENTILE_LOOKBACK, len(closes) - period - 1)
+    rsi_series = [_rsi(closes[: period + 1 + i], period) for i in range(lookback + 1)]
+    percentile = round(sum(1 for v in rsi_series if v <= rsi_now) / len(rsi_series), 4)
+
+    return {"rsi_slope": rsi_slope, "rsi_percentile": percentile, "rsi_divergence": divergence}
 
 
 def _atr(data: list[OHLCV], period: int) -> float:
