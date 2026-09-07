@@ -50,11 +50,19 @@ def compute_granger_causality(
 
     # statsmodels'in lag anahtarları numpy int64 — JSON'a (ve JSONB
     # kolonlarına) sessizce yazılamıyor, düz Python int'e çevriliyor.
+    # Faz 430 — kullanıcı isteği: "effect_size_stability" (GPT'nin
+    # ayrımı: p-value stability ≠ effect stability). ssr_ftest tuple'ı
+    # zaten (F-istatistiği, p-value, ...) döndürüyordu — p-value'nun
+    # YANINA F-istatistiğini de (0. indeks) topluyoruz, yeni bir hesap
+    # değil, zaten hesaplanmış bir değeri açığa çıkarmak.
     p_values_by_lag = {}
+    f_statistics_by_lag = {}
     for lag, (test_results, _) in results.items():
-        p_value = test_results.get("ssr_ftest", (None, None))[1]
+        f_stat, p_value = test_results.get("ssr_ftest", (None, None))[:2]
         if p_value is not None:
             p_values_by_lag[int(lag)] = round(float(p_value), 6)
+        if f_stat is not None:
+            f_statistics_by_lag[int(lag)] = round(float(f_stat), 6)
 
     if not p_values_by_lag:
         return None
@@ -66,6 +74,7 @@ def compute_granger_causality(
         "p_values_by_lag": p_values_by_lag,
         "best_lag": int(best_lag),
         "best_p_value": best_p_value,
+        "best_f_statistic": f_statistics_by_lag.get(best_lag),
         "granger_causes": bool(best_p_value < SIGNIFICANCE_LEVEL),
         "sample_size": len(cause_series),
     }

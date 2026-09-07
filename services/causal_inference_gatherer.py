@@ -62,17 +62,27 @@ def _attach_p_value_stability(relationships: list[dict], past_snapshots: list[di
     içindeki stabilitesini de ölçelim." SADECE gözlem — hiçbir ilişki
     filtrelenmiyor. Korelasyon stabilitesiyle AYNI mantık: bir nedensel
     ilişkinin p-değeri haftadan haftaya tutarlı mı yoksa şans eseri bir
-    kerelik mi görünüyor."""
-    past_by_pair: dict[str, list[float]] = {}
+    kerelik mi görünüyor.
+
+    Faz 430 — kullanıcı isteği: "effect_size_stability" (GPT'nin ayrımı:
+    p-value stability ≠ effect stability — bir ilişki her hafta p<0.05
+    kalıp ETKİ BÜYÜKLÜĞÜ (F-istatistiği) dramatik dalgalanabilir, ya da
+    tam tersi). AYNI past_snapshots taramasında, AYNI desenle best_f_
+    statistic serisi de toplanıyor — ikinci bir geçiş gerekmiyor."""
+    past_p_by_pair: dict[str, list[float]] = {}
+    past_f_by_pair: dict[str, list[float]] = {}
     for snap in past_snapshots:
         for r in (snap.get("result") or {}).get("significant_relationships") or []:
             key = f"{r['cause']}|{r['effect']}"
-            past_by_pair.setdefault(key, []).append(r.get("best_p_value"))
+            past_p_by_pair.setdefault(key, []).append(r.get("best_p_value"))
+            past_f_by_pair.setdefault(key, []).append(r.get("best_f_statistic"))
 
     for r in relationships:
         key = f"{r['cause']}|{r['effect']}"
-        series = [*past_by_pair.get(key, []), r.get("best_p_value")]
-        r["best_p_value_stability"] = compute_stability(series)
+        p_series = [*past_p_by_pair.get(key, []), r.get("best_p_value")]
+        r["best_p_value_stability"] = compute_stability(p_series)
+        f_series = [*past_f_by_pair.get(key, []), r.get("best_f_statistic")]
+        r["best_f_statistic_stability"] = compute_stability(f_series)
 
 
 def gather_causal_relationships() -> dict:
@@ -129,6 +139,7 @@ def gather_causal_relationships() -> dict:
             "effect": effect_symbol,
             "best_lag": result["best_lag"],
             "best_p_value": result["best_p_value"],
+            "best_f_statistic": result["best_f_statistic"],
             "sample_size": result["sample_size"],
             "fdr_significant": fdr_ok,
         }

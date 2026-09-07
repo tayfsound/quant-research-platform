@@ -71,3 +71,26 @@ def test_fdr_correction_all_null_hypothesis_rejects_almost_everything():
     fdr_flags = apply_fdr_correction(p_values)
 
     assert sum(fdr_flags) <= sum(naive_significant)
+
+
+def test_best_f_statistic_is_present_and_higher_for_a_stronger_relationship():
+    """Faz 430 — kullanıcı isteği: "effect_size_stability" (p-value
+    stability ≠ effect stability, GPT'nin ayrımı). best_f_statistic,
+    zaten hesaplanan ssr_ftest'in F-değerini açığa çıkarıyor — daha
+    güçlü/net bir nedensel ilişki daha yüksek bir F-istatistiği
+    üretmeli, iki bağımsız rastgele seri kıyasla."""
+    rng = np.random.default_rng(42)
+    n = 200
+    cause = rng.normal(0, 1, n)
+    strong_effect = np.zeros(n)
+    for t in range(1, n):
+        strong_effect[t] = 0.8 * cause[t - 1] + rng.normal(0, 0.1)
+    strong = compute_granger_causality(list(cause), list(strong_effect), max_lag=3)
+    assert strong["best_f_statistic"] is not None
+    assert strong["best_f_statistic"] > 0
+
+    independent = compute_granger_causality(
+        list(cause), list(rng.normal(0, 1, n)), max_lag=3,
+    )
+    assert independent["best_f_statistic"] is not None
+    assert strong["best_f_statistic"] > independent["best_f_statistic"]

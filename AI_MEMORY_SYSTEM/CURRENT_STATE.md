@@ -100,6 +100,27 @@ whistling-parasol.md`. Plan yazılırken kritik bir gerçek bulundu:
   güncellenen test + 119 bağımlı modül testi geçti, tam regresyon
   çalışıyor.
 
+**2026-09-07 (devam) — Faz 429: Ölçüm Stabilitesi'ne sign_consistency_pct.**
+`compute_stability()`'nin döndürdüğü dict'e (ayrı bir fonksiyon yerine)
+tek bir yeni alan eklendi — mean'in işaretiyle aynı işarette olan
+değerlerin oranı, CV'nin yakalayamadığı bir boyut (düşük CV ama
+sürekli işaret değiştiren bir seri). mean==0 iken CV ile AYNI ilke:
+None. ~16 gatherer'ın TAMAMI (feature_ic, market_state, historical_
+analog, agent_combination_reliability, vb.) sıfır ek wiring ile otomatik
+kazandı — `extract_stability_summary()` zaten dict'i olduğu gibi
+yayıyordu. 3 yeni test + 91 bağımlı test geçti, deploy edildi.
+
+**2026-09-07 (devam) — Faz 430: causal_inference'a effect_size_stability.**
+`compute_granger_causality()`'ye `best_f_statistic` eklendi — zaten
+statsmodels'in hesapladığı ssr_ftest F-değeri, yeni bir istatistik değil,
+sadece açığa çıkarıldı. `causal_inference_gatherer.py`'nin `_attach_p_
+value_stability()`'si AYNI taramada artık `best_f_statistic_stability`'yi
+de topluyor (compute_stability üzerinden, Faz 429'un yeni `sign_
+consistency_pct`'ini de otomatik kazanıyor). GPT'nin ayrımı: bir ilişki
+her hafta p<0.05 kalıp etki büyüklüğü dramatik dalgalanabilir — artık bu
+ayrı ayrı görünür. 1 yeni test + tüm wiring/research_summary testleri
+geçti (gerçek piyasa verisiyle, ~4dk).
+
 **Açık/gözlem bekleyen:** SHORT geçici olarak kapalı (yeniden açma planı yok, gözlem sürüyor). WS disconnect düzelmesi (Faz 414) hâlâ taze logla doğrulanmadı. Kullanıcı iki büyük GPT mimari raporu daha paylaştı (Incremental Value/Conditional Lift/Pattern Coverage/Temporal Decay/Negative Evidence önerisi + OI/Funding/Liquidation/ATR/RSI-detay gibi yeni ham feature adayları, önceliklendirilmiş: ①OI+Funding+Price ②ATR/realized vol ③RSI ham+slope+divergence) — kullanıcının kendi çerçevesi gereği ("ilk fırsatta, detaylıca") bunlar TODO'ya (`project_open_items_2026_08_31.md`) detaylıca eklendi, HENÜZ uygulanmadı.
 
 **Faz 417 — Approvals sayfası sessizce boş görünüyordu.** Kullanıcı
