@@ -271,6 +271,33 @@ def build_cognitive_context(
     ctx.market.features["high_impact_event_imminent"] = compute_event_proximity(
         datetime.now(UTC)
     )["high_impact_event_imminent"]
+    # Faz 436 (2026-09-07) — kullanıcı önceliği ①: OI+Funding+Price'ı
+    # BİRLİKTE değerlendiren gözlem-only sinyal (bkz. market_data/
+    # features/order_flow_relationship.py'nin modül notu — funding_rate
+    # TEK BAŞINA Faz 411'de gürültü bulunmuştu, BİRLİKTE anlamlı olup
+    # olmadığı henüz test edilmedi). data_quality_score/high_impact_
+    # event_imminent İLE AYNI desen: sadece ctx.market.features'a
+    # yazılıyor, hiçbir agent'ın skoruna girmiyor. order_book_snapshots
+    # bulunamazsa (yeni sembol, DB hıçkırığı) fail-closed "unclear" —
+    # cycle asla bu yüzden patlamaz.
+    try:
+        from contracts.market_data import DataSource
+        from database.repositories.market_data_repository import MarketDataRepository
+        from database.session_factory import SessionFactory
+        from market_data.features.order_flow_relationship import compute_order_flow_relationship
+
+        with SessionFactory.get_session() as session:
+            recent_snapshots = MarketDataRepository(session).get_recent_order_book_snapshots(
+                DataSource.BINANCE, symbol, limit=50,
+            )
+        relationship = compute_order_flow_relationship(recent_snapshots)
+    except Exception:
+        relationship = None
+    if relationship is not None:
+        ctx.market.features["order_flow_relationship_category"] = relationship["category"]
+        ctx.market.features["order_flow_relationship_price_change_pct"] = relationship["price_change_pct"]
+        ctx.market.features["order_flow_relationship_oi_change_pct"] = relationship["oi_change_pct"]
+        ctx.market.features["order_flow_relationship_funding_rate"] = relationship["funding_rate"]
     # Faz 251: kullanıcı kararı — risk (stop/target) ölçeklendirmesi sinyal
     # zaman diliminden (genelde 1m, gürültü seviyesinde ATR) bağımsız,
     # daha yavaş bir bar setinden türetiliyor (bkz. signal_engine.

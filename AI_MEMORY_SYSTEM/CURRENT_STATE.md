@@ -211,6 +211,46 @@ alınamadı (bu oturumun araç setinde tarayıcı/screenshot aracı yok) —
 TypeScript derlemesi + vite'ın dosyayı hatasız servis etmesiyle
 doğrulandı, kullanıcının kendi gözüyle kontrol etmesi önerilir.
 
+**2026-09-07 (devam) — Faz 436: OI+Funding+Price BİRLİKTE ilişkisi
+(kullanıcı önceliği ①, "yeni ham feature ingestion'ı kurmaya şimdi
+başlayalım"). Onaylı plan: `~/.claude/plans/velvety-whistling-parasol.md`
+(2. plan, Ölçüm Stabilitesi/Tarihsel Analog planının üzerine yazıldı).**
+
+Plan yazılmadan önce kritik gerçekler bulundu: (1) OI+funding zaten
+canlı akıyor (`ingest_order_book_task`, 20sn hedef kadans) — sadece
+BİRLİKTE değerlendirilmiyor, `funding_rate` Faz 411'de TEK BAŞINA
+gürültü bulunup kaldırılmıştı; (2) `binance_liquidation_listener.py`
+(Faz 365) 11+ gündür kesintisiz bağlanıyor (434 bağlantı, SIFIR hata)
+ama `liquidation_events` **0 satır** — MempoolAgent/BehavioralAgent'ta
+zaten bilinen coğrafi WS kısıtlamasıyla AYNI imza olabilir (kullanıcı
+VPN/spoofing önerdi, ToS ihlali riski nedeniyle YAPILMADI, önce kök
+neden netleştirilmeli — REST çalışıp WS çalışmaması saf geo-blok
+teorisiyle tam örtüşmüyor, açık soru); (3) basis/premium için hiç
+altyapı yok; (4) ATR ham değeri zaten hesaplanıyor ama hiçbir agent'a
+ulaşmıyor; (5) RSI ham değeri zaten `TechnicalContext.rsi_value`'da
+akıyor, sadece eşik-only kullanılıyor.
+
+Faz 436 uygulandı: `database/repositories/market_data_repository.py::
+get_recent_order_book_snapshots()` (yeni) + `market_data/features/
+order_flow_relationship.py::compute_order_flow_relationship()` (saf
+fonksiyon — fiyat/OI/funding üçlüsünü bullish_new_longs/bullish_short_
+covering/bearish_new_shorts/bearish_long_capitulation/unclear'a
+ayırıyor) + `services/orchestrator.py` (sonucu `ctx.market.features`'a
+ekliyor — data_quality_score İLE AYNI desen, GÖZLEM-ONLY, hiçbir
+agent'ın skoruna girmiyor, try/except ile cycle'ı asla patlatmıyor).
+
+Gerçek veriyle doğrulandı: BTC/ETH/SOL/DOGE/PEPE/WIF'in ~2 saatlik
+pencerelerinde hepsi "unclear" çıktı — OI değişimi %2 eşiğinin
+(open_interest_trend ile AYNI, mevcut) altında kalıyor. Bu bir hata
+değil, dürüst bir gözlem — eşik gerçek dağılıma göre kalibre edilmemiş
+olabilir, veri biriktikçe (haftalar) ayrıca değerlendirilecek, şimdi
+kör ayarlanmadı.
+
+24 yeni test (9 saf fonksiyon + 2 repository + 2 orchestrator wiring +
+mevcut dosyalara eklenenler) + 73+62 bağımlı test dosyası geçti (1
+bilinen/ilgisiz flaky: test_memory_engine_wiring.py, torch/mock state
+sızıntısı, izole çalıştırılınca geçiyor).
+
 **Açık/gözlem bekleyen:** SHORT geçici olarak kapalı (yeniden açma planı yok, gözlem sürüyor). WS disconnect düzelmesi (Faz 414) hâlâ taze logla doğrulanmadı. Kullanıcı iki büyük GPT mimari raporu daha paylaştı (Incremental Value/Conditional Lift/Pattern Coverage/Temporal Decay/Negative Evidence önerisi + OI/Funding/Liquidation/ATR/RSI-detay gibi yeni ham feature adayları, önceliklendirilmiş: ①OI+Funding+Price ②ATR/realized vol ③RSI ham+slope+divergence) — kullanıcının kendi çerçevesi gereği ("ilk fırsatta, detaylıca") bunlar TODO'ya (`project_open_items_2026_08_31.md`) detaylıca eklendi, HENÜZ uygulanmadı.
 
 **Faz 417 — Approvals sayfası sessizce boş görünüyordu.** Kullanıcı

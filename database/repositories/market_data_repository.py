@@ -186,3 +186,21 @@ class MarketDataRepository:
             {"exchange": exchange.value, "symbol": symbol},
         ).mappings().first()
         return dict(row) if row else None
+
+    # Faz 436 (2026-09-07) — kullanıcı isteği: OI+Funding+Price'ı BİRLİKTE
+    # değerlendirmek için (fiyat, open_interest, funding_rate hepsi bu
+    # tabloda AYNI satırda zaten var) bir zaman serisi lazım —
+    # get_latest_order_book_snapshot tek satır dönüyordu, yeterli değildi.
+    def get_recent_order_book_snapshots(self, exchange: DataSource, symbol: str, limit: int = 50) -> list[dict]:
+        """En yeniden en eskiye (time DESC) sıralı — çağıran gerekirse
+        kendi kronolojik sırasına çevirir (agent_combination_reliability.py
+        vb.'nin AYNI "en yeni N, çağıran sıralar" deseni)."""
+        rows = self.session.execute(
+            text("""
+                SELECT * FROM order_book_snapshots
+                WHERE exchange = :exchange AND symbol = :symbol
+                ORDER BY time DESC LIMIT :limit
+            """),
+            {"exchange": exchange.value, "symbol": symbol, "limit": limit},
+        ).mappings().all()
+        return [dict(r) for r in rows]
