@@ -385,23 +385,11 @@ DEFAULTS: dict[str, str] = {
     # zaman dilimi. Günlük varsayılan: en sakin/en az gürültülü sinyal.
     "medium_term_timeframe": "1d",
     "medium_term_max_concurrent": "5",
-    # Faz 268c — "İsabeti artırmanın yolu daha akıllı kullanım" yol
-    # haritasının Faz C'si (Multi-Timeframe Cascade). Kullanıcı kararı:
-    # raporun önerdiği TAM versiyon (üst zaman dilimlerinde de gerçek
-    # CognitiveEngine çalıştırılıyor, embedding dahil) — bu, canlı
-    # cycle'ı sembol başına ~3 katına çıkarabilir. Varsayılan kapalı
-    # (medium_term_enabled ile aynı opt-in desen) — kullanıcı kaynak/
-    # gecikme etkisini gördükten sonra açıp kapatabilsin.
-    "multi_timeframe_cascade_enabled": "false",
-    "multi_timeframe_cascade_timeframes": "15m,1h",
-    # Faz 250: Live A/B Testing Framework. Açıksa multi_timeframe_cascade_
-    # enabled'ın statik açık/kapalı anahtarı yerine, HER sembol/cycle
-    # bağımsız olarak rastgele control (cascade kapalı)/treatment (cascade
-    # açık) kovasına atanır ve decisions.experiment_bucket'a etiketlenir —
-    # services/ab_testing.py::evaluate_experiment gerçek kapanmış
-    # işlemlerle Welch's t-test karşılaştırması yapabilsin diye.
-    # Varsayılan kapalı — opt-in, mevcut davranış hiç değişmez.
-    "multi_timeframe_cascade_ab_test_enabled": "false",
+    # Faz 268c'nin Multi-Timeframe Cascade ayarları (multi_timeframe_
+    # cascade_enabled / _timeframes / _ab_test_enabled) Faz 457'de
+    # KALDIRILDI — mekanizmanın kendisi mimariden çıktı (ölçülen fayda
+    # yok, sembol başına ~3 kat CognitiveEngine maliyeti vardı; bkz.
+    # services/orchestrator.py::run_portfolio_aware_cycle docstring'i).
     # Faz 268-sonrası — kullanıcı isteği: Adaptive Barrier Engine'i
     # (analytics/adaptive_barrier_engine.py, MAE/MFE'nin GERÇEK koşullu
     # dağılımından türetilen SL/TP önerisi) RiskTargetStage'e wire
@@ -416,8 +404,9 @@ DEFAULTS: dict[str, str] = {
     # Faz 269-sonrası — 3. taraf inceleme bulgusu: adaptive_barrier_enabled
     # AÇIK olduğu için, barrier tablosu ilk kez dolduğu an (şu an 100/200
     # gerçek kapanış — yakında) sistem HİÇ karşılaştırma fırsatı olmadan
-    # anında %100 adaptive'e geçecekti. multi_timeframe_cascade_ab_test_
-    # enabled ile AYNI desen: açıksa statik anahtarın yerine HER karar
+    # anında %100 adaptive'e geçecekti. (O zamanki multi_timeframe_
+    # cascade_ab_test_enabled ile AYNI desen — o ayar Faz 457'de kalktı,
+    # bu duruyor.) Açıksa statik anahtarın yerine HER karar
     # bağımsız rastgele control (statik ATR)/treatment (adaptive, tablo
     # varsa) kovasına atanır, decisions.experiment_bucket'a etiketlenir —
     # services/ab_testing.py::evaluate_experiment gerçek kapanmış

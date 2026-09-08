@@ -148,53 +148,6 @@ def _get_risk_bars_cached(data_provider, symbol: str, timeframe: str = "1d", lim
     return bars
 
 
-def _combine_timeframe_beliefs(timeframe_beliefs: dict[str, dict]) -> dict:
-    """Faz 268c — Multi-Timeframe Cascade (yol haritası Faz C). Bağımsız
-    kanıt varsayımıyla basit Bayesian birleştirme:
-    P(LONG | tf1, tf2, ...) ∝ P(LONG|tf1) × P(LONG|tf2) × ... (prior 0.5/0.5).
-    WAIT/NEUTRAL diyen bir zaman dilimi hiçbir bilgi vermiyor sayılır —
-    çarpıma dahil edilmez (WAIT bir yön tahmini değil, Faz245 ile aynı ilke)."""
-    long_product = 1.0
-    short_product = 1.0
-    informative_count = 0
-
-    for belief in timeframe_beliefs.values():
-        direction = belief.get("direction", "NEUTRAL")
-        # 0.0/1.0'a hiç yaklaşmayan bir sınır — tek bir zaman diliminin
-        # ürünü tamamen sıfırlamasını/domine etmesini engelliyor.
-        confidence = max(0.01, min(0.99, belief.get("confidence") or 0.0))
-        if direction == "LONG":
-            long_product *= confidence
-            short_product *= (1 - confidence)
-            informative_count += 1
-        elif direction == "SHORT":
-            short_product *= confidence
-            long_product *= (1 - confidence)
-            informative_count += 1
-
-    if informative_count == 0:
-        return {
-            "combined_direction": None, "combined_confidence": 0.0,
-            "agreement_count": 0, "total_informative": 0,
-        }
-
-    total = long_product + short_product
-    p_long = (long_product / total) if total > 0 else 0.5
-    p_short = 1 - p_long
-    combined_direction = "LONG" if p_long >= p_short else "SHORT"
-    combined_confidence = round(max(p_long, p_short), 3)
-    agreement_count = sum(
-        1 for b in timeframe_beliefs.values() if b.get("direction") == combined_direction
-    )
-
-    return {
-        "combined_direction": combined_direction,
-        "combined_confidence": combined_confidence,
-        "agreement_count": agreement_count,
-        "total_informative": informative_count,
-    }
-
-
 def _get_daily_bars_cached(data_provider, symbol: str) -> list:
     """Orta-vadeli katman (propose_medium_term) için gerçek günlük bar —
     kısa-vadeli katman artık _get_risk_bars_cached(..., timeframe="4h")
@@ -571,101 +524,6 @@ class CognitiveOrchestrator:
 
         return {"ctx": ctx, "data": data, "fee": fee, "direction": direction}
 
-    def propose_multi_timeframe(self, symbol: str, timeframes: list[str] | None = None) -> dict | None:
-        """Faz 268c — "İsabeti artırmanın yolu daha akıllı kullanım" yol
-        haritasının Faz C'si (Multi-Timeframe Cascade). Rapor: "1m LONG +
-        15m LONG + 1h LONG üçlüsü, yalnızca 1m LONG'dan çok daha güçlü bir
-        konviksiyon demektir — şu an bu bilgi Council'a hiç ulaşmıyor."
-
-        propose()'un aynısı (birincil karar, GERÇEKTEN açılan pozisyon
-        buradan gelir) — TEK fark: council'e geçmeden ÖNCE, üst zaman
-        dilimlerinde (varsayılan 15m/1h) çalıştırılan AYRI, TAM
-        CognitiveEngine geçişlerinden (embedding dahil) çıkan yönler
-        Bayesian olarak birleştirilip ctx.cognition.relevant_knowledge'a
-        "timeframe_belief" olarak ekleniyor — Metacognition.evaluate_
-        confidence() bunu okuyup birincil yönle UYUŞUYORSA confidence'ı
-        yukarı, ÇELİŞİYORSA aşağı çekiyor (bkz. o metodun docstring'i).
-
-        Kullanıcı kararı: raporun önerdiği TAM versiyon — üst zaman
-        dilimleri de gerçek council çalıştırıyor, deterministik/ucuz bir
-        yaklaşım değil. Bilinçli maliyet: sembol başına ~3 kat CognitiveEngine
-        çağrısı. Bu yüzden varsayılan KAPALI (app_settings.multi_timeframe_
-        cascade_enabled) — medium_term_enabled ile aynı opt-in desen."""
-        from database.repositories.app_settings_repository import AppSettingsRepository
-        from database.session_factory import SessionFactory
-
-        with SessionFactory.get_session() as session:
-            settings_repo = AppSettingsRepository(session)
-            primary_timeframe = settings_repo.get("candle_timeframe")
-            lookback = int(settings_repo.get("candle_lookback"))
-            medium_term_enabled = settings_repo.get("medium_term_enabled") == "true"
-            medium_term_timeframe = settings_repo.get("medium_term_timeframe")
-            cascade_timeframes_raw = settings_repo.get("multi_timeframe_cascade_timeframes")
-
-        if timeframes is None:
-            timeframes = [tf.strip() for tf in cascade_timeframes_raw.split(",") if tf.strip()]
-
-        # 1. Üst zaman dilimleri — bunlar hiçbir zaman kendi başlarına
-        #    pozisyon açmaz, sadece "kaç zaman diliminde de aynı yön
-        #    teyit ediliyor" bilgisini üretir. Basit, sabit bir risk
-        #    tabanı (4h) yeterli — bu koşuların stop/target'ı hiç
-        #    kullanılmıyor, sadece proposed_direction/confidence okunuyor.
-        timeframe_beliefs: dict[str, dict] = {}
-        for tf in timeframes:
-            if tf == primary_timeframe:
-                continue
-            data_tf = self.data_provider.get_ohlcv(symbol, tf, limit=lookback)
-            if not data_tf:
-                continue
-            risk_data_tf = _get_risk_bars_cached(self.data_provider, symbol, timeframe="4h", limit=60)
-            ctx_tf = self._build_context(symbol, tf, data_tf, daily_data=risk_data_tf)
-            ctx_tf = self.engine.run(ctx_tf, persist=False)
-            timeframe_beliefs[tf] = {
-                "direction": ctx_tf.decision.proposed_direction or "NEUTRAL",
-                "confidence": ctx_tf.decision.confidence or 0.0,
-            }
-
-        combined = _combine_timeframe_beliefs(timeframe_beliefs)
-
-        # 2. Birincil zaman dilimi — propose() ile AYNI mantık, tek fark
-        #    aşağıdaki relevant_knowledge enjeksiyonu, engine.run()'dan ÖNCE.
-        data = self.data_provider.get_ohlcv(symbol, primary_timeframe, limit=lookback)
-        if not data:
-            return None
-
-        # Faz 317-sonrası — trade_horizon ayarı kaldırıldı (bkz. propose()
-        # üstündeki AYNI not), sabit 4h.
-        risk_timeframe = "4h"
-        risk_data = _get_risk_bars_cached(self.data_provider, symbol, timeframe=risk_timeframe, limit=60)
-
-        ctx = self._build_context(
-            symbol,
-            primary_timeframe,
-            data,
-            daily_data=risk_data,
-            exclude_timeframe=medium_term_timeframe if medium_term_enabled else None,
-        )
-        ctx.cognition.relevant_knowledge.append({
-            "type": "timeframe_belief",
-            "data": {"per_timeframe": timeframe_beliefs, **combined},
-        })
-        ctx = self.engine.run(ctx, persist=False)
-        _observe_decision_latency(symbol, data[-1].timestamp)
-
-        market_price = data[-1].close
-        direction = ctx.decision.proposed_direction if ctx.decision.proposed_direction else "NEUTRAL"
-        size = ctx.decision.final_size if ctx.decision.final_size else 0.0
-
-        if direction != "NEUTRAL" and size > 0:
-            result = self.fill_engine.simulate({"direction": direction, "size": size}, market_price)
-            filled_price, fee = result.filled_price, result.fee
-        else:
-            filled_price, fee = market_price, 0.0
-
-        ctx.decision.filled_price = filled_price
-
-        return {"ctx": ctx, "data": data, "fee": fee, "direction": direction}
-
     def propose_medium_term(self, symbol: str) -> dict | None:
         """Faz 259: kullanıcı isteği — "predictions WAIT döndüğünde uygun
         zamanda ai büyük pozisyonlara girsin, orta vadeli, günler/haftalar
@@ -867,31 +725,25 @@ class CognitiveOrchestrator:
         şekilde küçültülüyor — "sinyal limitleri gevşetemez" kuralı burada
         da geçerli, sadece küçültebiliyor.
 
-        Faz 268c — Multi-Timeframe Cascade varsayılan kapalı (app_settings.
-        multi_timeframe_cascade_enabled) — açıksa propose() yerine
-        propose_multi_timeframe() kullanılır (sembol başına ~3 kat
-        CognitiveEngine maliyeti, kullanıcı kararıyla kabul edildi).
-
-        Faz 250 — Live A/B Testing Framework: multi_timeframe_cascade_
-        ab_test_enabled açıksa, statik açık/kapalı anahtarı yerine HER
-        sembol bağımsız olarak rastgele control (cascade kapalı)/treatment
-        (cascade açık) kovasına atanır ve kararı decisions.experiment_
-        bucket'a etiketlenir — services/ab_testing.py::evaluate_experiment
-        gerçek kapanmış işlemlerle karşılaştırabilsin diye. Varsayılan
-        kapalı, açıkken de statik ayarı GEÇERSİZ KILAR (ikisi aynı anda
-        anlamsız olurdu)."""
-        from database.repositories.app_settings_repository import AppSettingsRepository
-        from database.session_factory import SessionFactory
-
-        with SessionFactory.get_session() as session:
-            settings_repo = AppSettingsRepository(session)
-            cascade_enabled = settings_repo.get("multi_timeframe_cascade_enabled") == "true"
-            ab_test_enabled = settings_repo.get("multi_timeframe_cascade_ab_test_enabled") == "true"
-
+        Faz 457 (2026-09-08) — Multi-Timeframe Cascade MİMARİDEN
+        KALDIRILDI. Gerçek ölçüm (Faz 448 + bugünkü hacim araştırması):
+        (a) MTF uzlaşmasının LONG'da hiçbir katkısı yoktu (uzlaşma %46,3
+        vs uzlaşmama %46,5), SHORT'ta ZARARLIYDI (uzlaşma anında isabet
+        %34,9 -- MTF hiç yokken %44,4); (b) karşılığında sembol başına
+        ~3 kat CognitiveEngine maliyeti getiriyordu (loglarda ölçüldü:
+        sembol başına 20-38sn, cascade kapalıyken ~7-12sn), 123 sembollük
+        bir döngüyü ~50 dakikaya çıkarıyor, 30 dakikalık cycle lock TTL'i
+        dolduğu için döngüler üst üste biniyor ve sistem fiilen hiç karar
+        üretemiyordu. Kullanıcı kararı: "faydası yoksa mimariden
+        temizleyelim." A/B test kancası da (multi_timeframe_cascade_ab_
+        test_enabled) aynı sebeple kaldırıldı -- test edecek bir treatment
+        kolu kalmadı."""
         # Faz 387 — kullanıcı isteği: trading cycle performans profillemesi
         # (~12.5dk'lık tam sweep'in nereye gittiğini ölçmek). Saf ölçüm —
-        # davranış DEĞİŞMEDİ, sadece sembol başına hangi yolun (cascade/
-        # plain) kullanıldığı ve gerçek geçen süre structlog'a düşüyor.
+        # davranış DEĞİŞMEDİ, sadece sembol başına gerçek geçen süre
+        # structlog'a düşüyor (Faz 457'ye kadar burada ayrıca hangi yolun
+        # -- cascade/plain -- seçildiği de loglanıyordu; cascade kalkınca
+        # tek yol kaldı).
         import time as _time
 
         import structlog as _structlog
@@ -899,22 +751,10 @@ class CognitiveOrchestrator:
         proposals: dict[str, dict] = {}
         for sym in symbols:
             _t0 = _time.monotonic()
-            if ab_test_enabled:
-                from services.ab_testing import assign_bucket
-                bucket = assign_bucket()
-                path = "cascade" if bucket == "treatment" else "plain"
-                p = self.propose_multi_timeframe(sym) if bucket == "treatment" else self.propose(sym)
-                if p is not None:
-                    p["ctx"].cognition.relevant_knowledge.append({
-                        "type": "experiment_bucket",
-                        "data": {"bucket": f"multi_timeframe_cascade_v1:{bucket}"},
-                    })
-            else:
-                path = "cascade" if cascade_enabled else "plain"
-                p = self.propose_multi_timeframe(sym) if cascade_enabled else self.propose(sym)
+            p = self.propose(sym)
             _structlog.get_logger().info(
                 "symbol_propose_timing",
-                symbol=sym, path=path, elapsed_s=round(_time.monotonic() - _t0, 3),
+                symbol=sym, elapsed_s=round(_time.monotonic() - _t0, 3),
                 had_result=p is not None,
             )
             if p is not None:

@@ -150,26 +150,13 @@ class DecisionRecorder:
                 "data": entry,
             })
 
-        # Faz 375 — 0.5266/multi-timeframe cascade instrumentation
-        # (kullanıcı isteği): services/orchestrator.py::propose_multi_
-        # timeframe()'in "timeframe_belief" kaydı (15m/4h/medium-term
-        # kırılımı + Bayesian birleştirilmiş sonuç) HESAPLANIYORDU ve
-        # Metacognition.evaluate_confidence()'ı GERÇEKTEN etkiliyordu ama
-        # hiçbir zaman persist edilmiyordu — "confidence neden bu sayıya
-        # yakınsadı?" sorusunun cevabı DB'de yoktu. debate_result/
-        # decision_fusion ile AYNI desen: hem tam ham veri (per_timeframe
-        # dahil) agent_contributions'a, hem özet iki alan (mtf_direction/
-        # mtf_confidence) ayrı sütunlara.
-        mtf_direction = None
-        mtf_confidence = None
-        if hasattr(ctx, "cognition"):
-            for item in ctx.cognition.relevant_knowledge:
-                if item.get("type") == "timeframe_belief":
-                    agent_opinions_data.append(item)
-                    data = item.get("data", {})
-                    mtf_direction = data.get("combined_direction")
-                    mtf_confidence = data.get("combined_confidence")
-                    break
+        # Faz 375'te eklenen multi-timeframe cascade instrumentation'ı
+        # ("timeframe_belief" kaydını agent_contributions'a + mtf_direction/
+        # mtf_confidence özet sütunlarına yazmak) Faz 457'de KALDIRILDI:
+        # cascade'in kendisi mimariden çıktığı için artık bu tipte hiç
+        # kayıt üretilmiyor, döngü her karar için boşuna dönüyordu.
+        # decisions.mtf_* sütunları ve geçmiş veri DURUYOR (analiz için),
+        # yeni kararlarda NULL kalıyor.
 
         # filled_price varsa (orchestrator.py fill_engine.simulate ile
         # gerçek slippage uygulayıp set ediyor) onu kullan; yoksa (örn.
@@ -777,8 +764,6 @@ class DecisionRecorder:
             pre_fusion_confidence=pre_fusion_confidence,
             final_ev=final_ev,
             rejection_reason=rejection_reason,
-            mtf_direction=mtf_direction,
-            mtf_confidence=mtf_confidence,
         )
 
         self.persistor.persist(event)

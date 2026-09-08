@@ -22,7 +22,6 @@ class Metacognition:
         criticism: dict,
         contradiction: dict,
         belief_strength: float = 0.5,
-        belief_direction: str | None = None,
     ) -> dict:
         # Gerçek bulgu: model_confidence şu ana kadar SADECE hafızadan
         # geliyordu — hafıza yoksa (ki bu genç bir sistemde hemen her
@@ -47,39 +46,19 @@ class Metacognition:
             # seyreltilerek zayıflatılmamalı.
             model_confidence = max(model_confidence, memory_confidence)
 
-        # Faz 268c — Multi-Timeframe Cascade (yol haritası Faz C): rapor —
-        # "1m LONG + 15m LONG + 1h LONG üçlüsü, yalnızca 1m LONG'dan çok
-        # daha güçlü bir konviksiyon demektir." services/orchestrator.py::
-        # propose_multi_timeframe() üst zaman dilimlerini Bayesian
-        # birleştirip buraya "timeframe_belief" olarak enjekte ediyor.
-        # Birincil yönle UYUŞUYORSA confidence yukarı çekilir (memory_
-        # insight ile aynı "max" mantığı); ÇELİŞİYORSA aşağı çekilir —
-        # bir uyumsuzluğu sessizce yok saymak, raporun asıl hedeflediği
-        # "yanlış pozitifleri azaltma" etkisini sıfırlardı.
-        timeframe_entries = [
-            item for item in ctx.cognition.relevant_knowledge
-            if item.get("type") == "timeframe_belief"
-        ]
-        if timeframe_entries and belief_direction in ("LONG", "SHORT"):
-            tf_data = timeframe_entries[-1]["data"]
-            combined_direction = tf_data.get("combined_direction")
-            combined_confidence = tf_data.get("combined_confidence") or 0.0
-            if combined_direction == belief_direction:
-                # Faz 448 (2026-09-08) — gerçek veriyle bulundu: SHORT'ta
-                # çapraz-zaman-dilimi UZLAŞMASI bağımsız doğrulayıcı kanıt
-                # değil, aşırı-uzamış/tükeniş rejiminin işareti çıktı.
-                # n=1083 gerçek karar: primary+4h ikisi de SHORT dediğinde
-                # gerçek isabet %34,9 — ne primary'nin kendi başına isabetinden
-                # (%38,1) ne 4h'nin kendi başına isabetinden (%49,85) iyi,
-                # ikisinden de KÖTÜ (bkz. analytics/direction_calibration_
-                # gatherer.py'nin Faz 446 bulgusu + oturum içi MTF-attribution
-                # analizi). LONG'da AYNI zarar YOK (uzlaşma %46,3 vs
-                # uzlaşmama %46,5 — anlamlı fark yok) — bu yüzden boost
-                # SADECE SHORT için kaldırıldı, LONG'un davranışı DEĞİŞMEDİ.
-                if belief_direction != "SHORT":
-                    model_confidence = max(model_confidence, combined_confidence)
-            elif combined_direction is not None:
-                model_confidence = model_confidence * (1 - combined_confidence * 0.3)
+        # Faz 457 (2026-09-08) — buradaki Multi-Timeframe Cascade mantığı
+        # ("timeframe_belief" enjeksiyonuyla confidence'ı yukarı/aşağı
+        # çekmek, Faz 268c) TAMAMEN KALDIRILDI. Sırasıyla ölçülen gerçek
+        # veri: Faz 448'de SHORT tarafındaki confidence boost'unun ZARARLI
+        # olduğu bulunup kaldırılmıştı (uzlaşma anında isabet %34,9 — hem
+        # primary'nin %38,1'inden hem 4h'nin %49,85'inden kötü), LONG
+        # tarafında ise hiçbir katkısı ölçülememişti (uzlaşma %46,3 vs
+        # uzlaşmama %46,5). Geriye kalan tek etkisi ÇELİŞKİ cezasıydı ve
+        # onu üretmek için sembol başına 3 kat CognitiveEngine çalıştırmak
+        # gerekiyordu — döngüyü ~50 dakikaya çıkarıp sistemi fiilen karar
+        # üretemez hale getiren maliyet buydu. Kullanıcı kararı: "faydası
+        # yoksa mimariden temizleyelim." Geçmiş veri (decisions.mtf_*
+        # kolonları) analiz için DURUYOR, sadece canlı mantık kalktı.
 
         risk_flags = criticism.get("risk_flags", [])
         risk_penalty = sum(RISK_WEIGHTS.get(flag, 0.1) for flag in risk_flags)

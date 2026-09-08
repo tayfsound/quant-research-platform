@@ -349,11 +349,6 @@ def test_run_portfolio_aware_cycle_finalizes_every_symbol_and_applies_fusion_whe
 
         with patch.object(orch, "propose", side_effect=lambda sym: proposals.get(sym)):
             with patch("database.repositories.app_settings_repository.AppSettingsRepository.get") as mock_get:
-                # Faz 268c: run_portfolio_aware_cycle() artık başta ayrıca
-                # multi_timeframe_cascade_enabled'ı da okuyor (varsayılan
-                # "false" — propose() kullanılmaya devam etmeli, bu testin
-                # zaten mockladığı yol).
-                #
                 # Faz 363 — kritik bulgu: bu test finalize_proposal() üzerinden
                 # gerçekten record_stage.execute() -> decision_recorder.record()
                 # kadar gidiyor, o da (Faz 361/362'de eklenen) signal_
@@ -368,8 +363,6 @@ def test_run_portfolio_aware_cycle_finalizes_every_symbol_and_applies_fusion_whe
                     "max_confidence_mode_enabled": "false",
                     "starting_capital": "1000",
                     "max_portfolio_var_pct": "0.001",
-                    "multi_timeframe_cascade_enabled": "false",
-                    "multi_timeframe_cascade_ab_test_enabled": "false",
                     "act_threshold": "0.65",
                 }
                 mock_get.side_effect = lambda key: overrides.get(key, DEFAULTS.get(key))
@@ -383,44 +376,23 @@ def test_run_portfolio_aware_cycle_finalizes_every_symbol_and_applies_fusion_whe
             assert r["size"] < 1.0
 
 
-def test_run_portfolio_aware_cycle_tags_experiment_bucket_when_ab_test_enabled():
-    """Faz 250: multi_timeframe_cascade_ab_test_enabled açıkken, statik
-    cascade ayarı yerine her sembol bağımsız rastgele bir kovaya atanmalı
-    ve ctx.cognition.relevant_knowledge'a experiment_bucket etiketi
-    eklenmeli (RecordingStage'in okuyup decisions.experiment_bucket'a
-    yazdığı AYNI mekanizma)."""
-    with patch("transformers.AutoModel.from_pretrained"), patch("transformers.AutoTokenizer.from_pretrained"):
-        orch = CognitiveOrchestrator()
+def test_run_portfolio_aware_cycle_no_longer_has_a_cascade_ab_test_arm():
+    """Faz 457 (2026-09-08) — Multi-Timeframe Cascade mimariden KALDIRILDI,
+    dolayisiyla Faz 250'nin multi_timeframe_cascade_v1 A/B deneyi de kalkti:
+    karsilastirilacak bir treatment kolu (propose_multi_timeframe) artik
+    yok. Eski test burada her sembolu rastgele control/treatment kovasina
+    atayip experiment_bucket etiketini dogruluyordu.
 
-        proposals = {
-            "BTCUSDT": {"ctx": _fake_ctx("BTCUSDT", "LONG", 1.0), "data": _correlated_bars(seed=1), "fee": 0.0, "direction": "LONG"},
-        }
+    Regresyon korumasi: hem uretici metodun hem de onu secen dallanmanin
+    GERCEKTEN silindigini dogruluyoruz -- biri geride kalirsa (orn. sadece
+    ayar silinip cagri yeri unutulursa) cycle sessizce eski pahali yola
+    geri donebilirdi."""
+    import inspect
 
-        with patch.object(orch, "propose", side_effect=lambda sym: proposals.get(sym)):
-            with patch.object(orch, "propose_multi_timeframe", side_effect=lambda sym: proposals.get(sym)):
-                with patch("database.repositories.app_settings_repository.AppSettingsRepository.get") as mock_get:
-                    mock_get.side_effect = lambda key: {"max_confidence_mode_enabled": "false",
-                        "starting_capital": "1000",
-                        "max_portfolio_var_pct": "0.5",
-                        "multi_timeframe_cascade_enabled": "false",
-                        "multi_timeframe_cascade_ab_test_enabled": "true",
-                        "act_threshold": "0.65",
-                        # Faz 367 — decision_recorder.py'nin finalize_proposal
-                        # yolunda okuduğu yeni asset-class/rejim aç-kapa
-                        # ayarları; test hiçbir sınıfı/rejimi kapatmıyor.
-                        "asset_class_trading_enabled": '{"crypto": true, "commodity": true, "equity": true}',
-                        "regime_trading_enabled": (
-                            '{"bullish_high": true, "bullish_normal": true, "bullish_low": true, '
-                            '"bearish_high": true, "bearish_normal": true, "bearish_low": true}'
-                        ),
-                    }[key]
-                    with patch("services.ab_testing.assign_bucket", return_value="treatment"):
-                        orch.run_portfolio_aware_cycle(["BTCUSDT"])
+    from services.orchestrator import CognitiveOrchestrator as _Orch
 
-        ctx = proposals["BTCUSDT"]["ctx"]
-        entries = [
-            item for item in ctx.cognition.relevant_knowledge
-            if item.get("type") == "experiment_bucket"
-        ]
-        assert len(entries) == 1
-        assert entries[0]["data"]["bucket"] == "multi_timeframe_cascade_v1:treatment"
+    assert not hasattr(_Orch, "propose_multi_timeframe")
+    source = inspect.getsource(_Orch.run_portfolio_aware_cycle)
+    assert "cascade_enabled" not in source
+    assert "ab_test_enabled" not in source
+    assert "assign_bucket" not in source

@@ -401,7 +401,6 @@ class MetaStage:
             criticism,
             {"conflict_level": conflict_level},
             belief_strength=belief.strength,
-            belief_direction=belief.direction,
         )
 
         ctx.decision.confidence = meta["confidence"]
@@ -1318,7 +1317,8 @@ class RiskTargetStage:
         enabled varsayılan AÇIK olduğu için, barrier tablosu ilk kez
         dolduğu an sistem hiç karşılaştırma fırsatı olmadan %100
         adaptive'e geçecekti. adaptive_barrier_ab_test_enabled açıksa
-        (multi_timeframe_cascade_ab_test_enabled ile AYNI desen), statik
+        (o zamanki multi_timeframe_cascade_ab_test_enabled ile AYNI
+        desen — o ayar Faz 457'de kalktı, bu duruyor), statik
         anahtarın yerine HER karar bağımsız rastgele control (statik
         ATR)/treatment (adaptive) kovasına atanır ve decisions.
         experiment_bucket'a etiketlenir."""

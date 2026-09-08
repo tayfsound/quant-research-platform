@@ -133,58 +133,35 @@ def test_council_and_final_decision_lineage_are_persisted_separately_even_when_t
     assert row["council_direction"] != row["direction"]
 
 
-def test_multi_timeframe_belief_is_persisted_as_summary_columns_and_full_raw_data():
-    """Faz 375 — 0.5266/multi-timeframe cascade instrumentation: services/
-    orchestrator.py::propose_multi_timeframe()'in "timeframe_belief" kaydı
-    (15m/4h/medium-term kırılımı + Bayesian birleştirme) önceden hiç
-    persist edilmiyordu. Artık hem mtf_direction/mtf_confidence özet
-    sütunlarına, hem TAM ham veri (per_timeframe dahil) agent_
-    contributions'a yazılıyor."""
+def test_mtf_columns_stay_none_after_cascade_removal():
+    """Faz 457 (2026-09-08) — Multi-Timeframe Cascade mimariden KALDIRILDI.
+    Faz 375'in "timeframe_belief"i mtf_direction/mtf_confidence sutunlarina
+    ozetleyen mantigi da kaldirildi (uretici olmadigi icin her karar icin
+    bosuna donuyordu).
+
+    Sutunlar ve sozlesme alanlari KASITLI olarak duruyor -- decisions
+    tablosunda GECMIS veri var, analiz gatherer'lari onu hala okuyor. Bu
+    test iki seyi birden garanti ediyor: (a) kayit yokken None kaliyor,
+    (b) disaridan eski formatta bir "timeframe_belief" gelse BILE artik
+    sutunlara sizmiyor -- yani uydurma/yarim veri uretilmiyor."""
     from uuid import uuid4
-    ctx = _FakeCtxWithCognition(uuid4())
-    ctx.cognition.relevant_knowledge = [
-        {
+
+    for relevant_knowledge in (
+        [],
+        [{
             "type": "timeframe_belief",
-            "data": {
-                "per_timeframe": {
-                    "4h": {"direction": "LONG", "confidence": 0.72},
-                    "1d": {"direction": "LONG", "confidence": 0.65},
-                },
-                "combined_direction": "LONG",
-                "combined_confidence": 0.891,
-                "agreement_count": 2,
-                "total_informative": 2,
-            },
-        },
-    ]
+            "data": {"combined_direction": "LONG", "combined_confidence": 0.891},
+        }],
+    ):
+        ctx = _FakeCtxWithCognition(uuid4())
+        ctx.cognition.relevant_knowledge = list(relevant_knowledge)
 
-    recorder = DecisionRecorder()
-    event = recorder.record(ctx, opinions=[], belief=None)
+        recorder = DecisionRecorder()
+        event = recorder.record(ctx, opinions=[], belief=None)
 
-    with SessionFactory.get_session() as session:
-        row = DecisionPersistor(session).get_by_id(str(event.id))
+        with SessionFactory.get_session() as session:
+            row = DecisionPersistor(session).get_by_id(str(event.id))
 
-    assert row is not None
-    assert row["mtf_direction"] == "LONG"
-    assert row["mtf_confidence"] == 0.891
-    tf_items = [i for i in row["agent_contributions"] if i.get("type") == "timeframe_belief"]
-    assert len(tf_items) == 1
-    assert tf_items[0]["data"]["per_timeframe"]["4h"]["confidence"] == 0.72
-    assert tf_items[0]["data"]["per_timeframe"]["1d"]["direction"] == "LONG"
-
-
-def test_no_timeframe_belief_leaves_mtf_columns_none():
-    """multi_timeframe_cascade_enabled=false ise (ya da hiç veri yoksa)
-    mtf_direction/mtf_confidence None kalmalı — icat edilmiş bir değer
-    asla üretilmez."""
-    from uuid import uuid4
-    ctx = _FakeCtxWithCognition(uuid4())
-
-    recorder = DecisionRecorder()
-    event = recorder.record(ctx, opinions=[], belief=None)
-
-    with SessionFactory.get_session() as session:
-        row = DecisionPersistor(session).get_by_id(str(event.id))
-
-    assert row["mtf_direction"] is None
-    assert row["mtf_confidence"] is None
+        assert row is not None
+        assert row["mtf_direction"] is None
+        assert row["mtf_confidence"] is None

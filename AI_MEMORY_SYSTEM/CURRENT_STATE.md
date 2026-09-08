@@ -1,9 +1,62 @@
-# Mevcut Durum -- v1.168.0 (Faz 441-453: Direction Prediction Engine + Faz 447'nin ilk adımı + pattern_agent gürültü denetimi (BOS/FVG ters işaret düzeltmesi) + watchlist 104→123)
+# Mevcut Durum -- v1.169.0 (Faz 441-457: Direction Prediction Engine + pattern_agent gürültü denetimi + karar hacmi kurtarma zinciri (Faz 454-457) + watchlist 104→123)
 
 **Tarih:** 2026-09-08
 **Branch:** main
 **Son commit (HEAD):** `e19ef6b` (Faz 450), push edildi.
 **Servis durumu:** Faz 448 VE Faz 439/440 artık İKİSİ DE canlıda — worker ikinci kez force-kill edilip watchdog'la yeniden başlatıldı (2026-09-08, kullanıcı onayıyla: "yaptığımız değişiklikleri canlıya alalım"). Faz 450/451 (historical_analog_engine.py) offline/rapor-only, restart gerekmez. Watchlist 104→123 sembole çıkarıldı (canlı, restart gerekmedi).
+
+**2026-09-08 devamı — Faz 454-457: karar hacmi çöküşünün teşhisi ve
+kurtarılması.** Kullanıcı bildirimi: "AI pozisyon alma konusunda
+yavaşladı, günlük beklentimin çok altında işlem yapıyor, data
+toplayamıyorum." Üst üste binmiş BEŞ ayrı neden bulundu, hepsi gerçek
+veriyle doğrulandı:
+
+1. **3 saatlik tam kesinti** — makine yeniden başlamış, HİÇBİR servis
+   otomatik gelmemiş (Docker kapalı → postgres/redis yok, watchdog yok,
+   beat yok). Kurtarma sırası memory `project_reboot_recovery_procedure`
+   olarak kaydedildi. Kalıcı çözüm (launchd) hâlâ açık bir iş.
+2. **Faz 454** — DecisionFusion'ın negatif-EV reddi kararların **%82'sini**
+   engelliyordu: Faz 399'un istisnası SADECE `trading_mode=="test"`
+   bakıyordu, kullanıcı ise canlı modda ama TESTNET API'sindeydi
+   ("gerçek para diye bir şey yok"). Yeni `_is_simulated_symbol()`
+   helper'ı ile istisna **hibrit** hale getirildi: gerçek borsaya giden
+   sembollerde negatif EV AYNEN engelliyor (regresyon testiyle sabit),
+   simüle sembollerde REDUCE'a düşüyor.
+3. **Faz 455** — `pkill -9` sonrası `_CycleLock`'un Redis kilitleri asla
+   serbest kalmıyordu; 6 kritik görev AYNI ANDA orphan kilitteydi
+   (decisions 6 saat, order_book 2 saat hiç yazılmamış). `service_
+   watchdog.sh::start_celery_default()` artık worker'ı yeniden
+   başlatmadan önce tüm `lock:*` anahtarlarını siliyor.
+4. **Faz 456** — beat schedule'ı worker kapasitesinin ~%77'sini tüketip
+   853 görevlik birikim yaratıyordu; 4 görevin kadansı seyreltildi
+   (`ingest_order_book` 20→120sn, `ingest_candles` 60→180sn, shadow
+   kapatmaları 60→180/300sn). `close_due_positions_task` KASITLI
+   dokunulmadı (pozisyon güvenliği).
+5. **Faz 457 — Multi-Timeframe Cascade MİMARİDEN KALDIRILDI.** Asıl
+   tıkanma buydu: cascade sembol başına 3 kat CognitiveEngine
+   çalıştırıyordu (ölçüldü: cascade 22,4sn vs plain 13,7sn/sembol),
+   123 sembollük döngüyü ~45 dakikaya çıkarıp 30 dakikalık cycle lock
+   TTL'ini aşıyor, döngüler üst üste biniyordu. Karşılığında ÖLÇÜLEN
+   fayda sıfırdı: Faz 448'de SHORT'taki uzlaşma boost'unun zararlı
+   olduğu bulunup kaldırılmıştı (uzlaşma isabeti %34,9 — primary'nin
+   %38,1'inden de 4h'nin %49,85'inden de kötü), LONG'da ise hiçbir fark
+   yoktu (%46,3 vs %46,5). Kullanıcı kararı: "faydası yoksa mimariden
+   temizleyelim." Kaldırılanlar: `orchestrator.propose_multi_timeframe()`
+   (95 satır) + `_combine_timeframe_beliefs()` + çağrı yerindeki
+   cascade/A-B dallanması, `metacognition.py`'nin timeframe_belief
+   mantığı ve artık ölü kalan `belief_direction` parametresi,
+   `decision_recorder.py`'nin mtf özetleme döngüsü, 3 app_settings
+   anahtarı + Settings API doğrulamaları + dashboard kartı,
+   `tests/test_multi_timeframe_cascade.py`. **BIRAKILANLAR (kasıtlı):**
+   `decisions.mtf_direction/mtf_confidence` sütunları, faz375/faz250
+   migration'ları ve `multi_timeframe_cascade_v1` A/B kovasını hariç
+   tutan gatherer'lar — GEÇMİŞ veri hâlâ analiz ediliyor. Yeni
+   kararlarda mtf_* alanları NULL kalıyor (regresyon testiyle sabit).
+   `app_settings`'te kalan 3 satır artık hiçbir kod tarafından
+   okunmuyor; Settings API onları "unknown setting key" diye reddediyor.
+
+Karar hacmi etkisi (gerçek, saatlik `decisions` sayımı): kesinti
+sırasında 0 → Faz 454 sonrası 21 → cascade kapatıldıktan sonra **183**.
 
 **2026-09-08 devamı — Faz 451: Pattern Coverage'in kademeli context-
 adjusted lift zinciri.** GPT'nin önerisi ("global baseline → regime
