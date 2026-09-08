@@ -108,18 +108,29 @@ def compute_historical_analogs(
 ) -> dict:
     """records: her biri {'agreeing_domains': frozenset[str], 'market_regime':
     str | None, 'direction': 'LONG'|'SHORT', 'win': bool, 'closed_at':
-    datetime | None, 'reversing': bool | None} olan GERÇEK kapanmış
-    kararlar. Domain evrenindeki HER kombinasyon (2/3'lü) × gerçek
-    market_regime × direction × reversing dörtlüsü için: o dörtlünün
-    (agreeing_domains ÜST KÜMESİ olan kararlarda) win_rate'ini tüm
-    örneklemin baseline'ıyla karşılaştırır. agent_combination_
-    reliability.py::compute_combination_reliability ile AYNI istatistiksel
-    iskelet — dördüncü eksen (reversing, Faz 404) eklendiği için
-    min_group_size ve effective_sample_size korumaları AYNEN uygulanıyor
-    (örneklem daha kolay parçalanır, icat edilmiş sonuç riski artmasın
-    diye). `reversing` None olan kayıtlar (Faz 401'den — 2026-09-01 —
-    ÖNCEKİ kararlar, bu alan hiç kaydedilmemiş) dışlanır — fail-closed,
-    icat edilmiş bir reversing değeri asla varsayılmaz."""
+    datetime | None, 'reversing': bool | None, 'volatility_regime':
+    str | None, 'structure_phase': str | None, 'trade_type': 'scalp'|
+    'swing'|None} olan GERÇEK kapanmış kararlar. Domain evrenindeki HER
+    kombinasyon (2/3'lü) × market_regime × direction × reversing ×
+    volatility_regime × structure_phase × trade_type YEDİLİSİ için: o
+    yedilinin (agreeing_domains ÜST KÜMESİ olan kararlarda) win_rate'ini
+    tüm örneklemin baseline'ıyla karşılaştırır — kullanıcının 2026-09-06
+    kararının ("state'i REGIME+DIRECTION+AGENT STATE+VOLATILITY+MARKET
+    STRUCTURE+FEATURE STATE+TIME/HORIZON'a genişlet") 7 boyutunun TAMAMI:
+    AGENT STATE=domains, REGIME=market_regime, DIRECTION=direction,
+    FEATURE STATE=reversing (Faz 404, market_state_engine'den TÜRETİLMİŞ
+    gerçek bir özellik durumu), VOLATILITY=volatility_regime, MARKET
+    STRUCTURE=structure_phase (Wyckoff), TIME/HORIZON=trade_type (scalp/
+    swing). agent_combination_reliability.py::compute_combination_
+    reliability ile AYNI istatistiksel iskelet — kullanıcının KENDİ
+    öngördüğü/kabul ettiği sonuç: 4→7 eksene çıkmak örneklemi ÇOK daha
+    kolay parçalar, min_group_size/FDR/effective_sample_size korumaları
+    AYNEN (gevşetilmeden) uygulanıyor, gate_eligible sayısının uzun süre
+    ~0 kalması beklenen/zararsız bir no-op (Faz 404'ün 'reversing'
+    eksenindeki AYNI öngörü). Yeni 3 alandan HERHANGİ biri eksik/None
+    olan kayıt dışlanır — fail-closed, icat edilmiş bir durum asla
+    varsayılmaz (reversing'in Faz 401 öncesi kararları dışlaması İLE
+    AYNI ilke)."""
     valid = [
         r for r in records
         if r.get("agreeing_domains") is not None
@@ -127,6 +138,9 @@ def compute_historical_analogs(
         and r.get("direction") in ("LONG", "SHORT")
         and r.get("win") is not None
         and isinstance(r.get("reversing"), bool)
+        and r.get("volatility_regime")
+        and r.get("structure_phase")
+        and r.get("trade_type") in ("scalp", "swing")
     ]
     if not valid:
         return {"analogs": [], "baseline_win_rate": None, "baseline_sample_size": 0}
@@ -151,7 +165,11 @@ def compute_historical_analogs(
             combo_set = frozenset(combo)
             for r in valid:
                 if combo_set <= r["agreeing_domains"]:
-                    groups[(combo, r["market_regime"], r["direction"], r["reversing"])].append(r)
+                    key = (
+                        combo, r["market_regime"], r["direction"], r["reversing"],
+                        r["volatility_regime"], r["structure_phase"], r["trade_type"],
+                    )
+                    groups[key].append(r)
                     domain_groups[combo].append(r)
 
     # min_group_size altındaki bir domain-only grup icat edilmiş bir
@@ -175,7 +193,7 @@ def compute_historical_analogs(
     for key, group in groups.items():
         if len(group) < min_group_size:
             continue
-        domains, regime, direction, reversing = key
+        domains, regime, direction, reversing, volatility_regime, structure_phase, trade_type = key
         wins = sum(1 for r in group if r["win"])
         domains_set = set(domains)
         own_ids = group_id_sets[key]
@@ -239,6 +257,9 @@ def compute_historical_analogs(
             "market_regime": regime,
             "direction": direction,
             "reversing": reversing,
+            "volatility_regime": volatility_regime,
+            "structure_phase": structure_phase,
+            "trade_type": trade_type,
             "combination_size": len(domains),
             "sample_size": len(group),
             "effective_sample_size": effective_sample_size,
@@ -350,7 +371,8 @@ def compute_direction_analogs(
 ) -> dict:
     """records: compute_historical_analogs()'un beklediği AYNI alanlar
     ('agreeing_domains', 'market_regime', 'direction' — kararın kendi
-    LONG/SHORT'u, 'reversing', 'closed_at') + YENİ 'forward_label':
+    LONG/SHORT'u, 'reversing', 'volatility_regime', 'structure_phase',
+    'trade_type', 'closed_at' — Faz 450'nin 7 boyutu DAHİL) + YENİ 'forward_label':
     'UP'|'DOWN'|'NEUTRAL'|None (Faz 441'in label_forward_direction()'ından
     — bu fonksiyon etiketi HESAPLAMIYOR, hazır bekliyor, tek sorumluluk
     ilkesi). forward_label'ı None/DIRECTION_LABELS dışı olan kayıtlar

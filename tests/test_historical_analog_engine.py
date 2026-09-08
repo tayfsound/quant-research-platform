@@ -12,7 +12,10 @@ from analytics.historical_analog_engine import (
 )
 
 
-def _record(domains, regime, direction, win, closed_at=None, reversing=False):
+def _record(
+    domains, regime, direction, win, closed_at=None, reversing=False,
+    volatility_regime="normal", structure_phase="neutral", trade_type="scalp",
+):
     return {
         "agreeing_domains": frozenset(domains),
         "market_regime": regime,
@@ -20,10 +23,22 @@ def _record(domains, regime, direction, win, closed_at=None, reversing=False):
         "win": win,
         "closed_at": closed_at,
         "reversing": reversing,
+        # Faz 450 (2026-09-08) — 7 boyutlu genişletme: VOLATILITY/MARKET
+        # STRUCTURE/TIME-HORIZON eksenleri. Testlerin BÜYÜK çoğunluğu bu
+        # boyutları KASITLI OLARAK sabit tutuyor (varsayılan) — asıl
+        # test ettikleri eksen (domains/regime/direction/reversing)
+        # izole kalsın diye; yeni eksenlere özel testler aşağıda AYRICA
+        # parametreleri değiştiriyor.
+        "volatility_regime": volatility_regime,
+        "structure_phase": structure_phase,
+        "trade_type": trade_type,
     }
 
 
-def _direction_record(domains, regime, direction, forward_label, closed_at=None, reversing=False):
+def _direction_record(
+    domains, regime, direction, forward_label, closed_at=None, reversing=False,
+    volatility_regime="normal", structure_phase="neutral", trade_type="scalp",
+):
     return {
         "agreeing_domains": frozenset(domains),
         "market_regime": regime,
@@ -31,6 +46,9 @@ def _direction_record(domains, regime, direction, forward_label, closed_at=None,
         "forward_label": forward_label,
         "closed_at": closed_at,
         "reversing": reversing,
+        "volatility_regime": volatility_regime,
+        "structure_phase": structure_phase,
+        "trade_type": trade_type,
     }
 
 
@@ -141,6 +159,69 @@ def test_reversing_is_a_separate_grouping_axis():
     reversing = next(a for a in result["analogs"] if a["reversing"] is True)
     assert calm["win_rate"] == 0.90
     assert reversing["win_rate"] == 0.20
+
+
+# Faz 450 (2026-09-08) — 7 boyutlu genişletme: kullanıcının 2026-09-06
+# kararının (REGIME+DIRECTION+AGENT STATE+VOLATILITY+MARKET STRUCTURE+
+# FEATURE STATE+TIME/HORIZON) kalan 3 ekseni. direction/reversing'in
+# KENDİ ayrı-eksen testleriyle AYNI desen.
+def test_volatility_regime_is_a_separate_grouping_axis():
+    records = []
+    for i in range(30):
+        records.append(_record({"technical", "macro"}, "bullish_low", "LONG", i < 27, volatility_regime="low"))
+    for i in range(30):
+        records.append(_record({"technical", "macro"}, "bullish_low", "LONG", i < 6, volatility_regime="high"))
+
+    result = compute_historical_analogs(records, combination_sizes=(2,), min_group_size=20)
+    low_vol = next(a for a in result["analogs"] if a["volatility_regime"] == "low")
+    high_vol = next(a for a in result["analogs"] if a["volatility_regime"] == "high")
+    assert low_vol["win_rate"] == 0.90
+    assert high_vol["win_rate"] == 0.20
+
+
+def test_structure_phase_is_a_separate_grouping_axis():
+    records = []
+    for i in range(30):
+        records.append(_record({"technical", "macro"}, "bullish_low", "LONG", i < 27, structure_phase="accumulation"))
+    for i in range(30):
+        records.append(_record({"technical", "macro"}, "bullish_low", "LONG", i < 6, structure_phase="distribution"))
+
+    result = compute_historical_analogs(records, combination_sizes=(2,), min_group_size=20)
+    accumulation = next(a for a in result["analogs"] if a["structure_phase"] == "accumulation")
+    distribution = next(a for a in result["analogs"] if a["structure_phase"] == "distribution")
+    assert accumulation["win_rate"] == 0.90
+    assert distribution["win_rate"] == 0.20
+
+
+def test_trade_type_is_a_separate_grouping_axis():
+    records = []
+    for i in range(30):
+        records.append(_record({"technical", "macro"}, "bullish_low", "LONG", i < 27, trade_type="scalp"))
+    for i in range(30):
+        records.append(_record({"technical", "macro"}, "bullish_low", "LONG", i < 6, trade_type="swing"))
+
+    result = compute_historical_analogs(records, combination_sizes=(2,), min_group_size=20)
+    scalp = next(a for a in result["analogs"] if a["trade_type"] == "scalp")
+    swing = next(a for a in result["analogs"] if a["trade_type"] == "swing")
+    assert scalp["win_rate"] == 0.90
+    assert swing["win_rate"] == 0.20
+
+
+def test_records_missing_any_of_the_three_new_dimensions_are_excluded_fail_closed():
+    """volatility_regime/structure_phase/trade_type'tan HERHANGİ biri
+    eksik/None ise kayıt TAMAMEN dışlanır -- reversing'in Faz 404'teki
+    fail-closed davranışıyla AYNI ilke, icat edilmiş bir durum asla
+    varsayılmaz."""
+    base = {"agreeing_domains": frozenset({"technical", "macro"}), "market_regime": "bullish_low",
+            "direction": "LONG", "win": True, "closed_at": None, "reversing": False}
+    records = [
+        {**base, "volatility_regime": None, "structure_phase": "neutral", "trade_type": "scalp"},
+        {**base, "volatility_regime": "normal", "structure_phase": None, "trade_type": "scalp"},
+        {**base, "volatility_regime": "normal", "structure_phase": "neutral", "trade_type": "unknown"},
+        {**base, "volatility_regime": "normal", "structure_phase": "neutral"},  # trade_type hic yok
+    ]
+    result = compute_historical_analogs(records)
+    assert result == {"analogs": [], "baseline_win_rate": None, "baseline_sample_size": 0}
 
 
 def test_records_with_missing_or_non_bool_reversing_are_excluded_fail_closed():

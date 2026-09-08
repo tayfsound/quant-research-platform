@@ -27,14 +27,15 @@ def _insert_decision(session, *, symbol: str, entry_price: float, timestamp, con
     session.execute(
         text("""
             INSERT INTO decisions
-                (id, timestamp, symbol, direction, size, confidence, status, entry_price,
+                (id, timestamp, symbol, direction, size, confidence, status, entry_price, stop_loss_price,
                  agent_contributions, market_regime, closed_at, excluded_from_stats)
             VALUES
-                (:id, :timestamp, :symbol, 'LONG', 1.0, 0.8, 'closed', :entry_price,
+                (:id, :timestamp, :symbol, 'LONG', 1.0, 0.8, 'closed', :entry_price, :stop_loss_price,
                  CAST(:agent_contributions AS jsonb), 'bullish_normal', :closed_at, false)
         """),
         {
             "id": str(uuid.uuid4()), "timestamp": timestamp, "symbol": symbol, "entry_price": entry_price,
+            "stop_loss_price": entry_price * 0.99,  # %1 mesafe -> trade_type='scalp'
             "agent_contributions": json.dumps(contributions, default=str),
             "closed_at": timestamp + timedelta(minutes=30),
         },
@@ -57,6 +58,14 @@ def test_gatherer_reproduces_a_known_up_pattern_end_to_end():
         # historical_analogs()'un fail-closed filtresi (isinstance(...,bool))
         # kaydı TAMAMEN dışlar (Faz 404'ün kasıtlı davranışı).
         {"type": "market_state", "data": {"reversing": False}},
+        # Faz 450 — volatility_regime `features` icinde, structure_phase
+        # `raw_snapshot` icinde -- services/decision_recorder.py'nin
+        # gercek market_snapshot yapisiyla AYNI (bkz. historical_analog_
+        # gatherer.py::_market_snapshot_data()).
+        {"type": "market_snapshot", "data": {
+            "features": {"volatility_regime": "normal"},
+            "raw_snapshot": {"structure_phase": "neutral"},
+        }},
     ]
 
     with SessionFactory.get_session() as session:

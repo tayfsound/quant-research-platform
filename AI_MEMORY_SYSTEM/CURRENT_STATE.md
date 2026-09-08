@@ -492,10 +492,66 @@ round-trip), ikisi de GERÇEK canlı veriyle geçti.
 **Ham Feature Ingestion planı (①OI+Funding+Price ②ATR ③RSI ④Liquidation
 ⑤Basis) artık TAMAMEN bitti — Faz 436-440 hepsi kodlandı/test edildi.**
 
+**2026-09-08 devamı — kullanıcı todo'dan iki eski maddeyi seçti: Faz 449
+(Pattern Coverage) ve Faz 450 (7 boyutlu historical_analog genişlemesi).**
+
+**Faz 449 — Pattern Coverage'in ertelenmiş küçük parçası.**
+`coverage_pct` ve `conditioning_incremental_value` Faz 427'den beri AYRI
+AYRI mevcuttu — yeni `coverage_weighted_incremental_value` (basit
+çarpım, işaret korunuyor) TEK bileşik skoru veriyor. Gerçek veride
+(n=2000) en yüksek: pattern+technical/bullish_normal/LONG (cov=0,086
+incr=0,109 combined=0,0094, n=172); en düşük AYNI kombinasyonun
+bearish_normal/SHORT'taki simetrik negatifi (combined=-0,0096, n=108).
+2 test, commit `95ae42a`.
+
+**Faz 450 — historical_analog_engine.py'nin 4. genişlemesi: TAM 7
+boyut.** Kullanıcının 2026-09-06 kararının ("REGIME+DIRECTION+AGENT
+STATE+VOLATILITY+MARKET STRUCTURE+FEATURE STATE+TIME/HORIZON") kalan
+3 ekseni eklendi: `volatility_regime` (signal_engine.py'nin ZATEN
+hesapladığı, `market_snapshot.features`'ta kayıtlı), `structure_phase`
+(Wyckoff, `market_snapshot.raw_snapshot`'ta kayıtlı — `ctx.market.
+features`'a HİÇ karışmadığı, sadece `raw_snapshot`'a gittiği bugün
+keşfedildi), `trade_type` (scalp/swing — Faz 425/426'nın `_trade_type()`
+fonksiyonu YENİDEN kullanıldı, entry_price/stop_loss_price'tan). ÜÇÜ
+DE yeni bir veri kaynağı GEREKTİRMEDİ — zaten her kararda kayıtlı.
+`reversing` (Faz 404) "FEATURE STATE" eksenine karşılık geliyor —
+market_state_engine'den türetilmiş bir özellik durumu.
+
+**Yan bulgu, düzeltildi:** `_analog_key()` (win_rate_stability için)
+doğrudan `analog["reversing"]` gibi köşeli parantez erişimi kullanıyordu
+— Faz 450 öncesi kaydedilmiş GERÇEK geçmiş raporlar (yeni 3 alanı
+İÇERMEYECEK) okunurken KeyError ile çökerdi, win_rate_stability
+özelliğini TAMAMEN kırardı. `.get()` ile düzeltildi + eski/yeni format
+ASLA çakışmayan ayrı anahtarlar üretiyor artık.
+
+Gerçek veriyle doğrulandı: n=8000 pencerede 7354 kayıt TÜM 7 boyutu
+doldurdu (sadece `reversing` 600 kaydı dışladı — volatility_regime/
+structure_phase/trade_type SIFIR kayıp), **9 gate_eligible** hücre
+bulundu (hepsi LONG+bullish rejimde, %86,7-97,0 isabet — kullanıcının
+"HESAPLAMA YÜKÜ çok artar, gate_eligible uzun süre ~0 kalabilir"
+öngörüsünün AKSİNE, gerçek veride bu boyutlar teorikte-olduğu-kadar
+patlayıcı DEĞİL çünkü çoğu değer pratikte az sayıda kategoride
+yoğunlaşıyor — ör. structure_phase çoğunlukla "neutral"). Ama gerçek
+üretim penceresinde (MAX_DECISIONS=2000, `historical_analog_gatherer.
+py`'nin gerçek varsayılanı) gate_eligible=**0** — beklenen, zararsız
+no-op, Faz 404'ün 'reversing' eksenindeki AYNI öngörü. `services/
+historical_analog_gatherer.py` + `services/direction_analog_gatherer.py`
+ikisi de güncellendi (aynı 3 alan çıkarımı). 6 yeni test (historical_
+analog_engine) + 1 yeni test (_analog_key dayanıklılık) + mevcut
+tüm bağlı testler (historical_analog/wiring/override_stage/direction_
+analog_gatherer/stability, 46 test) geçti.
+
+**Sadece offline/rapor — canlı `HistoricalAnalogOverrideStage` (aktif,
+`historical_analog_override_enabled=true`) bu değişiklikten SONRA daha
+AZ (0'a yakın) gate_eligible görecek, asla daha FAZLA/daha az güvenli
+değil — güvenli yön, restart gerektirir (bir sonraki celery worker
+restart'ında canlıya yansır).**
+
 **SIRADAKİ:** Faz 447 (Council'in evidence-provider'a geçişi) hâlâ AYRI
 kullanıcı onayı gerektiriyor. Örüntü-tanıma mimarisine geçiş kararı da
-AYRI, kendi tasarım oturumunu bekliyor — bugünkü Faz 445
-(`compute_direction_analogs`) zaten bu yöne atılmış ilk somut adım.
+AYRI, kendi tasarım oturumunu bekliyor — bugünkü Faz 445/450
+(`compute_direction_analogs`/7 boyutlu state) zaten bu yöne atılmış
+somut adımlar.
 
 **Açık/gözlem bekleyen:** SHORT geçici olarak kapalı (yeniden açma planı yok, gözlem sürüyor). WS disconnect düzelmesi (Faz 414) hâlâ taze logla doğrulanmadı. Kullanıcı iki büyük GPT mimari raporu daha paylaştı (Incremental Value/Conditional Lift/Pattern Coverage/Temporal Decay/Negative Evidence önerisi + OI/Funding/Liquidation/ATR/RSI-detay gibi yeni ham feature adayları, önceliklendirilmiş: ①OI+Funding+Price ②ATR/realized vol ③RSI ham+slope+divergence) — kullanıcının kendi çerçevesi gereği ("ilk fırsatta, detaylıca") bunlar TODO'ya (`project_open_items_2026_08_31.md`) detaylıca eklendi, HENÜZ uygulanmadı.
 

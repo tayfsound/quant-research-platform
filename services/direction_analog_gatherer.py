@@ -12,7 +12,9 @@ from analytics.evaluation_cohort import describe_evaluation_window
 from analytics.forward_direction import DEFAULT_THRESHOLD_PCT, label_forward_direction
 from analytics.historical_analog_engine import compute_direction_analogs
 from market_data.features.market_state_engine import market_state_reversing_for_decision
+from services.historical_analog_gatherer import _market_snapshot_data
 from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMENT_BUCKET
+from services.strategy_regime_compatibility_gatherer import _trade_type
 
 MAX_DECISIONS = 2000
 DEFAULT_HORIZON = timedelta(hours=1)
@@ -33,7 +35,7 @@ def gather_direction_analogs(
         rows = session.execute(
             text("""
                 SELECT d.agent_contributions, d.market_regime, d.direction, d.closed_at,
-                       d.entry_price, ms.close AS price_at_horizon
+                       d.entry_price, d.stop_loss_price, ms.close AS price_at_horizon
                 FROM decisions d
                 JOIN LATERAL (
                     SELECT close FROM market_snapshots ms2
@@ -66,11 +68,15 @@ def gather_direction_analogs(
         if agreeing is None:
             continue
         forward_label = label_forward_direction(r["entry_price"], r["price_at_horizon"], threshold_pct)
+        snapshot = _market_snapshot_data(contributions)
         records.append({
             "agreeing_domains": agreeing,
             "market_regime": market_regime,
             "direction": final_direction,
             "reversing": market_state_reversing_for_decision(contributions),
+            "volatility_regime": (snapshot.get("features") or {}).get("volatility_regime"),
+            "structure_phase": (snapshot.get("raw_snapshot") or {}).get("structure_phase"),
+            "trade_type": _trade_type(r["entry_price"], r["stop_loss_price"]),
             "forward_label": forward_label,
             "closed_at": r["closed_at"],
         })
