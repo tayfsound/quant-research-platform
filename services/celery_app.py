@@ -121,13 +121,13 @@ celery_app.conf.beat_schedule = {
     # ayrı bir tablo (shadow_positions) üzerinde çalışır.
     "close-due-shadow-positions-every-minute": {
         "task": "close_due_shadow_positions_task",
-        "schedule": 60.0,
+        "schedule": 180.0,
     },
     # Faz 316-sonrası — "benched ajan itirazı" gölge pozisyonları,
     # macro-only shadow ile AYNI cadence.
     "close-due-benched-shadow-positions-every-minute": {
         "task": "close_due_benched_shadow_positions_task",
-        "schedule": 60.0,
+        "schedule": 300.0,
     },
     # Faz 190/194: "gerçek işlem alıyormuş gibi test başlasın" — AI'ın
     # sadece birisi dashboard'u açık tutunca değil, gerçekten bağımsız/
@@ -205,9 +205,21 @@ celery_app.conf.beat_schedule = {
     # sadece 16 satırdı, OrderFlowAgent (9 oy veren ajandan biri) neredeyse
     # hep boş veri görüp hep WAIT üretiyordu. Order book saniyeler içinde
     # değiştiği için trading cycle'dan (90sn) daha sık, 20sn'de bir.
+        # Faz 456 (2026-09-08) — GERÇEK ÖLÇÜM: bu görevlerin gerçek çalışma
+    # süreleri planlanan aralıklarından UZUNDU, yani her tetikleme bir
+    # öncekinin üzerine biniyordu. 21 dakikalık pencerede ölçüldü:
+    # ingest_order_book ort. 65,8sn (20sn'de bir planlıydı -> 3,3x aşım),
+    # close_due_benched_shadow ort. 178,9sn (60sn -> 3x), ingest_candles
+    # ort. 71,9sn (60sn -> 1,2x), close_due_shadow ort. 60,1sn (60sn -> 1x).
+    # Sonuç: yinelenen görevler 11 worker sürecinin ~%77'sini yiyordu,
+    # kuyrukta 853 görev birikmişti ve run_trading_cycle_task boş slot
+    # bekleyip HİÇ çalışamıyordu (9 denemenin 9'u "previous_cycle_still_
+    # running"/kuyrukta bekleme) — kullanıcı "AI pozisyon almıyor, veri
+    # toplayamıyorum" derken görülen tablonun doğrudan sebebi. Aralıklar
+    # gerçek sürelerin ÜSTÜNE marj bırakacak şekilde yeniden ayarlandı.
     "ingest-order-book-every-20s": {
         "task": "ingest_order_book_task",
-        "schedule": 20.0,
+        "schedule": 120.0,
     },
     # Faz 207: aynı "ada" bulgusu — IngestionPipeline.ingest_candles()
     # (Market Overview dashboard sayfasının okuduğu tek kaynak,
@@ -216,7 +228,7 @@ celery_app.conf.beat_schedule = {
     # varsayılanı — 60sn'de bir yeterli, trading cycle kadar sık gerekmiyor.
     "ingest-candles-every-60s": {
         "task": "ingest_candles_task",
-        "schedule": 60.0,
+        "schedule": 180.0,
     },
     # Faz 204: ACT/REDUCE eşiklerinin kendi kendine kalibrasyonu — gerçek
     # kapalı işlem geçmişi gerektirdiği için (min. 20) yeterli veri
