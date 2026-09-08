@@ -80,6 +80,22 @@ start_celery_default() {
     # sonlandırılmamış çocuklar süresiz birikip kaynak tüketmeye devam
     # eder (yeni master onları hiç bilmez/yönetmez).
     pkill -f "celery -A services.celery_app worker -Q celery --loglevel=info -n worker_default" 2>/dev/null
+    # Faz 455 (2026-09-08) — GERÇEK OLAY: worker SIGKILL ile ölünce
+    # _CycleLock'ın Redis kilitleri ASLA serbest bırakılmıyor, yeni worker
+    # ayağa kalksa bile her döngü "previous_cycle_still_running" deyip
+    # atlıyor — kilit TTL'i dolana kadar (run_trading_cycle_task için
+    # 1800sn = 30 DAKİKA) sistem sessizce hiç işlem yapmıyor. 2026-09-08'de
+    # ölçüldü: 6 kritik görev (run_trading_cycle, close_due_positions,
+    # ingest_order_book, ingest_candles, close_due_shadow/benched) AYNI
+    # ANDA orphan kilitteydi — decisions 6 saat, order_book/market_
+    # snapshots 2 saat hiç yazılmamıştı. Tek worker/tek kuyruk (-Q celery)
+    # olduğu için yeni worker başlarken MEŞRU olarak tutulan bir kilit
+    # olamaz; hepsini temizlemek güvenli. Redis yoksa/hata verirse
+    # watchdog'u durdurmaz (|| true).
+    docker exec quant-research-platform-redis-1 sh -c \
+        'redis-cli KEYS "lock:*" | while read -r k; do [ -n "$k" ] && redis-cli DEL "$k"; done' \
+        >/dev/null 2>&1 || true
+    log "orphan cycle kilitleri temizlendi (worker restart)"
     cd "$REPO_DIR" || return
     nohup .venv/bin/celery -A services.celery_app worker -Q celery --loglevel=info -n worker_default@%h > /tmp/celery_default_watchdog.log 2>&1 &
     disown
