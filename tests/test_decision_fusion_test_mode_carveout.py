@@ -60,9 +60,15 @@ def test_negative_ev_short_reduces_instead_of_waiting_in_test_mode_too():
     assert ctx.decision.final_size > 0.0
 
 
-def test_negative_ev_long_still_waits_in_live_mode():
-    """Kritik regresyon: canlı modda hiçbir şey değişmedi -- gerçek
-    sermaye riskinde negatif EV hâlâ tam olarak engelliyor."""
+def test_negative_ev_long_still_waits_in_live_mode_on_a_real_exchange_symbol(monkeypatch):
+    """Kritik regresyon: GERÇEK borsaya giden bir sembolde canlı modda
+    hiçbir şey değişmedi -- negatif EV hâlâ tam olarak engelliyor.
+
+    Faz 454 — bu testin sembolü artık AÇIKÇA gerçek-borsa (non-simulated)
+    olarak sabitleniyor: hibrit carve-out SADECE simüle edilen
+    sembollerde devreye giriyor, o yüzden "canlı mod" tek başına
+    yeterli bir koşul değil."""
+    monkeypatch.setattr("services.decision_fusion._is_simulated_symbol", lambda symbol: False)
     ctx = _ctx("LONG", take_profit=1.0, stop_loss=10.0, confidence=0.3, proposed_size=10.0, trading_mode="live")
     ctx = DecisionFusion().evaluate(ctx, Belief(direction="LONG", strength=0.3))
 
@@ -71,6 +77,22 @@ def test_negative_ev_long_still_waits_in_live_mode():
     assert "decision_fusion" in _relevant_knowledge_types(ctx)
     fusion_item = next(i for i in ctx.cognition.relevant_knowledge if i["type"] == "decision_fusion")
     assert fusion_item["data"]["rejection"] == "Negatif beklenen değer (EV)"
+
+
+def test_negative_ev_on_a_simulated_symbol_reduces_even_in_live_mode(monkeypatch):
+    """Faz 454 — kullanıcı isteği ("hibrit olacak ama... gerçek para diye
+    bir şey yok, sistemi tıkayacak şeyler yapmayalım"): gerçek borsaya
+    GİTMEYEN (simüle) bir sembolde negatif-EV reddi veri toplamayı
+    tıkamamalı -- canlı modda bile REDUCE'a düşmeli. Gerçek veriyle
+    ölçülen sorun: 6 Eylül'de canlıya geçince günlük açılan pozisyon
+    800-1900'den 9-26'ya düşmüştü (kararların %82'si tam burada
+    reddediliyordu)."""
+    monkeypatch.setattr("services.decision_fusion._is_simulated_symbol", lambda symbol: True)
+    ctx = _ctx("LONG", take_profit=6.0, stop_loss=10.0, confidence=0.3, proposed_size=10.0, trading_mode="live")
+    ctx = DecisionFusion().evaluate(ctx, Belief(direction="LONG", strength=0.3))
+
+    assert ctx.decision.action == ActionType.REDUCE
+    assert ctx.decision.final_size > 0.0
 
 
 def test_test_mode_carveout_does_not_fire_without_a_real_directional_signal():

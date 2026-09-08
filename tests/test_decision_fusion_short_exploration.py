@@ -49,6 +49,10 @@ def test_negative_ev_short_opens_tiny_exploration_position_when_eligible(monkeyp
 
 
 def test_negative_ev_short_stays_waiting_when_not_eligible(monkeypatch):
+    # Faz 454 — hibrit EV carve-out'u SADECE simüle sembollerde devreye
+    # giriyor; bu test SHORT-exploration kapısını izole etmek istediği
+    # için sembol AÇIKÇA gerçek-borsa (non-simulated) sabitleniyor.
+    monkeypatch.setattr("services.decision_fusion._is_simulated_symbol", lambda symbol: False)
     monkeypatch.setattr(
         "services.short_exploration.is_eligible",
         lambda symbol, confidence: (False, "weekly_budget_exhausted"),
@@ -67,6 +71,7 @@ def test_negative_ev_short_stays_waiting_when_not_eligible(monkeypatch):
 def test_negative_ev_long_is_completely_unaffected_by_short_exploration(monkeypatch):
     """Kritik regresyon: exploration mekanizması SADECE SHORT'u etkilemeli
     — LONG'un negatif-EV davranışı birebir eskisiyle aynı kalmalı."""
+    monkeypatch.setattr("services.decision_fusion._is_simulated_symbol", lambda symbol: False)
     monkeypatch.setattr(
         "services.short_exploration.is_eligible",
         lambda symbol, confidence: (True, None),  # eligible=True olsa bile LONG'u etkilememeli

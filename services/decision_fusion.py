@@ -22,6 +22,31 @@ from services.inner_critic import InnerCritic
 _OPPORTUNITY_QUALITY_LOW_AGREEMENT_DISCOUNT = 0.6883
 
 
+def _is_simulated_symbol(symbol: str | None) -> bool:
+    """Faz 454 — hibrit negatif-EV carve-out'u için: bu sembol GERÇEK
+    borsaya mı gidiyor (live/testnet) yoksa tamamen simüle mi ediliyor?
+    `services/decision_recorder.py::_execution_mode_for_symbol` ile AYNI
+    ayar kaynağı ve AYNI fail-closed ilke — hata/eksik ayar durumunda
+    False döner, yani KORUMALI davranılır (carve-out uygulanmaz), asla
+    istemeden bir gerçek-borsa sembolünde EV koruması gevşetilmez."""
+    import json
+
+    from database.repositories.app_settings_repository import AppSettingsRepository
+    from database.session_factory import SessionFactory
+
+    if not symbol:
+        return False
+    try:
+        with SessionFactory.get_session() as session:
+            repo = AppSettingsRepository(session)
+            raw_map = repo.get("execution_mode_symbols")
+            global_mode = repo.get("execution_mode") or "simulated"
+        mapping = json.loads(raw_map) if raw_map else {}
+        return mapping.get(symbol, global_mode) == "simulated"
+    except Exception:
+        return False
+
+
 def compute_fused_confidence(
     ctx: CognitiveCycleContext,
     belief: Belief | None = None,
@@ -292,7 +317,25 @@ class DecisionFusion:
             # modunda veri toplama için küçük boyutlu bir REDUCE'a
             # düşülüyor) — Faz 388'in kendi formülüyle (final_size =
             # proposed_size * confidence) tutarlı.
-            if not explored and ctx.risk.trading_mode == "test" and direction in ("LONG", "SHORT") and (win > 0 or loss > 0):
+            #
+            # Faz 454 (2026-09-08) — kullanıcı isteği: "hibrit olacak ama...
+            # şu anda live modda test apiye bağlı zaten, gerçek para diye bir
+            # şey yok, sistemi tıkayacak şeyler yapmayalım." Gerçek veriyle
+            # ölçüldü: 6 Eylül'de canlıya geçilince Faz 399'un SADECE test
+            # moduna bakan bu carve-out'u devre dışı kaldı ve AYNI tıkanma
+            # geri geldi — son 2 günde 6818 yönlü kararın 5595'i (%82) tam
+            # burada, gate_block izi bırakmadan reddedildi; günlük açılan
+            # pozisyon 800-1900'den 9-26'ya düştü. Çözüm carve-out'u
+            # trading_mode'dan BAĞIMSIZ hale getirmek DEĞİL (o, gerçek
+            # sermayeyi de korumasız bırakırdı) — sembol bazlı: bir sembol
+            # gerçek borsaya (live/testnet) gidiyorsa negatif-EV reddi
+            # AYNEN sert kalır, simüle edilen sembollerde (şu an 123'ün
+            # 119'u) veri toplamayı tıkamaz. execution_mode_symbols'ın
+            # AYNI kaynağı, decision_recorder.py::_execution_mode_for_symbol
+            # ile aynı fail-closed ilke.
+            if not explored and (
+                ctx.risk.trading_mode == "test" or _is_simulated_symbol(ctx.market.symbol)
+            ) and direction in ("LONG", "SHORT") and (win > 0 or loss > 0):
                 explored = True
                 ctx.decision.action = ActionType.REDUCE
                 ctx.decision.final_size = round(abs(ctx.decision.proposed_size) * confidence, 8)

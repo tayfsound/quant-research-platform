@@ -24,6 +24,17 @@ from database.session_factory import SessionFactory
 from services.agent_combination_reliability_force_open import EXPERIMENT_BUCKET
 from services.decision_fusion import DecisionFusion
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _real_exchange_symbol(monkeypatch):
+    """Faz 454 — hibrit negatif-EV carve-out'u SADECE simüle edilen
+    sembollerde devreye giriyor. Bu dosyadaki testlerin HEPSİ force-open
+    kapısını İZOLE etmek istiyor (carve-out'u değil), o yüzden sembol
+    tüm testlerde AÇIKÇA gerçek-borsa (non-simulated) sabitleniyor."""
+    monkeypatch.setattr("services.decision_fusion._is_simulated_symbol", lambda symbol: False)
+
 # gate_eligible=True ama win_rate BİLEREK düşük (baseline'ın altında) —
 # "kapı kapalıyken win_rate hiç filtrelenmiyor" davranışını test etmek
 # için: sadece kapı uygunluğu (istatistiksel geçerlilik) yeterli olmalı.
