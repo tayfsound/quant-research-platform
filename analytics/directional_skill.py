@@ -262,6 +262,76 @@ def compute_pesaran_timmermann(records: list[dict]) -> dict | None:
     }
 
 
+def compute_execution_selection_effect(records: list[dict]) -> dict | None:
+    """Faz 459'da GERÇEK veriyle bulunan ikinci, bağımsız problem.
+
+    Son 21 günde 115.701 yönlü kararın yalnızca 10.450'si (%9) pozisyona
+    dönüştü; kalan 105.251'inin `entry_price`'ı hiç yazılmadığı için
+    bugüne kadarki BÜTÜN yön ölçümlerimiz (Faz 441-446-458 dahil) sessizce
+    bu %9'luk, üç kez süzülmüş alt kümeyi ölçüyordu.
+
+    Tüm popülasyon ölçüldüğünde çıkan tablo (7 gün, 1sa ufuk):
+      açılmayan  (%91): separation −0,074
+      açılan     (%9) : separation −0,177  (2,4 KAT daha ters)
+
+    Yani ham Council sinyali hafif ters, AMA icra kapıları (EV kapısı +
+    risk + meta) sinyalin EN TERS örneklerini seçerek geçiriyor. Bu, yön
+    sinyalinin kendisinden AYRI bir problem: kapılar ters seçim yapıyor.
+
+    records: [{"direction", "forward_label", "executed": bool}, ...]
+    `separation` = P(UP | LONG) − P(UP | SHORT); Council'in ayırt etme
+    gücü. Negatif = ters işaret. `amplification` = açılanların
+    separation'ının açılmayanlara oranı; 1'den büyükse kapılar ters
+    seçimi BÜYÜTÜYOR."""
+    groups: dict[bool, list[dict]] = {True: [], False: []}
+    for r in records:
+        if r.get("direction") not in ("LONG", "SHORT"):
+            continue
+        if r.get("forward_label") not in ("UP", "DOWN"):
+            continue
+        if not isinstance(r.get("executed"), bool):
+            continue
+        groups[r["executed"]].append(r)
+
+    out: dict[str, dict] = {}
+    for executed, members in groups.items():
+        key = "executed" if executed else "not_executed"
+        long_cell = [r for r in members if r["direction"] == "LONG"]
+        short_cell = [r for r in members if r["direction"] == "SHORT"]
+        if len(long_cell) < MIN_SAMPLE_SIZE or len(short_cell) < MIN_SAMPLE_SIZE:
+            out[key] = {"n": len(members), "separation": None, "usable": False}
+            continue
+        p_up_long = sum(1 for r in long_cell if r["forward_label"] == "UP") / len(long_cell)
+        p_up_short = sum(1 for r in short_cell if r["forward_label"] == "UP") / len(short_cell)
+        out[key] = {
+            "n": len(members),
+            "long_n": len(long_cell), "p_up_given_long": round(p_up_long, 6),
+            "short_n": len(short_cell), "p_up_given_short": round(p_up_short, 6),
+            "separation": round(p_up_long - p_up_short, 6),
+            "usable": True,
+        }
+
+    executed_sep = out.get("executed", {}).get("separation")
+    base_sep = out.get("not_executed", {}).get("separation")
+    amplification = None
+    gates_worsen_selection = None
+    if executed_sep is not None and base_sep not in (None, 0):
+        amplification = round(executed_sep / base_sep, 4)
+        # Aynı işaretteyse ve büyüklük arttıysa kapılar ters seçimi
+        # büyütüyor demektir.
+        gates_worsen_selection = bool(
+            executed_sep * base_sep > 0 and abs(executed_sep) > abs(base_sep)
+        )
+
+    if not out:
+        return None
+    return {
+        **out,
+        "amplification": amplification,
+        "gates_worsen_selection": gates_worsen_selection,
+    }
+
+
 def compute_daily_sign_test(records: list[dict], min_records_per_day: int = 50) -> dict | None:
     """Örtüşen örneklem itirazını aşan MUHAFAZAKÂR test: her GÜN tek bir
     bağımsız gözlem sayılır.

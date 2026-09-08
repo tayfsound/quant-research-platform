@@ -1,9 +1,51 @@
-# Mevcut Durum -- v1.170.0 (Faz 441-458: Direction Prediction Engine + karar hacmi kurtarma zinciri + Faz 458 yön becerisi ölçüm altyapısı)
+# Mevcut Durum -- v1.171.0 (Faz 441-459: Direction Prediction Engine + Faz 458/459 yön becerisi teşhisi: sinyal TERS İŞARETLİ, kapılar seçimi 2,3 kat kötüleştiriyor)
 
 **Tarih:** 2026-09-08
 **Branch:** main
 **Son commit (HEAD):** `e19ef6b` (Faz 450), push edildi.
 **Servis durumu:** Faz 448 VE Faz 439/440 artık İKİSİ DE canlıda — worker ikinci kez force-kill edilip watchdog'la yeniden başlatıldı (2026-09-08, kullanıcı onayıyla: "yaptığımız değişiklikleri canlıya alalım"). Faz 450/451 (historical_analog_engine.py) offline/rapor-only, restart gerekmez. Watchlist 104→123 sembole çıkarıldı (canlı, restart gerekmedi).
+
+**2026-09-09 — Faz 459: dönüş-koşullu yön değeri + icra kapılarının
+seçim etkisi. İKİ BÜYÜK BULGU.**
+
+Faz 458 "beceri sistematik negatif" demişti ama iki çok farklı dünya aynı
+sayıyı üretebilirdi: (a) Council gerçek ama ters işaretli bilgi taşıyor,
+(b) Council hiçbir şey taşımıyor ve negatiflik tamamen kısa vadeli dönüş
+(short-term reversal) etkisine karşı çalışmaktan geliyor. Ayırt edici
+ölçüm (`analytics/reversal_conditioning.py`): önceki 15dk getirisine göre
+TABAKALA, her tabakanın İÇİNDE sor — Council'in LONG/SHORT demesi ileri
+yükseliş olasılığını değiştiriyor mu? `separation = P(UP|LONG) −
+P(UP|SHORT)`.
+
+**BULGU 1 — sinyal TERS İŞARETLİ, gürültü DEĞİL.** Gerçek veride (7 gün,
+n=16.835): pooled separation **−0,1043**, üç tabakanın ÜÇÜNDE de tutarlı
+(−0,125 / −0,087 / −0,103). Dönüş etkisinin kendisi ise sadece **+0,0143**
+— yani Council'in kendi ters katkısı, dönüş etkisinin **7 KATI**. Dönüş
+hipotezi ELENDİ: negatif beceri Council'in KENDİ özelliği. Bu, "edge yok"
+sonucundan çok daha umut verici: 10,4 puanlık ayırt etme gücü VAR, sadece
+işareti ters.
+
+**BULGU 2 (beklenmedik) — icra kapıları ters seçimi 2,3 KAT büyütüyor.**
+Ölçüm sırasında kritik bir kör nokta bulundu: son 21 günde 115.701 yönlü
+kararın yalnızca **10.450'si (%9)** pozisyona dönüşmüş, kalan 105.251'inin
+`entry_price`'ı NULL — yani Faz 441/446/458 DAHİL bugüne kadarki BÜTÜN yön
+ölçümlerimiz sessizce bu %9'luk, üç kez süzülmüş alt kümeyi ölçüyordu.
+Gatherer artık `COALESCE(entry_price, karar-anı-snapshot)` kullanıyor ve
+tüm popülasyonu görüyor. Sonuç (`compute_execution_selection_effect()`):
+açılmayan kararlarda separation **−0,084**, açılanlarda **−0,194** —
+`amplification = 2,32`, `gates_worsen_selection = true`. Ham sinyal hafif
+ters, ama EV kapısı + risk + meta yığını sinyalin EN TERS örneklerini
+seçip geçiriyor. Yön sinyalinden AYRI, ikinci bir problem.
+
+Kör nokta kapatıldıktan sonra Faz 458 sayıları da yumuşadı (seçim
+yanlılığı kalktığı için): LONG −4,4pp / SHORT −6,1pp (önce −6,4 / −11,9),
+Brier 0,2691, resolution 0,000182, BSS −0,085. Teşhis değişmedi,
+büyüklüğü dürüstleşti.
+
+29 test geçti (9 yeni `test_reversal_conditioning.py` + güncellenen
+gatherer testleri). Üç hükmün (doğru işaret / ters işaret / hiç bilgi yok)
+her biri ayrı ayrı test ediliyor — çünkü üçü taban tabana zıt mimari
+kararlar doğuruyor.
 
 **2026-09-09 — Faz 458: yön becerisi ölçüm altyapısı (akademik
 literatür taramasının üç metodolojik düzeltmesi).** Kullanıcı isteği:
