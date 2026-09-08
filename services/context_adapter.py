@@ -438,6 +438,15 @@ class ContextAdapter:
             fibonacci_price_position=self._get(ctx, "fibonacci_price_position", "none"),
             wyckoff_event=self._get(ctx, "wyckoff_event", "none"),
             market_regime=self._get(ctx, "market_regime", market_regime),
+            # Faz 453 (2026-09-08) — gerçek bug: signal_engine.py::compute_
+            # pattern_signals() bu üçünü ZATEN hesaplıyordu (Faz 268-sonrası)
+            # ama to_pattern() hiç aktarmıyordu — PatternContext'in kendi
+            # varsayılanlarında (False/0.0) donuk kalıyordu.
+            # volume_profile_confirm bu yüzden pattern_agent.py'de HİÇ
+            # ateşlenmiyordu (gerçek veride n=0, doğrulandı). Düzeltildi.
+            poc_distance_pct=self._get(ctx, "poc_distance_pct", 0.0),
+            in_value_area=self._get(ctx, "in_value_area", False),
+            near_high_volume_node=self._get(ctx, "near_high_volume_node", False),
         )
 
     def to_quant(self, ctx: CognitiveCycleContext) -> QuantContext:

@@ -1,4 +1,4 @@
-# Mevcut Durum -- v1.167.0 (Faz 441-452: Direction Prediction Engine + Faz 447'nin ilk adımı (Council vs Analog gözlem raporu, +5,5pp gerçek lift bulundu) + watchlist 104→123)
+# Mevcut Durum -- v1.168.0 (Faz 441-453: Direction Prediction Engine + Faz 447'nin ilk adımı + pattern_agent gürültü denetimi (BOS/FVG ters işaret düzeltmesi) + watchlist 104→123)
 
 **Tarih:** 2026-09-08
 **Branch:** main
@@ -61,7 +61,58 @@ küçültülmüş uplift'e güvenmek) tutarlı bir bulgu. 7 yeni test (1 saf
 fonksiyon dosyası + 1 gatherer/DB round-trip) geçti.
 
 **Sadece gözlem — hiçbir canlı karar değişmedi, B/C seçeneklerine
-geçiş kararı kullanıcıda.**
+geçiş kararı kullanıcıda.** Kullanıcı kararı: C için "biraz daha
+bekleyelim."
+
+**2026-09-08 devamı — Faz 453: `pattern` ajanının gürültü denetimi,
+KÖK NEDEN bulundu VE düzeltildi.** Kullanıcı sordu: "hangi rejimde
+hangi yön olursa olsun gürültü yapan ajan var mı?" Gerçek yön isabeti
+(n=10000, 6 rejim) ile test edildi: `pattern` 6 rejimin HİÇBİRİNDE
+%50'yi geçmiyor (%37,6-48,9 arası). Ablasyon testiyle (konseyin çoğunluk
+yönüyle pattern uyuştuğunda vs uyuşmadığında konseyin GERÇEK isabeti)
+doğrulandı: pattern'in konseyle uyuşması HİÇBİR rejimde isabeti
+artırmıyor, 2 rejimde (bullish_low, bearish_high) konsey pattern'e
+KATILMADIĞINDA +18-20 puan daha isabetli. Kullanıcı "tarihsel analog
+motorunda pattern'in içinde olduğu başarılı rejimler gördüm" dedi —
+çelişki değil: pattern YALNIZ başına bullish_normal/LONG/scalp'te
+trade-kârlılığı bazında %86,73 gate_eligible ama AYNI rejimde saf yön
+isabeti sadece %48,9 — rejim rüzgârı (context cascade'in Faz 451'de
+bulduğu AYNI confound), pattern'in kendi becerisi değil.
+
+**Kök neden — rejime göre ayrıştırılmış Feature IC (n=11182, saf 1sa
+ileri yön hedefine karşı, Faz 411'in exit-fiyatı yerine):**
+- `break_of_structure`: 6 rejimin HEPSİNDE anlamlı NEGATİF IC (-0,12
+  ile -0,28, hepsi p<0,05, çoğu p<0,001) — "yükseliş yönlü BOS" gerçekte
+  DÜŞÜŞ öngörüyor (sahte kırılım imzası). Evrensel ters işaret.
+- `fair_value_gap`: 5/6 rejimde anlamlı NEGATİF (6.'sında da işaret
+  aynı yönde, sadece anlamsız). Evrensel ters işaret.
+- `swing_structure`: GERÇEKTEN rejime bağımlı (bullish_normal'da
+  anlamlı pozitif, bullish_low'da anlamlı negatif, diğerlerinde
+  anlamsız) — wyckoff_event/structure_phase'in Faz 411'de aldığı AYNI
+  muamele.
+- `volume_profile_confirm`: n=0, HİÇ ateşlenmiyor. Ayrı, gerçek bir bug
+  bulundu: `context_adapter.py::to_pattern()` `poc_distance_pct`/
+  `in_value_area`/`near_high_volume_node`'u HİÇ `PatternContext`'e
+  aktarmıyordu (signal_engine.py zaten hesaplıyordu) — wiring düzeltildi.
+
+**Uygulanan düzeltmeler (`agents/pattern_agent.py` + `services/
+context_adapter.py`):** BOS/FVG işaretleri evrensel çevrildi;
+swing_structure `_regime_gated()`'e taşındı (bullish_normal=pozitif,
+bullish_low=ters, diğerleri gölge); volume_profile_confirm wiring
+bug'ı düzeltildi AMA hiç test edilmemiş yeni bir canlı sinyal olduğu
+için shadow_contributions'a alındı (sıfır skor etkisi, feature_ic
+izlemeye devam — wyckoff_event/structure_phase'in İLK aktivasyonuyla
+AYNI ihtiyat). 3 eski test güncellendi + 2 yeni test eklendi (11/11
+pattern_agent testi geçti) + 54 bağlı test (context_adapter/feature_ic/
+cognitive_pipeline/council_orchestrator) geçti — 2 AYRI, ÖNCEDEN VAR
+OLAN, İLGİSİZ flaky/pre-existing hata bulundu (git stash ile
+doğrulandı: `test_council_orchestrator.py`'deki RiskChallenger testi
+VE `test_position_lifecycle.py`'deki excluded_from_stats testi —
+ikincisi tekrar denendiğinde geçti, flaky).
+
+**AÇIK MADDE — kullanıcı onayı bekliyor:** bu değişiklik CANLI skora
+dokunuyor (bugünün diğer offline analiz işlerinden farklı) — worker
+restart'ı (deploy) HENÜZ yapılmadı, karar kullanıcıda.
 
 **2026-09-08 devamı — Watchlist genişletildi (104→123 sembol), kullanıcı bulgusu:
 "aynı sembolle aynı yöne elli tane pozisyon açıyor, gelen veri

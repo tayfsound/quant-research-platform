@@ -70,34 +70,51 @@ class PatternAgent:
         elif context.wyckoff_event == "sign_of_weakness":
             _regime_gated(-1.5, "wyckoff_event", "Wyckoff sign of weakness tespit edildi", "bullish_low", "bearish_low")
 
-        # Break of Structure
+        # Faz 453 (2026-09-08) — kullanıcı isteği: "gürültü sinyalleri"
+        # denetimi (Faz 411'in break_of_structure/fair_value_gap'e hiç
+        # uygulanmadığı kısmı). Rejime göre ayrıştırılmış gerçek Feature
+        # IC (n=11182 karar, saf 1sa ileri yön hedefine karşı — trade
+        # kârlılığı DEĞİL): break_of_structure 6 rejimin HEPSİNDE anlamlı
+        # NEGATİF IC (-0,12 ile -0,28 arası, hepsi p<0,05, çoğu p<0,001)
+        # — "yükseliş yönlü BOS" gerçekte fiyatın DÜŞME olasılığını
+        # artırıyor (klasik "sahte kırılım" işareti — algoritmik/kripto
+        # piyasalarda görünür bir kırılım genelde tuzak). Rejimden
+        # BAĞIMSIZ, evrensel bir ters-işaret — structure_phase'in
+        # bearish_low'a özel çevirmesinden FARKLI olarak burada
+        # _regime_gated() gerekmiyor, işaret doğrudan çevrildi.
         if context.break_of_structure == "bullish":
-            contributions["break_of_structure"] = 1.5
-            evidence.append("Yükseliş yönlü yapı kırılımı (BOS)")
-        elif context.break_of_structure == "bearish":
             contributions["break_of_structure"] = -1.5
-            evidence.append("Düşüş yönlü yapı kırılımı (BOS)")
+            evidence.append("Yükseliş yönlü yapı kırılımı (BOS) — gerçek veride TERS yönde doğrulanmış (sahte kırılım imzası), işaret çevrildi")
+        elif context.break_of_structure == "bearish":
+            contributions["break_of_structure"] = 1.5
+            evidence.append("Düşüş yönlü yapı kırılımı (BOS) — gerçek veride TERS yönde doğrulanmış (sahte kırılım imzası), işaret çevrildi")
 
         # Change of Character — trend güvenini azaltır
         if context.change_of_character:
             caveats.append("Karakter değişimi (CHoCH) tespit edildi — trend dönüş riski")
             scale_all(0.6)
 
-        # Fair Value Gap
+        # Faz 453 — AYNI denetim: fair_value_gap 5/6 rejimde anlamlı
+        # NEGATİF IC (bullish_high'da n=190/p=0,39 anlamsız ama işaret
+        # YİNE negatif) — break_of_structure İLE AYNI ters-işaret deseni,
+        # evrensel çevrildi.
         if context.fair_value_gap == "bullish":
-            contributions["fair_value_gap"] = 0.5
-            evidence.append("Yükseliş yönlü adil değer boşluğu (FVG) doldurulmamış")
-        elif context.fair_value_gap == "bearish":
             contributions["fair_value_gap"] = -0.5
-            evidence.append("Düşüş yönlü adil değer boşluğu (FVG) doldurulmamış")
+            evidence.append("Yükseliş yönlü adil değer boşluğu (FVG) doldurulmamış — gerçek veride TERS yönde doğrulanmış, işaret çevrildi")
+        elif context.fair_value_gap == "bearish":
+            contributions["fair_value_gap"] = 0.5
+            evidence.append("Düşüş yönlü adil değer boşluğu (FVG) doldurulmamış — gerçek veride TERS yönde doğrulanmış, işaret çevrildi")
 
-        # Swing structure
+        # Faz 453 — AYNI denetim: swing_structure wyckoff_event/structure_
+        # phase İLE AYNI türden (rejime GERÇEKTEN bağımlı, evrensel DEĞİL)
+        # çıktı: bullish_normal'da anlamlı POZİTİF (dosyadaki doğru
+        # işaretle), bullish_low'da anlamlı NEGATİF (ters), diğer 4
+        # rejimde anlamsız (shadow'a düşüyor, _regime_gated()'in kendi
+        # mantığı).
         if context.swing_structure == "higher_highs_higher_lows":
-            contributions["swing_structure"] = 1.0
-            evidence.append("Yükselen tepeler / yükselen dipler — yükseliş yönlü salınım yapısı")
+            _regime_gated(1.0, "swing_structure", "Yükselen tepeler / yükselen dipler — yükseliş yönlü salınım yapısı", "bullish_normal", "bullish_low")
         elif context.swing_structure == "lower_highs_lower_lows":
-            contributions["swing_structure"] = -1.0
-            evidence.append("Alçalan tepeler / alçalan dipler — düşüş yönlü salınım yapısı")
+            _regime_gated(-1.0, "swing_structure", "Alçalan tepeler / alçalan dipler — düşüş yönlü salınım yapısı", "bullish_normal", "bullish_low")
         else:
             caveats.append("Karışık salınım yapısı — net bir yön eğilimi yok")
 
@@ -116,14 +133,26 @@ class PatternAgent:
         # signal_engine.compute_volume_profile). Fibonacci ile AYNI ilke:
         # yüksek-hacim bölgesi (gerçek biriktirme/support-resistance)
         # kendi başına yön açmıyor, mevcut yapısal kanıtı DOĞRULUYOR.
+        #
+        # Faz 453 (2026-09-08) — gerçek bug bulundu VE ayrıca düzeltildi:
+        # context_adapter.py::to_pattern() near_high_volume_node/in_value_
+        # area/poc_distance_pct'i HİÇ PatternContext'e aktarmıyordu —
+        # near_high_volume_node bu yüzden HER ZAMAN False kalıyordu,
+        # volume_profile_confirm gerçek veride n=0 (hiç ateşlenmemiş,
+        # doğrulandı). Wiring düzeltildi ama sinyal artık İLK KEZ gerçekten
+        # aktif olacak — hiç test edilmemiş yeni bir canlı sinyal gibi,
+        # bu yüzden shadow_contributions'a alındı (sıfır skor etkisi,
+        # feature_ic izlemeye devam) — gerçek IC kanıtı birikmeden skora
+        # girmiyor, wyckoff_event/structure_phase'in Faz 411'deki İLK
+        # aktivasyonuyla AYNI ihtiyat.
         current_score = sum(contributions.values())
         if context.near_high_volume_node:
             if current_score > 0:
-                contributions["volume_profile_confirm"] = 0.5
-                evidence.append("Fiyat yüksek hacimli bir birikim bölgesine yakın — yükseliş yapısını teyit ediyor (gerçek destek)")
+                shadow_contributions["volume_profile_confirm"] = 0.5
+                evidence.append("Fiyat yüksek hacimli bir birikim bölgesine yakın — yükseliş yapısını teyit ediyor (gerçek destek, henüz kanıtlanmamış, izleniyor)")
             elif current_score < 0:
-                contributions["volume_profile_confirm"] = -0.5
-                evidence.append("Fiyat yüksek hacimli bir birikim bölgesine yakın — düşüş yapısını teyit ediyor (gerçek direnç)")
+                shadow_contributions["volume_profile_confirm"] = -0.5
+                evidence.append("Fiyat yüksek hacimli bir birikim bölgesine yakın — düşüş yapısını teyit ediyor (gerçek direnç, henüz kanıtlanmamış, izleniyor)")
         if not context.in_value_area:
             caveats.append("Fiyat hacim-profili değer alanının (son hacmin ~%70'i) dışında — burada likidite daha ince")
 
