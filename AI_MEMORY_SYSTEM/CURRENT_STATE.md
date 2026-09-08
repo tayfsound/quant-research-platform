@@ -1,9 +1,61 @@
-# Mevcut Durum -- v1.169.0 (Faz 441-457: Direction Prediction Engine + pattern_agent gürültü denetimi + karar hacmi kurtarma zinciri (Faz 454-457) + watchlist 104→123)
+# Mevcut Durum -- v1.170.0 (Faz 441-458: Direction Prediction Engine + karar hacmi kurtarma zinciri + Faz 458 yön becerisi ölçüm altyapısı)
 
 **Tarih:** 2026-09-08
 **Branch:** main
 **Son commit (HEAD):** `e19ef6b` (Faz 450), push edildi.
 **Servis durumu:** Faz 448 VE Faz 439/440 artık İKİSİ DE canlıda — worker ikinci kez force-kill edilip watchdog'la yeniden başlatıldı (2026-09-08, kullanıcı onayıyla: "yaptığımız değişiklikleri canlıya alalım"). Faz 450/451 (historical_analog_engine.py) offline/rapor-only, restart gerekmez. Watchlist 104→123 sembole çıkarıldı (canlı, restart gerekmedi).
+
+**2026-09-09 — Faz 458: yön becerisi ölçüm altyapısı (akademik
+literatür taramasının üç metodolojik düzeltmesi).** Kullanıcı isteği:
+"Direction konusunda akademik çalışmaları inceleyelim... Sürekli bir
+direction problemimiz var, bunu aşmadan ilerleyemeyiz." Faz 446 direction
+Brier'ini 0,271 ölçüp "rastgeleden kötü" demişti ama TEK BİR SAYI ne
+yapmamız gerektiğini söylemiyordu. Literatür taraması üç eksik araç
+gösterdi, üçü de `analytics/directional_skill.py`'ye saf fonksiyon olarak
+eklendi (+ `services/directional_skill_gatherer.py`, gözlem-only, hiçbir
+Celery/beat kaydı yok):
+
+1. **Murphy ayrıştırması** (Brier = Reliability − Resolution +
+   Uncertainty). GERÇEK canlı veride (n=7.676, 21 gün, 1sa ufuk):
+   Uncertainty 0,2440 / **Reliability 0,0308** / **Resolution 0,000145**
+   / Brier 0,2750 / **Brier Skill Score −0,127**. Reliability,
+   Resolution'ın **213 katı** — literatürdeki "hiç ayrım yapmayan
+   tahmin" (climatological forecast) tanımı. **KRİTİK TUZAK UYARISI:**
+   post-hoc kalibrasyon (Platt/isotonic) Brier'i 0,2750 → 0,2438'e
+   indirir, yani "rastgeleden kötü" manşeti kaybolur AMA SIFIR BİLGİ
+   eklenmiş olur. Aylardır tek bir Brier sayısına bakarak yanlış soruyu
+   tartışıyorduk.
+2. **Doğru kıyas noktası.** Yön isabetinin benchmark'ı %50 DEĞİL, aynı
+   örneklemdeki koşulsuz yükseliş oranı. Ölçüldü: piyasa %51,92
+   yükselmiş; LONG isabeti %45,52 (**−6,4pp**), SHORT %36,15
+   (**−11,9pp**). Sorunumuz "edge yok" değil, **sistematik NEGATİF edge**
+   — ki bu, bilgi VAR ama işareti ters demek.
+3. **Pesaran-Timmermann (1992)** + **günlük işaret testi.** PT: S=−15,33,
+   p≈0, yön "negative". AMA PT gözlem bağımsızlığı varsayıyor ve 123
+   sembol aynı piyasa hareketini paylaştığı için bu ihlal ediliyor —
+   modül bunu `independence_assumption_violated=True` ile RAPORDA
+   taşıyor ve tek başına bırakmıyor. Muhafazakâr karşılığı: her günü tek
+   bağımsız gözlem sayan işaret testi — **6 yoğun günün 6'sı da negatif,
+   p=0,031** (günlük beceri −0,053 ile −0,134 arası). Örtüşen örneklem
+   itirazını aşan asıl kanıt bu.
+
+Faz 446'dan KASITLI bir fark: `status='closed'` filtresi YOK. Yön
+becerisi TAHMİNİN özelliğidir, işlemin değil; kapanma şartı koymak üç kez
+süzülmüş bir alt kümeyi ölçer ve tam da bu oturumun ana temasını
+(outcome ile direction'ı karıştırmak) tekrarlardı. Regresyon testiyle
+sabitlendi.
+
+Kodlama sırasında bir TASARIM KUSURU test tarafından yakalandı: ilk
+sürüm Brier'i bileşenlerden türetiyordu, ama kova içi olasılık varyansı
+varsa klasik üç terimli ayrıştırma gerçek Brier'i tam kurmuyor (rastgele
+veride ~0,001 fark). Artık Brier her zaman gerçek tanımdan geliyor, fark
+`decomposition_residual` olarak açıkça raporlanıyor (canlı veride
+0,000343).
+
+20 test geçti (`test_directional_skill.py` 16 + `test_directional_skill_
+gatherer.py` 4). Ana test, 2026-09-08 akşamı ELLE hesaplanan gerçek
+ayrıştırmayı yeniden üretiyor (proje disiplini: her yeni saf fonksiyon
+daha önce elle bulunmuş gerçek bir sonucu yeniden üretebilmeli).
 
 **2026-09-08 devamı — Faz 454-457: karar hacmi çöküşünün teşhisi ve
 kurtarılması.** Kullanıcı bildirimi: "AI pozisyon alma konusunda
