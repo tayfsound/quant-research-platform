@@ -332,6 +332,75 @@ def test_coverage_pct_reflects_share_of_total_valid_sample():
 
 # Faz 449 (2026-09-08) — "Pattern Coverage"nin ertelenmiş küçük parçası:
 # coverage_pct × conditioning_incremental_value TEK bir bileşik skor.
+# Faz 451 (2026-09-08) — Pattern Coverage'in kademeli context-adjusted
+# lift zinciri: global → rejim → rejim+yön → (tam hücre). GPT'nin önerisi
+# ("global baseline → regime baseline → direction+regime baseline →
+# pattern baseline → pattern+technical gibi kademeli") — ajan-bazlı son
+# adım BİLEREK kapsam dışı (conditioning_incremental_value onun yerine
+# geçiyor, ayrı ve daha büyük bir iş).
+def test_context_cascade_attributes_an_edge_entirely_to_regime():
+    """Bir hücrenin TÜM edge'i rejimden geliyorsa (yön ve ajan
+    kombinasyonu EK bir şey katmıyorsa) lift_from_direction ve
+    lift_from_agent_combination sıfıra yakın kalmalı, lift_from_regime
+    TÜM farkı taşımalı."""
+    base_time = datetime(2026, 8, 1, tzinfo=UTC)
+    strong_regime = [
+        _record({"technical", "macro"}, "bullish_low", "LONG", i < 27, base_time + timedelta(days=i))
+        for i in range(30)
+    ]
+    filler = [
+        _record({"quant"}, "bearish_high", "SHORT", i < 20, base_time + timedelta(days=i))
+        for i in range(40)
+    ]
+    result = compute_historical_analogs(strong_regime + filler, combination_sizes=(2,), min_group_size=20)
+    analog = next(a for a in result["analogs"] if set(a["domains"]) == {"technical", "macro"})
+    cascade = analog["context_cascade"]
+
+    # global_baseline zaten 4 ondalığa yuvarlanmış (baseline_win_rate),
+    # bu yuzden tolerans 1e-3 (1e-6 degil).
+    assert abs(cascade["global_baseline"] - 47 / 70) < 1e-3
+    assert abs(cascade["regime_baseline"] - 0.9) < 1e-3
+    assert abs(cascade["regime_direction_baseline"] - 0.9) < 1e-3
+    assert cascade["lift_from_direction"] == 0.0
+    assert cascade["lift_from_agent_combination"] == 0.0
+    assert cascade["lift_from_regime"] > 0.2
+    # Kademe kapanmalı: global + tüm lift'ler = hücrenin gerçek win_rate'i.
+    total = (
+        cascade["global_baseline"] + cascade["lift_from_regime"]
+        + cascade["lift_from_direction"] + cascade["lift_from_agent_combination"]
+    )
+    assert abs(total - analog["win_rate"]) < 1e-3
+
+
+def test_context_cascade_attributes_most_of_the_edge_to_the_agent_combination():
+    """Aynı rejim+yönde BAŞKA bir kombinasyon vasat çıkarken (quant tek
+    başına %50), test edilen kombinasyon (technical+macro) belirgin
+    şekilde daha iyi (%90) çıkıyorsa -- edge'in ÇOĞU rejimden değil,
+    GERÇEKTEN o ajan kombinasyonundan gelmeli."""
+    base_time = datetime(2026, 8, 1, tzinfo=UTC)
+    mediocre_same_context = [
+        _record({"quant"}, "bullish_normal", "LONG", i < 10, base_time + timedelta(days=i))
+        for i in range(20)
+    ]
+    strong_combo = [
+        _record({"technical", "macro"}, "bullish_normal", "LONG", i < 18, base_time + timedelta(days=i))
+        for i in range(20)
+    ]
+    filler = [
+        _record({"sentiment"}, "bearish_low", "SHORT", i < 20, base_time + timedelta(days=i))
+        for i in range(40)
+    ]
+    result = compute_historical_analogs(
+        mediocre_same_context + strong_combo + filler, combination_sizes=(2,), min_group_size=20,
+    )
+    analog = next(a for a in result["analogs"] if set(a["domains"]) == {"technical", "macro"})
+    cascade = analog["context_cascade"]
+
+    assert abs(cascade["regime_direction_baseline"] - 0.7) < 1e-6  # (10+18)/40
+    assert cascade["lift_from_agent_combination"] > cascade["lift_from_regime"]
+    assert abs(cascade["lift_from_agent_combination"] - 0.2) < 1e-6
+
+
 def test_coverage_weighted_incremental_value_is_the_product_and_keeps_sign():
     base_time = datetime(2026, 8, 1, tzinfo=UTC)
     good_regime = [

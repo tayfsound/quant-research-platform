@@ -1,9 +1,67 @@
-# Mevcut Durum -- v1.164.0 (Faz 441-448: Direction Prediction Engine + MetaStage kök-neden düzeltmesi + Ham Feature Ingestion tamamlandı)
+# Mevcut Durum -- v1.166.0 (Faz 441-451: Direction Prediction Engine + MetaStage kök-neden düzeltmesi + Ham Feature Ingestion + 7 boyutlu historical_analog + context cascade + watchlist 104→123)
 
 **Tarih:** 2026-09-08
 **Branch:** main
-**Son commit (HEAD):** Faz 440 (Ham Feature Ingestion tamamlandı), push edilecek.
-**Servis durumu:** Faz 448 (metacognition.py, SHORT'ta MTF-uzlaşma boost'u kaldırıldı) celery worker'a alındı — worker force-kill edildi, watchdog yeniden başlattı, taze kod canlıda (kullanıcı onayıyla). Faz 439/440 (orchestrator.py/pipeline.py) HENÜZ restart edilmedi — bir sonraki worker restart'ında canlıya yansıyacak.
+**Son commit (HEAD):** `e19ef6b` (Faz 450), push edildi.
+**Servis durumu:** Faz 448 VE Faz 439/440 artık İKİSİ DE canlıda — worker ikinci kez force-kill edilip watchdog'la yeniden başlatıldı (2026-09-08, kullanıcı onayıyla: "yaptığımız değişiklikleri canlıya alalım"). Faz 450/451 (historical_analog_engine.py) offline/rapor-only, restart gerekmez. Watchlist 104→123 sembole çıkarıldı (canlı, restart gerekmedi).
+
+**2026-09-08 devamı — Faz 451: Pattern Coverage'in kademeli context-
+adjusted lift zinciri.** GPT'nin önerisi ("global baseline → regime
+baseline → direction+regime baseline → pattern baseline → pattern+
+technical gibi kademeli") — `conditioning_incremental_value` (Faz 427)
+TEK bir sıçrama yapıyordu (domain-only vs TAM hücre, rejim/yön/reversing/
+volatility/structure/trade_type'ın HEPSİNİ tek adımda katarak).
+`compute_historical_analogs()`'a yeni `context_cascade` alanı eklendi:
+her adayın `global_baseline`/`regime_baseline`/`regime_direction_baseline`
++ `lift_from_regime`/`lift_from_direction`/`lift_from_agent_combination`
+— hücrenin edge'inin NE KADARININ rejimden, ne kadarının yöneden, ne
+kadarının GERÇEKTEN ajan kombinasyonundan geldiğini ayırıyor. Ajanın
+KENDİ aşamalı büyüme sırası (pattern→pattern+technical, tek tek ajan
+ekleme) BİLEREK kapsam dışı — `conditioning_incremental_value` o son
+adımın yerine geçiyor, ayrı ve çok daha büyük bir iş (size=1 hücreler +
+"hangi ajan önce eklendi" sıralama kararı gerektiriyor).
+
+Gerçek veriyle doğrulandı: `pattern+technical/bullish_low/LONG/swing`
+(win_rate=%96,97) — edge'in %18,24 puanı GERÇEKTEN kombinasyondan
+(rejim sadece %0,35 katkı). `macro+technical/bullish_normal/LONG/scalp`
+(win_rate=%91,72) — TERSİ: edge'in %10,45 puanı rejimden, kombinasyonun
+kendi katkısı sadece %4,26 — benzer görünen iki yüksek-win_rate hücre,
+çok farklı edge kaynaklarına sahip. 2 yeni test (kademe kapanışı +
+işaret doğrulaması) + 34/34 historical_analog_engine testi + 52 bağlı
+test geçti.
+
+**SIRADAKİ (kullanıcı onayladı, şimdi başlanıyor):** Faz 447 — Council'in
+evidence-provider'a geçişi. Planın kendi kuralı gereği somut bir tasarımı
+YOK ("Kapsam Faz 441-446'nın GERÇEK sonuçlarına göre AYRICA
+tasarlanacak") — kodlamaya geçmeden önce kapsam netleştirilecek.
+
+**2026-09-08 devamı — Watchlist genişletildi (104→123 sembol), kullanıcı bulgusu:
+"aynı sembolle aynı yöne elli tane pozisyon açıyor, gelen veri
+anlamsızlaşıyor."** Gerçek veriyle doğrulandı: son 2 günde ICPUSDT LONG
+tek başına 72 karar, INJUSDT LONG 71, WLDUSDT LONG 71 — aşırı yoğunlaşma
+gerçekti (aynı piyasa durumunun tekrar tekrar örneklenmesi, bugünkü
+MetaStage/agreement bulgularıyla AYNI "crowding gerçek kanıt değil"
+teması). Gerçek Binance USDT-M futures `/fapi/v1/ticker/24hr` uç
+noktasından TÜM mevcut sembollerin 24sa hacmi çekildi, mevcut watchlistte
+OLMAYANLAR filtrelendi (kaldıraçlı/junk pattern'ler — BULL/BEAR/UP/DOWN/
+3L/3S, ASCII-olmayan ticker'lar, 20M USDT altı hacim — elendi), kalan
+64 adaydan SADECE tanıdık/güvenilir 22'si önerildi (geri kalan ~42'si
+isim olarak tanınmadığı için — wash-trade/düşük-kalite riski, körlemesine
+eklenmedi). Kullanıcı "emin olduklarımızı ekleyelim" dedi. 3'ü zaten
+watchlistteydi (TSLAUSDT/GOOGLUSDT/MSTRUSDT), net 19 yeni eklendi:
+IOSTUSDT, HBARUSDT, KASUSDT, VIRTUALUSDT, PENDLEUSDT, ZROUSDT, LUNA2USDT,
+ETHFIUSDT, COTIUSDT, ORCAUSDT, HOODUSDT, MRVLUSDT, SPYUSDT, CRCLUSDT,
+PAXGUSDT, SKHYNIXUSDT, SNDKUSDT, CLUSDT, NATGASUSDT. Uygulama: ham SQL
+UPDATE değil, gerçek `admin` hesabına (yeni satır yaratmadan) `create_
+access_token()` ile token basılıp GERÇEK `/api/v1/settings/watchlist`
+API'si (auth'lu, OPERATOR rolü) çağrıldı — memory `project_open_items`'ın
+önerdiği "ikinci güvenli yol" ilk kez kullanıldı. DB'de doğrulandı:
+123 sembol. Restart GEREKMEDİ (watchlist her cycle'da taze okunuyor).
+**Geri kalan ~42 belirsiz aday (KORU, BZ, PUMP, MU, SKHY, AKE, SNXX,
+UAI, BNC, DRAM, SPCX, FORM, ASTER, RAYSOL, EWY, LIT, SOLV, ACE, HEMI,
+XPL, XAN, MINIMAX, CATI, MUUU, CFG, VVV, NBIS, COLLECT, PROM, KOMA, ONG,
+AXTI, BEAT, CHIP, SKR, BLUAI, ZEN, XAU, SAMSUNG vb.) kasıtlı olarak
+eklenmedi** — kullanıcı isterse ayrıca gözden geçirilip eklenebilir.
 
 **Faz 419-423 özet (bu turda, sırayla):**
 - **Faz 419**: Dashboard "Rejime Göre AI Konseyi Girişleri" kartına win_rate yanında `total_pnl` rozeti eklendi (renk PnL işaretine göre) — kullanıcı bulgusu: "ROI yanıltabiliyor, başarılı görünüp başarılı olmayanlar var."

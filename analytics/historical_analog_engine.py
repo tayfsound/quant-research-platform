@@ -181,6 +181,39 @@ def compute_historical_analogs(
         if len(group) >= min_group_size
     }
 
+    # Faz 451 (2026-09-08) — GPT'nin "context-adjusted incremental lift"
+    # önerisinin kademeli/cascading kısmı (conditioning_incremental_value,
+    # Faz 427, TEK bir karşılaştırma yapıyordu: domain-only vs TAM hücre —
+    # rejim/yön/reversing/volatility/structure/trade_type'ın HEPSİNİ TEK
+    # ADIMDA katıyordu). Bu, AYNI soruyu AŞAMA AŞAMA soruyor: global
+    # taban → rejim tabanı → rejim+yön tabanı → (mevcut conditioning_
+    # incremental_value'nun kapsadığı) tam hücre — her adımın KENDİ
+    # marjinal katkısını ayırıyor ("bu hücrenin edge'i asıl rejimden mi
+    # geliyor, yoksa ajan kombinasyonunun kendisi mi gerçekten katkı
+    # sağlıyor?"). Ajan-kombinasyonunun KENDİ aşamalı büyüme sırası
+    # (pattern → pattern+technical gibi tek tek ajan ekleme) BİLEREK
+    # kapsam dışı bırakıldı — bu, size=1 tekil-ajan hücreleri + hangi
+    # ajanın "önce" eklendiğine dair bir sıralama kararı gerektiren, çok
+    # daha büyük ayrı bir iş; conditioning_incremental_value (Faz 427)
+    # o son adımın YERİNE (domain-only'den tam hücreye TEK sıçrama)
+    # geçiyor, tam bir ajan-bazlı kademe değil.
+    regime_groups: dict[str, list[dict]] = defaultdict(list)
+    regime_direction_groups: dict[tuple, list[dict]] = defaultdict(list)
+    for r in valid:
+        regime_groups[r["market_regime"]].append(r)
+        regime_direction_groups[(r["market_regime"], r["direction"])].append(r)
+
+    regime_win_rates = {
+        regime: sum(1 for r in group if r["win"]) / len(group)
+        for regime, group in regime_groups.items()
+        if len(group) >= min_group_size
+    }
+    regime_direction_win_rates = {
+        key: sum(1 for r in group if r["win"]) / len(group)
+        for key, group in regime_direction_groups.items()
+        if len(group) >= min_group_size
+    }
+
     # agent_combination_reliability.py'deki AYNI örtüşme mantığı: bir
     # işlem birden fazla (domain, rejim, yön) hücresine birden girebilir
     # (ör. bir 3'lü, onu kapsayan bir 2'liyle) — "bağımsız kanıt"
@@ -230,6 +263,36 @@ def compute_historical_analogs(
         conditioning_incremental_value = (
             round(win_rate - domain_baseline, 4) if domain_baseline is not None else None
         )
+
+        # Faz 451 — kademeli context cascade: global → rejim → rejim+yön
+        # → (mevcut conditioning_incremental_value'nun kapsadığı) tam
+        # hücre. Her adım fail-closed None (min_group_size altındaki bir
+        # ara taban icat edilmiş bir lift üretmez).
+        regime_baseline = regime_win_rates.get(regime)
+        regime_direction_baseline = regime_direction_win_rates.get((regime, direction))
+        lift_from_regime = (
+            round(regime_baseline - baseline_win_rate, 4) if regime_baseline is not None else None
+        )
+        lift_from_direction = (
+            round(regime_direction_baseline - regime_baseline, 4)
+            if regime_baseline is not None and regime_direction_baseline is not None
+            else None
+        )
+        lift_from_agent_combination = (
+            round(win_rate - regime_direction_baseline, 4)
+            if regime_direction_baseline is not None
+            else None
+        )
+        context_cascade = {
+            "global_baseline": baseline_win_rate,
+            "regime_baseline": round(regime_baseline, 4) if regime_baseline is not None else None,
+            "regime_direction_baseline": (
+                round(regime_direction_baseline, 4) if regime_direction_baseline is not None else None
+            ),
+            "lift_from_regime": lift_from_regime,
+            "lift_from_direction": lift_from_direction,
+            "lift_from_agent_combination": lift_from_agent_combination,
+        }
         # Faz 427 — "Pattern Coverage": bu hücrenin TÜM örneklemin ne
         # kadarını temsil ettiği. gate_eligible'a KATILMIYOR (zorla bir
         # eşik değil) — sadece "yüksek win_rate ama kararların %0,3'ünü
@@ -273,6 +336,7 @@ def compute_historical_analogs(
             "conditioning_incremental_value": conditioning_incremental_value,
             "coverage_pct": coverage_pct,
             "coverage_weighted_incremental_value": coverage_weighted_incremental_value,
+            "context_cascade": context_cascade,
             "_wins": wins,
         })
 
