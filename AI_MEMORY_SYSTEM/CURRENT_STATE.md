@@ -1,4 +1,4 @@
-# Mevcut Durum -- v1.166.0 (Faz 441-451: Direction Prediction Engine + MetaStage kök-neden düzeltmesi + Ham Feature Ingestion + 7 boyutlu historical_analog + context cascade + watchlist 104→123)
+# Mevcut Durum -- v1.167.0 (Faz 441-452: Direction Prediction Engine + Faz 447'nin ilk adımı (Council vs Analog gözlem raporu, +5,5pp gerçek lift bulundu) + watchlist 104→123)
 
 **Tarih:** 2026-09-08
 **Branch:** main
@@ -30,10 +30,38 @@ kendi katkısı sadece %4,26 — benzer görünen iki yüksek-win_rate hücre,
 işaret doğrulaması) + 34/34 historical_analog_engine testi + 52 bağlı
 test geçti.
 
-**SIRADAKİ (kullanıcı onayladı, şimdi başlanıyor):** Faz 447 — Council'in
-evidence-provider'a geçişi. Planın kendi kuralı gereği somut bir tasarımı
-YOK ("Kapsam Faz 441-446'nın GERÇEK sonuçlarına göre AYRICA
-tasarlanacak") — kodlamaya geçmeden önce kapsam netleştirilecek.
+**2026-09-08 devamı — Faz 452: Faz 447'nin kullanıcı onaylı İLK, en
+güvenli adımı (A seçeneği) — Council vs Historical Analog uzlaşım
+raporu.** Faz 447'nin kendi tetikleme koşulu ("AI/Council baseline'ları
+GERÇEKTEN geçtiğini göstermeden bu faza girilmeyecek") bugün TERSİNE
+doğrulanmıştı (Faz 446: direction Brier randomdan kötü) — büyük bir
+mimari değişikliğe hemen girmek yerine üç kademeli seçenek sunuldu (A:
+sadece gözlem raporu, B: görünür-ama-etkisiz uyarı, C: gerçek mimari
+değişim), kullanıcı A'yı seçti.
+
+Yeni `analytics/council_analog_agreement.py::compute_council_vs_analog_
+agreement()` (saf fonksiyon — gate_eligible analog hücreleriyle eşleşen
+("endorsed") vs eşleşmeyen ("other") kararların win_rate'ini karşılaştırır,
+7 boyutun (domains ÜST KÜME + rejim/yön/reversing/volatility/structure/
+trade_type TAM eşleşme) HEPSİ kullanılır) + `services/council_analog_
+agreement_gatherer.py` (gerçek veri: `cutoff`'tan ÖNCEKİ kararlardan
+gate_eligible hesaplanır — `cutoff`'tan SONRAKİ kararlar bu hesaplamaya
+HİÇ girmez, GERÇEKTEN tutulmuş/held-out).
+
+**Gerçek, tutulmuş veriyle sonuç (n=8000 eğitim, n=1194 tutma penceresi,
+2026-09-06→08):** eğitim penceresinde 7 gate_eligible hücre bulundu
+(hepsi %89-92 tarihsel isabet). Tutma penceresinde bu hücrelere denk
+gelen GERÇEKTEN YENİ kararlar (n=75) **%58,67** isabet, denk
+gelmeyenler (n=1119) **%53,17** — **+5,5 puan gerçek, kalıcı lift**.
+Eğitim rakamları (%89-92) büyük ölçüde şişirilmiş (seçim önyargısı) ama
+gerçek bir ileriye-dönük değer VAR, sıfır değil — Council'i tamamen
+değiştirecek kadar dramatik değil (planın "önce kanıtla" ilkesini
+doğruluyor), Faz 433'ün shrinkage mantığıyla (ham win_rate'e değil
+küçültülmüş uplift'e güvenmek) tutarlı bir bulgu. 7 yeni test (1 saf
+fonksiyon dosyası + 1 gatherer/DB round-trip) geçti.
+
+**Sadece gözlem — hiçbir canlı karar değişmedi, B/C seçeneklerine
+geçiş kararı kullanıcıda.**
 
 **2026-09-08 devamı — Watchlist genişletildi (104→123 sembol), kullanıcı bulgusu:
 "aynı sembolle aynı yöne elli tane pozisyon açıyor, gelen veri
