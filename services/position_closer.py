@@ -57,6 +57,58 @@ _MAE_MFE_MAX_BARS = 1000  # Binance'in gerçek tek-istek tavanı
 _BREAKEVEN_LOSS_REDUCTION_THRESHOLD = 0.5
 
 
+def realistic_barrier_fill(direction: str, bar, stop_loss_price, take_profit_price) -> float | None:
+    """Faz 477 (2026-09-09) — STOP AŞIMININ KÖK NEDENİ.
+
+    Kullanıcı: "Gerçek nedenini ölçelim, stop aşımını olabildiğince
+    durduralım." Ölçüldü ve kök neden bulundu.
+
+    `close_due_positions()` (REST güvenlik ağı) tek bir 1 dakikalık mum
+    çekip `data[-1].close`'u HEM tetik kontrolü HEM dolum fiyatı olarak
+    kullanıyordu. Bunun iki ayrı kusuru var:
+
+      1. TESPİT: fiyat mum İÇİNDE stop'a değip toparlanırsa hiç
+         görülmüyordu (yanlış negatif).
+      2. DOLUM: tetiklendiğinde de, stop'u ZATEN AŞMIŞ olan kapanış
+         fiyatından kapatılıyordu -> yapay aşım.
+
+    Gerçek veri (3 gün, n=470 stopla kapanan): medyan aşım fiyatın
+    **%0,078**'i, P90 **%0,692**'si — yani tipik bir 1 dakikalık mum
+    aralığı kadar. Aşım piyasa hareketinden değil, ÖRNEKLEME
+    YÖNTEMİNDEN geliyordu.
+
+    Bu fonksiyon standart, muhafazakâr bariyer-dolum modelini uyguluyor:
+      - Bariyere mumun low/high'ı DEĞDİ mi (close değil) -> tespit
+      - Dolum bariyerin KENDİSİNDE — çünkü borsada duran bir stop emri
+        orada gerçekleşirdi
+      - AMA mum bariyerin ötesinde AÇILDIYSA gerçek bir boşluk (gap)
+        vardır; o durumda dolum AÇILIŞ fiyatında (gerçek, kaçınılmaz
+        kayma — uydurma bir iyimserlik üretmiyoruz)
+      - Aynı mumda hem stop hem hedef değdiyse STOP kazanır: mum içi
+        sıralamayı bilemeyiz, muhafazakâr olan kötü senaryodur
+
+    Tetiklenmediyse None döner (çağıran taraf normal `close` fiyatıyla
+    devam eder — davranış DEĞİŞMEZ)."""
+    open_price = getattr(bar, "open", None)
+    high = getattr(bar, "high", None)
+    low = getattr(bar, "low", None)
+    if open_price is None or high is None or low is None:
+        return None
+
+    if direction == "LONG":
+        if stop_loss_price is not None and low <= stop_loss_price:
+            # Aciilis zaten stop'un ALTINDAYSA gercek bir bosluk var.
+            return min(stop_loss_price, open_price)
+        if take_profit_price is not None and high >= take_profit_price:
+            return max(take_profit_price, open_price)
+    elif direction == "SHORT":
+        if stop_loss_price is not None and high >= stop_loss_price:
+            return max(stop_loss_price, open_price)
+        if take_profit_price is not None and low <= take_profit_price:
+            return min(take_profit_price, open_price)
+    return None
+
+
 class PositionCloser:
     def __init__(
         self,
@@ -791,10 +843,18 @@ class PositionCloser:
             data = self.data_provider.get_ohlcv(symbol, timeframe, limit=1)
             if not data:
                 continue
-            current_price = data[-1].close
+            bar = data[-1]
+            current_price = bar.close
 
             for pos in positions:
-                result = self._process_position_at_price(pos, current_price, decision_repo, now)
+                # Faz 477 — bariyer tetiklendiyse GERÇEKÇİ dolum fiyatı;
+                # aksi halde davranış eskisiyle birebir aynı (bar.close).
+                fill = realistic_barrier_fill(
+                    (pos.get("direction") or "").upper(), bar,
+                    pos.get("stop_loss_price"), pos.get("take_profit_price"),
+                )
+                price_for_position = fill if fill is not None else current_price
+                result = self._process_position_at_price(pos, price_for_position, decision_repo, now)
                 if result is None:
                     continue
                 closed.append(result["closed_entry"])

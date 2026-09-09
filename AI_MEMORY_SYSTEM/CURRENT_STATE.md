@@ -1,4 +1,4 @@
-# Mevcut Durum -- v1.187.0 (Faz 441-476: meta-learning eşiği 0,4→0,2 + Faz 414 DOĞRULANDI: düzeltme işe yaramamış)
+# Mevcut Durum -- v1.188.0 (Faz 441-477: stop aşımının KÖK NEDENİ bulundu — piyasa değil, kendi örnekleme yöntemimiz)
 
 **Tarih:** 2026-09-08
 **Branch:** main
@@ -20,6 +20,50 @@ Canlı doğrulama yapıldı: ilk 40 kararda dört kategori de ateşledi
 bearish_new_shorts −0,2 ×11, bearish_long_capitulation +0,3 ×11) — Faz
 453'teki gibi sessizce ölü kalma durumu YOK.
 
+
+**2026-09-09 — Faz 477: STOP AŞIMININ KÖK NEDENİ BULUNDU VE DÜZELTİLDİ.**
+Kullanıcı: "Gerçek nedenini ölçelim, stop aşımını olabildiğince
+durduralım."
+
+**Teşhis, ilk soruyla yön değiştirdi:** son 10 gündeki 8.528 kapanışın
+TAMAMI `execution_mode='simulated'`, sıfır borsa stop emri. Yani aşım
+borsada/piyasada değil, BİZİM KENDİ kapatma mantığımızda oluşuyordu.
+
+**Kök neden tek bir satır:** `close_due_positions()` (REST güvenlik ağı)
+tek bir 1dk mum çekip `data[-1].close`'u HEM tetik kontrolü HEM dolum
+fiyatı olarak kullanıyordu. İki ayrı kusur:
+1. *Tespit:* fiyat mum İÇİNDE stop'a değip toparlanırsa hiç görülmüyordu
+   (yanlış negatif) — borsadaki bir stop emri çoktan tetiklenmiş olurdu.
+2. *Dolum:* tetiklendiğinde de stop'u ZATEN AŞMIŞ kapanış fiyatından
+   kapatılıyordu -> yapay aşım.
+
+**Kanıt:** 3 gün, n=470 stopla kapanan pozisyon — medyan aşım fiyatın
+**%0,078**'i, P90 **%0,692**'si. Bu tipik bir 1 dakikalık mum aralığı
+kadar; yani aşım piyasa hareketinden değil ÖRNEKLEME YÖNTEMİNDEN
+geliyordu. (Faz 476'da ölçülmüştü: monitör günde sadece ~9 dk kör
+(%0,6) ama stopların %13'ü >%15 aşıyor — aritmetik zaten körlüğü
+dışlıyordu.)
+
+**Düzeltme:** yeni saf fonksiyon `realistic_barrier_fill()` — standart,
+muhafazakâr bariyer-dolum modeli:
+- Tetik mumun **low/high**'ıyla (close değil)
+- Dolum **bariyerin kendisinde** (borsada duran stop emri orada
+  gerçekleşirdi)
+- AMA mum bariyerin ÖTESİNDE açtıysa gerçek boşluk vardır -> dolum
+  AÇILIŞTA (uydurma iyimserlik üretilmiyor)
+- Aynı mumda hem stop hem hedef değdiyse STOP kazanır (mum içi sıralama
+  bilinemez, muhafazakâr olan kötü senaryo)
+- Tetiklenmediyse `None` -> çağıran eski `close` davranışına düşer
+
+SADECE REST yolu değişti; `_process_position_at_price` (WS monitörüyle
+PAYLAŞILAN kod) ve WS yolu HİÇ değişmedi.
+
+**Gözlem pencerelerine etkisi YOK:** yön ölçümlerimiz `market_snapshots`
+'tan gelen ileri fiyatı kullanıyor, `exit_price`'ı değil (Faz 470'te
+`feature_ic` de ileri getiriye çevrilmişti). Bu düzeltme PnL/exit
+fiyatlarını etkiliyor, yön ölçümünü değil.
+
+9 yeni test, 98 test geçti.
 
 **2026-09-09 — Faz 476: meta-learning eşiği 0,4 → 0,2 (kullanıcı
 kararı) + backlog #10 (Faz 414 WS doğrulaması) SONUÇLANDI.**
