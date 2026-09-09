@@ -1,4 +1,4 @@
-# Mevcut Durum -- v1.183.0 (Faz 441-472: madde 7'nin ölçüm adımı — Council SADECE rejime KARŞI konuştuğunda güvenilir)
+# Mevcut Durum -- v1.184.0 (Faz 441-473: meta-etiket hücreleri survival'dan geçirildi — biri güçlendi, biri eridi)
 
 **Tarih:** 2026-09-08
 **Branch:** main
@@ -20,6 +20,36 @@ Canlı doğrulama yapıldı: ilk 40 kararda dört kategori de ateşledi
 bearish_new_shorts −0,2 ×11, bearish_long_capitulation +0,3 ×11) — Faz
 453'teki gibi sessizce ölü kalma durumu YOK.
 
+
+**2026-09-09 — Faz 473: madde 7 adım 1 — meta-etiket hücreleri
+survival'dan geçirildi. OOS tek bir bölmedir; survival hücreyi ardışık
+21 pencerede tekrar tekrar sınadı.**
+
+| hücre | OOS | survival hükmü | keşif → sonraki ort. | tutarlı | kendi rejiminde |
+|---|---|---|---|---|---|
+| **LONG\|bearish_normal** | ✓ | **surviving** | +0,041 → **+0,109** | 10/14 | **+0,124** |
+| SHORT\|bullish_normal | ✓ | **decaying** | **+0,312** → +0,050 | 8/12 | +0,096 |
+| SHORT\|bearish_low | ✓ (ters) | collapsed | −0,078 → −0,062 | 7/20 | −0,063 |
+
+**Survival, OOS sonucunu anlamlı şekilde İNCELTTİ.** `SHORT|bullish_
+normal` keşifte +31 puanlık devasa bir fazlalık gösterip +5'e eridi —
+dış raporun tam olarak uyardığı backtest-anomalisi deseni (yüksek WR +
+küçük N). `LONG|bearish_normal` ise tersine GÜÇLENDİ (+0,041 → +0,109).
+Sadece OOS'a baksaydık ikisini eşit sayacaktık.
+
+**BAĞLANMADI — kullanıcı kararı: "Bağlama işini sonraya bırakalım."**
+Gerekçeler: (a) Faz 464'ün gözlem penceresi hâlâ açık, üst üste iki
+canlı değişiklik etkileri ayırt edilemez yapar; (b) `SHORT|bullish_
+normal`'ın erimesinin durup durmadığı görülmeli. Kurulmuş-ama-bağlanmamış
+her şey memory `project_unwired_architecture_backlog`'da (kullanıcı
+isteği: "Todo da yazsın ki unutmayım").
+
+Ayrıca GPT'nin MAE/MFE revizyon tavsiyeleri todo'ya alındı (memory
+`project_gpt_mae_mfe_review`) — acil değil. Ana tezi: o modül edge
+değil RİSK GEOMETRİSİ ölçüyor; `N>=10` canlı kapı için çok düşük
+(P90 bir kuyruk metriği); dar CI + küçük N yüksek güven demek değil;
+"Canlı: Açık" sütunu kanıt durumuna (OPEN/EXPLORATORY/INSUFFICIENT/
+UNSTABLE) dönüşmeli.
 
 **2026-09-09 — Faz 472: madde 7 (Council → evidence provider) ÖLÇÜM
 adımı. Council hangi hücrelerde kanıt sayılabilir?**

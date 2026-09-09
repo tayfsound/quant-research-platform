@@ -46,6 +46,7 @@ from analytics.evaluation_cohort import describe_evaluation_window
 from analytics.direction_meta_label import compute_direction_meta_label
 from analytics.feature_directional_value import compute_feature_directional_value
 from analytics.gate_selection_value import compute_gate_selection_effect
+from analytics.pattern_survival import compute_pattern_survival
 from analytics.forward_direction import DEFAULT_THRESHOLD_PCT, label_forward_direction
 from analytics.reversal_conditioning import compute_conditional_direction_value
 from analytics.signal_directional_value import compute_signal_directional_value
@@ -264,6 +265,21 @@ def gather_directional_skill(
         "gate_selection_effect": compute_gate_selection_effect(gate_records),
         # Faz 472: Council'in yön çağrısı HANGİ hücrelerde güvenilir kanıt.
         "direction_meta_label": compute_direction_meta_label(meta_label_records),
+        # Faz 473 — madde 7 adım 1: meta-etiket hücreleri ZAMAN İÇİNDE
+        # yaşıyor mu? OOS tek bir bölmedir; survival, hücreyi ardışık
+        # pencerelerde tekrar tekrar sınıyor.
+        "meta_label_survival": compute_pattern_survival([
+            {
+                "patterns": [f"{m['council_direction']}|{m['regime']}"] if m.get("regime") else [],
+                # "won" = COUNCIL HAKLI ÇIKTI MI (trade kârı DEĞİL).
+                "won": (
+                    (m["council_direction"] == "LONG" and m["forward_label"] == "UP")
+                    or (m["council_direction"] == "SHORT" and m["forward_label"] == "DOWN")
+                ),
+                "timestamp": m["timestamp"], "regime": m.get("regime"),
+            }
+            for m in meta_label_records
+        ], chunk_size=800),
         "horizon_minutes": round(horizon.total_seconds() / 60, 1),
         "threshold_pct": threshold_pct,
         "lookback_days": lookback_days,
