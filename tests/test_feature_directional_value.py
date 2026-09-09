@@ -124,3 +124,170 @@ def test_ranking_orders_by_absolute_strength():
 def test_none_values_are_excluded():
     records = _num("rsi_divergence", None, 300, 300)
     assert compute_feature_directional_value(records) is None
+
+
+# --- Faz 463: piyasa-geneli ozellik ayiklama (kullanici istegi: "kanit lazim bize") ---
+
+def _rec(feature, value, label, day="2026-09-01", bucket=None, symbol=None):
+    return {
+        "feature": feature, "value": value, "forward_label": label,
+        "day": day, "time_bucket": bucket, "symbol": symbol,
+    }
+
+
+def test_market_wide_feature_is_rejected_because_it_cannot_separate_symbols():
+    """KULLANICI TEŞHİSİ (2026-09-09): "bütün sembollerde aynı değeri
+    alıyor dediklerin onchain verisi." Doğru — onchain özellikleri
+    belirli bir ANDA tüm sembollerde aynı değeri alır.
+
+    Böyle bir özellik ham ayrımda GÜÇLÜ görünebilir (çünkü zaman içi
+    piyasa dalgalanmasını yakalar) ama sembol-içi ayrımı hesaplanamaz:
+    hiçbir zaman kovasında varyans yoktur. `proven` ASLA True olmamalı."""
+    records = []
+    for i, (deger, gun) in enumerate([
+        (100.0, "2026-09-01"), (100.0, "2026-09-02"), (100.0, "2026-09-03"),
+        (10.0, "2026-09-04"), (10.0, "2026-09-05"), (10.0, "2026-09-06"),
+    ]):
+        # Her kovada TUM semboller AYNI degeri aliyor (piyasa geneli).
+        label_up, label_down = (90, 10) if deger == 100.0 else (10, 90)
+        for j in range(label_up):
+            records.append(_rec("onchain_hash_rate", deger, "UP", gun, f"b{i}", f"S{j%12}"))
+        for j in range(label_down):
+            records.append(_rec("onchain_hash_rate", deger, "DOWN", gun, f"b{i}", f"S{j%12}"))
+
+    f = compute_feature_directional_value(records)["features"]["onchain_hash_rate"]
+
+    # Ham ayrim DEVASA gorunuyor...
+    assert abs(f["separation"]) > 0.5
+    # ...ama sembol-ici hicbir kovada varyans yok.
+    assert f["within_symbol"]["varying_buckets"] == 0
+    assert f["within_symbol"]["symbol_specific"] is False
+    # Dolayisiyla KANITLANMIS sayilmaz.
+    assert f["proven"] is False
+
+
+def test_symbol_specific_feature_survives_the_within_bucket_test():
+    """Gerçek sembol-bazlı bir özellik: AYNI anda semboller arasında
+    değişiyor ve yön ayrımı kova içinde de korunuyor."""
+    records = []
+    for i in range(8):
+        gun = f"2026-09-0{(i % 6) + 1}"
+        for j in range(30):
+            # Yuksek deger -> yukselis, dusuk deger -> dusus (kova ICINDE).
+            records.append(_rec("rsi_percentile", 90.0, "UP", gun, f"b{i}", f"S{j}"))
+            records.append(_rec("rsi_percentile", 90.0, "DOWN", gun, f"b{i}", f"S{j}") if j % 4 == 0 else
+                           _rec("rsi_percentile", 90.0, "UP", gun, f"b{i}", f"S{j}"))
+            records.append(_rec("rsi_percentile", 10.0, "DOWN", gun, f"b{i}", f"S{j}"))
+            records.append(_rec("rsi_percentile", 10.0, "UP", gun, f"b{i}", f"S{j}") if j % 4 == 0 else
+                           _rec("rsi_percentile", 10.0, "DOWN", gun, f"b{i}", f"S{j}"))
+
+    f = compute_feature_directional_value(records)["features"]["rsi_percentile"]
+
+    assert f["within_symbol"]["symbol_specific"] is True
+    assert f["within_symbol"]["separation"] > 0.02
+    assert f["proven"] is True
+
+
+def test_proven_requires_within_symbol_separation_to_agree_in_sign():
+    """Ham ayrım pozitif ama sembol-içi ayrım NEGATİF ise, ham sonuç
+    piyasa zamanlamasından geliyor demektir — çelişki varsa
+    kanıtlanmamış sayılır."""
+    records = []
+    for i in range(8):
+        gun = f"2026-09-0{(i % 6) + 1}"
+        # Kova ICINDE yuksek deger -> DUSUS (ham egilimin TERSI)
+        for j in range(30):
+            records.append(_rec("celiskili", 90.0, "DOWN", gun, f"b{i}", f"S{j}"))
+            records.append(_rec("celiskili", 10.0, "UP", gun, f"b{i}", f"S{j}"))
+        # Ama kovalar arasi: yuksek kovalar cogunlukla UP
+        if i % 2 == 0:
+            for j in range(40):
+                records.append(_rec("celiskili", 95.0, "UP", gun, f"b{i}", f"S{j}"))
+
+    f = compute_feature_directional_value(records)["features"]["celiskili"]
+    if f["separation"] is not None and f["within_symbol"]["separation"] is not None:
+        if f["separation"] * f["within_symbol"]["separation"] < 0:
+            assert f["proven"] is False
+
+
+def test_within_symbol_is_none_without_time_buckets():
+    """Zaman kovası bilgisi yoksa sembol-içi test YAPILAMAZ — "temiz"
+    varsaymak uydurma güvence olurdu, `proven` False kalmalı."""
+    records = _num("bir_ozellik", 10.0, 300, 100) + _num("bir_ozellik", 1.0, 100, 300)
+    f = compute_feature_directional_value(records)["features"]["bir_ozellik"]
+    assert f["within_symbol"] is None
+    assert f["proven"] is False
+
+
+def test_daily_consistency_rejects_a_one_day_fluke():
+    """Tek bir günde çok güçlü, diğer günlerde ters olan bir özellik
+    kanıtlanmış sayılmamalı."""
+    records = []
+    for gun, (u, d) in [("2026-09-01", (280, 20)), ("2026-09-02", (100, 200)),
+                        ("2026-09-03", (100, 200)), ("2026-09-04", (100, 200))]:
+        for _ in range(u):
+            records.append(_rec("kaza", 90.0, "UP", gun, "b1", "S1"))
+        for _ in range(d):
+            records.append(_rec("kaza", 90.0, "DOWN", gun, "b1", "S1"))
+        for _ in range(d):
+            records.append(_rec("kaza", 10.0, "UP", gun, "b1", "S1"))
+        for _ in range(u):
+            records.append(_rec("kaza", 10.0, "DOWN", gun, "b1", "S1"))
+
+    f = compute_feature_directional_value(records)["features"]["kaza"]
+    if f["daily"] is not None:
+        assert f["daily"]["consistent"] is False
+    assert f["proven"] is False
+
+
+def test_categorical_features_also_get_the_within_symbol_test():
+    """BİR KUSURDAN ÖĞRENİLDİ: ilk sürümde sembol-içi test SADECE
+    sayısal özelliklere uygulanıyordu. Sonuç: `trend` ve `ema_alignment`
+    gibi -- Faz 460'ta `market_regime`'in %100 kopyası olduğu KANITLANMIŞ
+    -- kategorik sinyaller dört şartın yalnızca ikisini geçerek
+    "kanıtlanmış" görünüyordu.
+
+    Burada rejim-kopyası bir kategorik alan taklit ediliyor: her zaman
+    kovasında TÜM semboller aynı kategoriye düşer. Kanıtlanmış
+    sayılmamalı."""
+    records = []
+    for i in range(8):
+        gun = f"2026-09-0{(i % 6) + 1}"
+        kategori = "bullish" if i % 2 == 0 else "bearish"
+        up, down = (60, 40) if kategori == "bullish" else (40, 60)
+        for j in range(up):
+            records.append(_rec("rejim_kopyasi", kategori, "UP", gun, f"b{i}", f"S{j}"))
+        for j in range(down):
+            records.append(_rec("rejim_kopyasi", kategori, "DOWN", gun, f"b{i}", f"S{j}"))
+
+    f = compute_feature_directional_value(records)["features"]["rejim_kopyasi"]
+
+    assert f["kind"] == "categorical"
+    # Ayirt edici GORUNUYOR...
+    assert f["separation"] > 0.02
+    # ...ama hicbir zaman kovasinda kategori DEGISMIYOR.
+    assert f["within_symbol"]["varying_buckets"] == 0
+    assert f["within_symbol"]["symbol_specific"] is False
+    assert f["proven"] is False
+
+
+def test_genuinely_symbol_specific_categorical_is_proven():
+    """Aynı anda semboller FARKLI kategorilere düşüyor ve ayrım kova
+    içinde de korunuyor -> kanıtlanmış."""
+    records = []
+    for i in range(8):
+        gun = f"2026-09-0{(i % 6) + 1}"
+        for j in range(50):
+            # AYNI kovada iki kategori birden var.
+            records.append(_rec("of_kategori", "bearish_capitulation", "UP", gun, f"b{i}", f"S{j}"))
+            if j % 3 == 0:
+                records.append(_rec("of_kategori", "bearish_capitulation", "DOWN", gun, f"b{i}", f"S{j}"))
+            records.append(_rec("of_kategori", "bullish_new_longs", "DOWN", gun, f"b{i}", f"S{j}"))
+            if j % 3 == 0:
+                records.append(_rec("of_kategori", "bullish_new_longs", "UP", gun, f"b{i}", f"S{j}"))
+
+    f = compute_feature_directional_value(records)["features"]["of_kategori"]
+
+    assert f["within_symbol"]["symbol_specific"] is True
+    assert f["within_symbol"]["separation"] > 0.02
+    assert f["proven"] is True

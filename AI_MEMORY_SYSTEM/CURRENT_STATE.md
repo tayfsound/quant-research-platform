@@ -1,9 +1,75 @@
-# Mevcut Durum -- v1.174.0 (Faz 441-462: yön kök nedeni + order-flow verisi + hiç ölçülmemiş 40+ bağlam özelliğinin yön değeri)
+# Mevcut Durum -- v1.175.0 (Faz 441-463: yön kök nedeni + KANIT FİLTRESİ — gerçek sembol-bazlı edge %13 değil ~%3)
 
 **Tarih:** 2026-09-08
 **Branch:** main
 **Son commit (HEAD):** `e19ef6b` (Faz 450), push edildi.
 **Servis durumu:** Faz 448 VE Faz 439/440 artık İKİSİ DE canlıda — worker ikinci kez force-kill edilip watchdog'la yeniden başlatıldı (2026-09-08, kullanıcı onayıyla: "yaptığımız değişiklikleri canlıya alalım"). Faz 450/451 (historical_analog_engine.py) offline/rapor-only, restart gerekmez. Watchlist 104→123 sembole çıkarıldı (canlı, restart gerekmedi).
+
+**2026-09-09 — Faz 463: kanıt filtresi. Ham ayrımların ÇOĞU piyasa
+zamanlamasıymış.** Kullanıcı isteği: "piyasa-geneli özellikleri ayıklamak
+için günlük tutarlılık + sembol-içi karşılaştırma ekleyelim. kanıt lazım
+bize." Ayrıca kullanıcı teşhisi: "bütün sembollerde aynı değeri alıyor
+dediklerin onchain verisi o yüzden öyle muhtemelen" — DOĞRU çıktı.
+
+`analytics/feature_directional_value.py`'ye iki filtre eklendi:
+  **günlük tutarlılık** — günlerin >= %80'inde aynı yön (Faz 458'in
+  günlük işaret testiyle AYNI ilke).
+  **sembol-içi (zaman-kovası-içi) ayrım** — 5 dakikalık kovalarda AYNI
+  ANDA semboller arasında ayrım korunuyor mu. Piyasa geneli bir
+  özellikte kova içi varyans sıfırdır -> kanıt üretilemez.
+Bir özellik ancak DÖRT şartı birden geçerse `proven`: anlamlı ayrım +
+uçta güçlenme + günlük tutarlılık + aynı işaretli sembol-içi ayrım.
+
+**EN ÖNEMLİ SONUÇ — büyüklük düzeltmesi.** Faz 462'de raporlanan
+0,13-0,18'lik ayrımların ÇOĞU sembol-bazlı edge değil, zaman içi piyasa
+dalgalanmasıymış. Sembol-içi gerçek edge:
+
+| özellik | ham | sembol-içi | kanıt |
+|---|---|---|---|
+| rsi_percentile | −0,175 | **+0,000** | ELENDI |
+| rsi_divergence | +0,166 | −0,001 | ELENDI |
+| onchain_solana_tps | −0,156 | −0,012 | ELENDI (günlük 0,50) |
+| hash_rate / network_activity / exchange_inflow / nupl | 0,08-0,14 | piyasa geneli | ELENDI |
+| order_flow_relationship_category | +0,167 | **+0,030** | ✓ |
+| ema_alignment | +0,112 | **+0,042** | ✓ |
+| trend | +0,105 | **+0,036** | ✓ |
+| market_structure | +0,107 | **+0,035** | ✓ |
+| di_plus | −0,119 | −0,028 | ✓ |
+| RSI | −0,131 | −0,026 | ✓ |
+| zscore | −0,132 | −0,024 | ✓ |
+| bollinger_percent_b | −0,131 | −0,024 | ✓ |
+
+Yani **gerçek sembol-bazlı edge ~%2,5-4, %13-18 DEĞİL.** Bu, ağırlık
+kaydırma kararını doğrudan etkiliyor: beklenti gerçekçi tutulmalı.
+
+**Yön, tüm kanıtlanmış kategoriklerde AYNI (ortalamaya dönüş):**
+  trend:            bullish P(UP)=0,488  vs  bearish 0,592
+  ema_alignment:    bullish_aligned 0,481  vs  bearish_aligned 0,592
+  market_structure: HH-HL 0,483  vs  LH-LL 0,590
+  order_flow:       bullish_short_covering 0,369 ... bearish_long_capitulation 0,533
+
+**Kodlama sırasında ÜÇ kusur testlerle yakalandı:** (1) kategorik
+özelliklere sembol-içi test HİÇ uygulanmıyordu — `trend`/`ema_alignment`
+dört şartın ikisiyle "kanıtlanmış" görünüyordu; (2) medyan bölmesi iki
+değerli kovalarda boş taraf üretiyordu (gerçek medyana geçildi); (3)
+monotonluk şartı ">" idi, az sayıda farklı değer alan özellikleri haksız
+eliyordu (">=" oldu; asıl elemek istediğimiz uçta ZAYIFLAMA).
+
+**AYRICA — meta-learning'in neden HİÇ tur üretmediği bulundu** (kullanıcı
+bildirimi: "hep sıfır, kurduğumuzdan beri bir tur bile gerçekleşmedi").
+Çalışıyor ama iki YAPISAL sebeple asla öneri üretemiyor:
+  1. `meta_optimizer/agent_tuner.py::FIELD_BOUNDS` — TÜM ağırlık
+     sınırları `(0.0, 2.0)`, yani NEGATİF olamıyor. CMA-ES bir sinyali
+     sıfıra indirebiliyor ama İŞARETİNİ ÇEVİREMİYOR. Faz 460'ta
+     kanıtlandı ki trend/momentum/ema_alignment/adx/bollinger TERS
+     işaretli — optimizasyon uzayı doğru çözümü İÇERMİYOR.
+  2. `synthetic_pnls()` hedefi trade PnL'i (outcome), yön değil — ve
+     "ajan ters oy verseydi pnl tam simetrik olurdu" varsayıyor, ki
+     bariyer/R:R asimetrisi yüzünden yanlış.
+Son deneme (2026-09-03): sample_count=2998, sharpe_improvement=−0,017,
+gereken +0,4. Yani "bozuk" değil, "aradığı yerde çözüm yok".
+
+24 test geçti (6 yeni). Hâlâ gözlem-only.
 
 **2026-09-09 — Faz 462: konumlanma verileri ÖLÇÜLDÜ (gereksiz çıktı) +
 hiç ölçülmemiş 40+ bağlam özelliğinin yön değeri.**

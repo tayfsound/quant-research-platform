@@ -83,7 +83,13 @@ def gather_directional_skill(
                        -- fiyatı kullanılıyor (bkz. modül notu 2).
                        COALESCE(d.entry_price, ref.close) AS reference_price,
                        (d.opened_at IS NOT NULL) AS executed,
-                       d.market_regime, d.agent_contributions,
+                       d.market_regime, d.agent_contributions, d.symbol,
+                       -- Faz 463: sembol-ici karsilastirma icin zaman kovasi.
+                       -- 5 dakikalik kova: ayni trading cycle'da islenen
+                       -- semboller ayni kovaya duser, boylece "ayni ANDA
+                       -- semboller arasinda degisiyor mu" sorusu sorulabilir.
+                       date_trunc('hour', d.timestamp)
+                         + interval '5 min' * floor(extract(minute FROM d.timestamp)/5) AS time_bucket,
                        ms.close AS price_at_horizon,
                        prv.close AS price_before
                 FROM decisions d
@@ -178,6 +184,7 @@ def gather_directional_skill(
                     feature_records.append({
                         "feature": feature, "value": value,
                         "forward_label": forward_label, "day": r["day"],
+                        "symbol": r["symbol"], "time_bucket": r["time_bucket"],
                     })
         for agent in (r["agent_contributions"] or []):
             for signal, contribution in (agent.get("feature_contributions") or {}).items():
