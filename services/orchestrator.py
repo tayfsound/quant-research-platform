@@ -251,6 +251,27 @@ def build_cognitive_context(
         ctx.market.features["order_flow_relationship_price_change_pct"] = relationship["price_change_pct"]
         ctx.market.features["order_flow_relationship_oi_change_pct"] = relationship["oi_change_pct"]
         ctx.market.features["order_flow_relationship_funding_rate"] = relationship["funding_rate"]
+
+    # Faz 461 (2026-09-09) — kullanıcı isteği: "Sinyalleri yok etmek
+    # yerine orijinal sinyalleri çekip versek sisteme daha iyi olmaz mı?"
+    # Binance klines cevabında ZATEN gelen ama Faz 461'e kadar atılan
+    # `taker_buy_base`'ten türetilen agresif alış baskısı. Canlı veriyle
+    # ölçüldü: pencerelenmiş+normalize edilmiş hâli 15dk ufkunda −0,075
+    # separation (uçlarda), 1sa ufkunda sıfır. GÖZLEM-ONLY (Faz 436/437/
+    # 438/439 ile AYNI boru) — hiçbir ajanın skoruna girmiyor.
+    try:
+        from market_data.features.order_flow_pressure import compute_order_flow_pressure
+        flow_pressure = compute_order_flow_pressure([
+            {"volume": bar.volume, "taker_buy_base": getattr(bar, "taker_buy_base", None)}
+            for bar in data
+        ])
+    except Exception:
+        flow_pressure = None
+    if flow_pressure is not None:
+        ctx.market.features["taker_flow_pressure_state"] = flow_pressure["pressure_state"]
+        ctx.market.features["taker_flow_pressure_zscore"] = flow_pressure["pressure_zscore"]
+        ctx.market.features["taker_buy_ratio_windowed"] = flow_pressure["taker_buy_ratio"]
+
     # Faz 439 (2026-09-08) — kullanıcı önceliği ① devamı: Binance'in
     # ücretsiz forceOrder akışından likidasyon baskısı, order_flow_
     # relationship İLE AYNI desen (gözlem-only, ctx.market.features,

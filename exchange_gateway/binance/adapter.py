@@ -119,6 +119,27 @@ class BinanceAdapter(BaseExchangeAdapter):
 
     @staticmethod
     def _parse_klines(data: list[list]) -> list[dict[str, Any]]:
+        """Faz 461 — kullanıcı bulgusu: Binance her mum için 12 alan
+        döndürüyor, bu fonksiyon yalnızca ilk 6'sını alıp GERİ KALANINI
+        ATIYORDU. Yani çektiğimiz her mumda -- milyonlarcasında -- gerçek
+        order-flow verisi AYNI HTTP cevabının içinde geldi ve çöpe gitti:
+        d[7] quote_volume, d[8] trades, d[9] taker_buy_base (AGRESİF ALIŞ
+        hacmi), d[10] taker_buy_quote. Sıfır ek istek, sıfır ek gecikme.
+
+        Eski 6 alan BİREBİR aynı kalıyor (regresyon yok); yeni alanlar
+        eksikse/bozuksa None -- uydurma değer üretilmiyor."""
+        def _f(row: list, idx: int) -> float | None:
+            try:
+                return float(row[idx])
+            except (IndexError, TypeError, ValueError):
+                return None
+
+        def _i(row: list, idx: int) -> int | None:
+            try:
+                return int(row[idx])
+            except (IndexError, TypeError, ValueError):
+                return None
+
         return [
             {
                 "time": d[0],
@@ -127,6 +148,10 @@ class BinanceAdapter(BaseExchangeAdapter):
                 "low": float(d[3]),
                 "close": float(d[4]),
                 "volume": float(d[5]),
+                "quote_volume": _f(d, 7),
+                "trades": _i(d, 8),
+                "taker_buy_base": _f(d, 9),
+                "taker_buy_quote": _f(d, 10),
             }
             for d in data
         ]

@@ -1,9 +1,57 @@
-# Mevcut Durum -- v1.172.0 (Faz 441-460: yön problemi KÖK NEDENİ bulundu — sistem rejim etiketini altı kez oyluyor, rejim 1sa ufkunda anti-prediktif)
+# Mevcut Durum -- v1.173.0 (Faz 441-461: yön problemi kök nedeni + Binance'in ZATEN gönderdiği order-flow verisi artık atılmıyor)
 
 **Tarih:** 2026-09-08
 **Branch:** main
 **Son commit (HEAD):** `e19ef6b` (Faz 450), push edildi.
 **Servis durumu:** Faz 448 VE Faz 439/440 artık İKİSİ DE canlıda — worker ikinci kez force-kill edilip watchdog'la yeniden başlatıldı (2026-09-08, kullanıcı onayıyla: "yaptığımız değişiklikleri canlıya alalım"). Faz 450/451 (historical_analog_engine.py) offline/rapor-only, restart gerekmez. Watchlist 104→123 sembole çıkarıldı (canlı, restart gerekmedi).
+
+**2026-09-09 — Faz 461: Binance'in ZATEN gönderdiği order-flow verisini
+artık atmıyoruz.** Kullanıcı itirazı: "Bu sinyalleri neden gerçekten
+almıyoruz, BinanceAPI'den çekebiliyor olmamız lazım... Sinyalleri yok
+etmek yerine orijinal sinyalleri çekip versek sisteme daha iyi olmaz mı?"
+
+Doğrulandı ve haklı çıktı: Binance `/api/v3/klines` her mum için **12
+alan** döndürüyor, `_parse_klines()` bunların yalnızca **6'sını** alıp
+gerisini atıyordu. Yani bugüne kadar çektiğimiz her mumda —
+milyonlarcasında — şu veri AYNI HTTP cevabının içinde geldi ve çöpe
+gitti: `quote_volume`, `trades`, **`taker_buy_base` (agresif ALIŞ
+hacmi — gerçek order flow)**, `taker_buy_quote`. Sıfır ek istek, sıfır
+ek gecikme.
+
+**İNŞA ETMEDEN ÖNCE ÖLÇÜLDÜ** (12 sembol, 33.750 pencere, canlı Binance):
+
+| kurgu | 15dk ufku | 1sa ufku |
+|---|---|---|
+| ham (tek mum) | — | −0,023 (değersiz) |
+| 15dk pencere + 120dk normalize, üst %25 vs alt %25 | −0,045 | −0,002 |
+| aynısı, üst %10 vs alt %10 | **−0,075** | −0,003 |
+
+Üç sonuç mimariyi belirledi: (1) pencereleme+normalizasyon ŞART, ham
+hâli değersiz; (2) etkin ufuk KISA (~15dk), 1 saatte sinyal tamamen
+kayboluyor — Kolm/Turiel/Westray'in "etkin ufuk ≈ iki ortalama fiyat
+değişimi" bulgusuyla birebir uyumlu; (3) işaret yine ortalamaya-dönüş
+yönünde ve uçlarda güçleniyor (monotonluk = gerçek bilgi işareti).
+
+Yapılanlar: `faz461` migration (market_snapshots'a 4 sütun, quantdb VE
+quantdb_test), `_parse_klines()` + `OHLCV` dataclass + `MarketSnapshot`
+sözleşmesi + repository upsert (yeni değer NULL ise ESKİSİNİ KORU) +
+ingestion, ve yeni `market_data/features/order_flow_pressure.py`.
+Çıktısı `ctx.market.features`'a yazılıyor — GÖZLEM-ONLY, Faz 436/437/
+438/439 ile AYNI kanıtlanmış boru, hiçbir ajanın skoruna girmiyor.
+
+**Bir ölçüm hatasından öğrenildi (teste sabitlendi):** pencere
+ORTALAMASI, tek tek mumlardan ~sqrt(n) kat dar dağılır. İlk denemede
+ortalama tek-mum standart sapmasına bölündüğü için 33.750 gözlemin
+sadece 39'u |z|>=1 çıktı ve sinyal görünmez oldu. Doğru payda standart
+HATA (sd/sqrt(n)).
+
+**Mevcut `aggressive_buy_ratio` ile karıştırılmamalı:** o, `/api/v3/
+trades`'in son 200 işleminden anlık bir oran ve Faz 460'ta yön değeri
+ÖLÇÜLDÜ: −0,011 ("no_signal"). Yeni sinyal mum serisi üzerinden
+pencerelenmiş ve sembolün kendi normuna göre normalize edilmiş.
+
+11 yeni test (2'si canlı Binance verisiyle; biri `_parse_klines`'ın
+alanları düşürmediğini doğrulayan regresyon koruması). 69 test geçti.
 
 **2026-09-09 — Faz 460: KÖK NEDEN. Sinyal seviyesinde yön değeri +
 rejim eşdoğrusallığı.** Kullanıcı isteği: "Kök nedeni arayalım."

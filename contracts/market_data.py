@@ -46,6 +46,13 @@ class MarketSnapshot(BaseModel):
     volume: float
     source_version: str
     quality: DataQuality = DataQuality.VALID
+    # Faz 461 — Binance'in klines cevabinda ZATEN gelen ama bugune kadar
+    # atilan order-flow alanlari. Opsiyonel: gecmis satirlarda ve bu
+    # alanlari vermeyen borsalarda None kalir (fail-closed).
+    quote_volume: float | None = None
+    trades: int | None = None
+    taker_buy_base: float | None = None
+    taker_buy_quote: float | None = None
 
 class OrderBookSnapshot(BaseModel):
     time: datetime

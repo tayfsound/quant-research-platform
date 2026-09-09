@@ -23,9 +23,11 @@ class MarketDataRepository:
         self.session.execute(
             text("""
                 INSERT INTO market_snapshots
-                    (exchange, symbol, resolution, time, open, high, low, close, volume, source_version, quality)
+                    (exchange, symbol, resolution, time, open, high, low, close, volume, source_version, quality,
+                     quote_volume, trades, taker_buy_base, taker_buy_quote)
                 VALUES
-                    (:exchange, :symbol, :resolution, :time, :open, :high, :low, :close, :volume, :source_version, :quality)
+                    (:exchange, :symbol, :resolution, :time, :open, :high, :low, :close, :volume, :source_version, :quality,
+                     :quote_volume, :trades, :taker_buy_base, :taker_buy_quote)
                 ON CONFLICT (exchange, symbol, resolution, time) DO UPDATE SET
                     open = EXCLUDED.open,
                     high = EXCLUDED.high,
@@ -33,7 +35,15 @@ class MarketDataRepository:
                     close = EXCLUDED.close,
                     volume = EXCLUDED.volume,
                     source_version = EXCLUDED.source_version,
-                    quality = EXCLUDED.quality
+                    quality = EXCLUDED.quality,
+                    -- Faz 461: yeni deger NULL ise ESKISINI KORU. Ayni mum
+                    -- bu alanlari tasimayan bir kaynaktan tekrar gelirse
+                    -- (or. baska bir borsa/eski kod yolu) zaten toplanmis
+                    -- order-flow verisini silmemeli.
+                    quote_volume = COALESCE(EXCLUDED.quote_volume, market_snapshots.quote_volume),
+                    trades = COALESCE(EXCLUDED.trades, market_snapshots.trades),
+                    taker_buy_base = COALESCE(EXCLUDED.taker_buy_base, market_snapshots.taker_buy_base),
+                    taker_buy_quote = COALESCE(EXCLUDED.taker_buy_quote, market_snapshots.taker_buy_quote)
             """),
             {
                 "exchange": snapshot.exchange.value,
@@ -47,6 +57,10 @@ class MarketDataRepository:
                 "volume": snapshot.volume,
                 "source_version": snapshot.source_version,
                 "quality": snapshot.quality.value,
+                "quote_volume": snapshot.quote_volume,
+                "trades": snapshot.trades,
+                "taker_buy_base": snapshot.taker_buy_base,
+                "taker_buy_quote": snapshot.taker_buy_quote,
             },
         )
         self.session.commit()

@@ -175,4 +175,11 @@ class IngestionPipeline:
             close=candle["close"],
             volume=candle["volume"],
             source_version="v1",
+            # Faz 461 — Binance klines cevabında ZATEN gelen order-flow
+            # alanları. .get() ile: bu alanları taşımayan başka bir
+            # sağlayıcıdan/mock'tan gelen mum kırılmamalı.
+            quote_volume=candle.get("quote_volume"),
+            trades=candle.get("trades"),
+            taker_buy_base=candle.get("taker_buy_base"),
+            taker_buy_quote=candle.get("taker_buy_quote"),
         )
