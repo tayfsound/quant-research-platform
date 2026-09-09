@@ -45,6 +45,7 @@ from analytics.directional_skill import (
 from analytics.evaluation_cohort import describe_evaluation_window
 from analytics.forward_direction import DEFAULT_THRESHOLD_PCT, label_forward_direction
 from analytics.reversal_conditioning import compute_conditional_direction_value
+from analytics.signal_directional_value import compute_signal_directional_value
 from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMENT_BUCKET
 
 MAX_DECISIONS = 20000
@@ -81,6 +82,7 @@ def gather_directional_skill(
                        -- fiyatı kullanılıyor (bkz. modül notu 2).
                        COALESCE(d.entry_price, ref.close) AS reference_price,
                        (d.opened_at IS NOT NULL) AS executed,
+                       d.market_regime, d.agent_contributions,
                        ms.close AS price_at_horizon,
                        prv.close AS price_before
                 FROM decisions d
@@ -135,6 +137,10 @@ def gather_directional_skill(
 
     predictions: list[tuple[float, bool]] = []
     records: list[dict] = []
+    # Faz 460: sinyal seviyesi. agent_contributions'daki
+    # feature_contributions BUGÜNE KADAR ORADAYDI, hiç bu amaçla
+    # okunmamıştı -- yeni kayıt/wiring gerekmiyor.
+    signal_records: list[dict] = []
     neutral_count = 0
     for r in rows:
         forward_label = label_forward_direction(
@@ -161,6 +167,15 @@ def gather_directional_skill(
             "direction": r["direction"], "forward_label": forward_label, "day": r["day"],
             "prior_return": prior_return, "executed": r["executed"],
         })
+        for agent in (r["agent_contributions"] or []):
+            for signal, contribution in (agent.get("feature_contributions") or {}).items():
+                if not isinstance(contribution, (int, float)):
+                    continue
+                signal_records.append({
+                    "signal": signal, "contribution": contribution,
+                    "forward_label": forward_label, "day": r["day"],
+                    "regime": r["market_regime"],
+                })
 
     return {
         # Faz 446'nın iki sayısı -- karşılaştırma sürekliliği için aynen
@@ -178,6 +193,9 @@ def gather_directional_skill(
         # Faz 459'un ikinci, bağımsız bulgusu: icra kapıları sinyalin en
         # ters örneklerini seçip geçiriyor mu.
         "execution_selection_effect": compute_execution_selection_effect(records),
+        # Faz 460: hangi HAM SİNYAL ters, hangisi doğru, hangisi aslında
+        # rejim etiketinin kopyası.
+        "signal_directional_value": compute_signal_directional_value(signal_records),
         "horizon_minutes": round(horizon.total_seconds() / 60, 1),
         "threshold_pct": threshold_pct,
         "lookback_days": lookback_days,

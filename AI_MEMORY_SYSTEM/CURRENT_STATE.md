@@ -1,9 +1,58 @@
-# Mevcut Durum -- v1.171.0 (Faz 441-459: Direction Prediction Engine + Faz 458/459 yön becerisi teşhisi: sinyal TERS İŞARETLİ, kapılar seçimi 2,3 kat kötüleştiriyor)
+# Mevcut Durum -- v1.172.0 (Faz 441-460: yön problemi KÖK NEDENİ bulundu — sistem rejim etiketini altı kez oyluyor, rejim 1sa ufkunda anti-prediktif)
 
 **Tarih:** 2026-09-08
 **Branch:** main
 **Son commit (HEAD):** `e19ef6b` (Faz 450), push edildi.
 **Servis durumu:** Faz 448 VE Faz 439/440 artık İKİSİ DE canlıda — worker ikinci kez force-kill edilip watchdog'la yeniden başlatıldı (2026-09-08, kullanıcı onayıyla: "yaptığımız değişiklikleri canlıya alalım"). Faz 450/451 (historical_analog_engine.py) offline/rapor-only, restart gerekmez. Watchlist 104→123 sembole çıkarıldı (canlı, restart gerekmedi).
+
+**2026-09-09 — Faz 460: KÖK NEDEN. Sinyal seviyesinde yön değeri +
+rejim eşdoğrusallığı.** Kullanıcı isteği: "Kök nedeni arayalım."
+`decisions.agent_contributions` içindeki `feature_contributions` sözlüğü
+BUGÜNE KADAR ORADAYDI ve hiç bu amaçla okunmamıştı — yeni kayıt/wiring
+gerekmeden her ham sinyalin yön değeri ölçülebildi
+(`analytics/signal_directional_value.py`, n=132.144, 18 sinyal, 7 gün).
+
+**Örüntü kusursuz: TÜM trend-takip sinyalleri TERS, TÜM ortalamaya-dönüş
+sinyalleri DOĞRU.**
+
+| ters | sep | | doğru | sep |
+|---|---|---|---|---|
+| bollinger_confirm | −0,209 | | zscore_mean_reversion | **+0,183** |
+| news_tone | −0,140 | | rsi_extreme | **+0,172** |
+| break_of_structure | −0,125 | | obv_divergence | +0,107 |
+| momentum | −0,120 | | volume_profile_confirm | +0,056 |
+| adx_strong_confirm | −0,109 | | structure_phase | +0,054 |
+| ema_alignment | −0,105 | | wyckoff_event | +0,022 |
+| trend | −0,101 | | | |
+| swing_structure | −0,101 | | | |
+
+**ASIL KÖK NEDEN — REJİM EŞDOĞRUSALLIĞI.** `trend`, `momentum`,
+`ema_alignment`, `adx_strong_confirm`, `bollinger_confirm`,
+`volume_profile_confirm` → `market_regime` etiketiyle **%100
+eşdoğrusal** (6.019 gözlemde TEK istisna yok: bearish_* rejimlerde katkı
+her zaman negatif, bullish_* rejimlerde her zaman pozitif). Bunlar
+bağımsız kanıt DEĞİL, rejim etiketinin oy olarak yeniden kodlanmış hâli.
+Ve rejim etiketinin kendisi 1sa ufkunda anti-prediktif: **"bearish"
+rejimlerde fiyat %60-62 ihtimalle YÜKSELİYOR** (bearish_low %61,7,
+bearish_normal %60,4; bullish_low ise sadece %46,6). Council, aynı tek
+bilgiyi altı farklı sinyal adı altında tekrar tekrar oyluyordu — Faz
+423'ün "technical'ın 4 sinyali trend'in kopyası" bulgusunun çok daha
+derin hâli.
+
+**Ufuk hipotezi ELENDİ:** aynı sinyaller 15dk/1sa/4sa/24sa'te ölçüldü —
+trend sinyalleri HİÇBİR ufukta doğruya dönmüyor, sadece sıfıra sönüyor
+(trend: −0,072 / −0,076 / −0,013 / −0,004). `rsi_extreme` ise tam bizim
+hedef ufkumuzda zirve yapıyor (+0,175 @ 1sa). Yani ufkumuz değil,
+sinyallerimiz yanlış.
+
+Bu, Faz 448'in MTF bulgusunu da açıklıyor: çok-zaman-dilimi uzlaşması =
+güçlü trend = ortalamaya dönüşün en çok cezalandırdığı an.
+
+Modül eşdoğrusallığı BİRİNCİ SINIF çıktı olarak raporluyor, çünkü "ters
+sinyal" ile "başka bir şeyin kopyası" taban tabana zıt düzeltmeler
+gerektiriyor: ilkinde işaret çevrilir, ikincisinde redundans kaldırılır.
+
+10 yeni test. Hâlâ gözlem-only.
 
 **2026-09-09 — Faz 459: dönüş-koşullu yön değeri + icra kapılarının
 seçim etkisi. İKİ BÜYÜK BULGU.**
