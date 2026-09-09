@@ -1,4 +1,4 @@
-# Mevcut Durum -- v1.186.0 (Faz 441-475: test DB şişmesi kalıcı çözüldü — 4.058 → 7 kullanıcı, büyüme durdu)
+# Mevcut Durum -- v1.187.0 (Faz 441-476: meta-learning eşiği 0,4→0,2 + Faz 414 DOĞRULANDI: düzeltme işe yaramamış)
 
 **Tarih:** 2026-09-08
 **Branch:** main
@@ -20,6 +20,57 @@ Canlı doğrulama yapıldı: ilk 40 kararda dört kategori de ateşledi
 bearish_new_shorts −0,2 ×11, bearish_long_capitulation +0,3 ×11) — Faz
 453'teki gibi sessizce ölü kalma durumu YOK.
 
+
+**2026-09-09 — Faz 476: meta-learning eşiği 0,4 → 0,2 (kullanıcı
+kararı) + backlog #10 (Faz 414 WS doğrulaması) SONUÇLANDI.**
+
+**(a) Eşik düşürüldü.** Önce bir yanlış anlaşılma giderildi: Faz 466'nın
+düzeltmesi ZATEN wire edilmiş ve canlıda — `agents/registry.py:83`
+onaylı katsayıları okuyor, `propose-agent-tuning-weekly` beat'te kayıtlı
+ve bugün 12:24 UTC'de yeni kodla çalışıp `sharpe_improvement: 0.218`
+kaydetmiş (eski değer −0,017'ydi). Wire edilecek bir şey yoktu.
+
+İKİ bağımsız kapı var: (1) `MIN_SHARPE_IMPROVEMENT` otomatik eşik,
+(2) İNSAN ONAYI — öneri `status="pending"` kaydediliyor ve
+`get_approved_technical_agent_coefficients()` sadece
+`get_latest_approved`'ı okuyor. Yani eşiği düşürmek hiçbir şeyi canlıya
+almaz, sadece öneriyi onay kuyruğuna düşürür.
+
+Gerekçe ÖLÇÜLEN SAYIYA UYDURULMADI (bu oturumda tekrar tekrar kaçındığımız
+hata). İlkesel: 0,4 bu kapının TEK koruma olduğu varsayımıyla seçilmişti;
+ikinci kapı varken kapı 1'in işi "bir insanın BAKMASINA değer mi". Mevcut
+canlı katsayılar OOS'ta ZARAR ediyor (−0,1028), optimize edilmiş θ kâr
+ediyor (+0,1168) — negatifi pozitife çeviren bir öneriyi insana hiç
+göstermemek kapının amacına aykırı.
+
+**(b) Faz 414 DOĞRULANDI — DÜZELTME İŞE YARAMAMIŞ.** Backlog #10, "birkaç
+günlük taze log lazım" diye aylardır bekliyordu. Artık 26 saatlik kesintisiz
+log var.
+
+| ölçüm | sonuç |
+|---|---|
+| WS kopması | **87 kopma / 26,4 saat = ~3,3/saat** (70'i "keepalive ping timeout") |
+| Faz 414 öncesi iddia | "her 10-30 dakikada bir" = 2-6/saat |
+| Yeniden bağlanma süresi | ortalama **6,0 sn** (günde ~9 dk körlük, %0,6) |
+| Monitör çalışıyor mu | EVET — 26 saatte 114 pozisyon kapattı |
+
+Kod düzeltmesi YERİNDE (`_handle_tick`'te ucuz `_is_price_triggered`
+kontrolü thread'den ÖNCE). Ama kopma sıklığı AYNI bantta kalmış.
+
+**Asıl ölçüm — stop aşımı (Faz 414'ün gerçek derdi):**
+düzeltme öncesi (1-5 Eylül) >%15 aşan stop oranı %6,3 / %14,9 / %6,5 /
+%17,2 / %18,0; düzeltme sonrası (7-9 Eylül) %15,7 / %5,4 / %17,6.
+**Anlamlı bir iyileşme YOK.**
+
+**Sonuç: WS event-loop tıkanıklığı hipotezi stop aşımının (ana) kök nedeni
+DEĞİLMİŞ.** Monitör günde sadece ~9 dakika kör (%0,6) ama stopların
+%13'ü >%15 aşıyor — aritmetik olarak körlük bunu açıklayamaz. Uç değerler
+(%625, %1380) da fiyat boşluğu/likidite olayı imzası taşıyor, izleme
+boşluğu değil. Gerçek kök neden başka yerde: muhtemelen tick'ler arası
+fiyat sıçraması ve/veya stop tetiklendiğinde market emrinin kayması.
+
+Backlog #10 KAPANDI — "doğrulanamaz" diye değil, DOĞRULANIP olumsuz
+çıktığı için.
 
 **2026-09-09 — Faz 475 (backlog #12): test DB şişmesi KALICI çözüldü.**
 Kullanıcı bunu "bilinen flake" olarak kabul etmemişti, kalıcı çözüm

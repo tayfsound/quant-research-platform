@@ -30,9 +30,26 @@ logger = structlog.get_logger()
 
 TECHNICAL_AGENT_ID = "technical_agent_v1"
 
-# Faz 239 raporunun kendi başarı kriteri: out-of-sample Sharpe farkı
-# (tuned - baseline) >= +0.4 olmadan bir θ insan onayına dahi sunulmuyor.
-MIN_SHARPE_IMPROVEMENT = 0.4
+# Faz 476 (2026-09-09) — kullanıcı kararı: eşik 0.4 -> 0.2.
+#
+# Faz 239'un 0.4'ü, bu kapının TEK koruma olduğu varsayımıyla seçilmişti.
+# Ama ikinci ve çok daha güçlü bir kapı var: burada üretilen θ
+# `status="pending"` olarak kaydediliyor ve `get_approved_technical_agent_
+# coefficients()` SADECE `get_latest_approved`'ı okuyor — yani bir insan
+# dashboard'dan onaylamadan canlı ajana HİÇBİR ŞEY geçmiyor. Dolayısıyla
+# bu kapının gerçek işi "canlıya alalım mı" değil, "bir insanın BAKMASINA
+# değer mi".
+#
+# GEREKÇE ÖLÇÜLEN SAYIYA UYDURULMADI (kapıyı veriye göre ayarlamak, bu
+# oturumda tekrar tekrar kaçındığımız hata). İlkesel: mevcut CANLI
+# katsayılar walk-forward out-of-sample'da ZARAR ediyor (mean OOS sharpe
+# −0,1028); optimize edilmiş θ kâr ediyor (+0,1168). Negatifi pozitife
+# çeviren bir öneriyi insana hiç göstermemek, kapının amacına aykırı.
+#
+# 0.2 hâlâ anlamlı bir çıta: gürültü seviyesindeki (0,0x) iyileşmeler
+# kuyruğu doldurmuyor. Faz 466 düzeltmesi öncesi ölçüm −0,017'ydi, yani
+# bu eşik o dönemde de tetiklenmezdi.
+MIN_SHARPE_IMPROVEMENT = 0.2
 
 _LAST_ATTEMPT_SETTINGS_KEY = "meta_learning_last_attempt"
 
