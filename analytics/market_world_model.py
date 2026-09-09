@@ -177,3 +177,91 @@ def compute_block_size_sensitivity(
         "is_stable": (ratio is not None and ratio <= 2.0),
         "p5_sensitivity_ratio": ratio,
     }
+
+
+# --- Faz 478: yon/rejim decomposition (kullanici fikri, 2026-09-09) ---
+
+MIN_RETURNS_PER_SLICE = 60
+
+
+def compute_bootstrap_decomposition(
+    records: list[dict],
+    block_size: int,
+    path_length: int,
+    n_paths: int = DEFAULT_N_PATHS,
+    random_seed: int = 42,
+    min_per_slice: int = MIN_RETURNS_PER_SLICE,
+) -> dict | None:
+    """Faz 478 — kullanıcı fikri: "Bu simülatöre artık direction / regime
+    decomposition eklemek çok daha değerli olur. Şu an aggregate sonuç
+    '1999 işlemin tamamında ne oluyor?' diyor. Senin asıl problemin ise
+    'hangi koşullarda işlem motoru bozuluyor?'"
+
+    records: [{"ret": float, "direction": "LONG"|"SHORT",
+               "regime": str | None, "volatility": str | None}, ...]
+    KRONOLOJİK sırada (Moving Block Bootstrap ardışık bağımlılığı
+    koruyabilsin diye — çağıran taraf sıralamayı garanti etmeli).
+
+    Her dilim için AYRI bootstrap çalıştırılır: overall, yön başına,
+    rejim başına, volatilite başına. Böylece
+        overall     ~ 0%
+        LONG       +0.08%
+        SHORT      -0.21%
+        bull_trend +0.12%
+        bear_low   -0.31%
+    gibi bir tablo çıkar ve gerçek problem alanı hemen görünür.
+
+    2026-09-09'UN DERSİ UYGULANDI (Faz 471): her dilim KENDİ getirileriyle
+    kendi başına simüle ediliyor — havuzlanmış sonuçtan pay biçilmiyor.
+    Aksi halde rejimler arası zorluk farkı sonuca sızardı.
+
+    <min_per_slice getiriyle bir dilim `usable: false` ile İŞARETLENİR,
+    sessizce atılmaz — "ölçemedik" ile "etkisi yok" karıştırılmamalı."""
+    usable = [
+        r for r in records
+        if isinstance(r.get("ret"), (int, float)) and not isinstance(r.get("ret"), bool)
+    ]
+    if len(usable) < min_per_slice:
+        return None
+
+    def _slice(members: list[dict]) -> dict:
+        if len(members) < min_per_slice:
+            return {"n": len(members), "usable": False, "paths": None}
+        paths = compute_block_bootstrap_paths(
+            [r["ret"] for r in members], block_size=block_size,
+            path_length=path_length, n_paths=n_paths, random_seed=random_seed,
+        )
+        if paths is None:
+            return {"n": len(members), "usable": False, "paths": None}
+        return {
+            "n": len(members),
+            "usable": True,
+            "mean_cumulative_return": paths.get("mean_cumulative_return"),
+            "p5_cumulative_return": paths.get("p5_cumulative_return"),
+            "p95_cumulative_return": paths.get("p95_cumulative_return"),
+            "cvar_5_cumulative_return": paths.get("cvar_5_cumulative_return"),
+            "mean_max_drawdown": paths.get("mean_max_drawdown"),
+        }
+
+    slices: dict[str, dict] = {"overall": _slice(usable)}
+    for field, prefix in (("direction", ""), ("regime", ""), ("volatility", "vol_")):
+        for value in sorted({r.get(field) for r in usable if r.get(field)}):
+            slices[f"{prefix}{value}"] = _slice(
+                [r for r in usable if r.get(field) == value]
+            )
+
+    worst = min(
+        (k for k, v in slices.items() if v["usable"] and k != "overall"),
+        key=lambda k: slices[k]["mean_cumulative_return"], default=None,
+    )
+    best = max(
+        (k for k, v in slices.items() if v["usable"] and k != "overall"),
+        key=lambda k: slices[k]["mean_cumulative_return"], default=None,
+    )
+    return {
+        "slices": slices,
+        "worst_slice": worst,
+        "best_slice": best,
+        "min_per_slice": min_per_slice,
+    }
+

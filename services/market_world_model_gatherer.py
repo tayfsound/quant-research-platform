@@ -42,7 +42,11 @@ deneyi) de basis_arb_v1 ile AYNI şekilde hariç tutuluyor — bu modülün
 amacı "gerçek AI konseyi getiri dağılımı"nı simüle etmek, deneysel
 varyansı değil (basis_arb_v1 zaten aynı gerekçeyle hariçti)."""
 from analytics.evaluation_cohort import describe_evaluation_window
-from analytics.market_world_model import compute_block_bootstrap_paths, compute_block_size_sensitivity
+from analytics.market_world_model import (
+    compute_block_bootstrap_paths,
+    compute_block_size_sensitivity,
+    compute_bootstrap_decomposition,
+)
 from analytics.measurement_stability import compute_stability
 from services.asset_class_performance_gatherer import _is_production_ai_council
 from services.pump_fade_strategy import EXPERIMENT_BUCKET as PUMP_FADE_EXPERIMENT_BUCKET
@@ -103,11 +107,37 @@ def gather_market_world_model(
     ordered = sorted(closed_trades, key=lambda t: t.get("closed_at") or t.get("opened_at"))
 
     returns = []
+    # Faz 478 — kullanıcı fikri: yön/rejim decomposition. Aynı (zaten
+    # çekilmiş) işlemlerden, her getirinin YANINDA hangi koşulda
+    # oluştuğunu da taşıyoruz; ek sorgu YOK.
+    decomposition_records = []
     if starting_capital > 0:
         for t in ordered:
             pnl = t.get("pnl")
-            if pnl is not None:
-                returns.append(pnl / starting_capital)
+            if pnl is None:
+                continue
+            ret = pnl / starting_capital
+            returns.append(ret)
+            # Rejim `decisions.market_regime`'de çoğu kararda NULL (Faz
+            # 471'de ölçüldü); `f"{trend}_{volatility_regime}"` formülüyle
+            # ctx.market.features'tan türetiliyor -- context_adapter::
+            # _compute_market_regime ile birebir aynı.
+            features = {}
+            for entry in (t.get("agent_contributions") or []):
+                if isinstance(entry, dict) and entry.get("type") == "market_snapshot":
+                    features = (entry.get("data") or {}).get("features") or {}
+                    break
+            trend = features.get("trend", "neutral")
+            volatility = features.get("volatility_regime")
+            regime = t.get("market_regime")
+            if not regime and trend != "neutral" and volatility:
+                regime = f"{trend}_{volatility}"
+            decomposition_records.append({
+                "ret": ret,
+                "direction": (t.get("direction") or "").upper() or None,
+                "regime": regime,
+                "volatility": volatility,
+            })
 
     paths = compute_block_bootstrap_paths(returns, block_size=block_size, path_length=path_length)
     _attach_paths_stability(paths, past_snapshots)
@@ -128,5 +158,9 @@ def gather_market_world_model(
         "n_returns": len(returns),
         "paths": paths,
         "block_size_sensitivity": block_size_sensitivity,
+        # Faz 478: "hangi koşullarda işlem motoru bozuluyor?"
+        "decomposition": compute_bootstrap_decomposition(
+            decomposition_records, block_size=block_size, path_length=path_length,
+        ),
         "evaluation_window": evaluation_window,
     }
