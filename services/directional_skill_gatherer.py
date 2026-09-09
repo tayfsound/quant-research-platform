@@ -43,6 +43,7 @@ from analytics.directional_skill import (
     compute_pesaran_timmermann,
 )
 from analytics.evaluation_cohort import describe_evaluation_window
+from analytics.direction_meta_label import compute_direction_meta_label
 from analytics.feature_directional_value import compute_feature_directional_value
 from analytics.gate_selection_value import compute_gate_selection_effect
 from analytics.forward_direction import DEFAULT_THRESHOLD_PCT, label_forward_direction
@@ -157,6 +158,7 @@ def gather_directional_skill(
     # Faz 421'den beri agent_contributions'da duruyordu, hiç bu amaçla
     # okunmamıştı.
     gate_records: list[dict] = []
+    meta_label_records: list[dict] = []
     neutral_count = 0
     for r in rows:
         forward_label = label_forward_direction(
@@ -212,6 +214,11 @@ def gather_directional_skill(
             "forward_label": forward_label, "day": r["day"],
             "regime": regime,
         })
+        # Faz 472 — madde 7 (Council -> evidence provider) ölçüm adımı.
+        meta_label_records.append({
+            "council_direction": r["direction"], "forward_label": forward_label,
+            "regime": regime, "timestamp": r["timestamp"],
+        })
         for entry in (r["agent_contributions"] or []):
             if entry.get("type") == "market_snapshot":
                 for feature, value in ((entry.get("data") or {}).get("features") or {}).items():
@@ -255,6 +262,8 @@ def gather_directional_skill(
         # Faz 467: hangi kapı TERS SEÇİM yapıyor (engellediği kararlar
         # geçirdiklerinden daha iyi).
         "gate_selection_effect": compute_gate_selection_effect(gate_records),
+        # Faz 472: Council'in yön çağrısı HANGİ hücrelerde güvenilir kanıt.
+        "direction_meta_label": compute_direction_meta_label(meta_label_records),
         "horizon_minutes": round(horizon.total_seconds() / 60, 1),
         "threshold_pct": threshold_pct,
         "lookback_days": lookback_days,

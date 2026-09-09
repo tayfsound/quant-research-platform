@@ -1,4 +1,4 @@
-# Mevcut Durum -- v1.182.0 (Faz 441-471: survival analizi + TÜM ölçümlere rejim kırılımı — havuzlanmış sayılar gerçek yapıyı gizliyormuş)
+# Mevcut Durum -- v1.183.0 (Faz 441-472: madde 7'nin ölçüm adımı — Council SADECE rejime KARŞI konuştuğunda güvenilir)
 
 **Tarih:** 2026-09-08
 **Branch:** main
@@ -20,6 +20,49 @@ Canlı doğrulama yapıldı: ilk 40 kararda dört kategori de ateşledi
 bearish_new_shorts −0,2 ×11, bearish_long_capitulation +0,3 ×11) — Faz
 453'teki gibi sessizce ölü kalma durumu YOK.
 
+
+**2026-09-09 — Faz 472: madde 7 (Council → evidence provider) ÖLÇÜM
+adımı. Council hangi hücrelerde kanıt sayılabilir?**
+
+`services/meta_label_model.py` zaten bir meta-label modeli ama hedefi
+`P(TP önce mi SL önce mi)` — yine TRADE SONUCU. Bu oturumun ana bulgusu
+tam olarak bu karışıklıktı (Faz 441/446/466/470'te dört ayrı yerde
+düzeltildi). `analytics/direction_meta_label.py` eksik yarıyı ekliyor:
+hedef **Council'in YÖN çağrısının sabit ufukta doğru çıkması**.
+
+Tasarım bu oturumda ölçülenlerden türetildi: hücre = (yön × rejim)
+(Faz 471: havuzlanmış sayılar yapıyı gizliyor), ZAMAN TABANLI
+train/holdout, taban HOLDOUT'UN KENDİ döneminden (piyasa zorlaşırsa ham
+isabet düşer ama fazlalık korunabilir), ve OOS'ta İŞARET KORUNMA şartı.
+
+**GERÇEK VERİ (n=17.050; train 11.935 taban %46,5 / holdout 5.115
+taban %48,1):**
+
+| hücre | train | holdout | holdout fazla | OOS |
+|---|---|---|---|---|
+| SHORT\|bullish_low | 0,359 | 0,601 | +0,120 | ✗ (işaret döndü) |
+| LONG\|bearish_low | 0,431 | 0,590 | +0,109 | ✗ (işaret döndü) |
+| **SHORT\|bullish_normal** | 0,515 | 0,580 | **+0,100** | **✓** |
+| **LONG\|bearish_normal** | 0,559 | 0,526 | **+0,045** | **✓** |
+| SHORT\|bearish_low | 0,421 | 0,456 | −0,025 | ✓ (TERS) |
+| LONG\|bullish_normal | 0,468 | 0,410 | −0,070 | ✗ |
+
+**BULGU: Council SADECE rejime KARŞI konuştuğunda güvenilir.**
+Hayatta kalan iki pozitif hücrenin ikisi de kontraryan — bullish
+rejimde SHORT, bearish rejimde LONG. Sistematik TERS çıkan tek hücre
+ise rejimle AYNI yönde olan (bearish_low'da SHORT). Bu, oturumun
+ortalamaya-dönüş bulgusunun bağımsız bir yoldan, doğrudan Council
+çıktısı üzerinde doğrulanması.
+
+OOS filtresi gerçek iş yapıyor: en büyük görünen üç fazlalık (+0,120,
++0,109 ve en kalabalık hücre LONG|bullish_normal) train↔holdout işaret
+dönmesi yüzünden ELENDİ.
+
+**Dürüstlük notu:** 11 hücrenin sadece 2'si geçti, fazlalıklar mütevazı
+(+0,045 … +0,100), pencere 14 gün ve tek bir rejim dönemi. Bağlama
+kararı ayrı bir onay turu — bu faz SADECE ölçüm.
+
+7 yeni test.
 
 **2026-09-09 — Faz 471: örüntü hayatta kalma analizi + TÜM ölçümlere
 rejim kırılımı. Kullanıcının teşhisi bir kez daha doğrulandı.**
