@@ -80,6 +80,47 @@ class OrderFlowAgent:
             caveats.append("Açık pozisyon (open interest) azalıyor — pozisyon kapatma, azaltılmış güven")
             scale_all(0.85)
 
+        # Faz 464 (2026-09-09) — kullanıcı kararı: "Önce kanıtlanmış
+        # özellikleri bağlayalım." Faz 436'nın fiyat/OI/funding ÜÇLÜSÜNÜ
+        # tek kategoriye ayıran sinyali bir yıl önce "önce gözlemle,
+        # kanıtlanırsa wire et" diye eklenmiş, `ctx.market.features`'ta
+        # akmış ama HİÇ ölçülmemişti. Faz 462/463'te ölçüldü ve DÖRT kanıt
+        # şartını birden geçen TEK yeni özellik oldu:
+        #   anlamlı ayrım (+0,167 ham) + günlük tutarlılık (6/6 gün) +
+        #   sembol-içi ayrım (+0,030, aynı işaretli) + piyasa-geneli DEĞİL.
+        #
+        # GERÇEK ÖLÇÜLEN P(1 saat sonra YUKARI), n=7.729:
+        #   bullish_short_covering      0,369   <- EN DÜŞÜK
+        #   bullish_new_longs           0,400
+        #   bearish_new_shorts          0,430
+        #   unclear                     0,474   (taban)
+        #   bearish_long_capitulation   0,533   <- EN YÜKSEK
+        #
+        # Yani "bullish" kategoriler DÜŞÜŞ, "long kapitülasyonu" YÜKSELİŞ
+        # habercisi — Faz 460/463'ün genel ortalamaya-dönüş örüntüsüyle
+        # birebir aynı. Katsayılar bu ölçülen sıralamadan türetildi
+        # (taban 0,474'e göre sapma x2), İCAT EDİLMEDİ. Büyüklükler
+        # KASITLI olarak küçük: sembol-içi gerçek edge ~3 puan, ham
+        # +0,167 değil — abartılı bir ağırlık ölçümün desteklediğinden
+        # fazlasını iddia ederdi.
+        _RELATIONSHIP_SCORES = {
+            "bullish_short_covering": -0.6,
+            "bullish_new_longs": -0.4,
+            "bearish_new_shorts": -0.2,
+            "bearish_long_capitulation": +0.3,
+        }
+        relationship = context.order_flow_relationship_category
+        if relationship in _RELATIONSHIP_SCORES:
+            _place(
+                "order_flow_relationship", _RELATIONSHIP_SCORES[relationship],
+                f"Fiyat/OI/funding ilişkisi: {relationship} — ölçülen 1sa yön eğilimi "
+                f"({'düşüş' if _RELATIONSHIP_SCORES[relationship] < 0 else 'yükseliş'})",
+            )
+        elif relationship == "unclear":
+            # Ölçülen P(UP)=0,474 taban değerin kendisi -- bilgi taşımıyor,
+            # skora 0 katkı (uydurma bir yön verilmiyor).
+            caveats.append("Fiyat/OI/funding ilişkisi belirsiz — yön bilgisi yok")
+
         score = sum(contributions.values())
 
         if score > 0.5:

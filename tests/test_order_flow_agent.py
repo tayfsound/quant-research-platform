@@ -145,3 +145,97 @@ def test_feature_contributions_reflect_the_wide_spread_discount():
     tight = agent.analyze(OrderFlowContext(aggressive_buy_ratio=0.7, spread_bps=2.0))
     wide = agent.analyze(OrderFlowContext(aggressive_buy_ratio=0.7, spread_bps=25.0))
     assert abs(wide.feature_contributions["aggressive_buy_ratio"] - tight.feature_contributions["aggressive_buy_ratio"] * 0.5) < 1e-6
+
+
+# --- Faz 464: kanitlanmis order_flow_relationship sinyalinin baglanmasi ---
+
+def test_bullish_short_covering_votes_short_because_that_is_what_was_measured():
+    """Faz 462/463'te GERÇEK veriyle ölçüldü (n=7.729): "bullish_short_
+    covering" kategorisinde 1 saat sonra yükseliş olasılığı %36,9 -- tüm
+    kategorilerin EN DÜŞÜĞÜ. Yani isminin aksine DÜŞÜŞ habercisi.
+
+    Bu, Faz 460/463'ün genel ortalamaya-dönüş örüntüsüyle birebir aynı ve
+    işaret ÖLÇÜMDEN geliyor, isimden değil."""
+    agent = OrderFlowAgent()
+    ctx = OrderFlowContext(
+        aggressive_buy_ratio=0.5, spread_bps=2.0,
+        order_flow_relationship_category="bullish_short_covering",
+    )
+    opinion = agent.analyze(ctx)
+
+    assert opinion.feature_contributions["order_flow_relationship"] < 0
+
+
+def test_bearish_long_capitulation_votes_long():
+    """Ölçülen P(UP)=0,533 -- tüm kategorilerin EN YÜKSEĞİ."""
+    agent = OrderFlowAgent()
+    ctx = OrderFlowContext(
+        aggressive_buy_ratio=0.5, spread_bps=2.0,
+        order_flow_relationship_category="bearish_long_capitulation",
+    )
+    opinion = agent.analyze(ctx)
+
+    assert opinion.feature_contributions["order_flow_relationship"] > 0
+
+
+def test_unclear_category_contributes_nothing():
+    """Ölçülen P(UP)=0,474, yani taban değerin kendisi -- bilgi taşımıyor.
+    Uydurma bir yön verilmemeli."""
+    agent = OrderFlowAgent()
+    ctx = OrderFlowContext(
+        aggressive_buy_ratio=0.5, spread_bps=2.0,
+        order_flow_relationship_category="unclear",
+    )
+    opinion = agent.analyze(ctx)
+
+    assert "order_flow_relationship" not in opinion.feature_contributions
+    assert any("belirsiz" in c for c in opinion.caveats)
+
+
+def test_missing_category_is_fail_closed():
+    """Veri yoksa (None) hiçbir katkı üretilmemeli -- Faz 436'nın
+    fail-closed ilkesi."""
+    agent = OrderFlowAgent()
+    ctx = OrderFlowContext(aggressive_buy_ratio=0.5, spread_bps=2.0)
+    opinion = agent.analyze(ctx)
+
+    assert "order_flow_relationship" not in opinion.feature_contributions
+
+
+def test_relationship_is_shadowed_in_the_harmful_regime():
+    """Faz 412'de order_flow domain'inin bullish_low'da zararlı olduğu
+    bulunmuştu; yeni sinyal o kararı DELMEMELİ -- aynı rejimde o da
+    gölgede kalmalı (skora sıfır etki, feature_ic izlemeye devam)."""
+    agent = OrderFlowAgent()
+    ctx = OrderFlowContext(
+        aggressive_buy_ratio=0.5, spread_bps=2.0, market_regime="bullish_low",
+        order_flow_relationship_category="bullish_short_covering",
+    )
+    opinion = agent.analyze(ctx)
+
+    # feature_contributions'ta IZLENIYOR ama skora girmiyor.
+    assert "order_flow_relationship" in opinion.feature_contributions
+    assert opinion.direction == "WAIT"
+
+
+def test_context_adapter_actually_passes_the_category_through():
+    """REGRESYON KORUMASI. Faz 453'te TAM BU KUSUR bulunmuştu:
+    `context_adapter.to_pattern()` hesaplanmış üç özelliği ajana hiç
+    geçirmediği için `volume_profile_confirm` sinyali aylarca HİÇ
+    tetiklenmemişti (n=0, sessizce ölü kod).
+
+    Yeni bir özelliği bağlarken en kolay atlanan halka bu -- sözleşmeye
+    alan eklemek ve ajanda skorlamak TEK BAŞINA yetmiyor, adapter'ın da
+    taşıması gerekiyor."""
+    from contracts.context import CognitiveCycleContext
+    from services.context_adapter import ContextAdapter
+
+    ctx = CognitiveCycleContext()
+    ctx.market.symbol = ""  # gercek DB okumasini atla
+    ctx.market.features = {"order_flow_relationship_category": "bearish_long_capitulation"}
+
+    of_ctx = ContextAdapter().to_order_flow(ctx)
+    assert of_ctx.order_flow_relationship_category == "bearish_long_capitulation"
+
+    opinion = OrderFlowAgent().analyze(of_ctx)
+    assert opinion.feature_contributions["order_flow_relationship"] > 0

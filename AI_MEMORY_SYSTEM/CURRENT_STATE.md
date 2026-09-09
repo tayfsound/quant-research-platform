@@ -1,9 +1,48 @@
-# Mevcut Durum -- v1.175.0 (Faz 441-463: yön kök nedeni + KANIT FİLTRESİ — gerçek sembol-bazlı edge %13 değil ~%3)
+# Mevcut Durum -- v1.176.0 (Faz 441-464: kanıt filtresi + İLK kanıtlanmış özelliğin canlı skora bağlanması)
 
 **Tarih:** 2026-09-08
 **Branch:** main
 **Son commit (HEAD):** `e19ef6b` (Faz 450), push edildi.
 **Servis durumu:** Faz 448 VE Faz 439/440 artık İKİSİ DE canlıda — worker ikinci kez force-kill edilip watchdog'la yeniden başlatıldı (2026-09-08, kullanıcı onayıyla: "yaptığımız değişiklikleri canlıya alalım"). Faz 450/451 (historical_analog_engine.py) offline/rapor-only, restart gerekmez. Watchlist 104→123 sembole çıkarıldı (canlı, restart gerekmedi).
+
+**2026-09-09 — Faz 464 (CANLI DAVRANIŞ DEĞİŞİKLİĞİ): Faz 436'nın
+order_flow_relationship'i, bir yıl sonra, kanıtlanarak canlı skora
+bağlandı.** Kullanıcı kararı: "Önce kanıtlanmış özellikleri bağlayalım."
+
+Faz 463'ün kanıt listesinden **TEK BİR** özellik bağlandı — kullanıcının
+kendi kuralı gereği (memory: incremental module activation, "asla toplu
+değil, her biri kendi gözlem penceresiyle"). Seçim gerekçesi:
+`order_flow_relationship_category` listedeki tek GERÇEKTEN YENİ bilgi —
+diğer kanıtlananlar (`trend`, `ema_alignment`, `market_structure`,
+`RSI`, `zscore`, `bollinger_percent_b`, `di_plus`) zaten skorlanıyor,
+sadece TERS işaretle; onların işaretini çevirmek çok daha büyük bir
+davranış değişikliği ve AYRI bir aktivasyon turu hak ediyor.
+
+Bağlanan sinyalin gerçek ölçümü (n=7.729, 1sa ufuk):
+  bullish_short_covering     P(UP)=0,369  <- EN DÜŞÜK
+  bullish_new_longs          P(UP)=0,400
+  bearish_new_shorts         P(UP)=0,430
+  unclear                    P(UP)=0,474  (taban -> skora 0 katkı)
+  bearish_long_capitulation  P(UP)=0,533  <- EN YÜKSEK
+Dört kanıt şartını da geçti: ham ayrım +0,167, günlük tutarlılık 6/6,
+sembol-içi ayrım +0,030 (aynı işaretli), piyasa-geneli DEĞİL.
+
+Katsayılar bu ölçülen sıralamadan türetildi (tabana göre sapma ×2),
+İCAT EDİLMEDİ, ve KASITLI olarak küçük tutuldu (−0,6 … +0,3): sembol-içi
+gerçek edge ~3 puan, ham +0,167 değil. Faz 412'nin bullish_low gölgeleme
+kararı DELİNMEDİ — yeni sinyal de o rejimde `shadow_contributions`'a
+gidiyor.
+
+Değişen dosyalar: `contracts/order_flow.py` (yeni alan),
+`services/context_adapter.py::to_order_flow()`, `agents/order_flow_agent.py`.
+
+**Faz 453'ün dersi teste sabitlendi:** o fazda `context_adapter.to_pattern()`
+hesaplanmış üç özelliği ajana hiç geçirmediği için `volume_profile_confirm`
+aylarca n=0 ile sessizce ölü kalmıştı. Yeni bir özelliği bağlarken en
+kolay atlanan halka bu — sözleşme + ajan TEK BAŞINA yetmiyor. Artık
+uçtan uca (features -> adapter -> ajan katkısı) bir regresyon testi var.
+
+6 yeni test, 21 test geçti (test_order_flow_agent.py).
 
 **2026-09-09 — Faz 463: kanıt filtresi. Ham ayrımların ÇOĞU piyasa
 zamanlamasıymış.** Kullanıcı isteği: "piyasa-geneli özellikleri ayıklamak

@@ -21,4 +21,11 @@ class OrderFlowContext(BaseModel):
     # rejiminde zararlı olduğu (ablation: -193$/işlem beklenti; yönlü IC:
     # p=0.014) bulundu — pattern_agent.py'deki AYNI market_regime deseni.
     market_regime: str = "unknown"
+    # Faz 464 (2026-09-09) — Faz 436'nin fiyat/OI/funding UCLUSUNU tek bir
+    # kategoriye ayiran sinyali. Bir yil once "once gozlemle, kanitlanirsa
+    # wire et" diye eklenmis, `ctx.market.features`'ta akmis ama HIC
+    # olculmemisti. Faz 462/463'te olculdu ve dort kanit sartini birden
+    # gecen TEK YENI ozellik oldu (bkz. agents/order_flow_agent.py).
+    # Veri yoksa None -- uydurma bir kategori asla uretilmiyor.
+    order_flow_relationship_category: str | None = None
     timestamp: datetime = Field(default_factory=datetime.now)

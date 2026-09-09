@@ -498,6 +498,13 @@ class ContextAdapter:
             funding_rate=self._get(ctx, "funding_rate", funding_rate),
             open_interest_trend=self._get(ctx, "open_interest_trend", open_interest_trend),
             market_regime=self._get(ctx, "market_regime", self._compute_market_regime(ctx)),
+            # Faz 464 — Faz 436'da hesaplanip ctx.market.features'a yazilan
+            # kategori artik ajana da ULASIYOR. (Faz 453'te AYNI kusur
+            # pattern icin bulunmustu: hesaplanan bir ozellik adapter'dan
+            # gecirilmedigi icin ilgili sinyal hic tetiklenmiyordu.)
+            order_flow_relationship_category=(ctx.market.features or {}).get(
+                "order_flow_relationship_category",
+            ),
         )
 
     def to_time(self, ctx: CognitiveCycleContext) -> TimeContext:
