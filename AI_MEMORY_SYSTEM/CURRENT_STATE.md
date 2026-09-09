@@ -1,4 +1,4 @@
-# Mevcut Durum -- v1.184.0 (Faz 441-473: meta-etiket hücreleri survival'dan geçirildi — biri güçlendi, biri eridi)
+# Mevcut Durum -- v1.185.0 (Faz 441-474: boot'ta otomatik başlatma kuruldu — 3 saatlik sessiz kesinti bir daha olmayacak)
 
 **Tarih:** 2026-09-08
 **Branch:** main
@@ -20,6 +20,43 @@ Canlı doğrulama yapıldı: ilk 40 kararda dört kategori de ateşledi
 bearish_new_shorts −0,2 ×11, bearish_long_capitulation +0,3 ×11) — Faz
 453'teki gibi sessizce ölü kalma durumu YOK.
 
+
+**2026-09-09 — Faz 474 (backlog #9): boot'ta otomatik başlatma
+(launchd) kuruldu.** Kullanıcı listesindeki 9. madde. Gerekçe gerçek bir
+olay: 2026-09-08'de makine yeniden başladı ve HİÇBİR servis gelmedi —
+Docker Desktop kapalı (postgres/redis yok), watchdog yok (uvicorn/celery
+worker/realtime_position_monitor/liquidation_listener yok), beat yok.
+Sistem **3 saat** tamamen sessiz durdu, hiçbir alarm yok; `/tmp` de
+reboot'ta silindiği için watchdog logu bile boştu ("log boş" ≠ "sorun
+yok").
+
+Yeni `scripts/boot_startup.sh` memory `project_reboot_recovery_procedure`
+'deki elle kurtarma sırasını otomatikleştiriyor: Docker Desktop'ı aç ->
+daemon'ı bekle -> `docker compose up -d postgres redis` -> postgres'i
+bekle -> watchdog -> **celery beat** (watchdog beat'i YÖNETMİYOR; beat
+olmadan worker ayakta olsa bile hiç döngü tetiklenmez, sistem "çalışıyor"
+görünüp hiç karar üretmez) -> `/health` doğrulaması.
+
+`scripts/install_boot_startup.sh` LaunchAgent olarak kuruyor.
+LaunchDaemon DEĞİL, bilinçli: script `open -a Docker` ile GUI
+uygulaması başlatıyor, bu kullanıcı oturumu bağlamı gerektiriyor.
+`KeepAlive` de YOK — bu tek seferlik bir kurtarma script'i, sürekli
+izleme işini `service_watchdog.sh` yapıyor.
+
+Log `~/Library/Logs/quant_boot_startup.log`'a yazılıyor — `/tmp` DEĞİL,
+çünkü tam da teşhis etmek istediğimiz olayın kaydı orada siliniyordu.
+
+Kurulup doğrulandı (`launchctl list` -> `com.quantresearch.boot`);
+script idempotent, her şey ayaktayken doğru şekilde "zaten çalışıyor"
+deyip atlıyor. Kaldırma komutu install script'inin çıktısında.
+
+**AYRICA — backlog #11 (altcoin SHORT R:R) ARTIK AÇIK DEĞİL.** Kullanıcı
+"neyi bekliyorduk, neden benim kararım gerekiyor" diye sordu; kontrol
+edildi: iki önkoşul da tamamlanmış (Faz 425 `target_atr_mult_short`
+1,4→3,5; Faz 426 `short_scalp_only_gate`) VE `direction_trading_enabled`
+şu an `{"LONG":true,"SHORT":true}` — yani SHORT zaten yeniden AÇILMIŞ.
+Son 7 günde 2.383 SHORT pozisyon açılmış. Memory'deki "açma kararı
+kullanıcıya ait, henüz verilmedi" notu BAYAT.
 
 **2026-09-09 — Faz 473: madde 7 adım 1 — meta-etiket hücreleri
 survival'dan geçirildi. OOS tek bir bölmedir; survival hücreyi ardışık
