@@ -5,6 +5,28 @@
 **Son commit (HEAD):** `e19ef6b` (Faz 450), push edildi.
 **Servis durumu:** Faz 448 VE Faz 439/440 artık İKİSİ DE canlıda — worker ikinci kez force-kill edilip watchdog'la yeniden başlatıldı (2026-09-08, kullanıcı onayıyla: "yaptığımız değişiklikleri canlıya alalım"). Faz 450/451 (historical_analog_engine.py) offline/rapor-only, restart gerekmez. Watchlist 104→123 sembole çıkarıldı (canlı, restart gerekmedi).
 
+**2026-09-09 — Faz 465: aylardır kırık olan `test_unanswered_risk_
+challenge_reduces_real_vote_weight_end_to_end` düzeltildi** (memory
+kuralı: ilgisiz hataları da düzelt). `git stash` ile doğrulandı: hata Faz
+464 öncesinde de vardı. Ürün hatası DEĞİL, üç katmanlı fikstür
+bayatlaması:
+
+1. Ajanın kendi ham confidence'ı artık 0,85 değil **0,70** (skor 3,5 /
+   divisor 5,0) — RiskChallenger'ın 0,75 eşiği council daha hiçbir şey
+   yapmadan aşılamıyordu. Düzeltme: `higher_timeframe_trend="bearish"`
+   eklendi; Faz 316'nın gerçek-ölçüme dayalı htf_disagreement çarpanı
+   (×1,15) 0,70'i 0,805'e çıkarıyor.
+2. `services/agent_confidence_model.py::predict_confidence_multiplier`
+   CANLI VERİDEN öğrenilmiş bir çarpan uyguluyor (bugün technical için
+   ×0,69) — testi kaçınılmaz olarak kırılgan yapıyordu, nötre sabitlendi.
+3. `calibrate_domain_confidence` (ampirik isabet eğrisi) aynı sebeple
+   nötre sabitlendi.
+
+Bir yanlış deneme de kayda değer: önce `volume_confirmation=True`
+denendi, confidence'ı 0,70'ten 0,64'e DÜŞÜRDÜ — çünkü Faz 258'de gerçek
+veriyle (561 kapanmış işlem) ölçülüp semantiği TERSİNE çevrilmiş: hacim
+sıçraması artık teyit değil, tükeniş işareti sayılıyor.
+
 **2026-09-09 — Faz 464 (CANLI DAVRANIŞ DEĞİŞİKLİĞİ): Faz 436'nın
 order_flow_relationship'i, bir yıl sonra, kanıtlanarak canlı skora
 bağlandı.** Kullanıcı kararı: "Önce kanıtlanmış özellikleri bağlayalım."

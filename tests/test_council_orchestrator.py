@@ -279,7 +279,7 @@ def test_council_stage_leaves_data_freshness_none_without_a_last_bar_timestamp(m
     assert captured["data_freshness"] is None
 
 
-def test_unanswered_risk_challenge_reduces_real_vote_weight_end_to_end():
+def test_unanswered_risk_challenge_reduces_real_vote_weight_end_to_end(monkeypatch):
     """Faz 268-sonrası — kritik bulgu (üçüncü taraf mimari incelemesi +
     gerçek kod doğrulaması): RiskChallenger üretimde gerçekten itiraz
     üretiyordu (yüksek confidence + yüksek volatilite) ama hiçbir
@@ -287,6 +287,34 @@ def test_unanswered_risk_challenge_reduces_real_vote_weight_end_to_end():
     etkisi vardı — sadece explainability zincirine yazılıyordu. Bu test,
     uçtan uca gerçek CouncilOrchestrator.deliberate() ile, itirazın artık
     gerçekten opinion.performance_weight'i düşürdüğünü doğruluyor."""
+    # Faz 464-sonrası düzeltme: bu test AYLARDIR kırıktı ve sebebi bir
+    # ürün hatası DEĞİL, fikstür bayatlamasıydı. TechnicalAgent'ın kendi
+    # ham confidence'ı hâlâ tam olarak beklenen 0,85 (skor 5,4 / divisor
+    # 5,0, 0,85'te kapanıyor) — ama CouncilOrchestrator araya CANLI
+    # VERİDEN ÖĞRENİLEN bir kalibrasyon modeli sokuyor
+    # (services/agent_confidence_model.py) ve o model bugün technical'ı
+    # x0,69 kısıyor: 0,85 -> 0,59, yani RiskChallenger'ın "aşırı güven"
+    # eşiğinin (0,75) ALTINA. Çarpan gerçek isabet verisinden geldiği
+    # için zamanla kayıyor; teste bağlanması onu kaçınılmaz olarak
+    # kırılgan yapıyordu.
+    #
+    # Test ETTİĞİ şey "cevapsız itiraz oy ağırlığını düşürür mü" —
+    # kalibrasyon modelinin O ANKİ durumu değil. O yüzden çarpan nötre
+    # sabitleniyor (mekanizmanın kendisi test_agent_confidence_model.py'de
+    # ayrıca test ediliyor).
+    # CANLI VERIDEN ogrenilen IKI ayri duzeltme araya giriyor; ikisi de
+    # gercek isabet verisiyle surekli kayiyor, dolayisiyla ikisi de
+    # notre sabitleniyor (her biri kendi test dosyasinda ayrica test
+    # ediliyor -- burada test edilen sey CEVAPSIZ ITIRAZ mekanizmasi).
+    monkeypatch.setattr(
+        "services.agent_confidence_model.predict_confidence_multiplier",
+        lambda domain, features: 1.0,
+    )
+    monkeypatch.setattr(
+        "services.council_orchestrator.calibrate_domain_confidence",
+        lambda domain, confidence, evidence_count=0, symbol=None: confidence,
+    )
+
     registry = AgentRegistry.create_default()
     orchestrator = CouncilOrchestrator(registry)
     # score = trend(1.0) + momentum(1.0) + market_structure(1.5) +
@@ -296,10 +324,21 @@ def test_unanswered_risk_challenge_reduces_real_vote_weight_end_to_end():
     # ALTINA düşürürdü — bu testin ilk halinde fark edilmeyen bir kurulum hatasıydı).
     # volatility_regime="high" -> _VOLATILITY_REGIME_TO_SCORE["high"]=0.8 (>0.7).
     # RiskChallenger'ın "Aşırı güven + yüksek volatilite" kontrolü tetiklenmeli.
+    # higher_timeframe_trend="bearish" fikstürün ilk halinde YOKTU ve
+    # bugün ZORUNLU: ajanin bu baglamdaki ham skoru artik 3,5 (divisor
+    # 5,0 -> confidence 0,70), yani RiskChallenger'in 0,75 esigi council
+    # daha hicbir sey yapmadan asilamiyordu. Faz 316'da eklenen
+    # htf_disagreement carpani (x1,15) gercek olcume dayali, dokumante
+    # bir davranis: ust zaman dilimi TERSINE oldugunda confidence
+    # artiyor -> 0,70 x 1,15 = 0,805 > 0,75.
+    #
+    # (volume_confirmation KASITLI olarak False birakildi: Faz 258'de
+    # gercek veriyle olculup semantigi TERSINE cevrilmis -- True artik
+    # tukenis isareti sayilip skoru DUSURUYOR.)
     ctx = TechnicalContext(
         trend="bullish", momentum="strengthening", market_structure="higher_highs",
         ema_alignment="bullish_aligned", rsi_value=20.0, volatility_regime="high",
-        adx=30.0, di_plus=30.0, di_minus=10.0,
+        adx=30.0, di_plus=30.0, di_minus=10.0, higher_timeframe_trend="bearish",
     )
 
     _, opinions = orchestrator.deliberate({AgentDomain.TECHNICAL: ctx})
