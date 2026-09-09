@@ -33,9 +33,33 @@ def compute_feature_ic(closed_trades: list[dict], min_sample_size: int = MIN_SAM
     direction/entry_price/exit_price sütunları bulunur.
 
     Her isimli feature için: (o feature'ın ajan skoruna GERÇEK sayısal
-    katkısı, o işlemdeki GERÇEK ham fiyat getirisi — trade yönünden
-    bağımsız, sadece fiyatın gerçekte nereye gittiği) çiftleri toplanıp
-    Pearson korelasyonu hesaplanıyor. Bir sinyal SADECE gerçekten
+    katkısı, ileri fiyat getirisi) çiftleri toplanıp Pearson korelasyonu
+    hesaplanıyor.
+
+    FAZ 470 (2026-09-09) — HEDEF DEĞİŞTİ, ÇÜNKÜ ESKİSİ METRİĞİ BOZUYORDU.
+    Eskiden hedef `(exit_price - entry_price)/entry_price` idi; bu ileri
+    fiyat DEĞİL, işlemin KENDİ bariyer çıkışı (stop/target). Bir dış
+    inceleme `autocorrelation_momentum` için IC=0,9924 (n=33) bulup
+    "target leakage" şüphesi bildirdi. İzlendi ve sebep bulundu — sızıntı
+    feature'da DEĞİL, metrikte:
+
+      katkı = −1,5 olan işlemlerin bariyer getirisi: −4,50 … −4,73%
+      katkı = +1,5 olan işlemlerin bariyer getirisi: −0,24 … −0,65%
+
+    İkili bir feature (±1,5) + iki DAR banda kümelenmiş, hiç örtüşmeyen
+    bir hedef = Pearson korelasyonu zorunlu olarak ±1'e saturasyona
+    gidiyor. Yani raporlanan uç IC'ler (0,9924 / 0,6558 / −0,8566 ...)
+    gerçek öngörü gücü değil, bariyer yerleşiminin artefaktıydı.
+
+    Feature'ın KENDİSİ temiz: `_autocorrelation` sadece geçmiş getirilerin
+    lag-1 korelasyonu, hiçbir ileri bilgi kullanmıyor. Üstelik DOĞRU
+    hedefle ölçüldüğünde gerçekten iyi bir sinyal (+1,5 -> %65,2 yükseliş,
+    −1,5 -> %31,6; ayrım +0,336).
+
+    Artık hedef `forward_return` (sabit ufuklu, bariyerden BAĞIMSIZ) —
+    `analytics/forward_direction.py`/Faz 466'nın meta-learning
+    düzeltmesiyle AYNI ilke. Çıktıdaki `target` alanı hangi hedefin
+    kullanıldığını AÇIKÇA söylüyor ki bir daha kimse yanlış okumasın. Bir sinyal SADECE gerçekten
     ateşlendiği (feature_contributions'ta göründüğü) işlemlerde
     örneklemeye giriyor — "bu sinyal bir şey söylediğinde, işaret ettiği
     yön gerçekten tutuyor mu?" sorusunu ölçmek bu.
@@ -47,13 +71,25 @@ def compute_feature_ic(closed_trades: list[dict], min_sample_size: int = MIN_SAM
     aynı disiplin)."""
     samples: dict[str, list[tuple[float, float]]] = defaultdict(list)
     domains: dict[str, str] = {}
+    # Faz 470 — hedef takibi ÖZELLİK BAZINDA. İlk sürümde global bir
+    # sayaç kullanıldı ve tek bir eski kayıt bile TÜM özellikleri
+    # "barrier_exit" diye etiketliyordu; bu, düzeltmenin amacını
+    # (hangi sayıya güvenilir olduğunu göstermek) boşa çıkarıyordu.
+    forward_counts: dict[str, int] = defaultdict(int)
 
     for trade in closed_trades:
         entry_price = trade.get("entry_price")
-        exit_price = trade.get("exit_price")
-        if not entry_price or exit_price is None:
-            continue
-        raw_return = (exit_price - entry_price) / entry_price
+        forward_return = trade.get("forward_return")
+        if forward_return is not None:
+            raw_return = float(forward_return)
+        else:
+            # Geriye dönük uyumluluk: forward_return taşımayan çağrılar
+            # (eski testler/eski kayıtlar) hâlâ çalışsın, AMA sonuç
+            # `target` alanında açıkça "barrier_exit" diye işaretlensin.
+            exit_price = trade.get("exit_price")
+            if not entry_price or exit_price is None:
+                continue
+            raw_return = (exit_price - entry_price) / entry_price
 
         opinions = trade.get("agent_contributions") or []
         for item in opinions:
@@ -63,6 +99,8 @@ def compute_feature_ic(closed_trades: list[dict], min_sample_size: int = MIN_SAM
             for feature_name, value in (item.get("feature_contributions") or {}).items():
                 samples[feature_name].append((value, raw_return))
                 domains[feature_name] = domain
+                if forward_return is not None:
+                    forward_counts[feature_name] += 1
 
     results: dict[str, dict] = {}
     for feature_name, pairs in samples.items():
@@ -81,6 +119,16 @@ def compute_feature_ic(closed_trades: list[dict], min_sample_size: int = MIN_SAM
             "p_value": round(float(p_value), 4),
             "sample_size": len(pairs),
             "agent_domain": domains[feature_name],
+            # Faz 470: hangi hedefe karşı ölçüldüğü GİZLENMİYOR. Bariyer
+            # hedefi ±1'e saturasyona gittiği için uç IC'ler o modda
+            # güvenilmezdir; "mixed" ise iki hedef karışmış demektir ve
+            # sayı yine ihtiyatla okunmalıdır.
+            "target": (
+                "forward_return" if forward_counts[feature_name] == len(pairs)
+                else "barrier_exit" if forward_counts[feature_name] == 0
+                else "mixed"
+            ),
+            "forward_return_fraction": round(forward_counts[feature_name] / len(pairs), 4),
         }
     return results
 

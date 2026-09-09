@@ -1,4 +1,4 @@
-# Mevcut Durum -- v1.180.0 (Faz 441-469: madde 5 tamamlandı — trend'e YAPAY bağ çözüldü + RiskChallenger eşiği 0,75→0,51)
+# Mevcut Durum -- v1.181.0 (Faz 441-470: feature_ic'in hedefi düzeltildi — IC=0,99 bir edge değil, BARİYER ARTEFAKTIYMIŞ)
 
 **Tarih:** 2026-09-08
 **Branch:** main
@@ -20,6 +20,53 @@ Canlı doğrulama yapıldı: ilk 40 kararda dört kategori de ateşledi
 bearish_new_shorts −0,2 ×11, bearish_long_capitulation +0,3 ×11) — Faz
 453'teki gibi sessizce ölü kalma durumu YOK.
 
+
+**2026-09-09 — Faz 470: dış raporun "IC=0,9924 leakage?" alarmı izlendi.
+Sızıntı feature'da DEĞİL, METRİĞİN KENDİSİNDEYMİŞ.**
+
+Kullanıcının paylaştığı dış inceleme `autocorrelation_momentum` için
+IC=0,9924 (n=33) bulup "target leakage" şüphesi bildirdi ve haklıydı —
+ama sebep beklenenden farklı çıktı.
+
+**Feature TEMİZ:** `_autocorrelation` sadece geçmiş getirilerin lag-1
+korelasyonu (`np.diff(closes)/closes[:-1]`), hiçbir ileri bar/future
+return/centered rolling kullanmıyor.
+
+**Metrik BOZUKTU:** `analytics/feature_ic.py` hedef olarak
+`(exit_price - entry_price)/entry_price` kullanıyordu — bu ileri fiyat
+değil, işlemin KENDİ bariyer çıkışı. Gerçek veri:
+
+    katkı −1,5 olan işlemler -> bariyer getirisi −4,50 … −4,73%
+    katkı +1,5 olan işlemler -> bariyer getirisi −0,24 … −0,65%
+
+İkili bir feature + iki DAR banda kümelenmiş, hiç örtüşmeyen bir hedef
+= Pearson zorunlu olarak ±1'e saturasyona gidiyor. Bu, bütün gün
+düzelttiğimiz outcome/direction karışıklığının (Faz 441/446/466) bir
+kez daha ortaya çıkışı.
+
+Hedef sabit ufuklu ileri getiriye çevrildi (Faz 466'nın meta-learning
+düzeltmesiyle AYNI ilke) ve çıktıya `target` + `forward_return_fraction`
+alanları eklendi — hangi sayının hangi hedefe karşı ölçüldüğü artık
+gizlenmiyor. (İlk sürümde sayaç GLOBAL tutulmuştu ve tek bir eski kayıt
+TÜM özellikleri "barrier_exit" etiketliyordu; özellik bazına çevrildi.)
+
+**DÜZELTME SONRASI — dış raporun üç "en iyi adayı" da ÇÖKTÜ:**
+
+| feature | rapordaki | düzeltilmiş | n |
+|---|---|---|---|
+| autocorrelation_momentum | 0,9924 | **+0,2332** (p=0,19) | 33 |
+| liquidity_sweep (residual) | +0,6558 | **−0,0673** (p=0,07) | 703 |
+| wyckoff_event (residual) | −0,6722 | **+0,0438** (p=0,19) | 892 |
+| long_term_trend_regime (residual) | −0,1246 | **−0,0226** (p=0,39) | 1447 |
+
+Ayakta kalan: `zscore_mean_reversion` +0,1953 (p=0,0001, n=379) —
+Faz 460/463'ün bulgusuyla tutarlı.
+
+**Raporun redundans tablosu da artık geçersiz:** adx_strong_confirm ↔
+ema_alignment = 1,0000, bollinger_confirm ↔ momentum = 1,0000 gibi
+değerler Faz 469'da düzeltilen YAPAY bağdan geliyordu (koşulların
+kendisi `and context.trend == ...` içeriyordu). Rapor Faz 469 ÖNCESİ
+veriyle üretilmiş.
 
 **2026-09-09 — Faz 469: madde 5 TAMAMLANDI. Redundans "kaldırılmadı",
 YANLIŞ OLDUĞU kanıtlandı. + RiskChallenger eşiği düşürüldü.**

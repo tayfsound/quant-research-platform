@@ -514,8 +514,42 @@ def refresh_feature_ic_report_task() -> dict:
     from database.repositories.feature_ic_report_repository import FeatureICReportRepository
     from database.session_factory import SessionFactory
 
+    from sqlalchemy import text
+
     with SessionFactory.get_session() as session:
         closed_trades = DecisionPersistor(session).list_closed_trades(limit=100_000)
+        # Faz 470 — SABİT UFUKLU ileri getiri. Eskiden IC, işlemin kendi
+        # bariyer çıkışına (exit_price) karşı ölçülüyordu; bu, ikili
+        # feature'larda Pearson'ı ±1'e saturasyona götürüp sahte "IC=0,99"
+        # değerleri üretiyordu (bkz. analytics/feature_ic.py docstring'i).
+        # Bu oturumun tüm yön ölçümlerinin kullandığı AYNI LATERAL desen.
+        forward = session.execute(text("""
+            SELECT d.id::text AS id,
+                   (fwd.close - COALESCE(d.entry_price, ref.close))
+                     / NULLIF(COALESCE(d.entry_price, ref.close), 0) AS forward_return
+            FROM decisions d
+            LEFT JOIN LATERAL (
+                SELECT close FROM market_snapshots m
+                WHERE m.exchange='binance' AND m.symbol=d.symbol AND m.resolution='1m'
+                  AND m.time BETWEEN d.timestamp - interval '3 min' AND d.timestamp + interval '3 min'
+                ORDER BY abs(extract(epoch FROM (m.time - d.timestamp))) LIMIT 1
+            ) ref ON true
+            JOIN LATERAL (
+                SELECT close FROM market_snapshots m
+                WHERE m.exchange='binance' AND m.symbol=d.symbol AND m.resolution='1m'
+                  AND m.time BETWEEN d.timestamp + interval '55 min' AND d.timestamp + interval '65 min'
+                ORDER BY abs(extract(epoch FROM (m.time - (d.timestamp + interval '1 hour')))) LIMIT 1
+            ) fwd ON true
+            WHERE d.status='closed' AND d.excluded_from_stats = false
+        """)).mappings().all()
+        forward_by_id = {
+            r["id"]: r["forward_return"] for r in forward if r["forward_return"] is not None
+        }
+        for trade in closed_trades:
+            fr = forward_by_id.get(str(trade.get("id")))
+            if fr is not None:
+                trade["forward_return"] = float(fr)
+
         past_snapshots = FeatureICReportRepository(session).get_recent(12)
         features = compute_feature_ic(closed_trades)
         attach_ic_stability(features, past_snapshots)
