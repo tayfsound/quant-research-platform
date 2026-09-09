@@ -1,4 +1,4 @@
-# Mevcut Durum -- v1.179.0 (Faz 441-468: ölçüm ailesi + market_structure SESSİZ ÖLÜ SİNYAL hatası bulundu)
+# Mevcut Durum -- v1.180.0 (Faz 441-469: madde 5 tamamlandı — trend'e YAPAY bağ çözüldü + RiskChallenger eşiği 0,75→0,51)
 
 **Tarih:** 2026-09-08
 **Branch:** main
@@ -20,6 +20,53 @@ Canlı doğrulama yapıldı: ilk 40 kararda dört kategori de ateşledi
 bearish_new_shorts −0,2 ×11, bearish_long_capitulation +0,3 ×11) — Faz
 453'teki gibi sessizce ölü kalma durumu YOK.
 
+
+**2026-09-09 — Faz 469: madde 5 TAMAMLANDI. Redundans "kaldırılmadı",
+YANLIŞ OLDUĞU kanıtlandı. + RiskChallenger eşiği düşürüldü.**
+
+**(a) Trend'e YAPAY bağ çözüldü.** Kullanıcı itirazı yön verdi:
+"gerçekten aynı bilgiyse sinyalin KAYNAĞI problemli, yanılarak anlamlı
+bir sinyali kaybedebiliriz." Kaynak incelendi ve Faz 423'ün teşhisi
+ÇÜRÜTÜLDÜ: `momentum`, `bollinger_confirm` ve `adx_strong_confirm`'ün
+"trend ile korelasyon 1.000" olmasının sebebi, koşulun KENDİSİNİN
+`and context.trend == "bullish"` içermesiydi. Yani ölçülen redundans
+sinyallerin özelliği değil, **ajanın kendi kodunun ürettiği bir
+artefakt**tı.
+
+Gerçek veriyle kanıtlandı (trend SABİT tutularak, n=29.305):
+
+| trend | momentum | P(1sa UP) |
+|---|---|---|
+| bearish | strengthening | 0,5736 |
+| bearish | **weakening** | **0,6247** |
+| bullish | strengthening | 0,5095 |
+| bullish | **weakening** | **0,5311** |
+
+Momentum trend sabitken HÂLÂ bilgi taşıyor, üstelik iki rejimde de AYNI
+yönde. **Beşini toplu gömseydik gerçek bir sinyal kaybedecektik** —
+kullanıcının uyarısı tam isabet.
+
+Üç sinyalin `and trend == ...` bağı kaldırıldı; üçü de SHADOW'da KALDI
+(skora sıfır etki -> üretim davranışı DEĞİŞMEDİ, Faz 464'ün gözlem
+penceresi korunuyor) ama artık BAĞIMSIZ ölçülebiliyorlar. İşaret kararı
+kanıt birikince ayrı aktivasyon (bugünkü ölçüm "weakening -> YUKARI"
+diyor, yani mevcut işaretin TERSİ).
+
+`ema_alignment` KASITLI olarak dokunulmadı: onunki GERÇEK kaynak
+redundansı — `ema20>ema50>ema200` tanımı gereği `ema20>ema50` (trend)
+kümesinin ALT KÜMESİ, ajan koduyla ilgisi yok. Gerekçe kaybolmasın diye
+ayrı bir test yazıldı.
+
+**(b) RiskChallenger eşiği 0,75 -> 0,51** (kullanıcı kararı). Faz 468'de
+ölçülmüştü: TechnicalAgent varsayılan katsayılarla en fazla ~0,53
+confidence üretiyor, yani "aşırı güven + yüksek volatilite" kontrolü o
+ajan için FİİLEN ULAŞILAMAZDI — market_structure'daki "sessiz ölü
+mekanizma" deseninin aynısı. 0,51 bugünkü ölçümle de uyumlu: confidence
+yön hakkında bilgi taşımıyor (resolution ~0,0003) ve LONG'da
+ANTI-prediktif (güven 0,28'de isabet %65,5, 0,83'te %43,0). Eşik artık
+sınıf sabiti (`OVERCONFIDENCE_THRESHOLD`), sihirli sayı değil.
+
+105 test geçti.
 
 **2026-09-09 — Faz 468: `market_structure` YILLARDIR ÖLÜYMÜŞ. Kullanıcı
 itirazı gerçek bir hata ortaya çıkardı.**

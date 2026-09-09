@@ -291,3 +291,83 @@ def test_market_structure_is_shadowed_not_scored_for_now():
     # ...ama TEK BASINA hicbir yon uretmiyor (skora girmiyor).
     assert yukselen.direction == "WAIT"
     assert dusen.direction == "WAIT"
+
+
+# --- Faz 469: trend'e yapay bag cozuldu ---
+
+def test_momentum_fires_independently_of_trend():
+    """FAZ 469 — kullanıcı itirazının doğrudan karşılığı: "gerçekten aynı
+    bilgiyse sinyalin KAYNAĞI problemli, yanılarak anlamlı bir sinyali
+    kaybedebiliriz."
+
+    Faz 423 momentum'u "trend ile korelasyon 1.000" diye shadow'a almıştı
+    — ama korelasyon 1.000 çıkıyordu ÇÜNKÜ koşulun kendisi
+    `and context.trend == "bullish"` içeriyordu. Ölçülen redundans,
+    sinyalin değil AJANIN KENDİ KODUNUN eseriydi.
+
+    Gerçek veri (trend sabit tutularak, n=29.305) momentum'un bağımsız
+    bilgi taşıdığını gösterdi: bearish rejimde weakening 0,6247 vs
+    strengthening 0,5736; bullish rejimde 0,5311 vs 0,5095."""
+    agent = TechnicalAgent()
+
+    # trend BEARISH iken bile "strengthening" ateslenmeli (eskiden imkansizdi).
+    op = agent.analyze(TechnicalContext(trend="bearish", momentum="strengthening"))
+    assert op.feature_contributions["momentum"] > 0
+
+    # trend BULLISH iken "weakening" ateslenmeli (eskiden imkansizdi).
+    op = agent.analyze(TechnicalContext(trend="bullish", momentum="weakening"))
+    assert op.feature_contributions["momentum"] < 0
+
+    # trend YOKKEN de olculebilmeli.
+    op = agent.analyze(TechnicalContext(trend="neutral", momentum="strengthening"))
+    assert op.feature_contributions["momentum"] > 0
+
+
+def test_bollinger_and_adx_also_fire_independently_of_trend():
+    """momentum ile AYNI kusur bollinger_confirm ve adx_strong_confirm'de
+    de vardı — üçü de `and context.trend == ...` ile bağlanmıştı."""
+    agent = TechnicalAgent()
+
+    op = agent.analyze(TechnicalContext(trend="bearish", bollinger_percent_b=1.5))
+    assert op.feature_contributions["bollinger_confirm"] > 0
+
+    op = agent.analyze(TechnicalContext(
+        trend="bearish", adx=30.0, di_plus=30.0, di_minus=10.0,
+    ))
+    assert op.feature_contributions["adx_strong_confirm"] > 0
+
+
+def test_ema_alignment_stays_coupled_because_it_is_a_real_subset_of_trend():
+    """KASITLI FARK: `ema_alignment` bağı ÇÖZÜLMEDİ, çünkü onunki gerçek
+    bir KAYNAK redundansı — `ema20>ema50>ema200` tanımı gereği
+    `ema20>ema50` (trend) kümesinin ALT KÜMESİ. Ajan koduyla ilgisi yok,
+    dolayısıyla "bağı çözmek" diye bir şey mümkün değil.
+
+    Bu test, ileride biri "tutarlılık olsun" diye onu da değiştirmeye
+    kalkarsa gerekçenin kaybolmamasını sağlıyor: ema_alignment
+    bullish_aligned iken trend zaten bullish'tir."""
+    agent = TechnicalAgent()
+    # trend NOTR birakiliyor: ema_alignment'in KENDI katkisini, trend'in
+    # skoruyla karistirmadan gormek icin.
+    op = agent.analyze(TechnicalContext(ema_alignment="bullish_aligned", trend="neutral"))
+    assert op.feature_contributions["ema_alignment"] > 0
+    # Shadow'da: TEK BASINA hicbir yon uretmiyor.
+    assert op.direction == "WAIT"
+
+
+def test_decoupling_does_not_change_the_score():
+    """Üçü de SHADOW'da kaldığı için üretim davranışı DEĞİŞMEMELİ —
+    Faz 464'ün gözlem penceresi açıkken bu kritik."""
+    agent = TechnicalAgent()
+    ctx = TechnicalContext(
+        trend="bullish", momentum="weakening", bollinger_percent_b=1.5,
+        adx=30.0, di_plus=30.0, di_minus=10.0, rsi_value=20.0,
+    )
+    op = agent.analyze(ctx)
+
+    skorlanan = {"trend", "rsi_extreme", "volume_confirmation", "obv_divergence"}
+    golge = set(op.feature_contributions) - skorlanan
+    assert {"momentum", "bollinger_confirm", "adx_strong_confirm"} <= golge
+    # Skor SADECE skorlanan sinyallerden gelmeli.
+    implied = sum(v for k, v in op.feature_contributions.items() if k in skorlanan)
+    assert abs(abs(implied) - op.confidence * 5.0) < 1e-6

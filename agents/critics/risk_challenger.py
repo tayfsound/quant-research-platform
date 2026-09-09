@@ -17,6 +17,20 @@ class RiskChallenger:
     - Risk sinyalleri üretmek
     """
 
+    # Faz 469 (2026-09-09) — kullanıcı kararı: "RiskChallenger'ın eşiği
+    # çok yüksek, %51 yapalım." 0,75 idi ve Faz 468'de ölçüldü ki
+    # TechnicalAgent varsayılan katsayılarla en fazla ~0,53 confidence
+    # üretebiliyor — yani bu kontrol o ajan için FİİLEN ULAŞILAMAZDI,
+    # sessizce hiç tetiklenmiyordu (Faz 468'in market_structure'ında
+    # bulunan "sessiz ölü mekanizma" deseninin aynısı).
+    #
+    # 0,51 seçimi ayrıca bugünkü ölçümle uyumlu: confidence yön hakkında
+    # bilgi taşımıyor (Murphy resolution ~0,0003) ve LONG'da ANTI-prediktif
+    # (güven 0,28'de isabet %65,5, 0,83'te %43,0) — yani "yüksek güven +
+    # yüksek volatilite" gerçekten sorgulanması gereken bir kombinasyon.
+    OVERCONFIDENCE_THRESHOLD = 0.51
+    HIGH_VOLATILITY_THRESHOLD = 0.7
+
     def __init__(self):
         self.domain = AgentDomain.RISK
 
@@ -32,7 +46,8 @@ class RiskChallenger:
         confidence = opinion.confidence
 
         # Aşırı güven + yüksek volatilite
-        if volatility > 0.7 and confidence > 0.75:
+        if (volatility > self.HIGH_VOLATILITY_THRESHOLD
+                and confidence > self.OVERCONFIDENCE_THRESHOLD):
             challenges.append(
                 AgentChallenge(
                     challenger_domain=AgentDomain.RISK,

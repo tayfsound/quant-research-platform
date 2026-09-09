@@ -106,15 +106,38 @@ class TechnicalAgent:
             contributions["trend"] = -c.trend_weight
             evidence.append("Piyasa düşüş trendinde")
 
-        # Momentum — bkz. yukarıdaki Faz 423 notu: trend ile korelasyon
-        # 1.000, kendi şartı zaten trend'e bağlı — shadow (izleme amaçlı,
-        # skora girmiyor).
-        if context.momentum == "strengthening" and context.trend == "bullish":
+        # Faz 469 (2026-09-09) — TREND'E YAPAY BAĞ ÇÖZÜLDÜ. Kullanıcı
+        # itirazı: "Gerçekten aynı bilgi olmaması lazım bu sinyallerin;
+        # gerçekten aynı bilgiyse sinyalin KAYNAĞI problemli, yanılarak
+        # anlamlı bir sinyali kaybedebiliriz."
+        #
+        # Haklı çıktı. Faz 423 bu sinyalleri "trend ile korelasyon 1.000"
+        # diye shadow'a almıştı — ama korelasyon 1.000 çıkıyordu ÇÜNKÜ
+        # KOŞULUN KENDİSİ `and context.trend == ...` içeriyordu. Yani
+        # ölçülen redundans, sinyalin bir özelliği değil, AJANIN KENDİ
+        # KODUNUN yarattığı bir artefaktmış.
+        #
+        # Gerçek veriyle kanıtlandı (trend SABİT tutularak, n=29.305):
+        #     bearish + strengthening  P(UP)=0,5736 | weakening 0,6247
+        #     bullish + strengthening  P(UP)=0,5095 | weakening 0,5311
+        # Momentum, trend sabitken HÂLÂ bilgi taşıyor ve iki rejimde de
+        # AYNI yönde (+5,1pp / +2,2pp). Bağ çözülmeseydi bu bilgi
+        # ölçülemez kalırdı.
+        #
+        # `ema_alignment` KASITLI olarak dokunulmadı: o gerçek bir kaynak
+        # redundansı — `ema20>ema50>ema200` tanımı gereği `ema20>ema50`
+        # (trend) kümesinin ALT KÜMESİ, ajan koduyla ilgisi yok.
+        #
+        # Üçü de SHADOW'da KALIYOR: skora sıfır etki (üretim davranışı
+        # değişmiyor), ama artık BAĞIMSIZ olarak ölçülebiliyorlar. İşaret
+        # kararı, kanıt birikince ayrı bir aktivasyon (bugünkü ölçüm
+        # "weakening -> YUKARI" diyor, yani mevcut işaretin TERSİ).
+        if context.momentum == "strengthening":
             shadow_contributions["momentum"] = c.momentum_weight
-            evidence.append("Yükseliş momentumu güçleniyor")
-        elif context.momentum == "weakening" and context.trend == "bearish":
+            evidence.append("Momentum güçleniyor (izleniyor, skora girmiyor)")
+        elif context.momentum == "weakening":
             shadow_contributions["momentum"] = -c.momentum_weight
-            evidence.append("Düşüş momentumu güçleniyor")
+            evidence.append("Momentum zayıflıyor (izleniyor, skora girmiyor)")
 
         # Piyasa yapısı — Faz 468 (2026-09-09): SESSİZ ÖLÜ SİNYAL DÜZELTMESİ.
         #
@@ -236,10 +259,11 @@ class TechnicalAgent:
         # kapsadığı z-score'la çakışırdı).
         # Faz 423 — momentum ile korelasyon 1.000 (bkz. yukarıdaki not),
         # kendi şartı zaten trend'e bağlı — shadow.
-        if context.bollinger_percent_b > 1.0 and context.trend == "bullish":
+        # Faz 469 — trend'e yapay bağ çözüldü (bkz. momentum'daki not).
+        if context.bollinger_percent_b > 1.0:
             shadow_contributions["bollinger_confirm"] = c.bollinger_confirm_weight
             evidence.append(f"Fiyat üst Bollinger Bandının üzerinde ({context.bollinger_percent_b:.2f}) — yükseliş trendini teyit ediyor")
-        elif context.bollinger_percent_b < 0.0 and context.trend == "bearish":
+        elif context.bollinger_percent_b < 0.0:
             shadow_contributions["bollinger_confirm"] = -c.bollinger_confirm_weight
             evidence.append(f"Fiyat alt Bollinger Bandının altında ({context.bollinger_percent_b:.2f}) — düşüş trendini teyit ediyor")
 
@@ -268,10 +292,11 @@ class TechnicalAgent:
         elif context.adx > 25:
             # Faz 423 — trend ile korelasyon 1.000, kendi şartı zaten
             # trend'e bağlı — shadow.
-            if context.di_plus > context.di_minus and context.trend == "bullish":
+            # Faz 469 — trend'e yapay bağ çözüldü (bkz. momentum'daki not).
+            if context.di_plus > context.di_minus:
                 shadow_contributions["adx_strong_confirm"] = c.adx_strong_confirm_weight
                 evidence.append(f"ADX {context.adx:.1f} — güçlü trend, DI+ yükseliş yönünü teyit ediyor")
-            elif context.di_minus > context.di_plus and context.trend == "bearish":
+            elif context.di_minus > context.di_plus:
                 shadow_contributions["adx_strong_confirm"] = -c.adx_strong_confirm_weight
                 evidence.append(f"ADX {context.adx:.1f} — güçlü trend, DI- düşüş yönünü teyit ediyor")
 
