@@ -22,7 +22,7 @@ uygulanıyor (aynı yardımcı fonksiyon, kod tekrarı yok)."""
 from analytics.barrier_table_builder import _extract_real_trades_for_barrier_table
 from analytics.barrier_table_repository import GROUP_BY
 from analytics.mae_mfe import compute_conditional_mae_distribution
-from analytics.mae_mfe_scientific import bootstrap_quantile_ci
+from analytics.mae_mfe_scientific import bootstrap_quantile_ci, compute_distribution_profile
 from analytics.measurement_stability import compute_stability
 from services.asset_class_performance_gatherer import _is_production_ai_council
 
@@ -71,15 +71,23 @@ def gather_mae_mfe_confidence(window: int = DEFAULT_WINDOW) -> dict:
         groups.setdefault(key, []).append(abs(t["mae_pct"]))
 
     confidence_intervals: dict[str, dict] = {}
+    # Faz 479 — GPT'nin (kullanıcı todo'su) tavsiyeleri: tek bir P90
+    # yetmiyor. Her kova için TAM dağılım profili (median/p75/p90/p95/
+    # p99/max) + kanıt kademesi + "dar CI ama küçük N" tuzak uyarısı.
+    distribution_profiles: dict[str, dict] = {}
     for key, values in groups.items():
         label = "|".join(f"{field}={value}" for field, value in zip(GROUP_BY, key))
         ci = bootstrap_quantile_ci(values, quantile=CI_QUANTILE)
         if ci is not None:
             confidence_intervals[label] = ci
+        profile = compute_distribution_profile(values, quantile=CI_QUANTILE)
+        if profile is not None:
+            distribution_profiles[label] = profile
 
     return {
         "quantile": CI_QUANTILE,
         "point_estimates": point_estimates,
         "confidence_intervals": confidence_intervals,
+        "distribution_profiles": distribution_profiles,
         "total_trades": len(trades),
     }

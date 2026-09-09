@@ -1,4 +1,4 @@
-# Mevcut Durum -- v1.188.0 (Faz 441-477: stop aşımının KÖK NEDENİ bulundu — piyasa değil, kendi örnekleme yöntemimiz)
+# Mevcut Durum -- v1.189.0 (Faz 441-479: risk simülatörü decomposition + MAE/MFE dağılım profili — GPT'nin örneği otomatik yakalandı)
 
 **Tarih:** 2026-09-08
 **Branch:** main
@@ -20,6 +20,41 @@ Canlı doğrulama yapıldı: ilk 40 kararda dört kategori de ateşledi
 bearish_new_shorts −0,2 ×11, bearish_long_capitulation +0,3 ×11) — Faz
 453'teki gibi sessizce ölü kalma durumu YOK.
 
+
+**2026-09-09 — Faz 478/479: todo'daki iki ölçüm maddesi yapıldı.**
+
+**Faz 478 — risk simülatörüne yön/rejim decomposition** (kullanıcı fikri).
+`compute_bootstrap_decomposition()`: overall/yön/rejim/volatilite
+dilimlerinin HER BİRİ için ayrı Moving Block Bootstrap. Faz 471'in dersi
+uygulandı — her dilim KENDİ getirileriyle simüle ediliyor, havuzlanmış
+sonuçtan pay biçilmiyor. Gerçek veri (n=2000): **en kötü dilim SHORT**,
+en iyi `bullish_normal`; `bearish_normal`/`bearish_low` negatif. Faz
+472/473'ün meta-etiket bulgusuyla BAĞIMSIZ olarak örtüşüyor.
+
+**Faz 479 — GPT'nin MAE/MFE revizyon tavsiyeleri** (kullanıcı todo'su).
+`compute_distribution_profile()`: tek bir P90 yerine TAM profil
+(median/p75/p90/p95/p99/max) + `evidence_tier` + `narrow_ci_small_sample`
+tuzak uyarısı.
+
+Gerçek veride GPT'nin VERDİĞİ ÖRNEK otomatik yakalandı:
+`SHORT|bear_trend|low|equity` -> **n=27, CI=[0,0134, 0,0138]** — GPT'nin
+"1,35% [1,34%, 1,38%] ama N=27, dar CI + küçük N yüksek güven DEĞİLDİR"
+dediği kovanın ta kendisi. Toplam 3 kova bu tuzağa düşüyor.
+
+GPT'nin diğer gözlemi de doğrulandı: SHORT'un P90 MAE'si bear_trend'de
+(%7,53/%8,01) bull_trend'dekinden (%5,57/%5,89) YÜKSEK — sezgiye aykırı,
+ve bizim bağımsız SHORT bulgularımızla aynı bölgeyi işaret ediyor.
+
+Kanıt kademesi dağılımı 20 kovada: strong 2, usable 3, weak 8,
+exploratory 7 — yani **15/20 kova "usable"ın altında**. GPT'nin
+"MIN_SAMPLE_SIZE=10 canlı aç/kapa için çok düşük" uyarısı sayıyla
+doğrulandı.
+
+KALAN (dashboard tarafı): "Canlı: Açık" sütununu kanıt durumuna
+(OPEN/EXPLORATORY/INSUFFICIENT/UNSTABLE) çevirmek — veri artık
+`evidence_tier`/`narrow_ci_small_sample` ile hazır.
+
+14 yeni test.
 
 **2026-09-09 — Faz 477: STOP AŞIMININ KÖK NEDENİ BULUNDU VE DÜZELTİLDİ.**
 Kullanıcı: "Gerçek nedenini ölçelim, stop aşımını olabildiğince
