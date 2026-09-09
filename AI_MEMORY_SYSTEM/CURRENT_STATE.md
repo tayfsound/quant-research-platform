@@ -5,6 +5,22 @@
 **Son commit (HEAD):** `e19ef6b` (Faz 450), push edildi.
 **Servis durumu:** Faz 448 VE Faz 439/440 artık İKİSİ DE canlıda — worker ikinci kez force-kill edilip watchdog'la yeniden başlatıldı (2026-09-08, kullanıcı onayıyla: "yaptığımız değişiklikleri canlıya alalım"). Faz 450/451 (historical_analog_engine.py) offline/rapor-only, restart gerekmez. Watchlist 104→123 sembole çıkarıldı (canlı, restart gerekmedi).
 
+**GÖZLEM PENCERESİ AÇIK (2026-09-09 11:52 UTC'den itibaren):** Faz 464
+(`order_flow_relationship` canlı skora bağlandı) izleniyor. Kullanıcı
+kararı: meta-learning eşiği (`MIN_SHARPE_IMPROVEMENT=0.4`) BİLEREK
+düşürülmedi — ikinci bir değişiklik bindirmek Faz 464'ün etkisini ayırt
+edilemez hale getirirdi. Değişiklik öncesi taban çizgisi ve kontrol
+yöntemi memory `project_faz464_observation_window`'da; özet:
+brier 0,2685 / resolution 0,000294 / BSS −0,0786 / LONG −0,0309 /
+SHORT −0,0442 / pooled_separation −0,0750 / execution_amplification 3,72
+(n=16.954).
+
+Canlı doğrulama yapıldı: ilk 40 kararda dört kategori de ateşledi
+(bullish_short_covering −0,6 ×4, bullish_new_longs −0,4 ×14,
+bearish_new_shorts −0,2 ×11, bearish_long_capitulation +0,3 ×11) — Faz
+453'teki gibi sessizce ölü kalma durumu YOK.
+
+
 **2026-09-09 — Faz 466: meta-learning'in İKİ YAPISAL kusuru düzeltildi.
 Walk-forward OOS iyileşmesi −0,017'den +0,2195'e çıktı (13 kat).**
 Kullanıcı bildirimi: "meta learning hâlâ çalışmıyor bu arada, hep sıfır,
