@@ -1,9 +1,73 @@
-# Mevcut Durum -- v1.173.0 (Faz 441-461: yön problemi kök nedeni + Binance'in ZATEN gönderdiği order-flow verisi artık atılmıyor)
+# Mevcut Durum -- v1.174.0 (Faz 441-462: yön kök nedeni + order-flow verisi + hiç ölçülmemiş 40+ bağlam özelliğinin yön değeri)
 
 **Tarih:** 2026-09-08
 **Branch:** main
 **Son commit (HEAD):** `e19ef6b` (Faz 450), push edildi.
 **Servis durumu:** Faz 448 VE Faz 439/440 artık İKİSİ DE canlıda — worker ikinci kez force-kill edilip watchdog'la yeniden başlatıldı (2026-09-08, kullanıcı onayıyla: "yaptığımız değişiklikleri canlıya alalım"). Faz 450/451 (historical_analog_engine.py) offline/rapor-only, restart gerekmez. Watchlist 104→123 sembole çıkarıldı (canlı, restart gerekmedi).
+
+**2026-09-09 — Faz 462: konumlanma verileri ÖLÇÜLDÜ (gereksiz çıktı) +
+hiç ölçülmemiş 40+ bağlam özelliğinin yön değeri.**
+
+**(a) Binance konumlanma uç noktaları — İNŞA EDİLMEDİ, çünkü ölçüm
+gerekçelendirmedi.** Faz 461'in disiplini uygulandı (önce ölç). 10
+sembol, 15dk periyot, n=4.870:
+
+| sinyal | 15dk | 1sa |
+|---|---|---|
+| topLongShortPositionRatio (büyük hesap) | +0,015 | −0,001 |
+| globalLongShortAccountRatio (perakende) | +0,030 | +0,026 |
+| SPREAD (büyük − perakende) | +0,007 | −0,006 |
+| takerlongshortRatio | +0,011 | −0,002 |
+| openInterestHist değişimi | −0,045 | −0,003 |
+
+Claude'un "akıllı para vs perakende farkı asıl sinyaldir" hipotezi
+YANLIŞ çıktı (+0,007). Gürültü bandının (±0,02) üstünde tek şey OI
+değişimi ve o da sadece en uç dilimde. **Dört yeni ingestion borusu
+kurulmadı — ölçüm bizi gereksiz işten kurtardı.**
+
+**(b) Bunun yerine ZATEN elimizde olan veride değer bulundu.**
+`ctx.market.features`'ta Faz 411/423/436/437/438/439/461'de "önce
+gözlemle, kanıtlanırsa wire et" diye eklenen 40'tan fazla özellik
+akıyordu — veri birikmiş ama HİÇ ÖLÇÜLMEMİŞTİ. Yeni
+`analytics/feature_directional_value.py` hepsini birden değerlendiriyor
+(tipi kendi tespit ediyor: sayısal -> çeyreklik + uç dilim monotonluk
+testi; kategorik -> kategori başına P(UP) + ayırt etme gücü).
+
+Gerçek veride (n=772.914 özellik gözlemi, 7 gün) en güçlüler:
+
+| özellik | sep | uç sep | monoton |
+|---|---|---|---|
+| rsi_percentile | −0,184 | −0,229 | ✓ |
+| order_flow_relationship_category | +0,170 | — | (kategorik) |
+| order_flow_relationship_price_change_pct | −0,170 | −0,231 | ✓ |
+| rsi_divergence | +0,170 | — | (kategorik) |
+| zscore | −0,138 | −0,159 | ✓ |
+| bollinger_percent_b | −0,137 | −0,160 | ✓ |
+| RSI | −0,135 | −0,144 | ✓ |
+| di_plus | −0,125 | −0,143 | ✓ |
+| di_minus | **+0,119** | +0,158 | ✓ |
+
+Örüntü Faz 460'ı bağımsız bir veri yolundan doğruluyor: **"fiyat ne
+kadar uzamış" ölçen HER metrik ters** (yüksek okuma -> düşüş), ve
+hepsinde uçta güçlenme (monotonluk) var — yani gürültü değil, gerçek
+bilgi. Büyüklükleri (uçta 0,18-0,23) Council'in ürettiği her şeyden
+BÜYÜK.
+
+**Tetikleyici bulgu:** Faz 436'nın `order_flow_relationship`'i (bir yıl
+önce kurulmuş, hiç bağlanmamış, hiç ölçülmemiş) 16 puanlık ayrım
+gösterdi: bullish_short_covering P(UP)=0,373 / bullish_new_longs 0,398
+vs bearish_long_capitulation 0,533. "Tek tek gürültü ama birlikte
+anlamlı" hipotezi ilk kez test edildi ve DOĞRULANDI (ters işaretle).
+
+**DÜRÜSTLÜK UYARISI (henüz çözülmedi):** `onchain_solana_tps` (−0,148),
+`hash_rate_trend`, `network_activity_trend` gibi PİYASA GENELİ özellikler
+belirli bir anda tüm sembollerde AYNI değeri alıyor — ölçülen ayrımları
+sembol-bazlı bir edge değil, zaman içi piyasa dalgalanmasını yakalıyor
+olabilir. Bu modül henüz günlük tutarlılık hesaplamıyor (Faz 460'ın
+sinyal modülü hesaplıyor); piyasa-geneli özellikler için sonuçlar
+ihtiyatla okunmalı.
+
+11 yeni test, 61 test geçti. Hâlâ gözlem-only.
 
 **2026-09-09 — Faz 461: Binance'in ZATEN gönderdiği order-flow verisini
 artık atmıyoruz.** Kullanıcı itirazı: "Bu sinyalleri neden gerçekten

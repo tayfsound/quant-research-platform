@@ -43,6 +43,7 @@ from analytics.directional_skill import (
     compute_pesaran_timmermann,
 )
 from analytics.evaluation_cohort import describe_evaluation_window
+from analytics.feature_directional_value import compute_feature_directional_value
 from analytics.forward_direction import DEFAULT_THRESHOLD_PCT, label_forward_direction
 from analytics.reversal_conditioning import compute_conditional_direction_value
 from analytics.signal_directional_value import compute_signal_directional_value
@@ -141,6 +142,10 @@ def gather_directional_skill(
     # feature_contributions BUGÜNE KADAR ORADAYDI, hiç bu amaçla
     # okunmamıştı -- yeni kayıt/wiring gerekmiyor.
     signal_records: list[dict] = []
+    # Faz 462: ctx.market.features'taki 40+ ham özellik. Faz 411/423/436/
+    # 437/438/439/461'de "önce gözlemle" diye eklendiler, veri birikti
+    # ama HİÇ ölçülmediler.
+    feature_records: list[dict] = []
     neutral_count = 0
     for r in rows:
         forward_label = label_forward_direction(
@@ -167,6 +172,13 @@ def gather_directional_skill(
             "direction": r["direction"], "forward_label": forward_label, "day": r["day"],
             "prior_return": prior_return, "executed": r["executed"],
         })
+        for entry in (r["agent_contributions"] or []):
+            if entry.get("type") == "market_snapshot":
+                for feature, value in ((entry.get("data") or {}).get("features") or {}).items():
+                    feature_records.append({
+                        "feature": feature, "value": value,
+                        "forward_label": forward_label, "day": r["day"],
+                    })
         for agent in (r["agent_contributions"] or []):
             for signal, contribution in (agent.get("feature_contributions") or {}).items():
                 if not isinstance(contribution, (int, float)):
@@ -196,6 +208,8 @@ def gather_directional_skill(
         # Faz 460: hangi HAM SİNYAL ters, hangisi doğru, hangisi aslında
         # rejim etiketinin kopyası.
         "signal_directional_value": compute_signal_directional_value(signal_records),
+        # Faz 462: hiç ölçülmemiş bağlam özelliklerinin yön değeri.
+        "feature_directional_value": compute_feature_directional_value(feature_records),
         "horizon_minutes": round(horizon.total_seconds() / 60, 1),
         "threshold_pct": threshold_pct,
         "lookback_days": lookback_days,
