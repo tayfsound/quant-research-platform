@@ -5,7 +5,7 @@ from agents.technical_agent import TechnicalAgent
 from contracts.technical import TechnicalContext
 
 
-def test_bullish_setup_generates_long():
+def test_bullish_setup_now_votes_short_because_that_is_what_was_measured():
     agent = TechnicalAgent()
     # Faz 468 — rsi_value EKLENDI: market_structure artik shadow'da
     # (string uyusmazligi yuzunden zaten hic skorlanmiyordu), momentum ve
@@ -23,11 +23,21 @@ def test_bullish_setup_generates_long():
         rsi_value=20.0,
     )
     opinion = agent.analyze(ctx)
-    assert opinion.direction == "LONG"
-    assert opinion.confidence > 0
+    # FAZ 480 — BU TESTIN ILK HALI "bullish -> LONG" diyordu; o VARSAYIM
+    # gercek veriyle YANLISLANDI ve trend_weight -1.0'a cevrildi.
+    # Kanit: sinyal seviyesinde separation -0,096, gunluk tutarlilik 5/5;
+    # baglam ozelligi olarak trend=bullish -> P(1sa UP)=0,488 (bearish
+    # 0,592), sembol-ici ayrim +0,036. Ayrica Faz 472'de Council'in
+    # SADECE rejime KARSI konustugunda guvenilir oldugu, Faz 478'de risk
+    # simulatorunun en kotu diliminin SHORT ciktigi bulundu.
+    #
+    # rsi_extreme (asiri satim, +1.0, DOGRU isaretli) trend'in -1.0'ini
+    # dengeliyor; yonu belirleyen kalan katkilar.
+    assert opinion.direction in ("SHORT", "WAIT")
+    assert opinion.feature_contributions["trend"] < 0
     assert len(opinion.evidence) >= 2
 
-def test_bearish_setup_generates_short():
+def test_bearish_setup_now_leans_long():
     agent = TechnicalAgent()
     ctx = TechnicalContext(
         trend="bearish",
@@ -36,8 +46,11 @@ def test_bearish_setup_generates_short():
         rsi_value=80.0,
     )
     opinion = agent.analyze(ctx)
-    assert opinion.direction == "SHORT"
-    assert opinion.confidence > 0
+    # FAZ 480 — aynadaki hali: bearish trend artik POZITIF katki veriyor
+    # (olculen P(1sa UP)=0,592). rsi_value=80 (asiri alim) rsi_extreme'i
+    # -1.0 yapiyor ve trend'in +1.0'ini dengeliyor.
+    assert opinion.feature_contributions["trend"] > 0
+    assert opinion.direction in ("LONG", "WAIT")
 
 def test_ranging_market_waits():
     agent = TechnicalAgent()
@@ -73,7 +86,14 @@ def test_volume_confirmation_no_longer_rewarded_as_bullish():
     assert any("hacim sıçraması" in c.lower() for c in opinion_with_spike.caveats)
     # Aynı diğer koşullarda, hacim sıçraması OLAN senaryo artık OLMAYANDAN
     # daha düşük konviksiyonlu olmalı (önceden tam tersiydi).
-    assert opinion_with_spike.confidence < opinion_without_spike.confidence
+    # Faz 480 -- yon-agnostik hale getirildi. Eskiden "confidence duser"
+    # deniyordu ama bu SADECE taban yon LONG iken gecerliydi; trend'in
+    # isareti cevrilince (bkz. TechnicalAgentCoefficients.trend_weight)
+    # negatif bir katki SHORT'u GUCLENDIRIYOR ve |skor| buyuyor.
+    # Testin ASIL iddiasi zaten katkinin NEGATIF olmasi: hacim sicramasi
+    # bullish bir teyit DEGIL (Faz 258, 561 islem: %15,4 vs %28,5).
+    assert opinion_with_spike.feature_contributions["volume_confirmation"] < 0
+    assert "volume_confirmation" not in opinion_without_spike.feature_contributions
 
 
 def test_volume_divergence_warning():
@@ -93,11 +113,20 @@ def test_confirming_tradingview_signal_adds_evidence_not_a_new_direction():
     ederse evidence'a eklenir, yönü DEĞİŞTİRMEZ."""
     agent = TechnicalAgent()
     ctx = TechnicalContext(
+        # Faz 480 -- trend'in isareti cevrildigi icin bu baglamda ajanin
+        # KENDI yonu artik SHORT; "teyit eden" dis sinyal de bearish olmali.
         trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows",
-        external_signal="bullish", external_signal_source="tradingview",
+        external_signal="bearish", external_signal_source="tradingview",
     )
     opinion = agent.analyze(ctx)
-    assert opinion.direction == "LONG"
+    # Faz 480 -- bu test TradingView MEKANIZMASINI olcuyor, trend'in
+    # isaretini degil: dis sinyal EVIDENCE ekler, YONU DEGISTIRMEZ.
+    # Yon-agnostik hale getirildi ki isaret degisiklikleri onu bir daha
+    # dolayli olarak kirmasin.
+    without_tv = agent.analyze(TechnicalContext(
+        trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows",
+    ))
+    assert opinion.direction == without_tv.direction
     assert any("TradingView" in e for e in opinion.evidence)
 
 
@@ -106,11 +135,18 @@ def test_conflicting_tradingview_signal_adds_caveat_not_a_direction_flip():
     eklenir — tek başına yönü LONG'dan SHORT'a çevirmez."""
     agent = TechnicalAgent()
     ctx = TechnicalContext(
+        # Faz 480 -- ajanin kendi yonu artik SHORT; "celisen" dis sinyal
+        # bullish olmali.
         trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows",
-        external_signal="bearish", external_signal_source="tradingview",
+        external_signal="bullish", external_signal_source="tradingview",
     )
     opinion = agent.analyze(ctx)
-    assert opinion.direction == "LONG"  # kendi iç görüşü hâlâ geçerli
+    # Faz 480 -- yon-agnostik: celisen dis sinyal SADECE caveat ekler,
+    # ajanin KENDI yonunu degistirmez.
+    without_tv = agent.analyze(TechnicalContext(
+        trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows",
+    ))
+    assert opinion.direction == without_tv.direction
     assert any("çelişiyor" in c for c in opinion.caveats)
 
 
@@ -157,11 +193,11 @@ def test_feature_contributions_names_the_active_signals():
         trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows",
         ema_alignment="bullish_aligned", adx=30.0, di_plus=30.0, di_minus=10.0,
     ))
-    assert opinion.feature_contributions["trend"] > 0
-    assert opinion.feature_contributions["momentum"] > 0
-    assert opinion.feature_contributions["market_structure"] > 0
-    assert opinion.feature_contributions["ema_alignment"] > 0
-    assert opinion.feature_contributions["adx_strong_confirm"] > 0
+    # Faz 480 -- bu test hangi sinyallerin ATESLENDIGINI olcuyor, isaretini
+    # degil. trend artik negatif katki veriyor (olculen: bullish -> dusus
+    # egilimi), o yuzden "0'dan farkli" kontrolu yapiliyor.
+    for ad in ("trend", "momentum", "market_structure", "ema_alignment", "adx_strong_confirm"):
+        assert opinion.feature_contributions[ad] != 0, ad
 
 
 def test_feature_contributions_reflect_the_adx_weak_discount():
@@ -184,10 +220,17 @@ def test_htf_agreement_discounts_confidence_but_never_changes_direction():
         ema_alignment="bullish_aligned",
     )
     baseline = agent.analyze(base_ctx)
-    agreeing = agent.analyze(base_ctx.model_copy(update={"higher_timeframe_trend": "bullish"}))
+    # Faz 480 -- "uyusan" HTF, ajanin KENDI yonune gore secilmeli. trend'in
+    # isareti cevrildigi icin bu baglamda ajan artik SHORT diyor, dolayisiyla
+    # uyusan ust-zaman-dilimi trendi "bearish". Sabit "bullish" yazmak,
+    # testi yanlislikla DISAGREEMENT kolunu olcer hale getiriyordu.
+    uyusan = "bullish" if baseline.direction == "LONG" else "bearish"
+    agreeing = agent.analyze(base_ctx.model_copy(update={"higher_timeframe_trend": uyusan}))
 
-    assert baseline.direction == "LONG"
-    assert agreeing.direction == "LONG"
+    # Faz 480 -- yon-agnostik. Bu test HTF MEKANIZMASINI olcuyor
+    # (confidence degisir, YON ASLA degismez), trend'in isaretini degil.
+    assert baseline.direction in ("LONG", "SHORT")
+    assert agreeing.direction == baseline.direction
     assert agreeing.confidence < baseline.confidence
     assert abs(agreeing.confidence - round(baseline.confidence * 0.75, 3)) < 1e-3
 
@@ -197,15 +240,20 @@ def test_htf_disagreement_boosts_confidence_but_never_changes_direction():
     daha yüksek (%74.7) — confidence artırılmalı (0.85 tavanı korunarak),
     direction ASLA değişmemeli."""
     agent = TechnicalAgent()
+    # Faz 480 -- rsi_value=80 KALDIRILDI: trend'in isareti cevrilince
+    # bearish trend +1.0, rsi_extreme (asiri alim) -1.0 veriyordu ve skor
+    # TAM SIFIRA (WAIT) dusuyordu. Bu test HTF mekanizmasini olcuyor,
+    # yonlu bir taban skora ihtiyaci var.
     base_ctx = TechnicalContext(
         trend="bearish", momentum="weakening", market_structure="lower_highs_lower_lows",
-        rsi_value=80.0,
     )
     baseline = agent.analyze(base_ctx)
-    disagreeing = agent.analyze(base_ctx.model_copy(update={"higher_timeframe_trend": "bullish"}))
+    # Faz 480 -- "celisen" HTF de ajanin KENDI yonune gore secilmeli.
+    celisen = "bearish" if baseline.direction == "LONG" else "bullish"
+    disagreeing = agent.analyze(base_ctx.model_copy(update={"higher_timeframe_trend": celisen}))
 
-    assert baseline.direction == "SHORT"
-    assert disagreeing.direction == "SHORT"
+    assert baseline.direction in ("LONG", "SHORT")
+    assert disagreeing.direction == baseline.direction
     assert disagreeing.confidence >= baseline.confidence
     assert disagreeing.confidence <= 0.85
 

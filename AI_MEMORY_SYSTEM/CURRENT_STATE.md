@@ -1,4 +1,4 @@
-# Mevcut Durum -- v1.189.0 (Faz 441-479: risk simülatörü decomposition + MAE/MFE dağılım profili — GPT'nin örneği otomatik yakalandı)
+# Mevcut Durum -- v1.190.0 (Faz 441-481: trend'in İŞARETİ ÇEVRİLDİ — sistemin temel yön varsayımı ölçüme göre düzeltildi)
 
 **Tarih:** 2026-09-08
 **Branch:** main
@@ -20,6 +20,61 @@ Canlı doğrulama yapıldı: ilk 40 kararda dört kategori de ateşledi
 bearish_new_shorts −0,2 ×11, bearish_long_capitulation +0,3 ×11) — Faz
 453'teki gibi sessizce ölü kalma durumu YOK.
 
+
+**2026-09-10 — Faz 480: `trend`'in İŞARETİ ÇEVRİLDİ. Sistemin en temel
+yön varsayımı ölçüme göre düzeltildi.** Kullanıcı kararı: "Önce
+sinyalleri çevir. Bozuk sinyal üzerinden hiçbir şekilde ilerleme
+düşünmüyorum, temelimiz problemli."
+
+**Ölçüm işi ÇOK sadeleştirdi:** skorlanan tek ters sinyal `trend`'di.
+momentum/ema_alignment/bollinger_confirm/adx_strong_confirm Faz
+423/469'da zaten shadow'a alınmıştı; rsi_extreme (+0,218) ve
+obv_divergence (+0,070) zaten doğru işaretliydi. Yani "yedi sinyali
+çevir" değil, TEK parametre: `trend_weight: 1.0 -> -1.0`.
+
+Üç bağımsız ölçüm aynı sonucu verdi: (1) Faz 460/463 — separation
+−0,096, günlük tutarlılık **5/5**, sembol-içi (piyasa zamanlamasından
+arındırılmış) +0,036; bağlam özelliği olarak trend=bullish -> P(1sa
+UP)=0,488 vs bearish 0,592. (2) Faz 472/473 — Council SADECE rejime
+KARŞI konuştuğunda güvenilir (OOS + survival). (3) Faz 478 — risk
+simülatöründe en kötü dilim SHORT, tek pozitif rejim bullish_normal.
+
+KODU DEĞİL KATSAYIYI çevirdik: bu, meta-learning'in aradığı parametre.
+Faz 466'da sınırlar negatife açılınca CMA-ES de bağımsız olarak
+trend_weight'i −0,21 … −2,00 aralığına çekmişti.
+
+**16 test kırıldı, üç kategoriye ayrıldı:** 2'si gerçekten "bullish ->
+LONG" VARSAYIMINI kodluyordu (ölçülen davranışa göre yeniden yazıldı,
+adları da değişti); 13'ü başka mekanizmaları (HTF çarpanı, TradingView,
+korelasyon, market state tilt, confidence modeli) test edip trend'i
+sadece fikstür olarak kullanıyordu — **YÖN-AGNOSTİK** hale getirildi ki
+ileride işaret değişiklikleri onları bir daha dolaylı kırmasın; 1'i
+GERÇEK BİR BULGUYDU (aşağıda).
+
+**KABUL EDİLMİŞ ZAYIFLIK:** `test_red_team`'in "istikrarlı yükselişte
+kill switch tetiklenmemeli" testi kırıldı — ve bu test artefaktı DEĞİL:
+çevrilmiş sistem monoton bir trendde tutarlı kaybediyor, kill switch
+haklı olarak tetikleniyor. "Benign veri" tanımı sistemin premisine
+görelidir; senaryo ortalamaya-dönen bir piyasaya çevrildi ama gerekçe
+yoruma yazıldı. Kanıt güçlü (üç ölçüm, 5/5 gün) ama **21 günlük tek bir
+rejim döneminden** geliyor. `signal_directional_value` her koşuda
+`trend`'in işaretini raporluyor — pozitife dönerse sistem bunu kendisi
+söyleyecek.
+
+**Faz 481 — iki ÖNCEDEN VAR OLAN hata düzeltildi** (memory kuralı):
+(a) `feature_registry` — Faz 437/438'de eklenen `atr_expansion_ratio`/
+`rsi_slope`/`rsi_percentile`/`rsi_divergence` statik kataloga hiç
+kaydedilmemişti; (b) `test_failure_classifier` — "stop_loss'un payı
+artmalı" diyordu ama conftest DB'yi boşalttığı için stop_loss tek
+kategoriydi, payı zaten %100'dü ve artması matematiksel olarak
+İMKÂNSIZDI (`assert 1.0 > 1.0`); ikinci bir geçerli kayıp kategorisi
+(`breakeven_stop`) eklendi.
+
+**DOĞRULAMA (git stash ile, tam suite):** değişikliklerim OLMADAN 12
+hata, İLE 10 hata. Kalan 10'un tamamı önceden var (hepsi izole koşuda
+GEÇİYOR, sadece tam suite'te kırılıyor — test kirliliği/sıralama). Faz
+480/481 hiçbirine sebep olmadı, aksine 2'sini düzeltti.
+2.570 test geçiyor.
 
 **2026-09-09 — Faz 478/479: todo'daki iki ölçüm maddesi yapıldı.**
 

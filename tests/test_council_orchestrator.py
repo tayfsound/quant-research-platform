@@ -422,7 +422,17 @@ def test_technical_confidence_model_adjusts_opinion_confidence_when_saved():
 
     registry = AgentRegistry.create_default()
     orchestrator = CouncilOrchestrator(registry)
-    ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows", rsi_value=10.0)
+    # Faz 480 -- rsi_value 10 -> 40. Iki sarti BIRDEN saglamasi gerekiyor:
+    #   (a) rsi_extreme'i TETIKLEMEMELI (<25 / >75 disinda) -- aksi halde
+    #       trend'in cevrilmis -1.0'ini sifirlayip skoru WAIT'e dusuruyor;
+    #   (b) confidence modelinin olcegine gore 50'den UZAK olmali --
+    #       varsayilan 50'de standardize deger 0 cikar, carpan 1.0 olur
+    #       ve test olcmek istedigi ayarlamayi hic goremez.
+    # 40 ikisini de sagliyor: (40-50)/10 = -1.0 -> carpan belirgin sekilde <1.
+    ctx = TechnicalContext(
+        trend="bullish", momentum="strengthening",
+        market_structure="higher_highs_higher_lows", rsi_value=40.0,
+    )
 
     _, opinions_before = orchestrator.deliberate({AgentDomain.TECHNICAL: ctx})
     technical_before = next(o for o in opinions_before if o.domain == AgentDomain.TECHNICAL)
@@ -484,7 +494,9 @@ def test_calibration_failure_does_not_drop_the_agents_already_computed_opinion(m
 
     technical = next((o for o in opinions if o.domain == AgentDomain.TECHNICAL), None)
     assert technical is not None, "kalibrasyon hatası ajanın oyunu düşürmemeli"
-    assert technical.direction == "LONG"
+    # Faz 480 -- yon-agnostik. Bu testin iddiasi "kalibrasyon patlasa bile
+    # ajanin ZATEN HESAPLANMIS oyu dusmez"; hangi yon oldugu onemli degil.
+    assert technical.direction in ("LONG", "SHORT")
 
 
 # Faz 353 — Mixture-of-Experts Regime Router. Gerçek 4410 kapalı kararla

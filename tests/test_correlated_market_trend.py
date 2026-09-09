@@ -52,22 +52,34 @@ def test_correlated_market_trend_is_none_for_non_crypto_symbols():
 
 
 def test_technical_agent_adds_evidence_when_correlation_confirms():
+    """Faz 480 — YON-AGNOSTIK. trend_weight varsayilani -1.0 oldugu icin
+    bu baglamda ajanin KENDI yonu SHORT; "teyit eden" korelasyon da o
+    yonle ayni olmali. Test korelasyon MEKANIZMASINI olcuyor, trend'in
+    isaretini degil."""
     agent = TechnicalAgent()
-    ctx = TechnicalContext(
+    base = TechnicalContext(
         trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows",
-        correlated_market_trend="bullish",
     )
-    opinion = agent.analyze(ctx)
-    assert opinion.direction == "LONG"
+    yon = agent.analyze(base).direction
+    teyit = "bullish" if yon == "LONG" else "bearish"
+
+    opinion = agent.analyze(base.model_copy(update={"correlated_market_trend": teyit}))
+
+    assert opinion.direction == yon
     assert any("Nasdaq" in e for e in opinion.evidence)
 
 
 def test_technical_agent_adds_caveat_when_correlation_conflicts():
+    """Celisen korelasyon SADECE uyari ekler, ajanin kendi yonunu
+    EZMEZ."""
     agent = TechnicalAgent()
-    ctx = TechnicalContext(
+    base = TechnicalContext(
         trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows",
-        correlated_market_trend="bearish",
     )
-    opinion = agent.analyze(ctx)
-    assert opinion.direction == "LONG"  # kendi iç görüşü hâlâ geçerli, ezilmiyor
+    yon = agent.analyze(base).direction
+    celisen = "bearish" if yon == "LONG" else "bullish"
+
+    opinion = agent.analyze(base.model_copy(update={"correlated_market_trend": celisen}))
+
+    assert opinion.direction == yon
     assert any("çelişiyor" in c for c in opinion.caveats)

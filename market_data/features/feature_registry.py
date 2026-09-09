@@ -66,6 +66,20 @@ _SPECS = [
                 "ADX'in +DI bileşeni"),
     FeatureSpec("di_minus", "market_data.features.signal_engine", "compute_technical_signals", "float",
                 "ADX'in -DI bileşeni"),
+    # Faz 481 (2026-09-10) -- ONCEDEN VAR OLAN BIR BOSLUK KAPATILDI.
+    # Faz 437/438'de eklenen dort ozellik ctx.market.features'a AKIYORDU
+    # ama bu statik katalog hic guncellenmemisti (registry otomatik
+    # senkronize olmuyor, modul notunda da yaziyor).
+    # tests/test_feature_registry.py bunu yakaliyordu ama hata
+    # gorulmemis/ertelenmisti.
+    FeatureSpec("atr_expansion_ratio", "market_data.features.signal_engine", "compute_technical_signals", "float",
+                "ATR'nin N-periyotluk ortalama ATR'ye orani (>1 genisleme, <1 daralma) -- Faz 437"),
+    FeatureSpec("rsi_slope", "market_data.features.signal_engine", "compute_technical_signals", "float",
+                "RSI'nin son periyottaki egimi (yon degil, degisim hizi) -- Faz 438"),
+    FeatureSpec("rsi_percentile", "market_data.features.signal_engine", "compute_technical_signals", "float",
+                "RSI'nin kendi gecmis dagilimindaki persentili -- Faz 438"),
+    FeatureSpec("rsi_divergence", "market_data.features.signal_engine", "compute_technical_signals", "str",
+                "Fiyat/RSI iraksamasi (bullish_divergence/bearish_divergence/none) -- Faz 438"),
     FeatureSpec("obv_trend", "market_data.features.signal_engine", "compute_technical_signals", "str",
                 "On-Balance Volume trendi"),
     FeatureSpec("price_obv_divergence", "market_data.features.signal_engine", "compute_technical_signals", "str",

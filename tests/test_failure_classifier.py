@@ -176,6 +176,30 @@ def test_summarize_loss_breakdown_pct_reflects_a_dominant_category():
     symbol = f"FAILBRK{uuid4().hex[:8]}"
     now = datetime.now(UTC)
 
+    # Faz 481 -- BASKA BIR KAYIP KATEGORISI EKLENDI (onceden var olan hata).
+    # Test "stop_loss'un PAYI artmali" diyor; ama kok conftest.py session
+    # basinda `decisions` tablosunu TRUNCATE ettigi icin (Faz 370) DB bos
+    # basliyordu ve testin kendi ekledigi TEK kayip stop_loss oluyordu.
+    # Pay zaten %100 idi, "artmasi" matematiksel olarak IMKANSIZDI
+    # (assert 1.0 > 1.0). Once farkli bir kategoriden bir kayip yaziyoruz
+    # ki stop_loss'un payi 1.0'in ALTINDA baslasin.
+    with SessionFactory.get_session() as session:
+        repo = DecisionPersistor(session)
+        other = DecisionEvent(
+            id=uuid4(), symbol=f"{symbol}OTHER", proposed_direction="LONG",
+            final_action="LONG", final_size=1.0, confidence=0.7, status="open",
+            entry_price=100.0, quantity=1.0, opened_at=now,
+            stop_loss_price=99.0, take_profit_price=102.0,
+        )
+        repo.persist(other)
+        repo.close_position(
+            decision_id=str(other.id), exit_price=99.5, pnl=-500.0, closed_at=now,
+            # `time_exit` LOSS_EXIT_REASONS'ta YOK -- breakdown onu hic
+            # saymaz, dolayisiyla stop_loss'un payini da dusurmez.
+            # Gecerli bir ikinci kategori olan `breakeven_stop` kullaniliyor.
+            outcome={"exit_reason": "breakeven_stop", "mae_pct": -0.005, "mfe_pct": 0.002},
+        )
+
     with SessionFactory.get_session() as session:
         repo = DecisionPersistor(session)
         event = DecisionEvent(

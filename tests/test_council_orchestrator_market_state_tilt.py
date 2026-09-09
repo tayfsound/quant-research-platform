@@ -1,6 +1,6 @@
 """Faz 402 — Market State Confidence Eğimi'nin council_orchestrator.py::
 deliberate()'deki uygulanması. tests/test_council_orchestrator.py'deki
-MoE Regime Router testleriyle AYNI desen (aynı `_BULLISH_TECHNICAL`/
+MoE Regime Router testleriyle AYNI desen (aynı `_LONG_VOTING_TECHNICAL`/
 `_unbenched_annotate` yaklaşımı, izole kopya)."""
 from agents.registry import AgentRegistry
 from contracts.agent import AgentDomain
@@ -10,12 +10,18 @@ from database.repositories.app_settings_repository import AppSettingsRepository
 from database.session_factory import SessionFactory
 from services.council_orchestrator import CouncilOrchestrator
 
-# Faz 468 -- rsi_value EKLENDI: market_structure artik shadow'da (string
-# uyusmazligi yuzunden zaten hic skorlanmiyordu), bu fikstürün TECHNICAL
-# ajanı yonlu bir oy uretebilsin diye gercekten skorlanan bir sinyal sart.
-_BULLISH_TECHNICAL = TechnicalContext(
-    trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows", volume_confirmation=True
-, rsi_value=20.0)
+# Faz 480 -- ADI VE ICERIGI DUZELTILDI. Bu fikstürün isi "TECHNICAL ajani
+# LONG oy versin" -- `trend="bullish"` olmasi degil. trend_weight
+# varsayilani -1.0 oldugu icin (olculen ters isaret) bullish bir baglam
+# artik SHORT'a isaret ediyor; fikstür LONG uretecek sekilde yeniden
+# kuruldu ve adi da o isi anlatiyor.
+#   trend="bearish" -> -(-1.0) = +1.0 ; rsi_value=20 (asiri satim) -> +1.0
+#   volume_confirmation KASITLI olarak yok (Faz 258'de olculup negatife
+#   cevrilmisti, skoru zayiflatiyordu).
+_LONG_VOTING_TECHNICAL = TechnicalContext(
+    trend="bearish", momentum="weakening", market_structure="lower_highs_lower_lows",
+    rsi_value=20.0,
+)
 _BEARISH_MACRO = MacroContext(inflation_trend="rising", liquidity_condition="tight", central_bank_bias="hawkish")
 
 _REVERSING_LONG_FEATURES = {
@@ -53,7 +59,7 @@ def test_disabled_by_default_is_a_complete_noop(monkeypatch):
         monkeypatch.setattr(orchestrator.reliability_annotator, "annotate", _unbenched_annotate)
 
         _, opinions = orchestrator.deliberate(
-            {AgentDomain.TECHNICAL: _BULLISH_TECHNICAL, AgentDomain.MACRO: _BEARISH_MACRO},
+            {AgentDomain.TECHNICAL: _LONG_VOTING_TECHNICAL, AgentDomain.MACRO: _BEARISH_MACRO},
             market_features=_REVERSING_LONG_FEATURES,
         )
         assert not any("Market State" in c for o in opinions for c in o.caveats)
@@ -69,13 +75,13 @@ def test_enabled_and_reversing_boosts_agreeing_and_discounts_opposing(monkeypatc
         monkeypatch.setattr(orchestrator.reliability_annotator, "annotate", _unbenched_annotate)
 
         _, baseline_opinions = orchestrator.deliberate(
-            {AgentDomain.TECHNICAL: _BULLISH_TECHNICAL, AgentDomain.MACRO: _BEARISH_MACRO},
+            {AgentDomain.TECHNICAL: _LONG_VOTING_TECHNICAL, AgentDomain.MACRO: _BEARISH_MACRO},
         )
         technical_baseline = next(o for o in baseline_opinions if o.domain == AgentDomain.TECHNICAL)
         macro_baseline = next(o for o in baseline_opinions if o.domain == AgentDomain.MACRO)
 
         _, tilted_opinions = orchestrator.deliberate(
-            {AgentDomain.TECHNICAL: _BULLISH_TECHNICAL, AgentDomain.MACRO: _BEARISH_MACRO},
+            {AgentDomain.TECHNICAL: _LONG_VOTING_TECHNICAL, AgentDomain.MACRO: _BEARISH_MACRO},
             market_features=_REVERSING_LONG_FEATURES,  # -> LONG, reversing=True
         )
         technical_tilted = next(o for o in tilted_opinions if o.domain == AgentDomain.TECHNICAL)
@@ -99,7 +105,7 @@ def test_enabled_but_not_reversing_is_a_noop(monkeypatch):
         monkeypatch.setattr(orchestrator.reliability_annotator, "annotate", _unbenched_annotate)
 
         _, opinions = orchestrator.deliberate(
-            {AgentDomain.TECHNICAL: _BULLISH_TECHNICAL}, market_features=_NOT_REVERSING_FEATURES,
+            {AgentDomain.TECHNICAL: _LONG_VOTING_TECHNICAL}, market_features=_NOT_REVERSING_FEATURES,
         )
         assert not any("Market State" in c for o in opinions for c in o.caveats)
     finally:
@@ -113,7 +119,7 @@ def test_enabled_but_no_market_features_is_a_noop_not_a_crash(monkeypatch):
         orchestrator = CouncilOrchestrator(registry)
         monkeypatch.setattr(orchestrator.reliability_annotator, "annotate", _unbenched_annotate)
 
-        _, opinions = orchestrator.deliberate({AgentDomain.TECHNICAL: _BULLISH_TECHNICAL})
+        _, opinions = orchestrator.deliberate({AgentDomain.TECHNICAL: _LONG_VOTING_TECHNICAL})
         assert not any("Market State" in c for o in opinions for c in o.caveats)
     finally:
         _restore_tilt_enabled(original)

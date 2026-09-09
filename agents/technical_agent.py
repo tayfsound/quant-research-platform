@@ -14,7 +14,35 @@ class TechnicalAgentCoefficients:
     refactor tek başına hiçbir davranış değişikliği yapmaz, sadece
     katsayıları parametrize eder. Gerçek ayar/onay akışı
     meta_optimizer/agent_tuner.py + services/meta_learning_scheduler.py'de."""
-    trend_weight: float = 1.0
+    # Faz 480 (2026-09-09) — İŞARET ÇEVRİLDİ (+1.0 -> -1.0). Kullanıcı
+    # kararı: "Önce sinyalleri çevir. Bozuk sinyal üzerinden hiçbir
+    # şekilde ilerleme düşünmüyorum, temelimiz problemli."
+    #
+    # `trend`, sistemin SKORLANAN tek ters sinyaliydi (momentum/
+    # ema_alignment/bollinger_confirm/adx_strong_confirm Faz 423/469'da
+    # zaten shadow'a alınmıştı; rsi_extreme ve obv_divergence zaten doğru
+    # işaretli). Yani "yedi sinyali çevir" değil, TEK bir değişiklik.
+    #
+    # ÜÇ BAĞIMSIZ ÖLÇÜM AYNI SONUCU VERDİ:
+    #  1. Faz 460/463 — sinyal seviyesinde separation −0,096, günlük
+    #     tutarlılık 5/5 (tek bir istisna yok). Bağlam özelliği olarak da
+    #     doğrulandı: trend=bullish -> P(1sa UP)=0,488; bearish -> 0,592,
+    #     sembol-içi (piyasa zamanlamasından arındırılmış) ayrım +0,036.
+    #  2. Faz 472/473 — Council'in yön çağrısı SADECE rejime KARŞI
+    #     konuştuğunda güvenilir çıktı (OOS + 21 pencere survival).
+    #  3. Faz 478 — risk simülatörü decomposition: en kötü dilim SHORT,
+    #     tek pozitif rejim bullish_normal.
+    #
+    # NEDEN KATSAYIYI NEGATİFE ÇEKİYORUZ, KODU DEĞİL: bu, meta-learning'in
+    # (meta_optimizer/agent_tuner.py) GERÇEKTEN ARADIĞI parametre. Faz
+    # 466'da FIELD_BOUNDS negatife açıldığında CMA-ES de bağımsız olarak
+    # trend_weight'i negatife çekmişti (canlı veride −0,21 … −2,00).
+    # İşareti kodun içine gömmek, optimizasyonun onu bir daha
+    # ayarlayamaması demek olurdu.
+    #
+    # DÜRÜSTLÜK NOTU: edge mütevazı (sembol-içi ~3,6 puan), devasa değil.
+    # Beklenti buna göre tutulmalı.
+    trend_weight: float = -1.0
     momentum_weight: float = 1.0
     market_structure_weight: float = 1.5
     ema_alignment_weight: float = 0.5

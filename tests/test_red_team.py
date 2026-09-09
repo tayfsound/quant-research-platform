@@ -260,24 +260,43 @@ def test_correlated_multi_asset_crash_produces_a_shared_crash_across_symbols():
         assert min(closes) < max(closes) * 0.85, f"{symbol} sert bir çöküş yaşamadı"
 
 
-def test_benign_steady_uptrend_does_not_trip_the_kill_switch(engine):
-    """Kill switch'in yanlış-pozitif üretmediğini (sağlıklı, tutarlı bir
-    trend'de tetiklenmediğini) doğrulayan negatif kontrol."""
+def test_benign_mean_reverting_market_does_not_trip_the_kill_switch(engine):
+    """Kill switch'in YANLIŞ-POZİTİF üretmediğini doğrulayan negatif
+    kontrol.
+
+    FAZ 480 — SENARYO DEĞİŞTİ VE SEBEBİ ÖNEMLİ. Bu test eskiden
+    "istikrarlı yükseliş" (monoton trend) kullanıyordu ve "sağlıklı veri"
+    sayıyordu. `trend_weight` ölçüme dayalı olarak -1.0'a çevrilince
+    (sistem artık ortalamaya-dönüş oynuyor) monoton bir trend bu sistem
+    için SAĞLIKLI DEĞİL, TAM TERSİNE en zor senaryo -- kill switch'in
+    orada tetiklenmesi doğru davranış, yanlış-pozitif değil.
+
+    "Benign" tanımı sistemin premisine görelidir. Ortalamaya-dönen bir
+    sistem için benign senaryo, ortalamaya dönen bir piyasadır. Senaryo
+    ona göre değiştirildi; testin ASIL iddiası (kill switch sağlıklı
+    veride sessiz kalmalı) korunuyor.
+
+    NOT: bu, Faz 480'in bilinen ve KABUL EDİLMİŞ zayıflığıdır --
+    sürekli tek yönlü bir trendde ortalamaya-dönüş kaybeder. Ölçüm
+    (Faz 460/463, 5/5 gün) bu piyasanın 1sa ufkunda ortalamaya döndüğünü
+    söylüyor; rejim değişirse yeniden ölçülmeli."""
     from datetime import UTC, datetime, timedelta
 
     from market_data.ingestion.ohlcv import OHLCV
 
     now = datetime.now(UTC)
-    price = 100.0
+    base = 100.0
     bars = []
     for i in range(150):
-        price *= 1.004  # istikrarlı, düşük gürültülü yükseliş
+        # Ortalamaya donen, dusuk gurultulu salinim -- sistemin premisine
+        # UYGUN "saglikli" veri.
+        price = base * (1 + 0.004 * (1 if i % 2 == 0 else -1))
         bars.append(OHLCV(
             timestamp=now + timedelta(minutes=i), open=price,
             high=price * 1.001, low=price * 0.999, close=price, volume=100.0,
         ))
     result = run_red_team_scenario(
-        bars, scenario_name="steady_uptrend", kill_switch_consecutive_losses=4,
+        bars, scenario_name="mean_reverting", kill_switch_consecutive_losses=4,
         max_drawdown_limit_pct=0.9, engine=engine,
     )
     assert result.kill_switch_tripped is False
