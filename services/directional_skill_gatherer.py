@@ -183,6 +183,25 @@ def gather_directional_skill(
             "direction": r["direction"], "forward_label": forward_label, "day": r["day"],
             "prior_return": prior_return, "executed": r["executed"],
         })
+        # Faz 471 — REJİM TÜRETMESİ. Ölçüldü: kapıya takılan 8.937
+        # kararın TAMAMINDA `decisions.market_regime` NULL (rejim, karar
+        # o aşamaya ulaşmadan yazılmıyor), toplamın da %76'sı boş. Yani
+        # kolona güvenmek "rejime göre değerlendirme"yi kapıya takılan
+        # kararlar için tamamen imkânsız kılıyordu.
+        # `services/context_adapter.py::_compute_market_regime()` ile
+        # BİREBİR AYNI formül (f"{trend}_{volatility_regime}"),
+        # ctx.market.features'tan türetiliyor -- o alanlar her kararda var.
+        snapshot_features = {}
+        for entry in (r["agent_contributions"] or []):
+            if entry.get("type") == "market_snapshot":
+                snapshot_features = (entry.get("data") or {}).get("features") or {}
+                break
+        regime = r["market_regime"]
+        if not regime:
+            trend = snapshot_features.get("trend", "neutral")
+            volatility = snapshot_features.get("volatility_regime", "normal")
+            regime = f"{trend}_{volatility}" if trend != "neutral" else None
+
         blocking_gates = [
             (entry.get("data") or {}).get("gate")
             for entry in (r["agent_contributions"] or [])
@@ -191,6 +210,7 @@ def gather_directional_skill(
         gate_records.append({
             "blocking_gates": blocking_gates, "direction": r["direction"],
             "forward_label": forward_label, "day": r["day"],
+            "regime": regime,
         })
         for entry in (r["agent_contributions"] or []):
             if entry.get("type") == "market_snapshot":
@@ -199,6 +219,7 @@ def gather_directional_skill(
                         "feature": feature, "value": value,
                         "forward_label": forward_label, "day": r["day"],
                         "symbol": r["symbol"], "time_bucket": r["time_bucket"],
+                        "regime": regime,
                     })
         for agent in (r["agent_contributions"] or []):
             for signal, contribution in (agent.get("feature_contributions") or {}).items():
@@ -207,7 +228,7 @@ def gather_directional_skill(
                 signal_records.append({
                     "signal": signal, "contribution": contribution,
                     "forward_label": forward_label, "day": r["day"],
-                    "regime": r["market_regime"],
+                    "regime": regime,
                 })
 
     return {

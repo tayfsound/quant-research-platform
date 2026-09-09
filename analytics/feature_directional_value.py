@@ -33,6 +33,12 @@ Modül tipi KENDİ tespit ediyor:
   kategorik -> kategori başına P(UP) + yeterli örnekli kategoriler
                arasındaki en yüksek/en düşük farkı.
 
+REJİM KIRILIMI (Faz 471, kullanıcı isteği: "Ölçtüğümüz her şeyi rejime
+göre değerlendirmemiz lazım; hangi rejimde hangi verinin anlamlı
+olduğunu anlayamayız yoksa."): bir özellik `bullish_normal`'da doğru
+işaretliyken `bearish_low`'da ters olabilir ve havuzlanmış tek bir sayı
+bunu ortalayıp yok eder. `by_regime` kırılımı bunu açıyor.
+
 Kasıtlı olarak SADECE ölçüm — hiçbir canlı kararı etkilemiyor.
 """
 import statistics
@@ -49,6 +55,8 @@ MIN_PER_SIDE_DAILY = 60
 # dalgalanmasi olabilir. Gunluk tutarlilik, bu tur sahte ayrimlari
 # eleyen tek ucuz filtre (Faz 458'in gunluk isaret testiyle AYNI ilke).
 MIN_CONSISTENT_DAY_RATIO = 0.8
+# Rejim kırılımı zorunlu olarak daha ince.
+MIN_PER_SIDE_REGIME = 60
 # Sembol-ici karsilastirma icin bir zaman kovasinda en az bu kadar
 # gozlem olmali (aksi halde "yuksek/dusuk" bolmesi anlamsiz).
 MIN_PER_TIME_BUCKET = 6
@@ -255,6 +263,25 @@ def compute_feature_directional_value(
 
             daily = _daily_consistency(numeric_members, _day_numeric)
             within_symbol = _within_bucket_separation(numeric_members)
+
+            # Rejim kırılımı -- havuzlanmış sayı, işaretin rejime göre
+            # değiştiği durumları ortalayıp yok eder.
+            by_regime: dict[str, dict] = {}
+            for regime in sorted({r.get("regime") for r in numeric_members if r.get("regime")}):
+                regime_members = [r for r in numeric_members if r.get("regime") == regime]
+                regime_sep, rh, rl = _numeric_separation(regime_members, 0.75, 0.25)
+                if regime_sep is None or rh < MIN_PER_SIDE_REGIME or rl < MIN_PER_SIDE_REGIME:
+                    by_regime[regime] = {"n": len(regime_members), "separation": None,
+                                         "usable": False}
+                    continue
+                by_regime[regime] = {
+                    "n": len(regime_members), "separation": round(regime_sep, 6),
+                    "usable": True,
+                }
+            regime_signs = {
+                v["separation"] > 0 for v in by_regime.values()
+                if v["usable"] and abs(v["separation"]) > NEUTRAL_BAND
+            }
             features[feature] = {
                 "kind": "numeric",
                 "n": len(numeric_members),
@@ -276,6 +303,10 @@ def compute_feature_directional_value(
                 ),
                 "daily": daily,
                 "within_symbol": within_symbol,
+                "by_regime": by_regime,
+                # True = özelliğin işareti rejimden rejime DEĞİŞİYOR;
+                # havuzlanmış sayı bu durumda yanıltıcıdır.
+                "sign_flips_across_regimes": bool(len(regime_signs) > 1),
                 "usable": usable_flag,
                 "verdict": (
                     ("correct_sign" if separation > NEUTRAL_BAND

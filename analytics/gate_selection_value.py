@@ -30,9 +30,19 @@ Bu yüzden kapıya DOKUNULMADI ve bunun yerine ölçüm kalıcı hale
 getirildi: gözlem penceresi boyunca kanıt kendiliğinden birikecek,
 tahmin yürütmek yerine bakıp karar vereceğiz.
 
+REJİM KIRILIMI (Faz 471, kullanıcı isteği: "Ölçtüğümüz her şeyi rejime
+göre değerlendirmemiz lazım; hangi rejimde hangi verinin anlamlı
+olduğunu anlayamayız yoksa."): bir kapı `bullish_normal`'da işini
+yaparken `bearish_low`'da ters seçim yapıyor olabilir ve havuzlanmış tek
+bir sayı bunu gizler — min_confidence_gate'in havuzlanmış −0,036'sı
+tam da böyle bir ortalama olabilir. Her kapı için `by_regime` kırılımı
+da veriliyor.
+
 Kasıtlı olarak SADECE ölçüm — hiçbir kapıyı değiştirmiyor.
 """
 MIN_PER_GROUP = 200
+# Rejim kırılımı zorunlu olarak daha ince.
+MIN_PER_GROUP_REGIME = 60
 MIN_PER_GROUP_DAILY = 40
 NEUTRAL_BAND = 0.02
 MIN_CONSISTENT_DAY_RATIO = 0.8
@@ -52,7 +62,9 @@ def compute_gate_selection_effect(records: list[dict]) -> dict | None:
                   "forward_label": "UP"|"DOWN", "day": str}, ...]
 
     `blocking_gates` BOŞ olan kararlar "tüm kapılardan geçmiş" sayılır ve
-    her kapı için ortak karşılaştırma grubudur.
+    her kapı için ortak karşılaştırma grubudur. Kayıtlarda `regime` varsa
+    ayrıca rejim başına kırılım üretilir (havuzlanmış sayı hangi rejimde
+    ne olduğunu gizler).
 
     Her kapı için:
       passed_hit_rate   — hiçbir kapıya takılmayanların isabeti
@@ -125,6 +137,28 @@ def compute_gate_selection_effect(records: list[dict]) -> dict | None:
                 "consistent": bool(dominant / len(daily_values) >= MIN_CONSISTENT_DAY_RATIO),
             }
 
+        # Rejim kırılımı -- her rejimde O REJİMİN kendi geçen grubuna karşı.
+        by_regime: dict[str, dict] = {}
+        for regime in sorted({r.get("regime") for r in usable if r.get("regime")}):
+            regime_passed = [r for r in passed if r.get("regime") == regime]
+            regime_blocked = [r for r in blocked if r.get("regime") == regime]
+            if (len(regime_passed) < MIN_PER_GROUP_REGIME
+                    or len(regime_blocked) < MIN_PER_GROUP_REGIME):
+                by_regime[regime] = {
+                    "passed_n": len(regime_passed), "blocked_n": len(regime_blocked),
+                    "selection_value": None, "usable": False,
+                }
+                continue
+            by_regime[regime] = {
+                "passed_n": len(regime_passed), "blocked_n": len(regime_blocked),
+                "passed_hit_rate": round(_hit_rate(regime_passed), 6),
+                "blocked_hit_rate": round(_hit_rate(regime_blocked), 6),
+                "selection_value": round(
+                    _hit_rate(regime_passed) - _hit_rate(regime_blocked), 6,
+                ),
+                "usable": True,
+            }
+
         verdict = (
             "selective" if selection_value > NEUTRAL_BAND
             else "anti_selective" if selection_value < -NEUTRAL_BAND
@@ -135,6 +169,11 @@ def compute_gate_selection_effect(records: list[dict]) -> dict | None:
             "blocked_hit_rate": round(blocked_hit, 6),
             "selection_value": round(selection_value, 6),
             "daily": daily,
+            "by_regime": by_regime,
+            "worst_regime": min(
+                (k for k, v in by_regime.items() if v["usable"]),
+                key=lambda k: by_regime[k]["selection_value"], default=None,
+            ),
             "usable": True,
             "verdict": verdict,
             # Bir kapiyi degistirmek icin GEREKEN cita. Faz 463'un

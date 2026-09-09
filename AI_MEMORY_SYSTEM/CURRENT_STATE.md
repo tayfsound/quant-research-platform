@@ -1,4 +1,4 @@
-# Mevcut Durum -- v1.181.0 (Faz 441-470: feature_ic'in hedefi düzeltildi — IC=0,99 bir edge değil, BARİYER ARTEFAKTIYMIŞ)
+# Mevcut Durum -- v1.182.0 (Faz 441-471: survival analizi + TÜM ölçümlere rejim kırılımı — havuzlanmış sayılar gerçek yapıyı gizliyormuş)
 
 **Tarih:** 2026-09-08
 **Branch:** main
@@ -20,6 +20,56 @@ Canlı doğrulama yapıldı: ilk 40 kararda dört kategori de ateşledi
 bearish_new_shorts −0,2 ×11, bearish_long_capitulation +0,3 ×11) — Faz
 453'teki gibi sessizce ölü kalma durumu YOK.
 
+
+**2026-09-09 — Faz 471: örüntü hayatta kalma analizi + TÜM ölçümlere
+rejim kırılımı. Kullanıcının teşhisi bir kez daha doğrulandı.**
+
+**(a) Pattern survival** (`analytics/pattern_survival.py`) — dış
+raporun tek gerçekten yeni önerisi. Ama yöntemi DÜZELTİLEREK alındı:
+rapor "89 -> 82 -> 79 -> 76, pattern eriyor mu?" diye ham WR düşüşüne
+bakıyordu. Ham düşüş tek başına çürüme kanıtı DEĞİL — piyasa da
+zorlaşmış olabilir. Burada her pencerede fazlalık, O PENCERENİN geri
+kalanına karşı ölçülüyor: `excess = örüntü_WR − diğerleri_WR`. Yükselen
+piyasada %76, taban %72 ise örüntü yaşıyordur.
+
+Bir tasarım kusuru testle yakalandı: taban örüntünün KENDİ kayıtlarını
+da içeriyordu ve örüntünün payı büyüdükçe fazlalığı seyreltiyordu
+(pay %50 ise fazlalık yarıya iniyor). Taban "popülasyonun geri kalanı"
+yapıldı — artık paydan bağımsız.
+
+**(b) REJİM KIRILIMI — kullanıcı isteği: "Ölçtüğümüz her şeyi rejime
+göre değerlendirmemiz lazım; hangi rejimde hangi verinin anlamlı
+olduğunu anlayamayız yoksa."** `pattern_survival`, `gate_selection_value`
+ve `feature_directional_value`'a `by_regime` eklendi.
+
+Yol açan veri boşluğu: kapıya takılan **8.937 kararın TAMAMINDA**
+`decisions.market_regime` NULL (rejim, karar o aşamaya ulaşmadan
+yazılmıyor); toplamın %76'sı boş. Rejim artık
+`ctx.market.features`'tan TÜRETİLİYOR —
+`context_adapter._compute_market_regime()` ile birebir aynı formül
+(`f"{trend}_{volatility_regime}"`).
+
+**SONUÇ: havuzlanmış sayılar gerçekten yapıyı gizliyormuş.**
+
+`ema` — havuzlanmış **+0,004** ("sinyal yok" görünüyor):
+    bullish_normal +0,078 | bullish_low −0,072 | bullish_high −0,070
+Havuzlama, ±7 puanlık gerçek yapıyı ortalayıp SIFIRLIYORDU.
+
+`di_minus` — havuzlanmış +0,092, ama temiz bir rejim ayrımı:
+    TÜM bearish rejimlerde +0,072 … +0,109
+    TÜM bullish rejimlerde −0,003 … −0,040
+
+`min_confidence_gate` — havuzlanmış −0,042, ama işareti REJİME GÖRE
+DEĞİŞİYOR:
+    bearish_low **−0,117** | bearish_normal −0,068 | bullish_normal −0,057
+    bullish_high **+0,034** | bullish_low **+0,028**
+Yani kapı bearish rejimlerde zararlı, bullish_high/low'da FAYDALI.
+Faz 467'de "havuzlanmış −0,036 ama günlük tutarsız (5/8)" demiştik —
+sebep artık belli: tutarsızlık gürültü değil, REJİM BAĞIMLILIĞIYMIŞ.
+Kapıyı topluca kaldırmak/çevirmek yanlış olurdu; doğru hamle rejime
+göre koşullamak.
+
+9 yeni test. Hâlâ gözlem-only.
 
 **2026-09-09 — Faz 470: dış raporun "IC=0,9924 leakage?" alarmı izlendi.
 Sızıntı feature'da DEĞİL, METRİĞİN KENDİSİNDEYMİŞ.**
