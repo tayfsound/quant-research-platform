@@ -1,4 +1,4 @@
-# Mevcut Durum -- v1.177.0 (Faz 441-466: kanıt filtresi + ilk özellik bağlandı + meta-learning'in iki yapısal kusuru düzeltildi)
+# Mevcut Durum -- v1.178.0 (Faz 441-467: yön ölçüm ailesi tamamlandı — sinyal, özellik ve KAPI seviyesinde otomatik kanıt)
 
 **Tarih:** 2026-09-08
 **Branch:** main
@@ -20,6 +20,44 @@ Canlı doğrulama yapıldı: ilk 40 kararda dört kategori de ateşledi
 bearish_new_shorts −0,2 ×11, bearish_long_capitulation +0,3 ×11) — Faz
 453'teki gibi sessizce ölü kalma durumu YOK.
 
+
+**2026-09-09 — Faz 467: kapı seçim değeri ölçümü (gözlem-only).**
+Kullanıcı isteği: Faz 459'un ikinci bulgusuna (icra kapıları sinyalin en
+ters örneklerini seçiyor, `execution_amplification` 2,32 -> 3,72) bakalım.
+
+Elle teşhis: baskın kapı `min_confidence_gate` (3 günde 2388 engelleme,
+açılan kararlarda SIFIR) ve havuzlanmış veride YANLIŞ tarafı seçiyor —
+geçenler %45,6 isabet, engellenenler %47,7. LONG'da ilişki daha çarpıcı
+ve monoton: güven 0,28'de isabet %65,5, güven 0,83'te %43,0. Mekanizma
+tutarlı: confidence, Faz 460'ta ters işaretli olduğu kanıtlanan trend/
+momentum/ema/adx yığınından üretiliyor.
+
+**AMA KENDİ KANIT ÇITAMIZI GEÇEMEDİ** — günlük kırılımda 5/8 (%62,5),
+çıta %80, ve en son üç günün ikisi TERS yönde. Bugün AYNI tuzağa iki kez
+düşmüştük (`rsi_percentile` ham −0,175 iken sembol-içi +0,000; onchain
+özellikleri piyasa-geneli). Bu yüzden **kapıya DOKUNULMADI** ve ayrıca
+Faz 464'ün gözlem penceresi açıkken ikinci bir değişiklik iki etkiyi
+ayırt edilemez hale getirirdi.
+
+Bunun yerine ölçüm kalıcı hale getirildi: `analytics/gate_selection_
+value.py` her kapının geçirdiği vs engellediği kararların isabetini,
+günlük tutarlılığıyla birlikte otomatik izliyor. `gate_block` kayıtları
+Faz 421'den beri `agent_contributions`'da duruyordu, hiç bu amaçla
+okunmamıştı.
+
+Canlı veride (n=16.997, geçen 11.944, geçen isabet %45,99):
+
+| kapı | engellenen | isabet | seçim değeri | gün −/+ | tutarlı |
+|---|---|---|---|---|---|
+| min_confidence_gate | 2008 | 0,4955 | **−0,0356** | 2/1 | hayır |
+| pyramid_regime_gate | 2658 | 0,4752 | −0,0153 | 3/2 | hayır |
+| short_scalp_only_gate | 331 | 0,4502 | +0,0097 | — | — |
+
+`proven_anti_selective_gates` = **boş** — sistem artık "şüpheli ama
+kanıtlanmamış" demeyi kendisi yapıyor. Gözlem penceresi boyunca kanıt
+kendiliğinden birikecek.
+
+8 yeni test, 57 test geçti.
 
 **2026-09-09 — Faz 466: meta-learning'in İKİ YAPISAL kusuru düzeltildi.
 Walk-forward OOS iyileşmesi −0,017'den +0,2195'e çıktı (13 kat).**

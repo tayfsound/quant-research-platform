@@ -44,6 +44,7 @@ from analytics.directional_skill import (
 )
 from analytics.evaluation_cohort import describe_evaluation_window
 from analytics.feature_directional_value import compute_feature_directional_value
+from analytics.gate_selection_value import compute_gate_selection_effect
 from analytics.forward_direction import DEFAULT_THRESHOLD_PCT, label_forward_direction
 from analytics.reversal_conditioning import compute_conditional_direction_value
 from analytics.signal_directional_value import compute_signal_directional_value
@@ -152,6 +153,10 @@ def gather_directional_skill(
     # 437/438/439/461'de "önce gözlemle" diye eklendiler, veri birikti
     # ama HİÇ ölçülmediler.
     feature_records: list[dict] = []
+    # Faz 467: hangi kapı hangi kararları engelledi. `gate_block` kayıtları
+    # Faz 421'den beri agent_contributions'da duruyordu, hiç bu amaçla
+    # okunmamıştı.
+    gate_records: list[dict] = []
     neutral_count = 0
     for r in rows:
         forward_label = label_forward_direction(
@@ -177,6 +182,15 @@ def gather_directional_skill(
         records.append({
             "direction": r["direction"], "forward_label": forward_label, "day": r["day"],
             "prior_return": prior_return, "executed": r["executed"],
+        })
+        blocking_gates = [
+            (entry.get("data") or {}).get("gate")
+            for entry in (r["agent_contributions"] or [])
+            if entry.get("type") == "gate_block" and (entry.get("data") or {}).get("gate")
+        ]
+        gate_records.append({
+            "blocking_gates": blocking_gates, "direction": r["direction"],
+            "forward_label": forward_label, "day": r["day"],
         })
         for entry in (r["agent_contributions"] or []):
             if entry.get("type") == "market_snapshot":
@@ -217,6 +231,9 @@ def gather_directional_skill(
         "signal_directional_value": compute_signal_directional_value(signal_records),
         # Faz 462: hiç ölçülmemiş bağlam özelliklerinin yön değeri.
         "feature_directional_value": compute_feature_directional_value(feature_records),
+        # Faz 467: hangi kapı TERS SEÇİM yapıyor (engellediği kararlar
+        # geçirdiklerinden daha iyi).
+        "gate_selection_effect": compute_gate_selection_effect(gate_records),
         "horizon_minutes": round(horizon.total_seconds() / 60, 1),
         "threshold_pct": threshold_pct,
         "lookback_days": lookback_days,
