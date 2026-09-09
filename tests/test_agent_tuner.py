@@ -47,24 +47,58 @@ def test_sharpe_like_is_zero_for_empty_or_zero_variance_series():
     assert sharpe_like(np.array([3.0, 3.0, 3.0])) == 0.0  # sabit seri -> std=0
 
 
-def test_synthetic_pnls_credits_real_pnl_when_agent_agrees_with_executed_direction():
+def test_synthetic_returns_use_forward_price_not_trade_pnl():
+    """FAZ 466 — HEDEF DEĞİŞTİ. Eskiden ajanın oyu YÜRÜTÜLEN yönle
+    aynıysa gerçek `pnl`, tersse `-pnl` kullanılıyordu. İki kusuru vardı:
+    (a) `pnl` bir TRADE sonucu -- bariyer/stop/tutma süresine bağlı, oysa
+    ölçmek istediğimiz YÖN; (b) `-pnl`, "ters bahis tam simetrik sonuç
+    verirdi" varsayıyordu, ki bariyerler asimetrik olduğu için yanlış.
+
+    Artık sabit ufuklu GERÇEK ileri getiri kullanılıyor: LONG oyunda
+    +getiri, SHORT oyunda −getiri. Burada `pnl` KASITLI olarak yanıltıcı
+    seçildi (−999) -- sonuca hiç girmemeli."""
+    default = TechnicalAgentCoefficients()
+    records = [
+        HistoricalTechnicalRecord(_bullish_context(), "LONG", -999.0, forward_return=0.02),
+    ]
+    assert synthetic_pnls(default, records).tolist() == [0.02]
+
+
+def test_synthetic_returns_negate_forward_return_for_short_votes():
+    default = TechnicalAgentCoefficients()
+    records = [
+        HistoricalTechnicalRecord(_bearish_context(), "LONG", -999.0, forward_return=0.02),
+    ]
+    assert synthetic_pnls(default, records).tolist() == [-0.02]
+
+
+def test_records_without_forward_return_contribute_nothing():
+    """Fail-closed: ileri fiyat bulunamadıysa uydurma bir getiri
+    üretilmez."""
     default = TechnicalAgentCoefficients()
     records = [HistoricalTechnicalRecord(_bullish_context(), "LONG", 42.0)]
-    pnls = synthetic_pnls(default, records)
-    assert pnls.tolist() == [42.0]
+    assert synthetic_pnls(default, records).tolist() == [0.0]
 
 
-def test_synthetic_pnls_negates_pnl_when_agent_disagrees_with_executed_direction():
-    default = TechnicalAgentCoefficients()
-    records = [HistoricalTechnicalRecord(_bearish_context(), "LONG", 42.0)]
-    pnls = synthetic_pnls(default, records)
-    assert pnls.tolist() == [-42.0]
+def test_has_forward_returns_detects_a_fully_empty_target():
+    """Faz 466 — yön-tabanlı hedef, forward_return olmadan SESSİZCE her θ
+    için sıfır dizisi üretir ve CMA-ES "hiçbir şey fark etmiyor" sonucuna
+    varır; bu, kullanıcının şikâyet ettiği "hep sıfır" durumunun yeni bir
+    kılıkta tekrarı olurdu."""
+    from meta_optimizer.agent_tuner import has_forward_returns
+
+    assert has_forward_returns([
+        HistoricalTechnicalRecord(_bullish_context(), "LONG", 1.0),
+    ]) is False
+    assert has_forward_returns([
+        HistoricalTechnicalRecord(_bullish_context(), "LONG", 1.0, forward_return=0.01),
+    ]) is True
 
 
 def test_synthetic_pnls_is_zero_when_agent_waits():
     default = TechnicalAgentCoefficients()
     neutral_ctx = TechnicalContext()  # her şey "neutral" -> WAIT
-    records = [HistoricalTechnicalRecord(neutral_ctx, "LONG", 42.0)]
+    records = [HistoricalTechnicalRecord(neutral_ctx, "LONG", 42.0, forward_return=0.02)]
     pnls = synthetic_pnls(default, records)
     assert pnls.tolist() == [0.0]
 
@@ -77,13 +111,20 @@ def test_clip_vector_clamps_each_field_to_its_own_bound():
     coeffs = TechnicalAgentCoefficients.from_vector(clipped)
     assert coeffs.adx_weak_discount == 1.0  # kendi üst sınırı [0,1]
     assert coeffs.confidence_divisor == 10.0  # kendi üst sınırı [2,10]
-    assert coeffs.trend_weight == 2.0  # genel büyüklük üst sınırı [0,2]
+    assert coeffs.trend_weight == 2.0  # yon tasiyan katsayilarin ust siniri
 
     undersized = [-100.0] * len(names)
     clipped_low = clip_vector(undersized)
     coeffs_low = TechnicalAgentCoefficients.from_vector(clipped_low)
-    assert coeffs_low.trend_weight == 0.0
-    assert coeffs_low.confidence_divisor == 2.0  # negatif olamaz, alt sınır 2.0
+    # FAZ 466: yon tasiyan katsayilar artik NEGATIF olabiliyor. Faz 239
+    # bunu "icat edilmis davranis" diye yasaklamisti; Faz 460/463 gercek
+    # veriyle (n=132.144, gunluk tutarlilik + sembol-ici dogrulama) tam
+    # tersini olctu -- trend/momentum/ema_alignment/adx/bollinger bu
+    # piyasada TERS calisiyor. Negatife izin vermemek, arama uzayindan
+    # DOGRU COZUMU disliyordu.
+    assert coeffs_low.trend_weight == -2.0
+    assert coeffs_low.adx_weak_discount == 0.0   # carpimsal indirim, [0,1] disi anlamsiz
+    assert coeffs_low.confidence_divisor == 2.0  # pozitif olmak ZORUNDA
 
 
 def test_optimize_technical_agent_coefficients_beats_a_deliberately_bad_baseline():
@@ -100,7 +141,10 @@ def test_optimize_technical_agent_coefficients_beats_a_deliberately_bad_baseline
         ctx = _bullish_context() if bullish else _bearish_context()
         executed = "LONG" if bullish else "SHORT"
         pnl = float(rng.uniform(5.0, 20.0))
-        records.append(HistoricalTechnicalRecord(ctx, executed, pnl))
+        # Faz 466: hedef artik ileri getiri -- bullish baglamda fiyat
+        # GERCEKTEN yukselmis, bearish'te dusmus (ideal, gurultusuz set).
+        forward = float(rng.uniform(0.005, 0.02)) * (1 if bullish else -1)
+        records.append(HistoricalTechnicalRecord(ctx, executed, pnl, forward))
 
     blind_baseline = TechnicalAgentCoefficients(
         trend_weight=0.0, momentum_weight=0.0, market_structure_weight=0.0,
@@ -259,3 +303,46 @@ def test_technical_agent_with_tuned_coefficients_is_independent_of_default_insta
 
     assert default_opinion.direction == "LONG"
     assert zeroed_opinion.direction == "WAIT"
+
+
+def test_optimizer_can_now_discover_an_inverted_signal():
+    """FAZ 466'NIN ASIL AMACI. Bu test, düzeltmeden ÖNCE geçmesi
+    İMKÂNSIZDI: `FIELD_BOUNDS` tüm ağırlıkları `(0.0, 2.0)`'a
+    hapsettiği için CMA-ES bir sinyali sıfıra indirebiliyor ama
+    İŞARETİNİ ÇEVİREMİYORDU.
+
+    Kullanıcının şikâyeti tam olarak bunun sonucuydu: "meta learning hâlâ
+    çalışmıyor, hep sıfır, kurduğumuzdan beri bir tur bile gerçekleşmedi."
+    Optimizasyon çalışıyordu ama ulaşabildiği en iyi nokta "tüm sinyalleri
+    sustur" idi, o da bir iyileşme sayılmıyordu (son deneme 2026-09-03:
+    sharpe_improvement −0,017, gereken +0,4).
+
+    Buradaki sentetik veri, Faz 460/463'te GERÇEK veride ölçülen durumun
+    birebir taklidi: bullish bağlamda fiyat DÜŞÜYOR. Doğru çözüm negatif
+    bir trend_weight ve optimizasyon artık ona ULAŞABİLMELİ."""
+    rng = np.random.default_rng(11)
+    records = []
+    for _ in range(80):
+        bullish = rng.random() > 0.5
+        ctx = _bullish_context() if bullish else _bearish_context()
+        # TERS piyasa: bullish sinyal -> fiyat DUSUYOR.
+        forward = float(rng.uniform(0.005, 0.02)) * (-1 if bullish else 1)
+        records.append(HistoricalTechnicalRecord(ctx, "LONG", 1.0, forward))
+
+    tuned_coeffs, tuned_sharpe = optimize_technical_agent_coefficients(
+        records, max_iterations=60, seed=3,
+    )
+
+    # Varsayilan (pozitif isaretli) katsayilar bu piyasada ZARAR ediyor.
+    default_sharpe = sharpe_like(synthetic_pnls(TechnicalAgentCoefficients(), records))
+    assert default_sharpe < 0
+
+    # Optimizasyon ters isareti KESFETMIS olmali.
+    assert tuned_sharpe > default_sharpe
+    yon_tasiyanlar = [
+        tuned_coeffs.trend_weight, tuned_coeffs.momentum_weight,
+        tuned_coeffs.market_structure_weight, tuned_coeffs.ema_alignment_weight,
+    ]
+    assert any(w < -0.1 for w in yon_tasiyanlar), (
+        f"Hicbir katsayi negatife gecmedi: {yon_tasiyanlar}"
+    )

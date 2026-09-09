@@ -1,9 +1,70 @@
-# Mevcut Durum -- v1.176.0 (Faz 441-464: kanıt filtresi + İLK kanıtlanmış özelliğin canlı skora bağlanması)
+# Mevcut Durum -- v1.177.0 (Faz 441-466: kanıt filtresi + ilk özellik bağlandı + meta-learning'in iki yapısal kusuru düzeltildi)
 
 **Tarih:** 2026-09-08
 **Branch:** main
 **Son commit (HEAD):** `e19ef6b` (Faz 450), push edildi.
 **Servis durumu:** Faz 448 VE Faz 439/440 artık İKİSİ DE canlıda — worker ikinci kez force-kill edilip watchdog'la yeniden başlatıldı (2026-09-08, kullanıcı onayıyla: "yaptığımız değişiklikleri canlıya alalım"). Faz 450/451 (historical_analog_engine.py) offline/rapor-only, restart gerekmez. Watchlist 104→123 sembole çıkarıldı (canlı, restart gerekmedi).
+
+**2026-09-09 — Faz 466: meta-learning'in İKİ YAPISAL kusuru düzeltildi.
+Walk-forward OOS iyileşmesi −0,017'den +0,2195'e çıktı (13 kat).**
+Kullanıcı bildirimi: "meta learning hâlâ çalışmıyor bu arada, hep sıfır,
+kurduğumuzdan beri bir tur bile gerçekleşmedi."
+
+Teşhis: bozuk değildi, YANLIŞ UZAYDA arıyordu.
+
+**Kusur 1 — arama uzayı doğru çözümü İÇERMİYORDU.** `FIELD_BOUNDS`'ta
+tüm ağırlıklar `(0.0, 2.0)` idi. Faz 239 bunu bilinçli seçmişti:
+"katsayı negatif olursa yön tersine döner, bu İCAT EDİLMİŞ bir davranış
+olur." O günün bilgisiyle ilkeli bir karardı — ama dayandığı varsayım
+("bullish trend -> yukarı") Faz 460/463'te n=132.144 gözlemle, günlük
+tutarlılık + sembol-içi doğrulamayla YANLIŞLANDI. CMA-ES bir sinyali
+sıfıra indirebiliyor ama İŞARETİNİ ÇEVİREMİYORDU; ulaşabildiği en iyi
+nokta "hepsini sustur" idi. Yön taşıyan katsayılar artık `[-2.0, +2.0]`;
+yön taşımayanlar (adx_weak_discount, confidence_divisor, htf çarpanları)
+KASITLI olarak eski sınırlarında.
+
+**Sınırları açmak TEK BAŞINA yetmedi** (bir testte yakalandı): başlangıç
+adım boyu `sigma=0.3`, eski `[0,2]` uzayı için seçilmişti. Aralık iki
+katına çıkınca (genişlik 2 -> 4) CMA-ES işaret sınırını aşamıyor, x0'ın
+(hepsi pozitif) etrafında sıkışıp kalıyordu — ajanın yönü bir EŞİK
+fonksiyonu olduğu için arama yüzeyi basamaklı. `sigma` 0.9'a çıkarıldı
+(CMA-ES olağan tavsiyesi: aralığın ~1/4'ü).
+
+**Kusur 2 — hedef yanlış şeyi ölçüyordu.** `synthetic_pnls()` trade
+`pnl`'ini kullanıyordu (bariyer/stop/tutma süresine bağlı) ve "ters
+bahis tam simetrik sonuç verirdi" varsayıyordu — bariyerler asimetrik
+olduğu için yanlış. Bu, oturumun ana temasının (outcome ile direction'ı
+karıştırmak) meta-learning'deki tekrarıydı. Artık hedef SABİT UFUKLU
+(1 saat) gerçek ileri getiri: LONG oyunda +getiri, SHORT'ta −getiri.
+Sharpe ölçeği korunduğu için MIN_SHARPE_IMPROVEMENT eşiği anlamını
+koruyor. `load_historical_technical_records()` artık bu oturumun tüm yön
+ölçümlerinin kullandığı AYNI LATERAL join'i yapıyor.
+
+Yeni `has_forward_returns()` + scheduler kontrolü: ileri getiri hiç
+yoksa hedef sessizce her θ için sıfır üretir ve "hep sıfır" durumu YENİ
+BİR KILIKTA tekrarlanırdı — artık `no_forward_returns` diye açıkça
+raporlanıyor.
+
+**GERÇEK VERİDEKİ SONUÇ** (n=2.993 kayıt, 2.989'unda ileri getiri var;
+25 fold walk-forward, hepsi out-of-sample):
+
+| | önce | sonra |
+|---|---|---|
+| sharpe_improvement | −0,017 | **+0,2195** |
+| mean OOS sharpe (mevcut katsayılar) | — | **−0,1028** |
+| mean OOS sharpe (optimize) | — | **+0,1168** |
+
+Yani MEVCUT canlı katsayılar out-of-sample ZARAR ediyor; optimize
+edilmiş θ kâr ediyor. Son fold'larda `trend_weight` tutarlı şekilde
+−0,84 … −2,00 aralığına yakınsıyor ve OOS sharpe tutarlı POZİTİF
+(baseline aynı fold'larda tutarlı NEGATİF) — Faz 460/463'ün bulgusunun
+tamamen bağımsız bir yoldan doğrulanması.
+
+**Yine de öneri ÜRETİLMİYOR:** +0,2195 < +0,40 eşiği. Fail-closed
+tasarım amacına uygun çalışıyor. Eşiği düşürmek bir GÜVENLİK KAPISINI
+gevşetmek olurdu — kullanıcı kararı gerektirir, tek taraflı yapılmadı.
+
+15+8 test geçti.
 
 **2026-09-09 — Faz 465: aylardır kırık olan `test_unanswered_risk_
 challenge_reduces_real_vote_weight_end_to_end` düzeltildi** (memory

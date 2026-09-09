@@ -19,7 +19,11 @@ from meta_optimizer.agent_tuner import HistoricalTechnicalRecord
 
 def _fake_records(n: int) -> list[HistoricalTechnicalRecord]:
     ctx = TechnicalContext(trend="bullish", market_structure="higher_highs")
-    return [HistoricalTechnicalRecord(ctx, "LONG", 10.0) for _ in range(n)]
+    # Faz 466 — forward_return ZORUNLU: yeni hedef (sabit ufuklu ileri
+    # getiri) bu alan olmadan her θ için sıfır dizisi üretir ve scheduler
+    # "no_forward_returns" diyerek dürüstçe durur (bkz.
+    # meta_optimizer/agent_tuner.py::has_forward_returns).
+    return [HistoricalTechnicalRecord(ctx, "LONG", 10.0, 0.01) for _ in range(n)]
 
 
 def test_propose_skips_when_not_enough_historical_records(monkeypatch):

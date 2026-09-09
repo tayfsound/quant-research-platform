@@ -20,6 +20,7 @@ from database.repositories.app_settings_repository import AppSettingsRepository
 from database.session_factory import SessionFactory
 from meta_optimizer.agent_tuner import (
     MIN_RECORDS_TO_OPTIMIZE,
+    has_forward_returns,
     load_historical_technical_records,
     optimize_technical_agent_coefficients,
     walk_forward_validate,
@@ -74,6 +75,20 @@ def propose_technical_agent_tuning(agent_id: str = TECHNICAL_AGENT_ID) -> AgentT
             agent_id=agent_id, sample_count=len(records), required=MIN_RECORDS_TO_OPTIMIZE,
         )
         _record_last_attempt("insufficient_data", len(records), None)
+        return None
+
+    # Faz 466 — yeni hedef (sabit ufuklu ileri getiri) `forward_return`
+    # olmadan SESSİZCE her θ için sıfır dizisi üretir; CMA-ES "hiçbir şey
+    # fark etmiyor" sonucuna varır ve tam da kullanıcının şikâyet ettiği
+    # "hep sıfır" durumu YENİ BİR KILIKTA tekrarlanır. Sebebi açıkça
+    # raporlayıp duruyoruz (market_snapshots'ta ileri fiyat yoksa bu
+    # gerçek ve teşhis edilebilir bir veri boşluğudur).
+    if not has_forward_returns(records):
+        logger.warning(
+            "meta_learning_skip_no_forward_returns",
+            agent_id=agent_id, sample_count=len(records),
+        )
+        _record_last_attempt("no_forward_returns", len(records), None)
         return None
 
     with SessionFactory.get_session() as session:

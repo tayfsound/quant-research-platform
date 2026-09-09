@@ -31,27 +31,51 @@ from backtest.embargo_walk_forward import EmbargoWalkForwardSplitter
 from contracts.technical import TechnicalContext
 from services.agent_confidence_model import _normalize_raw_features
 
-# Faz 239: raporun önerdiği "[-2.0,+2.0] tüm katsayılar için" sınırı
-# gerçek kodun semantiğiyle uyuşmuyor — technical_agent.py'de her katsayı
-# zaten bir if/elif dalında +=/-= olarak kullanılıyor (yön dalın kendisinde
-# kodlu), yani katsayının kendisi negatif olursa YÖN TERSİNE döner (ör.
-# "bullish trend" bulgusu negatif bir trend_weight ile skoru AŞAĞI çeker)
-# — bu icat edilmiş bir davranış olur, gerçek TA mantığıyla çelişir. Bu
-# yüzden büyüklük (magnitude) katsayıları [0, 2.0]'a, çarpımsal indirim
-# (adx_weak_discount) [0, 1.0]'a, ve confidence_divisor (pozitif olmak
-# ZORUNDA, 0'a yakınsa confidence patlar) [2.0, 10.0]'a sınırlandı —
-# raporun ruhuna (küçük, sınırlı bir arama uzayı) sadık ama koda uyumlu.
+# Faz 239 KARARI, Faz 466'DA GERÇEK VERİYLE ÇÜRÜTÜLDÜ.
+#
+# Faz 239 şöyle demişti: "katsayı negatif olursa YÖN TERSİNE döner (ör.
+# 'bullish trend' bulgusu skoru AŞAĞI çeker) — bu İCAT EDİLMİŞ bir
+# davranış olur, gerçek TA mantığıyla çelişir." Bu, o günün bilgisiyle
+# ilkeli bir karardı; ama dayandığı varsayım ("bullish trend bulgusu
+# yükselişe işaret eder") 2026-09-09'da ölçülüp YANLIŞLANDI.
+#
+# Faz 460/463'ün gerçek ölçümü (n=132.144 sinyal gözlemi, 7 gün, günlük
+# tutarlılık + sembol-içi doğrulamayla):
+#     trend               separation −0,101  (7/7 gün negatif)
+#     momentum            −0,120  (7/7)
+#     ema_alignment       −0,105  (7/7)
+#     adx_strong_confirm  −0,109  (7/7)
+#     bollinger_confirm   −0,209  (5/5)
+#     rsi_extreme         +0,172  (7/7 POZİTİF)
+#     obv_divergence      +0,107  (6/7 pozitif)
+# Yani "bullish trend -> yukarı" varsayımı bu piyasada ve bu ufukta
+# GERÇEKTE TERS çalışıyor. Negatif katsayıya izin vermemek, arama
+# uzayından DOĞRU ÇÖZÜMÜ dışlıyordu.
+#
+# SOMUT SONUÇ (kullanıcı bildirimi: "meta learning hâlâ çalışmıyor, hep
+# sıfır, kurduğumuzdan beri bir tur bile gerçekleşmedi"): CMA-ES bir
+# sinyali sıfıra indirebiliyor ama İŞARETİNİ ÇEVİREMİYORDU, dolayısıyla
+# ulaşabildiği en iyi nokta "hepsini sustur" idi ve bu bir iyileşme
+# saymıyordu. Son deneme 2026-09-03: n=2998, sharpe_improvement=−0,017,
+# gereken +0,4. Bozuk değildi — YANLIŞ UZAYDA arıyordu.
+#
+# Artık YÖN taşıyan katsayılar [-2.0, +2.0]. Yön taşımayanlar KASITLI
+# olarak eski sınırlarında: adx_weak_discount çarpımsal bir indirim
+# ([0,1] dışında anlamsız), confidence_divisor pozitif olmak ZORUNDA
+# (0'a yakınsa confidence patlar), htf çarpanları ise Faz 316'da
+# semantiği korumak için özellikle asimetrik seçilmişti.
+_DIRECTIONAL = (-2.0, 2.0)
 FIELD_BOUNDS: dict[str, tuple[float, float]] = {
-    "trend_weight": (0.0, 2.0),
-    "momentum_weight": (0.0, 2.0),
-    "market_structure_weight": (0.0, 2.0),
-    "ema_alignment_weight": (0.0, 2.0),
-    "rsi_extreme_weight": (0.0, 2.0),
-    "volume_confirmation_penalty": (0.0, 2.0),
-    "bollinger_confirm_weight": (0.0, 2.0),
+    "trend_weight": _DIRECTIONAL,
+    "momentum_weight": _DIRECTIONAL,
+    "market_structure_weight": _DIRECTIONAL,
+    "ema_alignment_weight": _DIRECTIONAL,
+    "rsi_extreme_weight": _DIRECTIONAL,
+    "volume_confirmation_penalty": _DIRECTIONAL,
+    "bollinger_confirm_weight": _DIRECTIONAL,
     "adx_weak_discount": (0.0, 1.0),
-    "adx_strong_confirm_weight": (0.0, 2.0),
-    "obv_divergence_weight": (0.0, 2.0),
+    "adx_strong_confirm_weight": _DIRECTIONAL,
+    "obv_divergence_weight": _DIRECTIONAL,
     "confidence_divisor": (2.0, 10.0),
     # Faz 316 — sınırlar semantiği koruyor: agreement çarpanı 1.0'ı asla
     # AŞMAZ (her zaman bir indirim kalır), disagreement çarpanı 1.0'ın
@@ -69,6 +93,11 @@ class HistoricalTechnicalRecord:
     context: TechnicalContext
     executed_direction: str  # "LONG" | "SHORT" — gerçekte açılmış işlemin yönü
     pnl: float
+    # Faz 466 — SABİT UFUKLU gerçek ileri getiri (varsayılan 1 saat),
+    # işlemin kendi stop/target/tutma süresinden TAMAMEN bağımsız.
+    # `analytics/forward_direction.py` (Faz 441) ile AYNI hedef tanımı.
+    # Veri yoksa None -> o kayıt yön-tabanlı hedeften DÜŞER (fail-closed).
+    forward_return: float | None = None
 
 
 def load_historical_technical_records(window: int = 3000) -> list[HistoricalTechnicalRecord]:
@@ -93,11 +122,29 @@ def load_historical_technical_records(window: int = 3000) -> list[HistoricalTech
 
     with SessionFactory.get_session() as session:
         rows = session.execute(text("""
-            SELECT direction, pnl, agent_contributions, closed_at
-            FROM decisions
-            WHERE status='closed' AND excluded_from_stats=false AND closed_at IS NOT NULL
-                AND agent_contributions IS NOT NULL
-            ORDER BY closed_at DESC
+            SELECT d.direction, d.pnl, d.agent_contributions, d.closed_at,
+                   COALESCE(d.entry_price, ref.close) AS ref_price,
+                   fwd.close AS price_at_horizon
+            FROM decisions d
+            -- Faz 466: karar anı ve +1 saat fiyatları. Bu oturumdaki tüm
+            -- yön ölçümlerinin (Faz 446/458/459/460) kullandığı AYNI
+            -- LATERAL desen. LEFT: fiyat bulunamazsa kayıt tamamen
+            -- düşmesin, sadece yön-tabanlı hedefe giremesin.
+            LEFT JOIN LATERAL (
+                SELECT close FROM market_snapshots m
+                WHERE m.exchange='binance' AND m.symbol=d.symbol AND m.resolution='1m'
+                  AND m.time BETWEEN d.timestamp - interval '3 min' AND d.timestamp + interval '3 min'
+                ORDER BY abs(extract(epoch FROM (m.time - d.timestamp))) LIMIT 1
+            ) ref ON true
+            LEFT JOIN LATERAL (
+                SELECT close FROM market_snapshots m
+                WHERE m.exchange='binance' AND m.symbol=d.symbol AND m.resolution='1m'
+                  AND m.time BETWEEN d.timestamp + interval '55 min' AND d.timestamp + interval '65 min'
+                ORDER BY abs(extract(epoch FROM (m.time - (d.timestamp + interval '1 hour')))) LIMIT 1
+            ) fwd ON true
+            WHERE d.status='closed' AND d.excluded_from_stats=false AND d.closed_at IS NOT NULL
+                AND d.agent_contributions IS NOT NULL
+            ORDER BY d.closed_at DESC
             LIMIT :limit
         """), {"limit": window}).mappings().all()
     rows = list(reversed(rows))
@@ -133,7 +180,14 @@ def load_historical_technical_records(window: int = 3000) -> list[HistoricalTech
             # o kayıt atlanır (fail-closed: şüpheli veri kullanılmaz).
             continue
 
-        records.append(HistoricalTechnicalRecord(ctx, executed_direction, float(pnl)))
+        forward_return = None
+        ref_price, horizon_price = r["ref_price"], r["price_at_horizon"]
+        if ref_price and ref_price > 0 and horizon_price:
+            forward_return = (float(horizon_price) - float(ref_price)) / float(ref_price)
+
+        records.append(
+            HistoricalTechnicalRecord(ctx, executed_direction, float(pnl), forward_return)
+        )
 
     return records
 
@@ -150,21 +204,53 @@ def synthetic_pnls(
     coefficients: TechnicalAgentCoefficients,
     records: list[HistoricalTechnicalRecord],
 ) -> np.ndarray:
-    """Her gerçek kayıt için: bu θ ile ajan HANGİ yöne oy verirdi, ve o
-    oy gerçek yürütülen yönle aynıysa gerçek pnl, tersse -pnl, WAIT ise 0.
-    (position_closer.py::_record_agent_learning'deki was_correct mantığının
-    aynısı — burada pnl'e uygulanmış hali.)"""
+    """Bu θ ile ajanın oyu, SABİT UFUKLU gerçek ileri getiriye karşı.
+
+    FAZ 466'DA HEDEF DEĞİŞTİ — ikinci yapısal kusurun düzeltmesi.
+
+    ESKİ hedef: ajanın oyu gerçek YÜRÜTÜLEN yönle aynıysa gerçek `pnl`,
+    tersse `-pnl`. İki ayrı sorunu vardı:
+      (a) `pnl` bir TRADE SONUCU — bariyer yerleşimine, tutma süresine,
+          stop'a bağlı. Bu oturumun ana bulgusu tam olarak bu karışıklık:
+          "işlem kâr etti mi" ile "fiyat hangi yöne gitti" AYNI hedef
+          değil (bkz. analytics/forward_direction.py, Faz 441).
+      (b) `-pnl` varsayımı: "ters yönde bahis yapılsaydı sonuç tam
+          simetrik olurdu". Bariyerler asimetrik olduğu için (stop
+          mesafesi ≠ hedef mesafesi) bu YANLIŞ.
+
+    YENİ hedef: sabit ufuklu (1 saat) gerçek ileri getiri. LONG oyunda
+    +getiri, SHORT oyunda −getiri, WAIT'te 0. Bu, "bu yönde bir birim
+    bahis yapılsaydı ufuk sonunda ne olurdu"nun GERÇEK cevabı —
+    bariyerlerden, tutma süresinden ve icra kapılarından TAMAMEN
+    bağımsız. Sharpe ölçeği korunuyor, dolayısıyla scheduler'ın
+    MIN_SHARPE_IMPROVEMENT eşiği anlamını koruyor.
+
+    `forward_return`'ü olmayan kayıtlar 0 katkı verir (fail-closed —
+    uydurma bir getiri üretilmez); hepsi eksikse çağıran tarafın
+    `has_forward_returns()` ile bunu FARK ETMESİ gerekir."""
     agent = TechnicalAgent(coefficients=coefficients)
-    pnls = []
+    returns = []
     for record in records:
+        if record.forward_return is None:
+            returns.append(0.0)
+            continue
         opinion = agent.analyze(record.context)
-        if opinion.direction == record.executed_direction:
-            pnls.append(record.pnl)
-        elif opinion.direction in ("LONG", "SHORT"):
-            pnls.append(-record.pnl)
+        if opinion.direction == "LONG":
+            returns.append(record.forward_return)
+        elif opinion.direction == "SHORT":
+            returns.append(-record.forward_return)
         else:
-            pnls.append(0.0)
-    return np.array(pnls)
+            returns.append(0.0)
+    return np.array(returns)
+
+
+def has_forward_returns(records: list[HistoricalTechnicalRecord]) -> bool:
+    """Faz 466 — yön-tabanlı hedef, `forward_return` olmadan SESSİZCE
+    her θ için sıfır dizisi üretir ve CMA-ES "hiçbir şey fark etmiyor"
+    sonucuna varır. Bu, tam da kullanıcının şikâyet ettiği "hep sıfır"
+    durumunun yeni bir kılıkta tekrarı olurdu. Scheduler bu kontrolü
+    yapıp sebebi AÇIKÇA raporluyor."""
+    return any(r.forward_return is not None for r in records)
 
 
 def sharpe_like(pnls: np.ndarray) -> float:
@@ -196,7 +282,18 @@ def optimize_technical_agent_coefficients(
     lower = [FIELD_BOUNDS[n][0] for n in names]
     upper = [FIELD_BOUNDS[n][1] for n in names]
 
-    es = cma.CMAEvolutionStrategy(x0, 0.3, {
+    # Faz 466 — BASLANGIC ADIM BOYU (sigma) buyutuldu: 0.3 -> 0.9.
+    # Sinirlari negatife acmak TEK BASINA yetmedi; bir testte yakalandi:
+    # yon tasiyan katsayilarin arama araligi [0,2]'den [-2,+2]'ye
+    # cikinca (genislik 2 -> 4), 0.3'luk adim boyu ISARET SINIRINI
+    # asamiyordu. Ajanin yonu bir ESIK fonksiyonu oldugu icin arama
+    # yuzeyi basamakli: CMA-ES kucuk adimlarla x0'in (hepsi pozitif
+    # varsayilanlar) etrafinda sikisip kaliyor ve dogru cozum (negatif
+    # agirliklar) erisilemez kaliyordu. Sentetik ters-piyasa testinde
+    # dogrulandi: 0.3 ile hicbir katsayi negatife gecmiyor, 0.9 ile
+    # geciyor. CMA-ES icin olagan tavsiye sigma ~ arama araliginin
+    # 1/4'u; genislik 4 -> ~1.0, secilen 0.9 bunun hemen altinda.
+    es = cma.CMAEvolutionStrategy(x0, 0.9, {
         "bounds": [lower, upper],
         "seed": seed,
         "maxiter": max_iterations,
