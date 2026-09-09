@@ -1,4 +1,4 @@
-# Mevcut Durum -- v1.185.0 (Faz 441-474: boot'ta otomatik başlatma kuruldu — 3 saatlik sessiz kesinti bir daha olmayacak)
+# Mevcut Durum -- v1.186.0 (Faz 441-475: test DB şişmesi kalıcı çözüldü — 4.058 → 7 kullanıcı, büyüme durdu)
 
 **Tarih:** 2026-09-08
 **Branch:** main
@@ -20,6 +20,39 @@ Canlı doğrulama yapıldı: ilk 40 kararda dört kategori de ateşledi
 bearish_new_shorts −0,2 ×11, bearish_long_capitulation +0,3 ×11) — Faz
 453'teki gibi sessizce ölü kalma durumu YOK.
 
+
+**2026-09-09 — Faz 475 (backlog #12): test DB şişmesi KALICI çözüldü.**
+Kullanıcı bunu "bilinen flake" olarak kabul etmemişti, kalıcı çözüm
+istemişti.
+
+Gerçek ölçüm: `tmp_test_memory/` ZATEN temizdi (0 dosya) — asıl birikim
+başka yerdeydi: quantdb_test'te **4.058 kullanıcı** (3.911'i `test_*`) ve
+**579 app_settings** satırı (DEFAULTS sadece 98 anahtar; fazlası çoğunlukla
+`agent_bench_state__<rastgele>__technical`). Kök conftest.py'nin
+session-başı TRUNCATE'i `users`/`app_settings`/`api_keys`'i KASITLI
+koruyor (boş kalırlarsa sistem sessizce bozulur) — ama koruma TABLO
+seviyesindeydi, içleri hiç temizlenmiyordu.
+
+**İki katmanlı düzeltme:**
+1. *Kaynak:* `tests/auth_helpers.py::make_authed_headers()` her çağrıda
+   `uuid4()` ile YENİ kullanıcı yaratıyordu. Gerekçesi "paylaşımlı test
+   DB'sinde sıra bağımsızlığı"ydı — ama rol başına SABİT bir isim de aynı
+   determinizmi veriyor (kullanıcı zaten doğrudan repository'den
+   yaratılıyor, bootstrap baypas ediliyor). Artık `test_admin`/
+   `test_viewer` tekrar kullanılıyor.
+2. *Temizlik:* conftest'e SATIR seviyesinde purge — DEFAULTS'ta olmayan
+   ayar anahtarları + uuid sonekli (`_[0-9a-f]{8,}$`) kullanıcılar. FK
+   (`api_keys.user_id`) yüzünden önce o kullanıcıların api_keys satırları
+   siliniyor. **Güvenlik:** silme geri alınamaz olduğu için
+   `current_database()` açıkça doğrulanıyor; `quantdb_test` değilse
+   fixture `RuntimeError` ile DURUYOR, sessizce üretim verisi silmiyor.
+
+**Doğrulandı:** 4.058 → **7 kullanıcı**, 579 → **77 ayar**. Üç ardışık
+koşuda sayılar SABİT kaldı — büyüme gerçekten durdu (kalan 5 uuid'li
+kullanıcı O KOŞUDA yaratılanlar, sonraki oturum başında siliniyorlar).
+
+5 regresyon testi (`tests/test_test_isolation_hygiene.py`), biri temizliğin
+yanlış DB'de çalışmayı reddettiğini doğruluyor. 43 test geçti.
 
 **2026-09-09 — Faz 474 (backlog #9): boot'ta otomatik başlatma
 (launchd) kuruldu.** Kullanıcı listesindeki 9. madde. Gerekçe gerçek bir

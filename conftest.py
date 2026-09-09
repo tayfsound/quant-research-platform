@@ -112,6 +112,60 @@ def _purge_all_test_generated_tables_at_session_start():
         if table_names:
             quoted = ", ".join(f'"{t}"' for t in table_names)
             session.execute(text(f"TRUNCATE TABLE {quoted} CASCADE"))
+
+        # Faz 475 — KORUNAN TABLOLARIN İÇİ de birikiyordu. Yukarıdaki
+        # TRUNCATE `users` ve `app_settings`'i KASITLI atlıyor (boş
+        # kalırlarsa sistem sessizce bozulur), ama koruma TABLO
+        # seviyesinde olduğu için içlerindeki test çöpü hiç silinmiyordu.
+        # Gerçek ölçüm (2026-09-09): quantdb_test'te 4.051 kullanıcı
+        # (3.911'i `test_*`) ve 579 app_settings satırı (DEFAULTS sadece
+        # 98 anahtar — yani 481'i test çöpü, çoğu
+        # `agent_bench_state__<rastgele>__technical`).
+        #
+        # Çözüm tablo değil SATIR seviyesinde: tam olarak tohum/config
+        # verisi korunuyor, geri kalanı siliniyor.
+        #
+        # GÜVENLİK: bu dosyanın en üstünde DATABASE_URL zaten quantdb_test'e
+        # sabitleniyor, ama kullanıcı SİLMEK geri alınamaz bir iş olduğu
+        # için ayrıca açık bir doğrulama yapılıyor — yanlış bir DB'ye
+        # bağlanılmışsa fixture DURUR, sessizce üretim verisi silmez.
+        current_db = session.execute(text("SELECT current_database()")).scalar()
+        if current_db != "quantdb_test":
+            raise RuntimeError(
+                f"Test temizligi YANLIS veritabaninda calisacakti: {current_db!r}. "
+                "conftest.py'nin DATABASE_URL_SYNC ayari bozulmus olabilir."
+            )
+
+        # DEFAULTS'ta OLMAYAN her ayar anahtari test tarafindan uretilmis
+        # calisma-zamani durumudur (uretimde de boyleleri var ama BU DB
+        # tamamen izole -- icindeki her satir testlerden geliyor).
+        from database.repositories.app_settings_repository import DEFAULTS
+
+        session.execute(
+            text("DELETE FROM app_settings WHERE key <> ALL(:keys)"),
+            {"keys": list(DEFAULTS.keys())},
+        )
+        # tests/auth_helpers.py artik rol basina TEK deterministik kullanici
+        # yaratiyor; onlar KORUNUYOR. Gecmisten kalan uuid'li olanlar ve
+        # kayit akisini test eden gecici kullanicilar siliniyor.
+        #
+        # api_keys ONCE siliniyor: api_keys.user_id -> users.id yabanci
+        # anahtari var ve `api_keys` de korumali tablolardan, yani yukaridaki
+        # TRUNCATE onu da atliyor. Sadece SILINECEK kullanicilarin anahtarlari
+        # temizleniyor -- gercek tohum kullanicilarin anahtarlarina
+        # dokunulmuyor.
+        # Kalip: uuid SONEKI. Testler kullanicilarini `<ad>_<hex>` diye
+        # uretiyor (test_admin_a1b2c3d4, loginuser_..., disableduser_...,
+        # first_/second_/dup_/devmode_/legit_...) ve her kosuda 5-6 yenisi
+        # ekleniyordu. Tek tek isim saymak yerine IMZAYI yakaliyoruz;
+        # boylece ileride eklenecek testler de otomatik kapsaniyor.
+        # `test_admin`/`test_viewer` gibi DETERMINISTIK olanlar (Faz 475'in
+        # auth_helpers duzeltmesi) hex soneki tasimadiklari icin KORUNUYOR.
+        junk_users = "username ~ '_[0-9a-f]{8,}$'"
+        session.execute(text(
+            f"DELETE FROM api_keys WHERE user_id IN (SELECT id FROM users WHERE {junk_users})"
+        ))
+        session.execute(text(f"DELETE FROM users WHERE {junk_users}"))
         session.commit()
     yield
 
