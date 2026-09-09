@@ -10,9 +10,12 @@ from database.repositories.app_settings_repository import AppSettingsRepository
 from database.session_factory import SessionFactory
 from services.council_orchestrator import CouncilOrchestrator
 
+# Faz 468 -- rsi_value EKLENDI: market_structure artik shadow'da (string
+# uyusmazligi yuzunden zaten hic skorlanmiyordu), bu fikstürün TECHNICAL
+# ajanı yonlu bir oy uretebilsin diye gercekten skorlanan bir sinyal sart.
 _BULLISH_TECHNICAL = TechnicalContext(
-    trend="bullish", momentum="strengthening", market_structure="higher_highs", volume_confirmation=True
-)
+    trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows", volume_confirmation=True
+, rsi_value=20.0)
 _BEARISH_MACRO = MacroContext(inflation_trend="rising", liquidity_condition="tight", central_bank_bias="hawkish")
 
 _REVERSING_LONG_FEATURES = {

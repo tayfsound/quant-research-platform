@@ -27,11 +27,11 @@ from meta_optimizer.agent_tuner import (
 
 
 def _bullish_context() -> TechnicalContext:
-    return TechnicalContext(trend="bullish", market_structure="higher_highs")
+    return TechnicalContext(trend="bullish", market_structure="higher_highs_higher_lows")
 
 
 def _bearish_context() -> TechnicalContext:
-    return TechnicalContext(trend="bearish", market_structure="lower_lows")
+    return TechnicalContext(trend="bearish", market_structure="lower_highs_lower_lows")
 
 
 def test_sharpe_like_matches_hand_computed_mean_over_std():

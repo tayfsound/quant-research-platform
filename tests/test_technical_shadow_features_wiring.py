@@ -28,7 +28,7 @@ def test_to_technical_defaults_when_atr_fields_are_absent():
 
 
 def test_technical_agent_adds_a_caveat_for_expanding_volatility_no_score_impact():
-    base = dict(trend="bullish", momentum="strengthening", market_structure="higher_highs")
+    base = dict(trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows")
     baseline = TechnicalAgent().analyze(TechnicalContext(**base))
     expanding = TechnicalAgent().analyze(TechnicalContext(**base, atr_expansion_ratio=2.0))
 
@@ -38,7 +38,7 @@ def test_technical_agent_adds_a_caveat_for_expanding_volatility_no_score_impact(
 
 
 def test_technical_agent_adds_a_caveat_for_contracting_volatility_no_score_impact():
-    base = dict(trend="bullish", momentum="strengthening", market_structure="higher_highs")
+    base = dict(trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows")
     baseline = TechnicalAgent().analyze(TechnicalContext(**base))
     contracting = TechnicalAgent().analyze(TechnicalContext(**base, atr_expansion_ratio=0.3))
 
@@ -48,7 +48,7 @@ def test_technical_agent_adds_a_caveat_for_contracting_volatility_no_score_impac
 
 
 def test_technical_agent_no_caveat_when_ratio_is_near_1_or_unknown():
-    base = dict(trend="bullish", momentum="strengthening", market_structure="higher_highs")
+    base = dict(trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows")
     normal = TechnicalAgent().analyze(TechnicalContext(**base, atr_expansion_ratio=1.0))
     unknown = TechnicalAgent().analyze(TechnicalContext(**base, atr_expansion_ratio=None))
 
@@ -76,7 +76,7 @@ def test_to_technical_defaults_rsi_detail_when_absent():
 
 
 def test_technical_agent_adds_a_caveat_for_bearish_rsi_divergence_no_score_impact():
-    base = dict(trend="bullish", momentum="strengthening", market_structure="higher_highs")
+    base = dict(trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows")
     baseline = TechnicalAgent().analyze(TechnicalContext(**base))
     diverging = TechnicalAgent().analyze(TechnicalContext(**base, rsi_divergence="bearish_divergence"))
 
@@ -86,7 +86,7 @@ def test_technical_agent_adds_a_caveat_for_bearish_rsi_divergence_no_score_impac
 
 
 def test_technical_agent_adds_a_caveat_for_bullish_rsi_divergence_no_score_impact():
-    base = dict(trend="bullish", momentum="strengthening", market_structure="higher_highs")
+    base = dict(trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows")
     baseline = TechnicalAgent().analyze(TechnicalContext(**base))
     diverging = TechnicalAgent().analyze(TechnicalContext(**base, rsi_divergence="bullish_divergence"))
 
@@ -96,6 +96,6 @@ def test_technical_agent_adds_a_caveat_for_bullish_rsi_divergence_no_score_impac
 
 
 def test_technical_agent_no_rsi_divergence_caveat_when_none():
-    base = dict(trend="bullish", momentum="strengthening", market_structure="higher_highs")
+    base = dict(trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows")
     opinion = TechnicalAgent().analyze(TechnicalContext(**base, rsi_divergence="none"))
     assert not any("RSI düşüyor" in c or "RSI yükseliyor" in c for c in opinion.caveats)

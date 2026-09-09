@@ -46,7 +46,7 @@ def test_persistently_wrong_domain_gets_benched_and_reduced_not_zeroed(tmp_path)
     orchestrator.reliability_annotator.agent.memory = memory
 
     ctx = {AgentDomain.TECHNICAL: TechnicalContext(
-        trend="bullish", momentum="strengthening", market_structure="higher_highs",
+        trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows",
         ema_alignment="bullish_aligned", volume_confirmation=True,
         adx=30.0, di_plus=30.0, di_minus=10.0,
     )}
@@ -78,7 +78,7 @@ def test_marginally_benched_domain_is_far_less_suppressed_than_old_flat_floor(tm
     orchestrator.reliability_annotator.agent.memory = memory
 
     ctx = {AgentDomain.TECHNICAL: TechnicalContext(
-        trend="bullish", momentum="strengthening", market_structure="higher_highs",
+        trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows",
         ema_alignment="bullish_aligned", volume_confirmation=True,
         adx=30.0, di_plus=30.0, di_minus=10.0,
     )}
@@ -103,7 +103,7 @@ def test_catastrophically_unreliable_domain_is_still_strongly_suppressed(tmp_pat
     orchestrator.reliability_annotator.agent.memory = memory
 
     ctx = {AgentDomain.TECHNICAL: TechnicalContext(
-        trend="bullish", momentum="strengthening", market_structure="higher_highs",
+        trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows",
         ema_alignment="bullish_aligned", volume_confirmation=True,
         adx=30.0, di_plus=30.0, di_minus=10.0,
     )}
@@ -121,7 +121,7 @@ def test_benched_domain_recovers_after_real_correct_track_record(tmp_path):
     orchestrator.reliability_annotator.agent.memory = memory
 
     ctx = {AgentDomain.TECHNICAL: TechnicalContext(
-        trend="bullish", momentum="strengthening", market_structure="higher_highs",
+        trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows",
         ema_alignment="bullish_aligned", volume_confirmation=True,
         adx=30.0, di_plus=30.0, di_minus=10.0,
     )}
@@ -149,7 +149,7 @@ def test_insufficient_real_history_is_not_benched(tmp_path):
     orchestrator.reliability_annotator.agent.memory = AgentMemory(storage_path=str(tmp_path))
 
     ctx = {AgentDomain.TECHNICAL: TechnicalContext(
-        trend="bullish", momentum="strengthening", market_structure="higher_highs",
+        trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows",
         ema_alignment="bullish_aligned", volume_confirmation=True,
         adx=30.0, di_plus=30.0, di_minus=10.0,
     )}

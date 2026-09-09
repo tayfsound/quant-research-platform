@@ -32,7 +32,7 @@ def test_source_reliability_adapts_from_real_accuracy_not_the_agent_hardcoded_de
 
     _, opinions = orchestrator.deliberate({
         AgentDomain.TECHNICAL: TechnicalContext(
-            trend="bullish", momentum="strengthening", market_structure="higher_highs",
+            trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows",
             ema_alignment="bullish_aligned", volume_confirmation=True,
             adx=30.0, di_plus=30.0, di_minus=10.0,
         ),

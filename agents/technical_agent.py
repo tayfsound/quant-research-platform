@@ -116,13 +116,39 @@ class TechnicalAgent:
             shadow_contributions["momentum"] = -c.momentum_weight
             evidence.append("Düşüş momentumu güçleniyor")
 
-        # Piyasa yapısı
-        if context.market_structure == "higher_highs":
-            contributions["market_structure"] = c.market_structure_weight
-            evidence.append("Yükselen tepe/dip yapısı — yükseliş devam deseni")
-        elif context.market_structure == "lower_lows":
-            contributions["market_structure"] = -c.market_structure_weight
-            evidence.append("Alçalan tepe/dip yapısı — düşüş devam deseni")
+        # Piyasa yapısı — Faz 468 (2026-09-09): SESSİZ ÖLÜ SİNYAL DÜZELTMESİ.
+        #
+        # Kullanıcı sorusu ("bugün bütün teknik ajan sinyallerini
+        # gerçekten doğruladık mı?") üzerine yapılan kapsam denetiminde
+        # bulundu: bu dal HİÇ ateşlenmiyordu. Sebep bir string
+        # uyuşmazlığı — `signal_engine._swing_structure()`
+        # "higher_highs_higher_lows"/"lower_highs_lower_lows" döndürüyor,
+        # buradaki karşılaştırmalar ise "higher_highs"/"lower_lows"
+        # bekliyordu. Canlı veride doğrulandı: 3 günde technical ajanın
+        # feature_contributions'ında `market_structure` SIFIR kez geçti,
+        # oysa ajanın EN YÜKSEK tekil ağırlığı buydu (1.5).
+        #
+        # Bugünün ÜÇÜNCÜ aynı-sınıf hatası (Faz 453: volume_profile_
+        # confirm adapter'dan geçmiyordu; Faz 464'te uçtan uca regresyon
+        # testi eklenmişti). Artık `tests/test_technical_agent.py`'de
+        # bu dalı üreticinin GERÇEK çıktılarıyla besleyen bir test var.
+        #
+        # NEDEN SKORA DEĞİL SHADOW'A: Faz 462'de ölçüldü — işaret TERS.
+        #   higher_highs_higher_lows  P(1sa sonra UP) = 0,483
+        #   ranging                                    = 0,536
+        #   lower_highs_lower_lows                     = 0,590
+        # Yani buradaki "+ = yükseliş" varsayımı yanlış; string'i düzeltip
+        # eski işaretle skora sokmak, en büyük ağırlıkla TERS bir sinyal
+        # bağlamak olurdu. Ayrıca Faz 464'ün gözlem penceresi açık —
+        # ikinci bir canlı değişiklik iki etkiyi ayırt edilemez yapardı.
+        # Şimdilik shadow: artık ÖLÇÜLEBİLİR (feature_ic izliyor), skora
+        # etkisi sıfır. Doğru işaretle bağlanması AYRI bir aktivasyon.
+        if context.market_structure == "higher_highs_higher_lows":
+            shadow_contributions["market_structure"] = c.market_structure_weight
+            evidence.append("Yükselen tepe/dip yapısı (ölçümde TERS işaretli — izleniyor, skora girmiyor)")
+        elif context.market_structure == "lower_highs_lower_lows":
+            shadow_contributions["market_structure"] = -c.market_structure_weight
+            evidence.append("Alçalan tepe/dip yapısı (ölçümde TERS işaretli — izleniyor, skora girmiyor)")
         elif context.market_structure == "ranging":
             caveats.append("Piyasa konsolidasyonda — güven için kırılım gerekiyor")
 

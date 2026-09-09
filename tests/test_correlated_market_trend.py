@@ -54,7 +54,7 @@ def test_correlated_market_trend_is_none_for_non_crypto_symbols():
 def test_technical_agent_adds_evidence_when_correlation_confirms():
     agent = TechnicalAgent()
     ctx = TechnicalContext(
-        trend="bullish", momentum="strengthening", market_structure="higher_highs",
+        trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows",
         correlated_market_trend="bullish",
     )
     opinion = agent.analyze(ctx)
@@ -65,7 +65,7 @@ def test_technical_agent_adds_evidence_when_correlation_confirms():
 def test_technical_agent_adds_caveat_when_correlation_conflicts():
     agent = TechnicalAgent()
     ctx = TechnicalContext(
-        trend="bullish", momentum="strengthening", market_structure="higher_highs",
+        trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows",
         correlated_market_trend="bearish",
     )
     opinion = agent.analyze(ctx)

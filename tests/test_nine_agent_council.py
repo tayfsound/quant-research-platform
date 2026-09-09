@@ -37,7 +37,7 @@ def test_full_council_with_all_nine_domains_produces_one_belief():
     belief, opinions = orchestrator.deliberate({
         AgentDomain.MACRO: MacroContext(inflation_trend="falling", central_bank_bias="dovish"),
         AgentDomain.ONCHAIN: OnChainContext(whale_accumulation=True),
-        AgentDomain.TECHNICAL: TechnicalContext(trend="bullish", market_structure="higher_highs"),
+        AgentDomain.TECHNICAL: TechnicalContext(trend="bullish", market_structure="higher_highs_higher_lows"),
         AgentDomain.PATTERN: PatternContext(structure_phase="accumulation", break_of_structure="bullish"),
         AgentDomain.QUANT: QuantContext(zscore=-2.0, hurst_exponent=0.3),
         AgentDomain.ORDER_FLOW: OrderFlowContext(bid_ask_imbalance=0.4),

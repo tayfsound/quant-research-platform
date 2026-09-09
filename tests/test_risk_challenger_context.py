@@ -36,13 +36,27 @@ def test_build_debate_context_reflects_real_volatility_and_crowding():
 
 
 def test_crowded_high_volatility_high_confidence_council_actually_gets_challenged():
+    # Faz 468 — market_structure artık shadow'da: string uyuşmazlığı
+    # yüzünden ZATEN YILLARDIR hiç skorlanmıyordu (üretici
+    # "higher_highs_higher_lows" döndürürken ajan "higher_highs"
+    # bekliyordu), düzeltilirken ölçülen TERS işaretle skora sokulmadı.
+    # Sonuç: TechnicalAgent'ın varsayılan katsayılarla ulaşabileceği en
+    # yüksek confidence ~0,53 -- bu testin ihtiyaç duyduğu "aşırı güven"
+    # eşiğinin (0,75) ALTINDA. Fikstür gerçekçi bir şekilde AYARLANMIŞ
+    # katsayılarla besleniyor (katsayılar zaten tunable; meta-learning
+    # tam olarak bunları arıyor).
+    from agents.technical_agent import TechnicalAgent, TechnicalAgentCoefficients
+
     registry = AgentRegistry.create_default()
+    registry.register(AgentDomain.TECHNICAL, TechnicalAgent(
+        coefficients=TechnicalAgentCoefficients(trend_weight=2.0, rsi_extreme_weight=2.0),
+    ))
     orchestrator = CouncilOrchestrator(registry)
 
     belief, opinions = orchestrator.deliberate({
         AgentDomain.TECHNICAL: TechnicalContext(
-            trend="bullish", momentum="strengthening", market_structure="higher_highs",
-            ema_alignment="bullish_aligned", volume_confirmation=True, volatility_regime="high",
+            trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows",
+            ema_alignment="bullish_aligned", volatility_regime="high", rsi_value=20.0,
         ),
         AgentDomain.MACRO: MacroContext(inflation_trend="falling", central_bank_bias="dovish"),
         AgentDomain.ONCHAIN: OnChainContext(exchange_outflow_24h=500_000_000, whale_accumulation=True),

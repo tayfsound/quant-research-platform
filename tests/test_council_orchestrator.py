@@ -15,7 +15,7 @@ def test_full_council_deliberate():
     belief, opinions = orchestrator.deliberate({
         AgentDomain.MACRO: MacroContext(inflation_trend="rising", liquidity_condition="tight", central_bank_bias="hawkish"),
         AgentDomain.ONCHAIN: OnChainContext(exchange_outflow_24h=300_000_000, whale_accumulation=True),
-        AgentDomain.TECHNICAL: TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs", volume_confirmation=True),
+        AgentDomain.TECHNICAL: TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows", volume_confirmation=True),
     })
 
     assert belief.direction in ("LONG", "SHORT", "WAIT")
@@ -28,7 +28,7 @@ def test_partial_council():
 
     belief, opinions = orchestrator.deliberate({
         AgentDomain.MACRO: MacroContext(inflation_trend="falling", central_bank_bias="dovish"),
-        AgentDomain.TECHNICAL: TechnicalContext(trend="bullish", market_structure="higher_highs"),
+        AgentDomain.TECHNICAL: TechnicalContext(trend="bullish", market_structure="higher_highs_higher_lows"),
     })
 
     assert belief.direction in ("LONG", "SHORT", "WAIT")
@@ -64,7 +64,7 @@ def test_domain_confidence_calibration_is_applied_before_recalculate(monkeypatch
 
     registry = AgentRegistry.create_default()
     orchestrator = CouncilOrchestrator(registry)
-    ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs")
+    ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows")
 
     _, opinions = orchestrator.deliberate({AgentDomain.TECHNICAL: ctx})
     technical = next(o for o in opinions if o.domain == AgentDomain.TECHNICAL)
@@ -99,7 +99,7 @@ def test_deliberate_preserves_the_raw_confidence_before_calibration_overwrites_i
 
     registry = AgentRegistry.create_default()
     orchestrator = CouncilOrchestrator(registry)
-    ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs")
+    ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows")
 
     _, opinions = orchestrator.deliberate({AgentDomain.TECHNICAL: ctx})
     technical = next(o for o in opinions if o.domain == AgentDomain.TECHNICAL)
@@ -129,7 +129,7 @@ def test_deliberate_passes_each_opinions_real_evidence_count_to_calibration(monk
     # Faz A/B'nin agent_confidence_model çarpanı (varsa) opinion.evidence'ı
     # değiştirmiyor, sadece confidence'ı — bu testin gerçek amacı olan
     # "kaç kanıt" sayımını etkilemiyor.
-    ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs")
+    ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows")
 
     _, opinions = orchestrator.deliberate({AgentDomain.TECHNICAL: ctx})
     technical = next(o for o in opinions if o.domain == AgentDomain.TECHNICAL)
@@ -155,7 +155,7 @@ def test_deliberate_passes_the_real_symbol_to_calibration_for_asset_class_awaren
 
     registry = AgentRegistry.create_default()
     orchestrator = CouncilOrchestrator(registry)
-    ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs")
+    ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows")
 
     orchestrator.deliberate({AgentDomain.TECHNICAL: ctx}, symbol="PAXGUSDT")
 
@@ -183,7 +183,7 @@ def test_deliberate_uses_the_regime_specific_snapshot_when_one_exists(tmp_path):
         registry = AgentRegistry.create_default()
         orchestrator = CouncilOrchestrator(registry)
         orchestrator.weight_repository = repo
-        ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs")
+        ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows")
 
         orchestrator.deliberate({AgentDomain.TECHNICAL: ctx}, regime="bullish_high")
         assert orchestrator.active_weight_snapshot_id == regime_snapshot.id
@@ -315,7 +315,17 @@ def test_unanswered_risk_challenge_reduces_real_vote_weight_end_to_end(monkeypat
         lambda domain, confidence, evidence_count=0, symbol=None: confidence,
     )
 
+    # Faz 468 — market_structure artik shadow'da (string uyusmazligi
+    # yuzunden ZATEN yillardir hic skorlanmiyordu; olculen TERS isaretle
+    # skora sokulmadi). Sonuc: TechnicalAgent varsayilan katsayilarla
+    # ~0,53'un ustune cikamiyor, bu testin ihtiyaci olan esigin ALTINDA.
+    # Katsayilar gercekci sekilde ayarlaniyor (zaten tunable).
+    from agents.technical_agent import TechnicalAgent, TechnicalAgentCoefficients
+
     registry = AgentRegistry.create_default()
+    registry.register(AgentDomain.TECHNICAL, TechnicalAgent(
+        coefficients=TechnicalAgentCoefficients(trend_weight=2.0, rsi_extreme_weight=2.0),
+    ))
     orchestrator = CouncilOrchestrator(registry)
     # score = trend(1.0) + momentum(1.0) + market_structure(1.5) +
     # ema_alignment(0.5) + rsi_extreme(1.0) = 5.0 -> confidence=min(1.0,0.85)=0.85 (>0.75).
@@ -336,7 +346,7 @@ def test_unanswered_risk_challenge_reduces_real_vote_weight_end_to_end(monkeypat
     # gercek veriyle olculup semantigi TERSINE cevrilmis -- True artik
     # tukenis isareti sayilip skoru DUSURUYOR.)
     ctx = TechnicalContext(
-        trend="bullish", momentum="strengthening", market_structure="higher_highs",
+        trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows",
         ema_alignment="bullish_aligned", rsi_value=20.0, volatility_regime="high",
         adx=30.0, di_plus=30.0, di_minus=10.0, higher_timeframe_trend="bearish",
     )
@@ -360,7 +370,7 @@ def test_single_agent_directional_agreement_is_not_flagged_as_crowding():
     registry = AgentRegistry.create_default()
     orchestrator = CouncilOrchestrator(registry)
     ctx = TechnicalContext(
-        trend="bullish", momentum="strengthening", market_structure="higher_highs",
+        trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows",
         ema_alignment="bullish_aligned", volume_confirmation=True,
         volatility_regime="normal",
     )
@@ -379,7 +389,7 @@ def test_deliberate_applies_real_data_freshness_to_all_opinions():
     uygulanmalı (ajanın kendi hardcoded değeri değil)."""
     registry = AgentRegistry.create_default()
     orchestrator = CouncilOrchestrator(registry)
-    ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs")
+    ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows")
 
     _, opinions = orchestrator.deliberate({AgentDomain.TECHNICAL: ctx}, data_freshness=0.3)
     technical = next(o for o in opinions if o.domain == AgentDomain.TECHNICAL)
@@ -389,7 +399,7 @@ def test_deliberate_applies_real_data_freshness_to_all_opinions():
 def test_deliberate_leaves_freshness_untouched_when_not_provided():
     registry = AgentRegistry.create_default()
     orchestrator = CouncilOrchestrator(registry)
-    ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs")
+    ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows")
 
     _, opinions = orchestrator.deliberate({AgentDomain.TECHNICAL: ctx})
     technical = next(o for o in opinions if o.domain == AgentDomain.TECHNICAL)
@@ -412,7 +422,7 @@ def test_technical_confidence_model_adjusts_opinion_confidence_when_saved():
 
     registry = AgentRegistry.create_default()
     orchestrator = CouncilOrchestrator(registry)
-    ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs", rsi_value=10.0)
+    ctx = TechnicalContext(trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows", rsi_value=10.0)
 
     _, opinions_before = orchestrator.deliberate({AgentDomain.TECHNICAL: ctx})
     technical_before = next(o for o in opinions_before if o.domain == AgentDomain.TECHNICAL)
@@ -465,7 +475,7 @@ def test_calibration_failure_does_not_drop_the_agents_already_computed_opinion(m
     registry = AgentRegistry.create_default()
     orchestrator = CouncilOrchestrator(registry)
     ctx = TechnicalContext(
-        trend="bullish", momentum="strengthening", market_structure="higher_highs",
+        trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows",
         ema_alignment="bullish_aligned", volume_confirmation=True,
         adx=30.0, di_plus=30.0, di_minus=10.0,
     )
@@ -482,7 +492,7 @@ def test_calibration_failure_does_not_drop_the_agents_already_computed_opinion(m
 # reversion rejiminde technical_agent'ı izlemek quant_agent'ı izlemekten
 # belirgin şekilde daha kötü, trending rejiminde tam tersi.
 _BULLISH_TECHNICAL = TechnicalContext(
-    trend="bullish", momentum="strengthening", market_structure="higher_highs", volume_confirmation=True
+    trend="bullish", momentum="strengthening", market_structure="higher_highs_higher_lows", volume_confirmation=True
 )
 
 

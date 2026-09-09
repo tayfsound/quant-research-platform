@@ -1,4 +1,4 @@
-# Mevcut Durum -- v1.178.0 (Faz 441-467: yön ölçüm ailesi tamamlandı — sinyal, özellik ve KAPI seviyesinde otomatik kanıt)
+# Mevcut Durum -- v1.179.0 (Faz 441-468: ölçüm ailesi + market_structure SESSİZ ÖLÜ SİNYAL hatası bulundu)
 
 **Tarih:** 2026-09-08
 **Branch:** main
@@ -20,6 +20,63 @@ Canlı doğrulama yapıldı: ilk 40 kararda dört kategori de ateşledi
 bearish_new_shorts −0,2 ×11, bearish_long_capitulation +0,3 ×11) — Faz
 453'teki gibi sessizce ölü kalma durumu YOK.
 
+
+**2026-09-09 — Faz 468: `market_structure` YILLARDIR ÖLÜYMÜŞ. Kullanıcı
+itirazı gerçek bir hata ortaya çıkardı.**
+
+Kullanıcı iki uyarı yaptı: (1) "Gerçekten aynı bilgi olmaması lazım bu
+sinyallerin; gerçekten aynı bilgiyse sinyalin kaynağı problemli, yanılarak
+anlamlı bir sinyali kaybedebiliriz." (2) "Bugün bütün teknik ajan
+sinyallerini gerçekten doğruladık mı?" İkisi de haklı çıktı.
+
+**BULGU 1 — `momentum` rejim kopyası DEĞİL, ajan onu kopya YAPMIŞ.**
+Kaynağa bakıldı: `trend` = `ema20>ema50`, `momentum` = MACD histogram
+yönü — kavramsal olarak FARKLI bilgi (seviye vs türev). Ama ajan
+`if momentum=="strengthening" and trend=="bullish"` diye bağlamış.
+Gerçek veriyle ölçüldü: trend SABİT tutulduğunda momentum HÂLÂ bilgi
+taşıyor —
+    bearish + strengthening  P(UP)=0,5736   |  bearish + weakening 0,6247
+    bullish + strengthening  P(UP)=0,5095   |  bullish + weakening 0,5311
+Her iki trend durumunda da aynı yönde (+5,1pp / +2,2pp). Beş sinyali
+toplu gömseydik GERÇEK bir sinyal kaybedecektik. (`ema_alignment` ise
+tanımı gereği trend'in İÇİNDE: `ema20>ema50>ema200` ⊂ `ema20>ema50` —
+o gerçek kaynak redundansı.)
+
+**BULGU 2 (ciddi) — `market_structure` hiç ateşlenmiyormuş.** Kapsam
+denetiminde bulundu: ajanın EN YÜKSEK tekil ağırlığı (1.5) olan sinyal,
+3 günde `feature_contributions`'da SIFIR kez geçmiş. Sebep string
+uyuşmazlığı: `signal_engine._swing_structure()`
+"higher_highs_higher_lows"/"lower_highs_lower_lows" döndürüyor, ajan
+"higher_highs"/"lower_lows" bekliyordu. **Aynı gün içindeki ÜÇÜNCÜ
+aynı-sınıf hata** (Faz 453: volume_profile_confirm adapter'dan
+geçmiyordu; Faz 464'te uçtan uca test eklenmişti).
+
+Neden yıllarca yakalanmadı: mevcut testler ajanın YANLIŞ string'ini
+kullanıyordu — fikstürler üreticiyi değil, hatayı yansıtıyordu. 11 test
+dosyasında düzeltildi.
+
+Sistematik AST taraması yazıldı (ajanlardaki `context.X == "sabit"`
+karşılaştırmalarını canlı veride görülen değerlerle karşılaştırıyor);
+`onchain_agent`'ta bir aday çıktı ama 21 günlük pencerede
+`network_activity_trend` 50.978 kez "rising" almış — YANLIŞ ALARM,
+doğrulanıp elendi. Tek gerçek ölü dal market_structure'dı.
+
+**Düzeltme SKORA DEĞİL SHADOW'A:** Faz 462'de işaretin TERS olduğu
+ölçüldü (higher_highs_higher_lows P(UP)=0,483 / ranging 0,536 /
+lower_highs_lower_lows 0,590). String'i düzeltip eski işaretle skora
+sokmak, EN BÜYÜK ağırlıkla ters bir sinyal bağlamak olurdu. Ayrıca Faz
+464'ün gözlem penceresi açık. Şimdi ölçülebilir (feature_ic izliyor),
+skora etkisi SIFIR — yani **üretim davranışı hiç değişmedi** (sinyal
+zaten ölüydü).
+
+**Yan bulgu:** market_structure olmadan TechnicalAgent'ın varsayılan
+katsayılarla ulaşabileceği en yüksek confidence ~0,53 — yani
+RiskChallenger'ın "aşırı güven" eşiği (0,75) ve min_confidence_gate
+(0,70) bu ajan için fiilen ULAŞILAMAZ. Üç test bunu ortaya çıkardı,
+gerçekçi (ayarlanmış) katsayılarla düzeltildi.
+
+Yeni regresyon testi üreticinin GERÇEK çıktısını ajana veriyor — string'i
+bir tarafta değiştirip diğerini unutmak artık test kırar. 95 test geçti.
 
 **2026-09-09 — Faz 467: kapı seçim değeri ölçümü (gözlem-only).**
 Kullanıcı isteği: Faz 459'un ikinci bulgusuna (icra kapıları sinyalin en
