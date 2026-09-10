@@ -48,24 +48,44 @@ def _cleanup() -> None:
 
 
 def test_gather_scientific_self_correction_flags_real_degradation():
+    """Faz 482 — bu test eskiden GLOBAL `direction=LONG` segmentine
+    bakıyordu ve TAM PAKET koşusunda düşüyordu: paylaşılan quantdb_test'te
+    başka testlerin bıraktığı LONG kapanmış işlemler (gerçek ölçüm:
+    original_n=81, recent_n=697) enjekte edilen bozulmayı seyreltip
+    `significant_change`'i False yapıyordu. İlk denemem "mevcut segmente
+    göre ölçekle" idi — ama o kurgu recent_n=697 için 7.600 satır ekleme
+    gerektiriyordu ve DB büyüdükçe daha da kötüleşecekti.
+
+    Doğru çözüm, gatherer'ın KENDİ segment şemasını kullanmak: segmentler
+    `overall` / `direction=X` / `experiment_bucket=X` (bkz.
+    scientific_self_correction_gatherer.py::_fetch_wins_and_totals).
+    Benzersiz bir `experiment_bucket`, hiçbir başka testin dokunamayacağı
+    TAMAMEN İZOLE bir segment veriyor — bozulma sinyali artık paylaşılan
+    DB durumundan bağımsız."""
     now = datetime.now(UTC)
     old = now - timedelta(days=30)
+    # pump_fade/basis_arb DIŞINDA bir kova: o ikisi kasıtlı olarak
+    # dışlanıyor (bkz. _fetch_wins_and_totals docstring'i).
+    bucket = f"ssc_degradation_{uuid4().hex[:8]}"
 
     try:
         for _ in range(23):
-            _persist_closed_trade("LONG", True, old)
+            _persist_closed_trade("LONG", True, old, experiment_bucket=bucket)
         for _ in range(2):
-            _persist_closed_trade("LONG", False, old)
+            _persist_closed_trade("LONG", False, old, experiment_bucket=bucket)
         for _ in range(5):
-            _persist_closed_trade("LONG", True, now - timedelta(hours=1))
+            _persist_closed_trade("LONG", True, now - timedelta(hours=1), experiment_bucket=bucket)
         for _ in range(20):
-            _persist_closed_trade("LONG", False, now - timedelta(hours=1))
+            _persist_closed_trade("LONG", False, now - timedelta(hours=1), experiment_bucket=bucket)
 
         result = gather_scientific_self_correction(recent_days=7)
-        long_segment = result["segments"]["direction=LONG"]
-        assert long_segment["original_win_rate"] > long_segment["recent_win_rate"]
-        assert long_segment["significant_change"] is True
-        assert long_segment["hypothesis_still_valid"] is False
+        segment = result["segments"][f"experiment_bucket={bucket}"]
+        # %92 -> %20 bozulma: yön gerçekten kötüleşmiş ve anlamlı.
+        assert segment["original_win_rate"] > segment["recent_win_rate"]
+        assert segment["significant_change"] is True
+        assert segment["hypothesis_still_valid"] is False
+        assert segment["original_sample_size"] == 25
+        assert segment["recent_sample_size"] == 25
     finally:
         _cleanup()
 

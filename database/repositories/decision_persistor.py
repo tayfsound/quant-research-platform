@@ -317,7 +317,22 @@ class DecisionPersistor:
         # stop/hedef/likidasyon/breakeven/trailing kontrolü SIFIR —
         # sonsuza kadar izlenmeden kalabilirlerdi. limit=None artık
         # LIMIT'i tamamen kaldırıyor — close_due_positions bunu kullanıyor.
-        query = "SELECT * FROM decisions WHERE status = 'open' ORDER BY opened_at DESC"
+        #
+        # Faz 482 (2026-09-10) — `NULLS LAST` eklendi. Postgres'te
+        # `ORDER BY x DESC` varsayılan olarak NULL'ları EN BAŞA koyar; bu
+        # yüzden `status='open'` ama `opened_at IS NULL` olan (yani hiç
+        # gerçekten açılmamış, bozuk) HER satır sayfalanmış sorgunun ilk
+        # sayfasını işgal edip GERÇEK pozisyonları tamamen görünmez
+        # yapıyordu. Faz 268q bu tuzağı bir kez teşhis etmişti ama SADECE
+        # o zamanki testin temizliğini ekleyerek geçmişti — kök neden
+        # sorguda kaldığı için başka bir test (Faz 458) aynı deseni
+        # yeniden üretti ve 9 test tam-paket koşusunda StopIteration ile
+        # düştü. Artık sıralamanın kendisi dayanıklı: opened_at'i olmayan
+        # bir satır asla gerçek bir pozisyonun önüne geçemez.
+        query = (
+            "SELECT * FROM decisions WHERE status = 'open' "
+            "ORDER BY opened_at DESC NULLS LAST"
+        )
         params: dict = {}
         if limit is not None:
             query += " LIMIT :limit OFFSET :offset"

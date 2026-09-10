@@ -3,6 +3,8 @@ Kombinasyonu Güvenilirliği Kapısı entegrasyon testleri. tests/
 test_mae_mfe_bucket_gate_wiring.py'deki AYNI desen."""
 import uuid
 
+import pytest
+
 from contracts.agent import AgentDomain, AgentOpinion
 from contracts.agent_combination_reliability_report import AgentCombinationReliabilityReport
 from contracts.context import CognitiveCycleContext
@@ -12,6 +14,20 @@ from database.repositories.agent_combination_reliability_report_repository impor
 from database.repositories.app_settings_repository import AppSettingsRepository
 from database.session_factory import SessionFactory
 from services.decision_recorder import DecisionRecorder
+from tests.live_gate_helpers import global_real_exchange_mode
+
+
+@pytest.fixture(autouse=True)
+def _gates_run_in_live_mode():
+    """Faz 482 — bu dosyadaki testlerin HEPSİ "kapı canlıda gerçekten
+    engelliyor mu" sorusunu test ediyor. Kapılar artık sadece gerçek
+    borsaya giden (live/testnet) sembollerde engelliyor; global
+    execution_mode varsayılanı "simulated" olduğu için işaretlenmemiş
+    her test sembolü carve-out'a düşerdi. Bkz. tests/live_gate_helpers.py.
+    """
+    with global_real_exchange_mode():
+        yield
+
 
 
 def _reset_defaults() -> None:

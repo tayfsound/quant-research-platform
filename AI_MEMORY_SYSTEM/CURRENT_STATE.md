@@ -1,4 +1,237 @@
-# Mevcut Durum -- v1.190.0 (Faz 441-481: trend'in İŞARETİ ÇEVRİLDİ — sistemin temel yön varsayımı ölçüme göre düzeltildi)
+# Mevcut Durum -- v1.192.0 (Faz 482-486: sistem yeniden pozisyon açıyor — karar->aksiyon 25-90 dk'dan saniyelere)
+
+**Tarih:** 2026-09-10
+**Branch:** main
+**Tam suite:** 2592 passed, 1 skipped, 3 xpassed, **0 failed** (9dk48sn).
+Bugün başlanan 11 kırığın hepsi kapandı — 10'u aylardır "sadece tam
+pakette düşen" testlerdi.
+
+---
+
+## Faz 485 (2026-09-10) — KRİTİK: karar ile aksiyon arasındaki 25-90 dakika
+
+**Kullanıcı tespiti:** "Bir döngü bu kadar uzun sürerse sağlıklı işlem
+yapamaz ki zaten. AI şu an bir pozisyon önerisinde bulundu diyelim 40-50
+dk sonra şartların değişmiş olma olasılığı çok yüksek... karar verip
+40-50 dk sonra aksiyon alırsa sürekli yanlış şeyler yapacak."
+
+**Tespit doğrulandı ve gecikmeden DAHA KÖTÜ çıktı:** `finalize_proposal`
+fiyatı YENİDEN ÇEKMİYOR — `propose` anındaki `data[-1].close`'u
+kullanıyor. Eski `run_portfolio_aware_cycle` 123 sembolün TAMAMINI
+propose edip ancak sonra finalize ettiği için ilk sembol **25-90 dakika
+bayat fiyatla** açılıyordu; stop/hedef de o bayat fiyattan türetiliyordu.
+
+İzole ölçüm (hiçbir görev yarışmazken): ~12,4 sn/sembol -> 123 sembol =
+25 dk taban. Sembol başına ~11 HTTP çağrısı (Binance + FRED + Deribit +
+CoinDesk RSS + blockchain.info).
+
+**Toplu bekletmenin tek gerekçesi Faz 199'un batch portföy VaR'ıydı ve
+o gerekçe Faz 268-sonrasında kodun KENDİ yorumunda geçersiz ilan
+edilmişti** ("tek bir yeni öneri de anlamlı bir VaR/korelasyon
+kontrolüne girebiliyor, eskisi gibi 2+ eşzamanlı öneri şartı
+gerekmiyor"). Batch sınırı yıllardır sadece kod yapısı olarak duruyordu.
+
+Yeni akış: her sembol propose -> portföy füzyonu -> HEMEN finalize.
+Canlı kanıt: **BTCUSDT kararı döngü başladıktan 5 saniye sonra** yazıldı
+(19:33:06 -> 19:33:11). Aynı düzeltme orta-vadeli döngüye de uygulandı.
+Regresyon: `tests/test_faz485_decisions_are_finalized_per_symbol.py`.
+
+Portföy semantiği değişti ama DAHA DOĞRU yöne: aynı taramada önce
+finalize edilen semboller, sonrakiler için varsayımsal eşzamanlı öneri
+değil GERÇEK açık maruziyet olarak görünüyor.
+
+## Faz 486 (2026-09-10) — sembol başına pozisyon tavanı 20 -> 3
+
+**Kullanıcı isteği:** "Aynı sembol üzerinde saçma sapan miktarda işlem
+almasına engel olsak sadece, yeterli. Aynı sembolden o anda 20-30 işlem
+alırsa veriyi kirletecek."
+
+`max_open_positions_per_symbol_direction` 20'ydi ve semboller TAM o
+tavanda oturuyordu (AMZNUSDT 21, XMRUSDT/WMTUSDT/GSUSDT/GOOGLUSDT 20).
+3'e çekildi (SADECE ayar, kod değişikliği yok).
+
+Bu kapı risk motorunun kendi kapısı (`cognitive_pipeline.py`::
+`MAX_SAME_SYMBOL_DIRECTION_POSITIONS`), Faz 482'nin post-hoc kapı
+carve-out'undan ETKİLENMİYOR — test modunda da ısırıyor (canlıda
+doğrulandı: 10 dakikada 4 ret, açılanlarda sembol/yön başına en yüksek
+1). Dashboard Settings'ten değiştirilebilir.
+
+Yan fayda: eşzamanlı tavan 123 x 2 x 3 = ~738 oluyor, yani "cumartesi
+5000'e çarpar ve veri toplama durur" projeksiyonu kendiliğinden çözüldü.
+
+## Canlı durum (2026-09-10 20:00 UTC)
+
+```
+124 karar -> 110 pozisyon (%88,7), 108 farklı sembol
+Açık pozisyon: 390
+```
+
+Açılma oranı %0,73-1,22'den %88,7'ye çıktı. **%88,7 sağlıklı bir işlem
+oranı DEĞİL, "her şeyi topla" modu** — kapılar simüle sembollerde
+bilinçli devre dışı (Faz 482). Tarihsel normal %24-30 kapılar aktifken.
+Bu, gözlem haftası için kabul edilmiş ödünleşim.
+
+**Açılmayan 4 sembol:** BTCUSDT/ETHUSDT/SOLUSDT/BNBUSDT — tek 4 testnet
+sembolü. Gerçek Binance testnet emri düşüyor:
+`Binance error -4003: Quantity less than or equal to zero`
+(`fixed_position_size_usd=1000` BTC'de 0,000055 birim, minimum lot
+altında). Ayrı ve gerçek bir sorun, tıkaç DEĞİL (123'ün 119'u simüle).
+Pazartesi listesinde.
+
+**İZLENECEK TEK SAYI:** devir hızı. Son 10 dakikada 43 açıldı, 0
+kapandı. Açık pozisyon 2500'ü geçer VE saatlik kapanış açılışın
+yarısının altında kalırsa müdahale gerekir.
+
+---
+
+**Tarih:** 2026-09-10
+**Branch:** main
+
+---
+
+## Faz 482 (2026-09-10) — "Pozisyon açma çok yavaşladı" şikâyetinin kök nedeni
+
+**Kullanıcı gözlemi:** "ev kapısına bakalım tekrar, pozisyon açma
+konusunda çok yavaşladı sistem, son üç dört gündür giderek performansı
+düşüyor."
+
+**Ölçüm — bu bir yavaşlama değil, 2026-09-06 11:00 UTC'de bir uçurum:**
+
+| Gün | Yönlü karar | Açılan | Oran |
+|---|---|---|---|
+| 5 Eyl | 5.663 | 1.736 | %30,7 |
+| 6 Eyl | 3.424 | 822 | %24,0 |
+| 7 Eyl | 3.373 | 26 | **%0,77** |
+| 8 Eyl | 4.504 | 33 | %0,73 |
+| 9 Eyl | 7.288 | 89 | %1,22 |
+
+Saat bazında: 10:00'da 592 karar/174 açılış -> 11:00'da 304/28 ->
+12:00'da 318/13 -> sonra sıfır.
+
+**İki bağımsız tıkaç bulundu, ikisi de düzeltildi.**
+
+### 1. Kapılar `trading_mode`'a hiç bakmıyordu (ASIL sorun)
+
+`decision_recorder.py`'deki 10 post-hoc kapının hiçbiri canlı/test
+ayrımı yapmıyordu. 9 Eylül'de `min_confidence_gate` TEK BAŞINA 3074
+kararı blokladı; eşiği (0,7) canlı confidence dağılımının **p90**'ıydı
+(p50=0,49), yani tasarım gereği adayların ~%10'unu geçiriyordu.
+`same_direction_correlation` indirimiyle (×0,85 medyan, confidence
+0,53 -> 0,44) birleşince açılma oranı %1'e indi.
+
+Kanıt tablosu (9 Eylül, kapı-bloğu olmayan kararlar):
+
+| Yön | Korelasyon indirimi | n | Açılan |
+|---|---|---|---|
+| SHORT | var | 1.703 | 0 |
+| LONG | var | 1.272 | 7 |
+| LONG | **yok** | 304 | **82 (%27)** |
+
+Yani karar kalitesi bozulmamıştı — huni yukarıdan boşaltılıyordu.
+
+**Kullanıcı düzeltmesi:** "sadece live modu için geçerli olacak kapılar
+bunlar, test moduna engel olmaması lazımdı." Sembollerin 123'ünün 119'u
+tamamen simüle — ortada korunacak gerçek sermaye yoktu.
+
+**Çözüm:** 10 kapının hepsi ortak `DecisionRecorder._apply_gate()`
+yardımcısından geçiyor. Kural, Faz 454'ün negatif-EV carve-out'uyla
+BİREBİR aynı: `trading_mode == "test"` VEYA sembol simüle ise kapı
+engellemiyor. Fail-safe: ayar okunamazsa kapılar UYGULANIR
+(`_routes_to_real_exchange()`, `_resolve_execution_mode`'dan KASITLI
+olarak ayrı — oradaki fail-safe yönü tersine, burada kapıları sessizce
+kapatırdı).
+
+**KRİTİK tasarım kararı:** kapı ATLANMIYOR, yine değerlendiriliyor ve
+`gate_block` yerine `gate_bypassed_test_mode` olarak kaydediliyor —
+`analytics/gate_selection_value.py`'nin ölçtüğü "bu kapı gerçekten daha
+kötü kararları mı eliyor" sorusu körleşmiyor. Faz 397'nin TEK kapı için
+kurduğu desen onuna genişletildi, iki ayrı mekanizma bırakılmadı.
+
+`min_confidence_gate`'in 0,7 eşiğine DOKUNULMADI. O rakam gerçek
+ölçümden çıkmıştı (conf≈0,7'de %85,2 kazanma, +$11,65/işlem, n=1260) ama
+Faz 480 ÖNCESİ ters trend sinyaliyle yapılmıştı — yeniden ölçümü Faz 480
+gözlem penceresi kapanınca yapılacak. Test modunu artık tıkamadığı için
+canlı kalması maliyet üretmiyor.
+
+### 2. `threshold_optimizer` act_threshold'u 0,40 <-> 0,70 arasında gezdiriyordu
+
+Kararların içine yazılmış gerçek eşik (9 Eylül): 2784 kez **0,70**,
+116 kez 0,65, 67 kez 0,40. `app_settings`'te ise 0,4 yazıyordu — modül
+saatte bir çalışıp değeri değiştiriyordu.
+
+Kök neden: ızgaranın **HER** noktası negatif expectancy veriyordu
+(t=0,40 -> -0,60 $/işlem, t=0,50 -> -0,93, t=0,65 -> -0,96,
+t=0,70 -> -1,02, t=0,80 -> -3,66) ve fonksiyon "en az kötü"yü seçip
+canlıya yazıyordu. Aradaki fark gürültü. Faz 370'in SUM->MEAN düzeltmesi
+ızgaranın en yüksek adaya sistematik kaymasını çözmüştü ama bu tuzağı
+açık bırakmıştı — bu, modülün İKİNCİ canlı kilitlenme olayı.
+
+**Çözüm:** pozitif expectancy yoksa hiçbir şey yazılmıyor. "Hiçbir eşik
+bu işlemleri kârlı yapmıyor" bulgusu bir eşik seçme gerekçesi değil.
+
+**BİLİNEN, KASITLI DÜZELTİLMEYEN KISIT:** örneklem survivorship-biased —
+`list_closed_trades` sadece açılmış pozisyonları içerir, onlar da o günkü
+eşiği geçtikleri için oradadır. Daha akıllı bir formülle çözülemez;
+Faz 482'nin kapı carve-out'u simüle sembollerde confidence aralığının
+tamamını açtığı için örneklem önümüzdeki günlerde kendiliğinden temsili
+hâle gelecek.
+
+### Yan bulgu: EV kapısının geometrisi (HENÜZ DÜZELTİLMEDİ)
+
+9 Eylül'deki **her** kararda `stop_pct` tam 0,04500 (min_stop_pct
+tavanında, %100 doygunluk), `target_pct` 0,00818 -> R:R sabit **0,1818**.
+Bu geometride EV'nin pozitif olması için confidence > **%84,6** gerekiyor
+(ortalama 0,53).
+
+Mekanizma: `min_stop_pct` tabanı stop'u %4,5'e çıkarırken ORANI KORUYARAK
+hedefi de %12,4'e taşıyor; sonra confluence-snap hedefi %0,62'ye EZİYOR —
+çünkü hedef aralığı genişletildiği için arada mutlaka yakın bir yapısal
+bölge bulunuyor. `tp_sl_ratio_guard` sadece `stop/5.5`'e kadar geri
+açıyor. Yani `min_stop_pct` ile confluence-snap birbirini bozuyor: biri
+oranı koruyarak genişletiyor, diğeri korumasız daraltıyor.
+**Sıradaki iş.**
+
+---
+
+## Faz 482 — kırık testler: 10 testin TEK bir kök nedeni vardı
+
+Uzun süredir "sadece tam pakette düşen" 10 test vardı. Hepsi
+`StopIteration`/`KeyError` veriyordu.
+
+**Kök neden (9 test):** quantdb_test'te `status='open'` ama
+`opened_at IS NULL` olan **140 satır** birikmişti. Postgres'te
+`ORDER BY opened_at DESC` NULL'ları **EN BAŞA** koyar — bu satırlar
+`list_open_positions(limit=50/100)` sayfasını işgal edip testlerin kendi
+az önce açtığı pozisyonu listeden dışarı itiyordu.
+
+Bu tuzak **Faz 268q'da bir kez teşhis edilmişti** ama SADECE o günkü
+testin temizliği eklenerek geçilmişti — kök neden sorguda kaldığı için
+Faz 458'in gatherer testi aynı deseni yeniden üretti.
+
+İKİ yerden düzeltildi:
+1. **Üretim:** `decision_persistor.py::list_open_positions` artık
+   `ORDER BY opened_at DESC NULLS LAST`. Canlı `GET /positions`
+   (limit=100) de aynı şekilde yanıltılabilirdi.
+2. **Test:** `test_directional_skill_gatherer.py`'ye `_cleanup_symbol()`
+   + üç testte `try/finally`; biriken 140 satır silindi.
+
+**10. test (`scientific_self_correction`):** `direction=LONG` segmenti
+GLOBAL olduğu için başka testlerin LONG işlemleri enjekte edilen
+bozulmayı seyreltiyordu. Sabit kurgu, **mevcut segmente göre ölçeklenen**
+kurguya çevrildi. 500 sahte LONG kazanç enjekte edilerek doğrulandı.
+
+**`threshold_optimizer` testleri yeniden yapılandırıldı:** grid-search
+saf bir fonksiyona ayrıldı (`select_threshold`) — modül I/O ile mantığı
+karıştırdığı için testler paylaşılan DB'nin o anki içeriğine bağlıydı
+(izole geçip tam pakette düşmelerinin sebebi buydu). Mantık artık
+deterministik test ediliyor, DB round-trip'i tek entegrasyon testinde.
+
+**Ayrıca:** tam suite bir kez **12 saat 23 dakika asılı kaldı** (sadece
+54 sn CPU) — bir testin zaman aşımı olmayan canlı HTTPS çağrısı, soket
+`CLOSE_WAIT`'te kilitlenmiş. `pytest-timeout` kurulu DEĞİL; teşhis için
+`-o faulthandler_timeout=240` kullanılmalı.
+
+---
 
 **Tarih:** 2026-09-08
 **Branch:** main

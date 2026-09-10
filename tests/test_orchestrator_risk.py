@@ -20,9 +20,28 @@ def test_cycle_rejects_on_high_drawdown():
     assert "risk_verdict" in out
 
 def test_neutral_returns_zero_fee():
+    """Faz 484 — bu test eskiden "nötr/varsayılan bir döngü zaten işlem
+    açmaz, dolayısıyla komisyon 0'dır" varsayıyordu ve TAM PAKET koşusunda
+    düştü. Varsayım Faz 482'yle geçersizleşti: post-hoc kapılar artık test
+    modunda/simüle sembollerde engellemiyor, dolayısıyla bu döngü GERÇEKTEN
+    bir pozisyon açabiliyor ve komisyon pozitif çıkıyor.
+
+    Testin ASIL iddiası korunuyor ve daha keskin hale getiriliyor:
+    komisyon, kararın gerçekten işlem açıp açmadığıyla TUTARLI olmalı —
+    işlem yoksa 0, işlem varsa pozitif. Eskisi "ya 0 ya rejected" derken
+    açılan işlem durumunu hiç kontrol etmiyordu."""
     orch = CognitiveOrchestrator()
     out = orch.run_cycle(seed=999)
+
     assert "fee" in out
-    assert out["fee"] == 0.0 or out["risk_verdict"] == "rejected"
+    traded = (
+        out.get("direction") in ("LONG", "SHORT")
+        and out.get("risk_verdict") == "approved"
+        and (out.get("size") or 0.0) > 0
+    )
+    if traded:
+        assert out["fee"] > 0.0, f"islem acildi ama komisyon 0: {out}"
+    else:
+        assert out["fee"] == 0.0, f"islem acilmadi ama komisyon var: {out}"
 
 

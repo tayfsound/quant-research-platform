@@ -1,7 +1,6 @@
 """Faz 366 — decision_recorder.py::record()'a wire edilen Strategy Gate
 entegrasyon testleri. tests/test_decision_recorder.py'deki pyramid_
 regime_gate testleriyle AYNI desen."""
-from datetime import UTC, datetime
 
 from contracts.context import CognitiveCycleContext
 from database.repositories.app_settings_repository import AppSettingsRepository
@@ -54,12 +53,18 @@ def _long_swing_ctx(symbol: str) -> CognitiveCycleContext:
 
 
 def test_blocked_strategy_regime_pair_blocks_a_new_entry():
+    """Faz 482 — sembol açıkça GERÇEK borsaya işaretleniyor: kapılar artık
+    sadece live/testnet sembollerde engelliyor, işaretlenmemiş her sembol
+    (global execution_mode varsayılanı "simulated") carve-out'a düşer."""
+    from tests.live_gate_helpers import symbol_on_real_exchange
+
     _set_strategy_gate_enabled("true")
     approval_id = _block_pair("ai_council_LONG_swing", "bullish_high")
     symbol = f"SGTEST{__import__('uuid').uuid4().hex[:6]}USDT"
     recorder = DecisionRecorder()
     try:
-        event = recorder.record(_long_swing_ctx(symbol), [])
+        with symbol_on_real_exchange(symbol):
+            event = recorder.record(_long_swing_ctx(symbol), [])
         assert event.status == "no_trade"
     finally:
         _cleanup(approval_id)

@@ -621,24 +621,26 @@ class CognitiveOrchestrator:
         açık pozisyonları (decision_persistor.py::open_notional_by_
         symbol) kovaryans matrisine dahil ediyor — burada da AYNI
         metodu çağırıyoruz, ayrı bir kopya mantık yerine."""
-        proposals: dict[str, dict] = {}
+        # Faz 485 — kısa-vadeli döngüyle AYNI düzeltme (bkz. run_portfolio_
+        # aware_cycle'daki uzun not): propose ile finalize arasına 123
+        # sembollük bir bekleme koymak, pozisyonu bayat fiyatla açıyordu
+        # (finalize_proposal fiyatı yeniden çekmiyor). Her sembol kendi
+        # taze fiyatıyla hemen finalize ediliyor.
+        results: list[dict[str, Any]] = []
         for sym in symbols:
             p = self.propose_medium_term(sym)
-            if p is not None:
-                proposals[sym] = p
+            if p is None:
+                results.append({
+                    "symbol": sym, "direction": "NEUTRAL", "error": "no_data_or_disabled",
+                })
+                continue
 
-        directional = {
-            sym: p for sym, p in proposals.items()
-            if p["direction"] in ("LONG", "SHORT") and (p["ctx"].decision.final_size or 0) > 0
-        }
-        if len(directional) >= 1:
-            self._apply_portfolio_fusion(directional)
+            if p["direction"] in ("LONG", "SHORT") and (p["ctx"].decision.final_size or 0) > 0:
+                self._apply_portfolio_fusion({sym: p})
 
-        return [
-            self.finalize_proposal(proposals[sym], seed=seed) if sym in proposals
-            else {"symbol": sym, "direction": "NEUTRAL", "error": "no_data_or_disabled"}
-            for sym in symbols
-        ]
+            results.append(self.finalize_proposal(p, seed=seed))
+
+        return results
 
     def finalize_proposal(self, proposal: dict, seed: int = 42) -> dict[str, Any]:
         """propose()'un çıktısını (portföy fusion varsa ctx.decision.
@@ -769,7 +771,37 @@ class CognitiveOrchestrator:
 
         import structlog as _structlog
 
-        proposals: dict[str, dict] = {}
+        # Faz 485 (2026-09-10) — KRİTİK doğruluk düzeltmesi, kullanıcı
+        # tespiti: "Bir döngü bu kadar uzun sürerse sağlıklı işlem yapamaz
+        # ki zaten. AI şu an bir pozisyon önerisinde bulundu diyelim 40-50
+        # dk sonra şartların değişmiş olma olasılığı çok yüksek... karar
+        # verip 40-50 dk sonra aksiyon alırsa sürekli yanlış şeyler
+        # yapacak."
+        #
+        # Tespit ölçümle DOĞRULANDI ve gecikmeden DAHA KÖTÜ çıktı: eski
+        # yapı 123 sembolün TAMAMINI propose edip, ancak ondan SONRA hepsini
+        # finalize ediyordu. `finalize_proposal` fiyatı YENİDEN ÇEKMİYOR —
+        # `propose` anında alınan `data[-1].close`'u kullanıyor. Yani ilk
+        # sembol 0. dakikada önerilip 25. dakikada açılıyorsa pozisyon 25
+        # DAKİKA BAYAT FİYATLA açılıyordu; stop/hedef seviyeleri de o bayat
+        # fiyattan türetiliyordu. İzole ölçüm (hiçbir görev yarışmazken):
+        # ~12,4 sn/sembol -> 123 sembol = 25 dk taban; contention altında
+        # 40-90 dk.
+        #
+        # Toplu bekletmenin TEK gerekçesi Faz 199'un batch portföy VaR'ıydı
+        # ve o gerekçe Faz 268-sonrasında kendi yorumunda geçersiz ilan
+        # edilmişti: `_apply_portfolio_fusion` GERÇEK açık pozisyonları
+        # kovaryans matrisine dahil ettiği için tek bir öneri de anlamlı
+        # bir VaR/korelasyon kontrolünden geçiyor. Yani batch sınırı
+        # yıllardır sadece kod yapısı olarak duruyordu.
+        #
+        # Yeni akış: her sembol propose edilir edilmez portföy füzyonundan
+        # geçip HEMEN finalize ediliyor — karar ile aksiyon arasındaki
+        # gecikme 25-90 dakikadan ~saniyelere iniyor. Portföy semantiği
+        # değişiyor ama DAHA DOĞRU yöne: aynı taramada daha önce finalize
+        # edilmiş semboller, sonrakiler için varsayımsal eşzamanlı öneri
+        # değil GERÇEK açık maruziyet olarak görünüyor.
+        results: list[dict[str, Any]] = []
         for sym in symbols:
             _t0 = _time.monotonic()
             p = self.propose(sym)
@@ -778,44 +810,40 @@ class CognitiveOrchestrator:
                 symbol=sym, elapsed_s=round(_time.monotonic() - _t0, 3),
                 had_result=p is not None,
             )
-            if p is not None:
-                proposals[sym] = p
-                # Shadow Mode (Faz 268-sonrası) — kullanıcıyla üzerinde
-                # anlaşılan 3 seçenekten A: macro'nun bu cycle'da GERÇEKTEN
-                # ne dediğini (council'in final kararından bağımsız) izole
-                # bir gölge pozisyon olarak kaydet. Council'in kendi
-                # kararını asla etkilemez, hata olursa sessizce yutulur
-                # (bkz. macro_shadow_tracker.py docstring'i).
-                from services.macro_shadow_tracker import process_symbol_opinion
-                process_symbol_opinion(sym, p["ctx"], p["data"][-1].close, data_provider=self.data_provider)
+            if p is None:
+                results.append({
+                    "symbol": sym, "direction": "NEUTRAL", "error": "no_data",
+                    "memory_size": len(self.memory.memory),
+                })
+                continue
+            # Shadow Mode (Faz 268-sonrası) — kullanıcıyla üzerinde
+            # anlaşılan 3 seçenekten A: macro'nun bu cycle'da GERÇEKTEN
+            # ne dediğini (council'in final kararından bağımsız) izole
+            # bir gölge pozisyon olarak kaydet. Council'in kendi
+            # kararını asla etkilemez, hata olursa sessizce yutulur
+            # (bkz. macro_shadow_tracker.py docstring'i).
+            from services.macro_shadow_tracker import process_symbol_opinion
+            process_symbol_opinion(sym, p["ctx"], p["data"][-1].close, data_provider=self.data_provider)
 
-                # Faz 316-sonrası — kullanıcı isteği: "benched ajan
-                # itirazını gölge pozisyon testi." Benching kararının
-                # gerçekten doğru olup olmadığını (susturulan bir sinyal
-                # boşa mı gidiyor) AYNI izole/etkisiz mekanizmayla ölçer
-                # (bkz. services/benched_agent_shadow_tracker.py).
-                from services.benched_agent_shadow_tracker import process_symbol_opinions as process_benched_dissent
-                process_benched_dissent(sym, p["ctx"], p["data"][-1].close, data_provider=self.data_provider)
+            # Faz 316-sonrası — kullanıcı isteği: "benched ajan
+            # itirazını gölge pozisyon testi." Benching kararının
+            # gerçekten doğru olup olmadığını (susturulan bir sinyal
+            # boşa mı gidiyor) AYNI izole/etkisiz mekanizmayla ölçer
+            # (bkz. services/benched_agent_shadow_tracker.py).
+            from services.benched_agent_shadow_tracker import process_symbol_opinions as process_benched_dissent
+            process_benched_dissent(sym, p["ctx"], p["data"][-1].close, data_provider=self.data_provider)
 
-        directional = {
-            sym: p for sym, p in proposals.items()
-            if p["direction"] in ("LONG", "SHORT") and (p["ctx"].decision.final_size or 0) > 0
-        }
+            # Faz 485 — portföy füzyonu ve finalize ARTIK BURADA, sembol
+            # bazında (bkz. metodun başındaki not). Yönlü ve gerçekten
+            # boyutlanmış bir öneri, GERÇEK açık maruziyetle birlikte
+            # VaR/korelasyon kontrolünden geçiyor; ardından hemen
+            # finalize ediliyor, yani taze fiyatla.
+            if p["direction"] in ("LONG", "SHORT") and (p["ctx"].decision.final_size or 0) > 0:
+                self._apply_portfolio_fusion({sym: p})
 
-        # Faz 268-sonrası — kullanıcı isteği: "tam birleşik portföy
-        # VaR'ı." _apply_portfolio_fusion artık GERÇEK açık pozisyonları
-        # da kovaryans matrisine dahil ediyor (bkz. kendi docstring'i) —
-        # bu yüzden tek bir yeni öneri de (zaten açık pozisyonlarla
-        # birlikte) anlamlı bir VaR/korelasyon kontrolüne girebiliyor,
-        # eskisi gibi "bu cycle'da 2+ eşzamanlı öneri" şartı gerekmiyor.
-        if len(directional) >= 1:
-            self._apply_portfolio_fusion(directional)
+            results.append(self.finalize_proposal(p, seed=seed))
 
-        return [
-            self.finalize_proposal(proposals[sym], seed=seed) if sym in proposals
-            else {"symbol": sym, "direction": "NEUTRAL", "error": "no_data", "memory_size": len(self.memory.memory)}
-            for sym in symbols
-        ]
+        return results
 
     def _apply_portfolio_fusion(self, directional: dict[str, dict]) -> None:
         from database.repositories.app_settings_repository import AppSettingsRepository

@@ -134,7 +134,28 @@ def run_trading_cycle_task(symbol: str | None = None) -> dict:
     # cycle_task'ın (1500sn) TTL'lerini neden zaten daha yüksek tuttuğunun
     # gerekçesiyle aynı sınıf hata). Gerçek watchlist boyutuna güvenli bir
     # marj bırakacak şekilde 1800sn'ye çıkarıldı.
-    with _CycleLock("lock:run_trading_cycle_task", ttl_seconds=1800) as acquired:
+    # Faz 483-devam (2026-09-10) — ASIL olay burada: kullanıcı "hâlâ pozisyon
+    # açılmıyor" dedi ve `celery inspect active` ÜÇ eşzamanlı
+    # run_trading_cycle_task gösterdi (53 dk, 45 dk, 4,6 dk çalışan). TTL
+    # 1800 sn'ydi ama gerçek döngü 123 sembol x ~13 sn = ~1600 sn, üç kopya
+    # birbiriyle CPU/DB için yarıştığında bunun kat kat üstü. TTL dolunca
+    # kilit açılıp yeni kopya başlıyor, her kopya diğerlerini daha da
+    # yavaşlatıyor -> ÖLÜM SARMALI: hiçbiri bitmiyor, kararlar döngü
+    # sonunda persist edildiği için 2 saat boyunca SIFIR karar yazıldı
+    # (log'da 30 "succeeded" kaydının 30'u da "previous_cycle_still_running"
+    # skip'iydi; tamamlanan tek döngü yok). ingest_order_book_task'takiyle
+    # AYNI hata sınıfı.
+    # Faz 484 — TTL yeniden ölçüldü: duvar-saati hızı ~20 sn/sembol
+    # (elapsed_s'in ölçtüğü propose süresine veri çekme EKLENİYOR), yani
+    # 123 sembol = ~2460 sn = 41 dk. İlk konulan 3600 sn sadece 1,46x
+    # marj bırakıyordu; 5400 sn ~2,2x.
+    #
+    # KALAN RİSK (bilinçli): worker SIGKILL ile ölürse kilit 90 dk'ya
+    # kadar bayat kalır ve o süre boyunca hiç döngü başlamaz (normal
+    # kapanışta ve SIGTERM'de context manager kilidi bırakıyor). Gerçek
+    # çözüm ya döngüyü hızlandırmak ya kilide heartbeat eklemek — ikisi
+    # de bu haftanın gözlem donduruşunun DIŞINDA, pazartesiye bırakıldı.
+    with _CycleLock("lock:run_trading_cycle_task", ttl_seconds=5400) as acquired:
         if not acquired:
             return {"skipped": "previous_cycle_still_running"}
 
@@ -202,7 +223,9 @@ def run_medium_term_cycle_task() -> dict:
 
     open_symbols = [s for s in watchlist if is_market_open(s)]
 
-    with _CycleLock("lock:run_medium_term_cycle_task", ttl_seconds=1800) as acquired:
+    # Faz 483-devam — orta-vadeli döngü de AYNI kod yolunu (tüm watchlist
+    # üzerinde propose) kullanıyor, dolayısıyla AYNI süre riski.
+    with _CycleLock("lock:run_medium_term_cycle_task", ttl_seconds=5400) as acquired:
         if not acquired:
             return {"skipped": "previous_cycle_still_running"}
 
@@ -233,7 +256,11 @@ def optimize_thresholds_task() -> dict:
 
     suggestion = compute_suggested_thresholds()
     if suggestion is None:
-        return {"skipped": "insufficient_closed_trades"}
+        # Faz 482 — artık iki ayrı nedenle None dönebiliyor: yetersiz
+        # örneklem VEYA hiçbir aday eşiğin pozitif expectancy verememesi
+        # (bkz. threshold_optimizer.py'deki not). İkisi de "canlı eşiğe
+        # dokunma" demek; mevcut değer olduğu gibi kalır.
+        return {"skipped": "no_positive_expectancy_or_insufficient_sample"}
 
     with SessionFactory.get_session() as session:
         repo = AppSettingsRepository(session)
@@ -508,13 +535,13 @@ def refresh_feature_ic_report_task() -> dict:
     desen. SADECE ölçüm/kayıt — hiçbir feature'ı otomatik pasifleştirmiyor
     (compute_feature_ic'in kendi ilkesiyle aynı: "AI kendi skorlama
     mantığını otomatik gevşetemez/değiştiremez")."""
+    from sqlalchemy import text
+
     from analytics.feature_ic import attach_ic_stability, compute_feature_ic
     from contracts.feature_ic_report import FeatureICReport
     from database.repositories.decision_persistor import DecisionPersistor
     from database.repositories.feature_ic_report_repository import FeatureICReportRepository
     from database.session_factory import SessionFactory
-
-    from sqlalchemy import text
 
     with SessionFactory.get_session() as session:
         closed_trades = DecisionPersistor(session).list_closed_trades(limit=100_000)
@@ -840,7 +867,18 @@ def ingest_order_book_task() -> dict:
     crypto_symbols = [s for s in watchlist if looks_like_binance_pair(s)]
     pipeline = IngestionPipeline(BinanceAdapter())
 
-    with _CycleLock("lock:ingest_order_book_task", ttl_seconds=120) as acquired:
+    # Faz 483 (2026-09-10) — KRİTİK canlı olay: kilit TTL'i görevin GERÇEK
+    # süresinden kısaysa kilit iş sürerken AÇILIYOR ve beat'in gönderdiği
+    # sonraki kopya onu "serbest" bulup EŞZAMANLI ikinci bir kopya
+    # başlatıyor — yani kilit hiç kilitlemiyor. Gerçek ölçüm (canlı log):
+    # bu görev en uzun 631 sn sürdü, TTL ise 120 sn'ydi; yani her
+    # tamamlanmaya karşılık 4-5 kopya aynı anda koşuyordu. 123 sembol x 5
+    # HTTP çağrısı (Faz 440 premiumIndex'i EKLEDİ, watchlist de 104->123
+    # oldu) worker havuzunu doyurup run_trading_cycle_task'ı açlığa
+    # sokuyordu: Celery kuyruğu 400 göreve çıkmıştı ve saatte üretilen
+    # karar ~600'den ~50-100'e düşmüştü. TTL artık gözlenen en uzun
+    # sürenin belirgin ÜSTÜNDE.
+    with _CycleLock("lock:ingest_order_book_task", ttl_seconds=1500) as acquired:
         if not acquired:
             return {"skipped": "previous_run_still_in_progress"}
         results = {}
@@ -885,7 +923,9 @@ def ingest_candles_task() -> dict:
     crypto_symbols = [s for s in watchlist if looks_like_binance_pair(s)]
     pipeline = IngestionPipeline(BinanceAdapter())
 
-    with _CycleLock("lock:ingest_candles_task", ttl_seconds=300) as acquired:
+    # Faz 483 — bkz. ingest_order_book_task'taki not. Gerçek ölçüm: 313 sn,
+    # TTL 300 sn'ydi (sınırda ve zaman zaman aşılıyordu).
+    with _CycleLock("lock:ingest_candles_task", ttl_seconds=900) as acquired:
         if not acquired:
             return {"skipped": "previous_run_still_in_progress"}
         results = {}
@@ -1010,7 +1050,6 @@ def cleanup_stale_pump_fade_positions_task() -> dict:
 
     from database.repositories.decision_persistor import DecisionPersistor
     from database.session_factory import SessionFactory
-    from market_data.ingestion.data_provider import RoutingProvider
 
     if _real_market_data_source_or_none() is None:
         return {"skipped": "non_binance_market_data_source"}
@@ -1128,7 +1167,9 @@ def close_due_shadow_positions_task() -> dict:
     if _real_market_data_source_or_none() is None:
         return {"skipped": "non_binance_market_data_source"}
 
-    with _CycleLock("lock:close_due_shadow_positions_task", ttl_seconds=300) as acquired:
+    # Faz 483 — bkz. ingest_order_book_task'taki not. Gerçek ölçüm: 302 sn,
+    # TTL 300 sn'ydi.
+    with _CycleLock("lock:close_due_shadow_positions_task", ttl_seconds=900) as acquired:
         if not acquired:
             return {"skipped": "previous_run_still_in_progress"}
         closed = close_due_positions()
@@ -1145,7 +1186,10 @@ def close_due_benched_shadow_positions_task() -> dict:
     if _real_market_data_source_or_none() is None:
         return {"skipped": "non_binance_market_data_source"}
 
-    with _CycleLock("lock:close_due_benched_shadow_positions_task", ttl_seconds=300) as acquired:
+    # Faz 483-devam — canlıda İKİ eşzamanlı kopyası yakalandı (38 dk ve
+    # 5 dk); TTL 300 sn, gözlenen en uzun süre 179 sn ama contention
+    # altında çok daha uzun sürüyor.
+    with _CycleLock("lock:close_due_benched_shadow_positions_task", ttl_seconds=1800) as acquired:
         if not acquired:
             return {"skipped": "previous_run_still_in_progress"}
         closed = close_due_benched_positions()

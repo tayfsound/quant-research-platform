@@ -199,6 +199,31 @@ class DecisionRecorder:
             ):
                 opens_position = False
 
+        # Faz 482 (2026-09-10) — kullanıcı bulgusu: "sadece live modu için
+        # geçerli olacak kapılar bunlar, test moduna engel olmaması lazımdı."
+        # Gerçek ölçümle doğrulandı: aşağıdaki 10 post-hoc kapı trading_mode'a
+        # HİÇ bakmıyordu — 9 Eylül'de min_confidence_gate TEK BAŞINA 3074
+        # kararı blokladı, üstelik eşiği (0,7) canlı confidence dağılımının
+        # p90'ıydı (p50=0,49), yani tasarım gereği adayların ~%10'unu
+        # geçiriyordu. same_direction_correlation indirimiyle (×0,85 medyan)
+        # birleşince açılma oranı %30,7'den %1,2'ye düştü ve VERİ TOPLAMA
+        # tamamen durdu — oysa sembollerin 123'ünün 119'u tamamen simüle,
+        # ortada korunacak gerçek sermaye yok.
+        #
+        # Çözüm, services/decision_fusion.py::_is_simulated_symbol'ün (Faz
+        # 454, negatif-EV carve-out'u) AYNI kuralı: gerçek borsaya giden
+        # (live/testnet) bir sembolde kapılar AYNEN sert kalır; simüle
+        # sembolde ya da trading_mode="test" iken veri toplamayı tıkamaz.
+        # Fail-closed: ayar okunamazsa kapılar UYGULANIR (bkz. helper).
+        #
+        # Kapılar burada ATLANMIYOR, sadece "engelle" kararı `_record_gate()`
+        # üzerinden `gate_bypassed_test_mode`e çevriliyor — kapının ne
+        # yapacağı hâlâ ölçülebilir kalıyor (bkz. o metodun docstring'i).
+        live_capital_gates = (
+            getattr(ctx.risk, "trading_mode", None) != "test"
+            and self._routes_to_real_exchange(ctx.market.symbol)
+        )
+
         # Faz 361 — kullanıcı bulgusu: aynı sembol/yönde açık pozisyon
         # varken daha kötü fiyattan üste eklemek (piramitleme + tepeden
         # giriş) SADECE "bullish_low" rejiminde gerçekten avantajlı
@@ -228,8 +253,7 @@ class DecisionRecorder:
                 if is_worse_price_pyramid_blocked(
                     direction, entry_price, existing_avg, market_regime, allowed_regime=allowed_regime
                 ):
-                    opens_position = False
-                    agent_opinions_data.append({
+                    opens_position = self._apply_gate({
                         "type": "gate_block",
                         "data": {
                             "gate": "pyramid_regime_gate",
@@ -237,7 +261,7 @@ class DecisionRecorder:
                             "market_regime": market_regime,
                             "existing_avg_entry_price": existing_avg,
                         },
-                    })
+                    }, live_capital_gates, agent_opinions_data)
 
         # Kullanıcı isteği (2026-08-27): "sistemin işlem aldığı rejimleri
         # de aç kapa yapabilirsek süper olur." AI konseyi-özel (pyramid_
@@ -271,15 +295,14 @@ class DecisionRecorder:
                 f"{trend}_{features.get('volatility_regime', 'normal')}" if trend != "unknown" else None
             )
             if is_regime_trading_blocked(market_regime, regime_enabled_map, direction, long_override_regimes):
-                opens_position = False
-                agent_opinions_data.append({
+                opens_position = self._apply_gate({
                     "type": "gate_block",
                     "data": {
                         "gate": "regime_trading_gate",
                         "reason": "regime_disabled_by_user",
                         "market_regime": market_regime,
                     },
-                })
+                }, live_capital_gates, agent_opinions_data)
 
         # Kullanıcı isteği (2026-08-28): Dashboard'daki "LONG/SHORT kazanma
         # oranı" kartlarına manuel bir aç/kapa anahtarı — Grok raporunun
@@ -300,15 +323,14 @@ class DecisionRecorder:
             except (ValueError, TypeError):
                 direction_enabled_map = {}
             if is_direction_trading_blocked(direction, direction_enabled_map):
-                opens_position = False
-                agent_opinions_data.append({
+                opens_position = self._apply_gate({
                     "type": "gate_block",
                     "data": {
                         "gate": "direction_trading_gate",
                         "reason": "direction_disabled_by_user",
                         "direction": direction,
                     },
-                })
+                }, live_capital_gates, agent_opinions_data)
 
         # Faz 421 (2026-09-06) — kullanıcı isteği: gerçek confidence
         # kovası verisiyle (LONG'da confidence≈0,7 hem %85,2 kazanma HEM
@@ -326,8 +348,7 @@ class DecisionRecorder:
             min_confidence = float(min_confidence_raw) if min_confidence_raw else 0.7
             confidence_value = getattr(ctx.decision, "confidence", None)
             if is_confidence_trading_blocked(confidence_value, confidence_gate_enabled, min_confidence):
-                opens_position = False
-                agent_opinions_data.append({
+                opens_position = self._apply_gate({
                     "type": "gate_block",
                     "data": {
                         "gate": "min_confidence_gate",
@@ -335,7 +356,7 @@ class DecisionRecorder:
                         "confidence": confidence_value,
                         "min_confidence": min_confidence,
                     },
-                })
+                }, live_capital_gates, agent_opinions_data)
 
         # Kullanıcı isteği (2026-08-28): canlıya kademeli geçiş için,
         # yukarıdaki rejim kapısından DAHA GRANÜLER bir kontrol — MAE/MFE
@@ -369,15 +390,14 @@ class DecisionRecorder:
                 asset_class_trading_category(ctx.market.symbol) or "unknown",
             )
             if is_mae_mfe_bucket_trading_blocked(bucket_key, bucket_enabled_map):
-                opens_position = False
-                agent_opinions_data.append({
+                opens_position = self._apply_gate({
                     "type": "gate_block",
                     "data": {
                         "gate": "mae_mfe_bucket_trading_gate",
                         "reason": "bucket_disabled_by_user",
                         "bucket_key": bucket_key,
                     },
-                })
+                }, live_capital_gates, agent_opinions_data)
 
         # Kullanıcı isteği (2026-08-28): "kararı vermeden önce burayı
         # tarayacak, ajan gruplarının başarısını ölçecek — %80'in altında
@@ -407,8 +427,7 @@ class DecisionRecorder:
                     known_pairs = trustworthy_known_pairs(report["result"].get("pairs") or [])
                     agreeing_domains = agreeing_domains_for_decision(agent_opinions_data, direction)
                     if is_agent_combination_trading_blocked(agreeing_domains, known_pairs, min_win_rate):
-                        opens_position = False
-                        agent_opinions_data.append({
+                        opens_position = self._apply_gate({
                             "type": "gate_block",
                             "data": {
                                 "gate": "agent_combination_gate",
@@ -416,7 +435,7 @@ class DecisionRecorder:
                                 "agreeing_domains": sorted(agreeing_domains) if agreeing_domains else [],
                                 "min_win_rate": min_win_rate,
                             },
-                        })
+                        }, live_capital_gates, agent_opinions_data)
 
         # Backlog #17 — kullanıcı isteği: "tepeden/dipten kovalıyorsa"
         # (kritik bir seviyeden çok uzaktaysa) giriş engellensin. Gerçek
@@ -438,8 +457,7 @@ class DecisionRecorder:
                 is_large_cap = crypto_cap_tier(ctx.market.symbol) == "large_cap"
                 distance_pct = (ctx.market.features or {}).get("nearest_pivot_distance_pct")
                 if is_pivot_distance_entry_blocked(is_large_cap, distance_pct, threshold_pct=threshold_pct):
-                    opens_position = False
-                    agent_opinions_data.append({
+                    opens_position = self._apply_gate({
                         "type": "gate_block",
                         "data": {
                             "gate": "pivot_distance_gate",
@@ -447,7 +465,7 @@ class DecisionRecorder:
                             "distance_pct": distance_pct,
                             "threshold_pct": threshold_pct,
                         },
-                    })
+                    }, live_capital_gates, agent_opinions_data)
 
         # Kullanıcı isteği (2026-08-27): "Emtia, Kripto, Hisse Senedi'ni
         # aç kapa yapabileceğimiz modüller." AI konseyi/pump_fade AYRIMI
@@ -469,15 +487,14 @@ class DecisionRecorder:
                 enabled_map = {}
             category = asset_class_trading_category(ctx.market.symbol)
             if is_asset_class_trading_blocked(category, enabled_map):
-                opens_position = False
-                agent_opinions_data.append({
+                opens_position = self._apply_gate({
                     "type": "gate_block",
                     "data": {
                         "gate": "asset_class_trading_gate",
                         "reason": "asset_class_disabled_by_user",
                         "asset_class": category,
                     },
-                })
+                }, live_capital_gates, agent_opinions_data)
 
         # Faz 192: RiskTargetStage'in gerçek ATR'den kurduğu risk/ödül
         # magnitüdlerini (ctx.decision.stop_loss_distance/take_profit_
@@ -515,15 +532,14 @@ class DecisionRecorder:
             short_scalp_only_enabled = AppSettingsRepository(self.session).get("short_scalp_only_enabled") == "true"
             trade_type = _trade_type(entry_price, stop_loss_price)
             if is_short_swing_blocked(direction, trade_type, short_scalp_only_enabled):
-                opens_position = False
-                agent_opinions_data.append({
+                opens_position = self._apply_gate({
                     "type": "gate_block",
                     "data": {
                         "gate": "short_scalp_only_gate",
                         "reason": "short_swing_has_no_verified_edge",
                         "trade_type": trade_type,
                     },
-                })
+                }, live_capital_gates, agent_opinions_data)
 
         # Faz 366 — kullanıcı isteği: "ürettiği strateji insan onayına
         # sunulur böyle bir yapı ayarlamıştık" — analytics/strategy_
@@ -559,25 +575,21 @@ class DecisionRecorder:
                 )
                 blocked_pairs = StrategyGateApprovalRepository(self.session).list_blocked_pairs()
                 if is_strategy_regime_gated(strategy_label, market_regime, blocked_pairs):
-                    gate_data = {
-                        "gate": "strategy_regime_gate",
-                        "reason": "known_underperforming_strategy_regime_pair",
-                        "strategy_label": strategy_label,
-                        "market_regime": market_regime,
-                    }
                     # Faz 397 (2026-09-01) — kullanıcı isteği: "strategy_
                     # gate_approvals bunlar test modunda işlem alımına
-                    # engel olmasın ama" — bu kapı gerçek sermaye riskinde
-                    # (canlı) hâlâ tam olarak engelliyor, ama test modunda
-                    # (Faz 388'in "veri toplama hız kesmesin" ilkesiyle
-                    # AYNI gerekçe) artık ENGELLEMİYOR — sadece şeffaf
-                    # şekilde kaydediyor (canlıda engellerdi, ama test
-                    # modunda değil).
-                    if ctx.risk.trading_mode == "test":
-                        agent_opinions_data.append({"type": "gate_bypassed_test_mode", "data": gate_data})
-                    else:
-                        opens_position = False
-                        agent_opinions_data.append({"type": "gate_block", "data": gate_data})
+                    # engel olmasın ama". Faz 482'de bu carve-out DİĞER 9
+                    # kapıya da genişletildi ve ortak `_record_gate()`
+                    # yardımcısına taşındı — burada iki ayrı mekanizma
+                    # bırakmamak için bu kapı da aynı yoldan geçiyor.
+                    opens_position = self._apply_gate({
+                        "type": "gate_block",
+                        "data": {
+                            "gate": "strategy_regime_gate",
+                            "reason": "known_underperforming_strategy_regime_pair",
+                            "strategy_label": strategy_label,
+                            "market_regime": market_regime,
+                        },
+                    }, live_capital_gates, agent_opinions_data)
 
         # Faz 255: kullanıcı isteği — token bazlı kaldıraç. Aynı capital_
         # per_trade "teminatı" leverage kadar daha büyük bir notional
@@ -773,6 +785,61 @@ class DecisionRecorder:
             log_file.write_text(event.model_dump_json(indent=2))
 
         return event
+
+    def _apply_gate(
+        self, entry: dict, live_capital_gates: bool, agent_opinions_data: list
+    ) -> bool:
+        """Faz 482 — bir kapı "engelle" dediğinde ne yapılacağını TEK yerde
+        karara bağlar. SADECE `opens_position` True iken çağrılır; dönüş
+        değeri kapıdan SONRAKİ `opens_position`'dır: gerçek sermaye
+        kapıları geçerliyse False (pozisyon gerçekten engellendi), aksi
+        halde True (carve-out, pozisyon açılmaya devam ediyor).
+
+        KRİTİK: kapı her iki durumda da DEĞERLENDİRİLİYOR ve sonucu
+        kaydediliyor — sadece etiketi değişiyor (`gate_block` yerine
+        `gate_bypassed_test_mode`). Kapıyı hiç çalıştırmamak daha basit
+        olurdu ama `analytics/gate_selection_value.py`'nin ölçtüğü şeyi
+        (bu kapı GERÇEKTEN daha kötü kararları mı eliyor, yoksa
+        anti-selektif mi) kör ederdi — "engelleseydi ne olurdu" örneklemi
+        tamamen kaybolurdu. Faz 397'nin strategy_regime_gate için kurduğu
+        AYNI desen, şimdi 10 kapının hepsi için."""
+        if live_capital_gates:
+            agent_opinions_data.append(entry)
+            return False
+        agent_opinions_data.append({
+            "type": "gate_bypassed_test_mode", "data": entry["data"],
+        })
+        return True
+
+    def _routes_to_real_exchange(self, symbol: str | None) -> bool:
+        """Faz 482 — bu sembol GERÇEK bir borsaya mı gidiyor (live/testnet)
+        yoksa tamamen simüle mi ediliyor? `services/decision_fusion.py::
+        _is_simulated_symbol` (Faz 454) ile AYNI ayar kaynağı, ama fail-safe
+        yönü TERS çevrilmiş: orada hata durumunda carve-out UYGULANMAZ
+        (koruma kalır), burada hata durumunda True döner — yani kapılar
+        UYGULANIR. Her iki dosyada da sonuç aynı: bir aksaklık asla
+        istemeden gerçek-borsa korumasını gevşetmez.
+
+        _resolve_execution_mode() KASITLI olarak yeniden kullanılmadı: o,
+        hata durumunda "simulated" döner (oradaki doğru fail-safe, asla
+        istemeden testnet emri göndermemek için) — burada aynı varsayılan
+        TAM TERSİ etki yapar, kapıları sessizce kapatırdı."""
+        import json
+
+        from database.repositories.app_settings_repository import AppSettingsRepository
+        from database.session_factory import SessionFactory
+
+        if not symbol:
+            return True
+        try:
+            with SessionFactory.get_session() as session:
+                repo = AppSettingsRepository(session)
+                raw_map = repo.get("execution_mode_symbols")
+                global_mode = repo.get("execution_mode") or "simulated"
+            mapping = json.loads(raw_map) if raw_map else {}
+            return mapping.get(symbol, global_mode) != "simulated"
+        except Exception:
+            return True
 
     def _resolve_execution_mode(self, symbol: str) -> str:
         """Faz 315 — _symbol_leverage ile AYNI desen: execution_mode_

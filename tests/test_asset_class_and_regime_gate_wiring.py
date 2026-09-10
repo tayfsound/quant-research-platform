@@ -3,10 +3,26 @@ Class / Regime Trading Gate entegrasyon testleri. tests/test_decision_
 recorder.py'deki pyramid_regime_gate testleriyle AYNI desen."""
 import json
 
+import pytest
+
 from contracts.context import CognitiveCycleContext
 from database.repositories.app_settings_repository import AppSettingsRepository
 from database.session_factory import SessionFactory
 from services.decision_recorder import DecisionRecorder
+from tests.live_gate_helpers import global_real_exchange_mode
+
+
+@pytest.fixture(autouse=True)
+def _gates_run_in_live_mode():
+    """Faz 482 — bu dosyadaki testlerin HEPSİ "kapı canlıda gerçekten
+    engelliyor mu" sorusunu test ediyor. Kapılar artık sadece gerçek
+    borsaya giden (live/testnet) sembollerde engelliyor; global
+    execution_mode varsayılanı "simulated" olduğu için işaretlenmemiş
+    her test sembolü carve-out'a düşerdi. Bkz. tests/live_gate_helpers.py.
+    """
+    with global_real_exchange_mode():
+        yield
+
 
 
 def _set_asset_class_map(mapping: dict) -> None:

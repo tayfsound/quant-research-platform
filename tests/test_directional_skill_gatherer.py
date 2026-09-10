@@ -33,6 +33,29 @@ def _insert_decision(session, *, symbol, direction, entry_price, confidence, tim
     )
 
 
+def _cleanup_symbol(symbol: str) -> None:
+    """Faz 482 — bu dosyanın testleri `status='open'` ama `opened_at=NULL`
+    satırlar yazıyor ve HİÇBİRİ temizlemiyordu; paylaşılan quantdb_test'te
+    140 satıra kadar birikmişti. Postgres `ORDER BY opened_at DESC`
+    varsayılanı NULL'ları EN BAŞA koyduğu için bu satırlar sayfalanmış
+    açık-pozisyon sorgularının ilk sayfasını işgal edip 9 testi tam-paket
+    koşusunda StopIteration ile düşürüyordu.
+
+    Sıralamanın kendisi de düzeltildi (bkz. decision_persistor.py::
+    list_open_positions, artık `NULLS LAST`) — yani bu temizlik tek başına
+    savunma hattı DEĞİL, sadece paylaşılan DB'yi şişirmemek için
+    (bkz. proje hafızası "shared test state bloat"). tests/test_risk_state.py
+    AYNI deseni izliyor."""
+    with SessionFactory.get_session() as session:
+        session.execute(
+            text("DELETE FROM decisions WHERE symbol LIKE :pattern"), {"pattern": f"{symbol}%"}
+        )
+        session.execute(
+            text("DELETE FROM market_snapshots WHERE symbol LIKE :pattern"), {"pattern": f"{symbol}%"}
+        )
+        session.commit()
+
+
 def test_gatherer_measures_never_closed_decisions_too():
     """Faz 446'dan KASITLI farkın regresyon koruması: yön becerisi
     TAHMİNİN özelliğidir, işlemin değil. Hiç kapanmamış (status='open')
@@ -69,12 +92,15 @@ def test_gatherer_measures_never_closed_decisions_too():
             ))
         session.commit()
 
-    result = gather_directional_skill()
+    try:
+        result = gather_directional_skill()
 
-    assert result["n_directional"] >= 80
-    assert result["murphy_decomposition"] is not None
-    assert result["benchmark_relative_skill"] is not None
-    assert result["pesaran_timmermann"] is not None
+        assert result["n_directional"] >= 80
+        assert result["murphy_decomposition"] is not None
+        assert result["benchmark_relative_skill"] is not None
+        assert result["pesaran_timmermann"] is not None
+    finally:
+        _cleanup_symbol(symbol)
 
 
 def test_gatherer_reports_neutral_exclusions_instead_of_hiding_them():
@@ -100,9 +126,12 @@ def test_gatherer_reports_neutral_exclusions_instead_of_hiding_them():
             ))
         session.commit()
 
-    result = gather_directional_skill()
+    try:
+        result = gather_directional_skill()
 
-    assert result["n_neutral_excluded"] >= 30
+        assert result["n_neutral_excluded"] >= 30
+    finally:
+        _cleanup_symbol(symbol)
 
 
 def test_gatherer_carries_the_independence_caveat_into_the_report():
@@ -148,6 +177,9 @@ def test_gatherer_excludes_removed_multi_timeframe_cascade_experiment():
             ))
         session.commit()
 
-    window = gather_directional_skill()["evaluation_window"]
-    # Bu semboldeki 30 kayit tamamen cascade etiketli; havuza girmemeli.
-    assert window is not None
+    try:
+        window = gather_directional_skill()["evaluation_window"]
+        # Bu semboldeki 30 kayit tamamen cascade etiketli; havuza girmemeli.
+        assert window is not None
+    finally:
+        _cleanup_symbol(symbol)

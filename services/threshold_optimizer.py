@@ -38,26 +38,23 @@ ACT_CANDIDATES = [t / 100 for t in range(40, 91, 5)]  # 0.40, 0.45, ..., 0.90
 MIN_CANDIDATE_SAMPLE_SIZE = MIN_SAMPLE_SIZE
 
 
-def compute_suggested_thresholds(min_sample: int = MIN_SAMPLE_SIZE) -> dict | None:
-    """Gerçek kapanmış işlemlerin (confidence, pnl) çiftlerinden, geriye
-    dönük olarak en yüksek ORTALAMA kâr (expectancy) üretecek act_threshold'u
-    grid-search ile bulur — "eğer sadece confidence >= t olan işlemleri
-    alsaydım işlem başına ortalama kârım ne olurdu" sorusunu her aday eşik
-    için gerçekten hesaplıyor. Yeterli örnek yoksa (genel ya da adayın kendi
-    alt-örneklemi) None döner (icat edilmiş bir sayı değil, dürüstçe
-    'henüz yeterli veri yok')."""
-    with SessionFactory.get_session() as session:
-        trades = DecisionPersistor(session).list_closed_trades(limit=500)
+def select_threshold(
+    samples: list[tuple[float, float]], min_sample: int = MIN_SAMPLE_SIZE
+) -> dict | None:
+    """Faz 482 — grid-search'ün SAF hâli: (confidence, pnl) çiftlerinden
+    en yüksek ORTALAMA kâr (expectancy) veren act_threshold'u seçer.
+    "Eğer sadece confidence >= t olan işlemleri alsaydım işlem başına
+    ortalama kârım ne olurdu" sorusunu her aday eşik için hesaplar.
 
-    samples = [
-        (t["confidence"], t["pnl"])
-        for t in trades
-        if t.get("confidence") is not None and t.get("pnl") is not None
-    ]
+    I/O'dan AYRILDI çünkü DB'ye gömülü hâli paylaşılan quantdb_test'te
+    deterministik test edilemiyordu: sonuç, o an tabloda ne olduğuna
+    bağlıydı (bu yüzden aynı test izole geçip tam pakette düşüyordu).
+    `compute_suggested_thresholds()` bu fonksiyonu gerçek satırlarla
+    besleyen ince bir sarmalayıcı — davranış birebir aynı."""
     if len(samples) < min_sample:
         return None
 
-    best_act = 0.7
+    best_act = None
     best_reward = None
     best_sample_size = 0
     for t in ACT_CANDIDATES:
@@ -70,7 +67,40 @@ def compute_suggested_thresholds(min_sample: int = MIN_SAMPLE_SIZE) -> dict | No
             best_act = t
             best_sample_size = len(subset)
 
-    if best_reward is None:
+    if best_reward is None or best_act is None:
+        return None
+
+    # Faz 482 (2026-09-10) — İKİNCİ canlı kilitlenme olayı, gerçek veriyle
+    # ölçüldü. Faz 370'in SUM->MEAN düzeltmesi ızgarayı "en yüksek eşiğe"
+    # doğru sistematik kaymaktan kurtardı ama asıl tuzağı kapatmadı: ızgara
+    # NOKTALARININ HEPSİ negatif expectancy verdiğinde bu fonksiyon yine de
+    # "en az kötü" olanı seçip CANLIYA yazıyordu. Gerçek ölçüm (9 Eylül, son
+    # 500 kapanmış işlem): t=0,40 -> -0,60 $/işlem, t=0,50 -> -0,93,
+    # t=0,65 -> -0,96, t=0,70 -> -1,02, t=0,80 -> -3,66. Hepsi negatif;
+    # aralarındaki fark gürültü. Sonuç: act_threshold saatlik turlarda
+    # 0,40 ile 0,70 arasında gidip geliyordu ve 0,70'e sıçradığı her turda
+    # sistem fiilen duruyordu (açılma oranı %30,7 -> %1,2; canlı doğrulama:
+    # kararların içine yazılmış act_threshold değeri 9 Eylül'de 2784 kez
+    # 0,70, 116 kez 0,65, 67 kez 0,40).
+    #
+    # Kural: pozitif expectancy YOKSA hiçbir şey yazılmaz. "Hiçbir eşik bu
+    # işlemleri kârlı yapmıyor" bulgusu, bir eşik seçme gerekçesi DEĞİL —
+    # problem eşikte değil, işlemlerin kendisinde. Bu, modülün zaten
+    # benimsediği "yeterli veri yoksa dürüstçe None dön, icat edilmiş bir
+    # sayı yazma" ilkesinin aynısı, sadece örneklem sayısına değil kanıtın
+    # İŞARETİNE uygulanmış hâli.
+    #
+    # BİLİNEN, BU VERİYLE ÇÖZÜLEMEYEN KISIT (kasıtlı olarak düzeltilmedi):
+    # örneklem survivorship-biased — list_closed_trades SADECE açılmış
+    # pozisyonları içerir, onlar da o günkü act_threshold'u geçtikleri için
+    # oradadır. Yani fonksiyon, kendi kestiği bir dağılım üzerinde kendini
+    # kalibre ediyor. Düşük-confidence işlemlerin pnl'i hiç gözlenmediği
+    # için bu, daha akıllı bir formülle DEĞİL sadece daha geniş bir
+    # örneklemle çözülebilir — Faz 482'nin kapı carve-out'u (bkz. services/
+    # decision_recorder.py::_routes_to_real_exchange) simüle sembollerde
+    # confidence aralığının tamamını açtığı için önümüzdeki günlerde
+    # örneklem doğal olarak temsili hâle gelecek.
+    if best_reward <= 0:
         return None
 
     reduce_threshold = round(max(0.25, best_act - 0.3), 3)
@@ -81,3 +111,19 @@ def compute_suggested_thresholds(min_sample: int = MIN_SAMPLE_SIZE) -> dict | No
         "sample_size": best_sample_size,
         "best_reward": round(best_reward, 4),
     }
+
+
+def compute_suggested_thresholds(min_sample: int = MIN_SAMPLE_SIZE) -> dict | None:
+    """`select_threshold()`'u GERÇEK, kalıcı `decisions` tablosundaki son
+    500 kapanmış işlemle besleyen ince sarmalayıcı. Yeterli örnek yoksa ya
+    da hiçbir aday eşik pozitif expectancy vermiyorsa None döner — icat
+    edilmiş bir sayı canlı ayara asla yazılmaz."""
+    with SessionFactory.get_session() as session:
+        trades = DecisionPersistor(session).list_closed_trades(limit=500)
+
+    samples = [
+        (t["confidence"], t["pnl"])
+        for t in trades
+        if t.get("confidence") is not None and t.get("pnl") is not None
+    ]
+    return select_threshold(samples, min_sample=min_sample)

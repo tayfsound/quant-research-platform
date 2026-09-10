@@ -176,6 +176,29 @@ def snap_target_to_confluence(
     nearest = min(candidates, key=lambda z: abs(z["level"] - current_price))
     buffer = tolerance_pct / 2  # bölgenin TAM üstüne değil, hemen önüne
     adjusted = nearest["level"] * (1 - buffer) if direction == "LONG" else nearest["level"] * (1 + buffer)
+
+    # Faz 484 (2026-09-10) — Hypothesis'in bulduğu GERÇEK bug, Faz 368'de
+    # stop tarafında düzeltilenin AYNISI ama hedef tarafında hiç
+    # uygulanmamıştı. `buffer` fiyatın MUTLAK seviyesinin bir oranı
+    # (%0,25) olarak hesaplanıyor; aday bölge fiyata bundan daha yakınsa
+    # `level * (1 - buffer)` current_price'ın ALTINA düşüyor — yani LONG
+    # bir pozisyonun take-profit'i GİRİŞİN ALTINDA kalıyor. Karşı örnek:
+    # current_price=991212, zone=991293 (sadece 81 yukarıda), buffer payı
+    # 2478 -> adjusted=988815, yani girişin 2397 ALTINDA (ham hedef ise
+    # 1936 YUKARIDA). Çağıran taraf `abs(adjusted - current_price)`
+    # aldığı için bu, pozitif ama TERS yönlü bir "hedef mesafesi" gibi
+    # görünüyordu.
+    #
+    # Kelepçe yerine bölgeyi REDDETMEK seçildi: current_price'a kelepçe
+    # sıfır mesafeli (giriş = hedef) anlamsız bir hedef üretirdi. Bölge
+    # buffer bandının İÇİNDEyse orada alınacak bir kâr da yok — gürültü
+    # bandının içinde. Modülün zaten kullandığı fail-closed yol: ham
+    # ATR hedefi aynen döner.
+    raw_distance = abs(target_price - current_price)
+    on_profit_side = adjusted > current_price if direction == "LONG" else adjusted < current_price
+    if not on_profit_side or abs(adjusted - current_price) > raw_distance:
+        return target_price, None
+
     return adjusted, nearest
 
 

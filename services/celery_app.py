@@ -142,7 +142,14 @@ celery_app.conf.beat_schedule = {
     # yığılma riski arttı — 120sn'ye çıkarıldı.
     "run-trading-cycle-every-120s": {
         "task": "run_trading_cycle_task",
-        "schedule": 120.0,
+        # Faz 483-devam (2026-09-10) — gerçek döngü ~1600 sn sürüyor (123
+        # sembol x ~13 sn). 120 sn'lik plan, tamamlanma başına ~13 boş
+        # (kilide takılıp "skipped" dönen) kopya üretiyordu; kilit TTL'i
+        # aşıldığı anda bunlardan biri GERÇEK bir eşzamanlı döngü
+        # başlatıyordu. Aralık gerçek süreye hizalandı — döngü zaten daha
+        # sık koşamıyor. Faz 484: gerçek süre ~2460 sn olarak yeniden
+        # ölçüldü (20 sn/sembol duvar-saati), aralık 900 sn'ye çekildi.
+        "schedule": 900.0,
     },
     # Faz 200: kointegrasyon/spread z-score, teknik göstergelerden çok daha
     # yavaş değişen istatistiksel ilişkiler — her 90sn'de kontrol etmenin
@@ -217,9 +224,19 @@ celery_app.conf.beat_schedule = {
     # running"/kuyrukta bekleme) — kullanıcı "AI pozisyon almıyor, veri
     # toplayamıyorum" derken görülen tablonun doğrudan sebebi. Aralıklar
     # gerçek sürelerin ÜSTÜNE marj bırakacak şekilde yeniden ayarlandı.
+    #
+    # Faz 483 (2026-09-10) — AYNI olay bir kez daha yaşandı, çünkü yukarıdaki
+    # düzeltme SADECE aralığı hizaladı, kilit TTL'ini değil: TTL (120sn)
+    # görevin gerçek süresinden kısa kaldığı için kilit iş sürerken açılıyor
+    # ve sonraki kopya onu serbest bulup eşzamanlı koşuyordu (bkz. services/
+    # tasks.py::ingest_order_book_task'taki not). Görev bu arada 65,8sn'den
+    # 631sn'ye çıkmıştı: watchlist 104->123 sembol VE Faz 440 sembol başına
+    # 5. HTTP çağrısını (premiumIndex) ekledi. Aralık gerçek süreye
+    # hizalandı — görev zaten ~630sn sürdüğü için 120sn'lik plan yalnızca
+    # kuyruğa boş (kilide takılıp "skipped" dönen) kopya üretiyordu.
     "ingest-order-book-every-20s": {
         "task": "ingest_order_book_task",
-        "schedule": 120.0,
+        "schedule": 600.0,
     },
     # Faz 207: aynı "ada" bulgusu — IngestionPipeline.ingest_candles()
     # (Market Overview dashboard sayfasının okuduğu tek kaynak,

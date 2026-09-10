@@ -18,6 +18,19 @@ def test_refresh_market_state_cluster_task_saves_both_reports():
             {"pair": "BTCUSDT|ETHUSDT", "correlation": 0.85, "correlation_stability": None},
         ],
     }
+    # Faz 482 — bu task `_CycleLock` kullanıyor ve test paketi Redis'i
+    # GERÇEKTEN ÇALIŞAN celery worker ile paylaşıyor: canlı sistem tam o
+    # anda kilidi tutuyorsa task `{"skipped": ...}` dönüyor ve test
+    # `KeyError: 'n_symbols'` ile düşüyordu (tam paket koşusunda,
+    # worker yeniden başlatıldığı sırada gerçekten yaşandı).
+    # tests/test_candle_ingestion_task.py'deki AYNI desen — kilit
+    # çağrıdan hemen önce temizleniyor.
+    import redis
+
+    from config import get_settings
+
+    redis.from_url(get_settings().REDIS_URL).delete("lock:refresh_market_state_cluster_task")
+
     with patch("services.market_state_gatherer.gather_market_state_cluster", return_value=fake_result):
         result = refresh_market_state_cluster_task()
 

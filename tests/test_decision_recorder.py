@@ -146,7 +146,14 @@ def test_worse_price_pyramid_add_blocked_outside_allowed_regime():
         risk={"evaluation": {"verdict": "approved"}},
     )
 
-    event = recorder.record(ctx, [])
+    # Faz 482 — sembol açıkça GERÇEK borsaya işaretleniyor: kapılar artık
+    # sadece live/testnet sembollerde ENGELLİYOR, simüle sembolde (global
+    # execution_mode varsayılanı) sadece `gate_bypassed_test_mode` olarak
+    # kaydediliyor. Bkz. tests/live_gate_helpers.py.
+    from tests.live_gate_helpers import symbol_on_real_exchange
+
+    with symbol_on_real_exchange(symbol):
+        event = recorder.record(ctx, [])
     assert event.status == "no_trade"
 
     # Kullanıcı isteği (2026-08-31): bu kapı da diğer 7'siyle AYNI desende
